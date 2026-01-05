@@ -24,26 +24,6 @@ const (
 	EntireSettingsLocalFile = ".entire/settings.local.json"
 )
 
-// StartSettings contains configuration for the 'entire start' command
-type StartSettings struct {
-	// BranchPrefix is prepended to feature names when creating branches
-	// Default: "feature/"
-	BranchPrefix string `json:"branchPrefix,omitempty"`
-
-	// BaseBranch is the default branch to create features from
-	// Default: "main"
-	BaseBranch string `json:"baseBranch,omitempty"`
-
-	// RequirementsTemplate is the path to the requirements template file
-	// Required for --scaffold flag to work
-	RequirementsTemplate string `json:"requirementsTemplate,omitempty"`
-
-	// UseWorktrees controls whether to create git worktrees for parallel work.
-	// When false (default), creates branch and checks it out in current directory.
-	// When true, creates branch in a separate worktree at .worktrees/<name>.
-	UseWorktrees bool `json:"useWorktrees,omitempty"`
-}
-
 // EntireSettings represents the .entire/settings.json configuration
 type EntireSettings struct {
 	// Strategy is the name of the git strategy to use
@@ -76,9 +56,6 @@ type EntireSettings struct {
 	// AgentOptions contains agent-specific configuration
 	// Keyed by agent name, e.g., {"claude-code": {"ignore_untracked": false}}
 	AgentOptions map[string]interface{} `json:"agent_options,omitempty"`
-
-	// Start contains configuration for the 'entire start' command
-	Start *StartSettings `json:"start,omitempty"`
 }
 
 // LoadEntireSettings loads the Entire settings from .entire/settings.json,
@@ -281,45 +258,6 @@ func IsEnabled() (bool, error) {
 		return true, err
 	}
 	return settings.Enabled, nil
-}
-
-// GetStartSettings returns the start command settings with defaults applied.
-// Returns default values if not configured or if settings cannot be loaded.
-// Logs a warning if settings file exists but cannot be parsed.
-func GetStartSettings() *StartSettings {
-	defaults := &StartSettings{
-		BranchPrefix:         "feature/",
-		BaseBranch:           "main",
-		RequirementsTemplate: "",
-		UseWorktrees:         false,
-	}
-
-	settings, err := LoadEntireSettings()
-	if err != nil {
-		// Log the error so users know their config file has issues
-		slog.Warn("failed to load settings, using defaults", slog.Any("error", err))
-		return defaults
-	}
-	if settings.Start == nil {
-		return defaults
-	}
-
-	// Apply defaults for missing fields
-	result := &StartSettings{
-		BranchPrefix:         settings.Start.BranchPrefix,
-		BaseBranch:           settings.Start.BaseBranch,
-		RequirementsTemplate: settings.Start.RequirementsTemplate,
-		UseWorktrees:         settings.Start.UseWorktrees,
-	}
-
-	if result.BranchPrefix == "" {
-		result.BranchPrefix = defaults.BranchPrefix
-	}
-	if result.BaseBranch == "" {
-		result.BaseBranch = defaults.BaseBranch
-	}
-
-	return result
 }
 
 // GetStrategy returns the configured strategy instance.
