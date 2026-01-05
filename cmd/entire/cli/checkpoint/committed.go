@@ -584,6 +584,13 @@ func (s *GitStore) copyMetadataDir(metadataDir, basePath string, entries map[str
 			return nil
 		}
 
+		// Skip symlinks to prevent reading files outside the metadata directory.
+		// A symlink could point to sensitive files (e.g., /etc/passwd) which would
+		// then be captured in the checkpoint and stored in git history.
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+
 		// Get relative path within metadata dir
 		relPath, err := filepath.Rel(metadataDir, path)
 		if err != nil {

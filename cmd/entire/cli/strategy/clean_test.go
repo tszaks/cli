@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -281,5 +282,172 @@ func TestDeleteShadowBranches_Empty(t *testing.T) {
 
 	if len(deleted) != 0 || len(failed) != 0 {
 		t.Errorf("DeleteShadowBranches([]) = (%v, %v), want ([], [])", deleted, failed)
+	}
+}
+
+// TestListOrphanedSessionStates_RecentSessionNotOrphaned tests that recently started
+// sessions are NOT marked as orphaned, even if they have no checkpoints yet.
+//
+// P1 Bug: A session that just started (via InitializeSession) but hasn't created
+// its first checkpoint yet would be incorrectly marked as orphaned because it has:
+// - A session state file
+// - No checkpoints on entire/sessions
+// - No shadow branch (if using auto-commit strategy, or before first checkpoint)
+//
+// This test should FAIL with the current implementation, demonstrating the bug.
+func TestListOrphanedSessionStates_RecentSessionNotOrphaned(t *testing.T) {
+	// Setup: create a temp git repo
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	// Create initial commit
+	emptyTreeHash := plumbing.NewHash("4b825dc642cb6eb9a060e54bf8d69288fbee4904")
+	commitHash, err := createCommit(repo, emptyTreeHash, plumbing.ZeroHash, "initial commit", "test", "test@test.com")
+	if err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create HEAD reference
+	headRef := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("master"))
+	if err := repo.Storer.SetReference(headRef); err != nil {
+		t.Fatalf("failed to set HEAD: %v", err)
+	}
+	masterRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName("master"), commitHash)
+	if err := repo.Storer.SetReference(masterRef); err != nil {
+		t.Fatalf("failed to set master: %v", err)
+	}
+
+	// Create a session state file that was JUST started (simulating InitializeSession)
+	// This session has no checkpoints and no shadow branch yet
+	state := &SessionState{
+		SessionID:       "recent-session-123",
+		BaseCommit:      commitHash.String(), // Full 40-char hash
+		StartedAt:       time.Now(),          // Just started!
+		CheckpointCount: 0,                   // No checkpoints yet
+	}
+	if err := SaveSessionState(state); err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	// List orphaned session states
+	orphaned, err := ListOrphanedSessionStates()
+	if err != nil {
+		t.Fatalf("ListOrphanedSessionStates() error = %v", err)
+	}
+
+	// The recently started session should NOT be marked as orphaned
+	// because it's actively being used (StartedAt is recent)
+	for _, item := range orphaned {
+		if item.ID == "recent-session-123" {
+			t.Errorf("ListOrphanedSessionStates() incorrectly marked recent session as orphaned.\n"+
+				"Session was started %v ago, which is too recent to be considered orphaned.\n"+
+				"Expected: session to be protected from cleanup during active use.\n"+
+				"Got: session marked as orphaned with reason: %q",
+				time.Since(state.StartedAt), item.Reason)
+		}
+	}
+}
+
+// TestListOrphanedSessionStates_HashLengthMismatch tests that session states are correctly
+// matched against shadow branches even when hash lengths differ.
+//
+// P1 Bug: Shadow branches use 7-char hashes (e.g., "entire/abc1234") but session states
+// store the full 40-char BaseCommit hash. The current comparison at line 192 does:
+//
+//	shadowBranchSet[state.BaseCommit]
+//
+// where shadowBranchSet has 7-char keys but state.BaseCommit is 40 chars.
+// This comparison always fails, causing valid sessions to be marked as orphaned.
+//
+// This test should FAIL with the current implementation, demonstrating the bug.
+func TestListOrphanedSessionStates_HashLengthMismatch(t *testing.T) {
+	// Setup: create a temp git repo
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	// Create initial commit
+	emptyTreeHash := plumbing.NewHash("4b825dc642cb6eb9a060e54bf8d69288fbee4904")
+	commitHash, err := createCommit(repo, emptyTreeHash, plumbing.ZeroHash, "initial commit", "test", "test@test.com")
+	if err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create HEAD reference
+	headRef := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.NewBranchReferenceName("master"))
+	if err := repo.Storer.SetReference(headRef); err != nil {
+		t.Fatalf("failed to set HEAD: %v", err)
+	}
+	masterRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName("master"), commitHash)
+	if err := repo.Storer.SetReference(masterRef); err != nil {
+		t.Fatalf("failed to set master: %v", err)
+	}
+
+	// Create a shadow branch using the 7-char hash (matching real behavior)
+	// Real code: shadowBranch := "entire/" + baseHead[:7]
+	shortHash := commitHash.String()[:7]
+	shadowBranchName := "entire/" + shortHash
+	shadowRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(shadowBranchName), commitHash)
+	if err := repo.Storer.SetReference(shadowRef); err != nil {
+		t.Fatalf("failed to create shadow branch: %v", err)
+	}
+
+	// Create a session state with the FULL 40-char hash (matching real behavior)
+	// Real code: state.BaseCommit = head.Hash().String()
+	fullHash := commitHash.String()
+	state := &SessionState{
+		SessionID:       "session-with-shadow-branch",
+		BaseCommit:      fullHash, // Full 40-char hash!
+		StartedAt:       time.Now().Add(-1 * time.Hour),
+		CheckpointCount: 1,
+	}
+	if err := SaveSessionState(state); err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	// Verify the shadow branch exists and uses short hash
+	shadowBranches, err := ListShadowBranches()
+	if err != nil {
+		t.Fatalf("ListShadowBranches() error = %v", err)
+	}
+	if len(shadowBranches) != 1 || shadowBranches[0] != shadowBranchName {
+		t.Fatalf("Expected shadow branch %q, got %v", shadowBranchName, shadowBranches)
+	}
+
+	// Verify the hash length mismatch exists
+	t.Logf("Shadow branch hash (7 chars): %q", shortHash)
+	t.Logf("Session BaseCommit (40 chars): %q", fullHash)
+	t.Logf("Are they equal? %v (they should match by prefix)", shortHash == fullHash)
+
+	// List orphaned session states
+	orphaned, err := ListOrphanedSessionStates()
+	if err != nil {
+		t.Fatalf("ListOrphanedSessionStates() error = %v", err)
+	}
+
+	// The session should NOT be marked as orphaned because it HAS a shadow branch!
+	// The shadow branch exists (entire/<7-char-hash>), but the current code compares
+	// the 7-char hash against the 40-char BaseCommit, which always fails.
+	for _, item := range orphaned {
+		if item.ID == "session-with-shadow-branch" {
+			t.Errorf("ListOrphanedSessionStates() incorrectly marked session as orphaned due to hash length mismatch.\n"+
+				"Shadow branch exists: %q (uses 7-char hash: %q)\n"+
+				"Session BaseCommit: %q (40-char hash)\n"+
+				"The comparison shadowBranchSet[state.BaseCommit] fails because:\n"+
+				"  - shadowBranchSet contains key %q (7 chars)\n"+
+				"  - state.BaseCommit is %q (40 chars)\n"+
+				"Expected: session to be recognized as having a shadow branch.\n"+
+				"Got: session marked as orphaned with reason: %q",
+				shadowBranchName, shortHash, fullHash, shortHash, fullHash, item.Reason)
+		}
 	}
 }

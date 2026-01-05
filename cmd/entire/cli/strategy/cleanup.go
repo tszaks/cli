@@ -3,15 +3,29 @@ package strategy
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
+	"time"
 
 	"entire.io/cli/cmd/entire/cli/checkpoint"
+	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/session"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+)
+
+const (
+	// sessionGracePeriod is the minimum age a session must have before it can be
+	// considered orphaned. This protects active sessions that haven't created
+	// their first checkpoint yet.
+	sessionGracePeriod = 10 * time.Minute
+
+	// shadowBranchHashLength is the number of hex characters used in shadow branch names.
+	// Shadow branches are named "entire/<hash[:7]>" using a 7-char prefix of the commit hash.
+	shadowBranchHashLength = 7
 )
 
 // CleanupType identifies the type of orphaned item.
@@ -184,12 +198,24 @@ func ListOrphanedSessionStates() ([]CleanupItem, error) {
 	}
 
 	var orphaned []CleanupItem
+	now := time.Now()
+
 	for _, state := range states {
+		// Skip sessions that started recently - they may be actively in use
+		// but haven't created their first checkpoint yet
+		if now.Sub(state.StartedAt) < sessionGracePeriod {
+			continue
+		}
+
 		// Check if session has checkpoints on entire/sessions
 		hasCheckpoints := sessionsWithCheckpoints[state.SessionID]
 
 		// Check if shadow branch exists for base commit
-		hasShadowBranch := shadowBranchSet[state.BaseCommit]
+		// Shadow branches use 7-char hash prefixes, so we need to match by prefix
+		hasShadowBranch := false
+		if len(state.BaseCommit) >= shadowBranchHashLength {
+			hasShadowBranch = shadowBranchSet[state.BaseCommit[:shadowBranchHashLength]]
+		}
 
 		// Session is orphaned if it has no checkpoints AND no shadow branch
 		if !hasCheckpoints && !hasShadowBranch {
@@ -370,8 +396,16 @@ func ListAllCleanupItems() ([]CleanupItem, error) {
 }
 
 // DeleteAllCleanupItems deletes all specified cleanup items.
+// Logs each deletion for audit purposes.
 func DeleteAllCleanupItems(items []CleanupItem) (*CleanupResult, error) {
 	result := &CleanupResult{}
+	logCtx := logging.WithComponent(context.Background(), "cleanup")
+
+	// Build ID-to-Reason map for logging after deletion
+	reasonMap := make(map[string]string)
+	for _, item := range items {
+		reasonMap[item.ID] = item.Reason
+	}
 
 	// Group items by type
 	var branches, states, checkpoints []string
@@ -394,6 +428,23 @@ func DeleteAllCleanupItems(items []CleanupItem) (*CleanupResult, error) {
 		}
 		result.ShadowBranches = deleted
 		result.FailedBranches = failed
+
+		// Log deleted branches
+		for _, id := range deleted {
+			logging.Info(logCtx, "deleted orphaned shadow branch",
+				slog.String("type", string(CleanupTypeShadowBranch)),
+				slog.String("id", id),
+				slog.String("reason", reasonMap[id]),
+			)
+		}
+		// Log failed branches
+		for _, id := range failed {
+			logging.Warn(logCtx, "failed to delete orphaned shadow branch",
+				slog.String("type", string(CleanupTypeShadowBranch)),
+				slog.String("id", id),
+				slog.String("reason", reasonMap[id]),
+			)
+		}
 	}
 
 	// Delete session states
@@ -404,6 +455,23 @@ func DeleteAllCleanupItems(items []CleanupItem) (*CleanupResult, error) {
 		}
 		result.SessionStates = deleted
 		result.FailedStates = failed
+
+		// Log deleted session states
+		for _, id := range deleted {
+			logging.Info(logCtx, "deleted orphaned session state",
+				slog.String("type", string(CleanupTypeSessionState)),
+				slog.String("id", id),
+				slog.String("reason", reasonMap[id]),
+			)
+		}
+		// Log failed session states
+		for _, id := range failed {
+			logging.Warn(logCtx, "failed to delete orphaned session state",
+				slog.String("type", string(CleanupTypeSessionState)),
+				slog.String("id", id),
+				slog.String("reason", reasonMap[id]),
+			)
+		}
 	}
 
 	// Delete checkpoints
@@ -414,6 +482,37 @@ func DeleteAllCleanupItems(items []CleanupItem) (*CleanupResult, error) {
 		}
 		result.Checkpoints = deleted
 		result.FailedCheckpoints = failed
+
+		// Log deleted checkpoints
+		for _, id := range deleted {
+			logging.Info(logCtx, "deleted orphaned checkpoint",
+				slog.String("type", string(CleanupTypeCheckpoint)),
+				slog.String("id", id),
+				slog.String("reason", reasonMap[id]),
+			)
+		}
+		// Log failed checkpoints
+		for _, id := range failed {
+			logging.Warn(logCtx, "failed to delete orphaned checkpoint",
+				slog.String("type", string(CleanupTypeCheckpoint)),
+				slog.String("id", id),
+				slog.String("reason", reasonMap[id]),
+			)
+		}
+	}
+
+	// Log summary
+	totalDeleted := len(result.ShadowBranches) + len(result.SessionStates) + len(result.Checkpoints)
+	totalFailed := len(result.FailedBranches) + len(result.FailedStates) + len(result.FailedCheckpoints)
+	if totalDeleted > 0 || totalFailed > 0 {
+		logging.Info(logCtx, "cleanup completed",
+			slog.Int("deleted_branches", len(result.ShadowBranches)),
+			slog.Int("deleted_session_states", len(result.SessionStates)),
+			slog.Int("deleted_checkpoints", len(result.Checkpoints)),
+			slog.Int("failed_branches", len(result.FailedBranches)),
+			slog.Int("failed_session_states", len(result.FailedStates)),
+			slog.Int("failed_checkpoints", len(result.FailedCheckpoints)),
+		)
 	}
 
 	return result, nil
