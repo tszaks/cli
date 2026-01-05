@@ -546,13 +546,9 @@ func setupEntireDirectory() error {
 		return fmt.Errorf("failed to create .entire directory: %w", err)
 	}
 
-	// Create .gitignore to ignore tmp folder and local settings
-	gitignorePath := filepath.Join(entireDirAbs, ".gitignore")
-	gitignoreContent := "tmp/\nsettings.local.json\n"
-
-	//nolint:gosec // G306: Config file needs standard permissions for git
-	if err := os.WriteFile(gitignorePath, []byte(gitignoreContent), 0o644); err != nil {
-		return fmt.Errorf("failed to write .gitignore: %w", err)
+	// Create/update .gitignore with all required entries
+	if err := strategy.EnsureEntireGitignore(); err != nil {
+		return fmt.Errorf("failed to setup .gitignore: %w", err)
 	}
 
 	return nil
