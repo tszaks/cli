@@ -10,11 +10,9 @@ import (
 )
 
 const (
-	testSettingsStrategy    = `{"strategy": "manual-commit"}`
-	testSettingsEnabled     = `{"strategy": "manual-commit", "enabled": true}`
-	testSettingsDisabled    = `{"strategy": "manual-commit", "enabled": false}`
-	testDefaultBranchPrefix = "feature/"
-	testDefaultBaseBranch   = "main"
+	testSettingsStrategy = `{"strategy": "manual-commit"}`
+	testSettingsEnabled  = `{"strategy": "manual-commit", "enabled": true}`
+	testSettingsDisabled = `{"strategy": "manual-commit", "enabled": false}`
 )
 
 func TestLoadEntireSettings_EnabledDefaultsToTrue(t *testing.T) {
@@ -132,146 +130,6 @@ func TestSaveEntireSettings_PreservesEnabled(t *testing.T) {
 	}
 	if loaded.Enabled {
 		t.Error("Enabled should be false after saving as false")
-	}
-}
-
-func TestGetStartSettings_DefaultsWhenNotConfigured(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	// No settings file exists - should return defaults
-	startSettings := GetStartSettings()
-
-	if startSettings.BranchPrefix != testDefaultBranchPrefix {
-		t.Errorf("BranchPrefix = %q, want %q", startSettings.BranchPrefix, testDefaultBranchPrefix)
-	}
-	if startSettings.BaseBranch != testDefaultBaseBranch {
-		t.Errorf("BaseBranch = %q, want %q", startSettings.BaseBranch, testDefaultBaseBranch)
-	}
-	if startSettings.RequirementsTemplate != "" {
-		t.Errorf("RequirementsTemplate = %q, want empty string", startSettings.RequirementsTemplate)
-	}
-	if startSettings.UseWorktrees != false {
-		t.Errorf("UseWorktrees = %v, want false", startSettings.UseWorktrees)
-	}
-}
-
-func TestGetStartSettings_LoadsFromFile(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	// Create settings file with start config
-	settingsDir := filepath.Dir(EntireSettingsFile)
-	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
-		t.Fatalf("Failed to create settings dir: %v", err)
-	}
-
-	settingsContent := `{
-		"strategy": "manual-commit",
-		"enabled": true,
-		"start": {
-			"branchPrefix": "feat/",
-			"baseBranch": "develop",
-			"requirementsTemplate": "templates/req.md",
-			"useWorktrees": true
-		}
-	}`
-	if err := os.WriteFile(EntireSettingsFile, []byte(settingsContent), 0o644); err != nil {
-		t.Fatalf("Failed to write settings file: %v", err)
-	}
-
-	startSettings := GetStartSettings()
-
-	if startSettings.BranchPrefix != "feat/" {
-		t.Errorf("BranchPrefix = %q, want %q", startSettings.BranchPrefix, "feat/")
-	}
-	if startSettings.BaseBranch != "develop" {
-		t.Errorf("BaseBranch = %q, want %q", startSettings.BaseBranch, "develop")
-	}
-	if startSettings.RequirementsTemplate != "templates/req.md" {
-		t.Errorf("RequirementsTemplate = %q, want %q", startSettings.RequirementsTemplate, "templates/req.md")
-	}
-	if startSettings.UseWorktrees != true {
-		t.Errorf("UseWorktrees = %v, want true", startSettings.UseWorktrees)
-	}
-}
-
-func TestGetStartSettings_PartialConfig(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	// Create settings file with partial start config
-	settingsDir := filepath.Dir(EntireSettingsFile)
-	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
-		t.Fatalf("Failed to create settings dir: %v", err)
-	}
-
-	// Only branchPrefix is set, others should use defaults
-	settingsContent := `{
-		"strategy": "manual-commit",
-		"start": {
-			"branchPrefix": "fix/"
-		}
-	}`
-	if err := os.WriteFile(EntireSettingsFile, []byte(settingsContent), 0o644); err != nil {
-		t.Fatalf("Failed to write settings file: %v", err)
-	}
-
-	startSettings := GetStartSettings()
-
-	if startSettings.BranchPrefix != "fix/" {
-		t.Errorf("BranchPrefix = %q, want %q", startSettings.BranchPrefix, "fix/")
-	}
-	// Should use default for missing fields
-	if startSettings.BaseBranch != testDefaultBaseBranch {
-		t.Errorf("BaseBranch = %q, want default %q", startSettings.BaseBranch, testDefaultBaseBranch)
-	}
-	if startSettings.RequirementsTemplate != "" {
-		t.Errorf("RequirementsTemplate = %q, want empty string", startSettings.RequirementsTemplate)
-	}
-	if startSettings.UseWorktrees != false {
-		t.Errorf("UseWorktrees = %v, want false (default)", startSettings.UseWorktrees)
-	}
-}
-
-func TestSaveEntireSettings_PreservesStartSettings(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	// Save settings with Start config
-	settings := &EntireSettings{
-		Strategy: "manual-commit",
-		Enabled:  true,
-		Start: &StartSettings{
-			BranchPrefix:         "feature/",
-			BaseBranch:           "main",
-			RequirementsTemplate: "templates/requirements.md",
-			UseWorktrees:         true,
-		},
-	}
-	if err := SaveEntireSettings(settings); err != nil {
-		t.Fatalf("SaveEntireSettings() error = %v", err)
-	}
-
-	// Load and verify
-	loaded, err := LoadEntireSettings()
-	if err != nil {
-		t.Fatalf("LoadEntireSettings() error = %v", err)
-	}
-	if loaded.Start == nil {
-		t.Fatal("Start settings should not be nil after loading")
-	}
-	if loaded.Start.BranchPrefix != testDefaultBranchPrefix {
-		t.Errorf("Start.BranchPrefix = %q, want %q", loaded.Start.BranchPrefix, testDefaultBranchPrefix)
-	}
-	if loaded.Start.BaseBranch != testDefaultBaseBranch {
-		t.Errorf("Start.BaseBranch = %q, want %q", loaded.Start.BaseBranch, testDefaultBaseBranch)
-	}
-	if loaded.Start.RequirementsTemplate != "templates/requirements.md" {
-		t.Errorf("Start.RequirementsTemplate = %q, want %q", loaded.Start.RequirementsTemplate, "templates/requirements.md")
-	}
-	if loaded.Start.UseWorktrees != true {
-		t.Errorf("Start.UseWorktrees = %v, want true", loaded.Start.UseWorktrees)
 	}
 }
 

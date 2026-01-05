@@ -47,7 +47,7 @@ func TestSetupClaudeHooks_AddsAllRequiredHooks(t *testing.T) {
 	env.GitCommit("Initial commit")
 
 	// Run entire enable claude-hooks (non-interactive)
-	output, err := env.runEntireCmd("enable", "claude-hooks")
+	output, err := env.RunCLIWithError("enable", "claude-hooks")
 	if err != nil {
 		t.Fatalf("enable claude-hooks command failed: %v\nOutput: %s", err, output)
 	}
@@ -116,7 +116,7 @@ func TestSetupClaudeHooks_PreservesExistingSettings(t *testing.T) {
 	}
 
 	// Run enable claude-hooks
-	output, err := env.runEntireCmd("enable", "claude-hooks")
+	output, err := env.RunCLIWithError("enable", "claude-hooks")
 	if err != nil {
 		t.Fatalf("enable claude-hooks failed: %v\nOutput: %s", err, output)
 	}
