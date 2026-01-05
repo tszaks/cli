@@ -362,9 +362,9 @@ func GetWorktreePath() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// EnsureMetadataGitignore ensures metadata/ and current_session are in .entire/.gitignore
+// EnsureEntireGitignore ensures all required entries are in .entire/.gitignore
 // Works correctly from any subdirectory within the repository.
-func EnsureMetadataGitignore() error {
+func EnsureEntireGitignore() error {
 	// Get absolute path for the gitignore file
 	gitignoreAbs, err := paths.AbsPath(entireGitignore)
 	if err != nil {
@@ -377,13 +377,21 @@ func EnsureMetadataGitignore() error {
 		content = string(data)
 	}
 
+	// All entries that should be in .entire/.gitignore
+	requiredEntries := []string{
+		"tmp/",
+		"settings.local.json",
+		"metadata/",
+		"current_session",
+		"logs/",
+	}
+
 	// Track what needs to be added
 	var toAdd []string
-	if !strings.Contains(content, "metadata/") {
-		toAdd = append(toAdd, "metadata/")
-	}
-	if !strings.Contains(content, "current_session") {
-		toAdd = append(toAdd, "current_session")
+	for _, entry := range requiredEntries {
+		if !strings.Contains(content, entry) {
+			toAdd = append(toAdd, entry)
+		}
 	}
 
 	// Nothing to add

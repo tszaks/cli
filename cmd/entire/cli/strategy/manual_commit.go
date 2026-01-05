@@ -142,7 +142,7 @@ func (s *ManualCommitStrategy) ValidateRepository() error {
 
 // EnsureSetup ensures the strategy is properly set up.
 func (s *ManualCommitStrategy) EnsureSetup() error {
-	if err := EnsureMetadataGitignore(); err != nil {
+	if err := EnsureEntireGitignore(); err != nil {
 		return err
 	}
 	// Install generic hooks (they delegate to strategy at runtime)

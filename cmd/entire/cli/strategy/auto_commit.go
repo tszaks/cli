@@ -515,10 +515,10 @@ func (s *AutoCommitStrategy) getSessionLogLegacy(checkpointID string) ([]byte, s
 
 // EnsureSetup ensures the strategy's required setup is in place.
 // For auto-commit strategy:
-// - Gitignore metadata/
+// - Ensure .entire/.gitignore has all required entries
 // - Create orphan entire/sessions branch if it doesn't exist
 func (s *AutoCommitStrategy) EnsureSetup() error {
-	if err := EnsureMetadataGitignore(); err != nil {
+	if err := EnsureEntireGitignore(); err != nil {
 		return err
 	}
 
