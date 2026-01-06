@@ -201,10 +201,12 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 		if err := SaveEntireSettingsLocal(settings); err != nil {
 			return fmt.Errorf("failed to save local settings: %w", err)
 		}
+		fmt.Fprintln(w, "✓ Local settings saved (.entire/settings.local.json)")
 	} else {
 		if err := SaveEntireSettings(settings); err != nil {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
+		fmt.Fprintln(w, "✓ Project settings saved (.entire/settings.json)")
 	}
 	fmt.Fprintln(w, "✓ Settings saved")
 
@@ -304,10 +306,12 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 		if err := SaveEntireSettingsLocal(settings); err != nil {
 			return fmt.Errorf("failed to save local settings: %w", err)
 		}
+		fmt.Fprintln(w, "✓ Local settings saved (.entire/settings.local.json)")
 	} else {
 		if err := SaveEntireSettings(settings); err != nil {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
+		fmt.Fprintln(w, "✓ Project settings saved (.entire/settings.json)")
 	}
 	fmt.Fprintln(w, "✓ Settings saved")
 
