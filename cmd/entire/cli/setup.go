@@ -208,7 +208,6 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 		}
 		fmt.Fprintln(w, "✓ Project settings saved (.entire/settings.json)")
 	}
-	fmt.Fprintln(w, "✓ Settings saved")
 
 	// Install git hooks (always reinstall to ensure they're up-to-date)
 	gitHooksInstalled, err := strategy.InstallGitHook(true)
@@ -226,14 +225,12 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 
-	// Show strategy initialization with display name
+	// Show success message with display name
 	displayName := selectedStrategy
 	if dn, ok := strategyInternalToDisplay[internalStrategy]; ok {
 		displayName = dn
 	}
-	fmt.Fprintf(w, "✓ %s strategy initialized\n", displayName)
-
-	fmt.Fprintln(w, "\n✓ Enabled")
+	fmt.Fprintf(w, "\n✓ %s strategy enabled\n", displayName)
 
 	return nil
 }
@@ -313,7 +310,6 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 		}
 		fmt.Fprintln(w, "✓ Project settings saved (.entire/settings.json)")
 	}
-	fmt.Fprintln(w, "✓ Settings saved")
 
 	// Install git hooks (always reinstall to ensure they're up-to-date)
 	gitHooksInstalled, err := strategy.InstallGitHook(true)
@@ -334,9 +330,9 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 	if err := strat.EnsureSetup(); err != nil {
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
-	fmt.Fprintf(w, "✓ %s strategy initialized\n", selectedStrategy)
 
-	fmt.Fprintln(w, "\n✓ Enabled")
+	// Show success message with display name
+	fmt.Fprintf(w, "\n✓ %s strategy enabled\n", selectedStrategy)
 
 	return nil
 }
