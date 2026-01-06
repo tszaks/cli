@@ -71,15 +71,16 @@ func IsGitHookInstalled() bool {
 // InstallGitHook installs generic git hooks that delegate to `entire hook` commands.
 // These hooks work with any strategy - the strategy is determined at runtime.
 // If silent is true, no output is printed.
-func InstallGitHook(silent bool) error {
+// Returns the number of hooks that were installed (0 if all already up to date).
+func InstallGitHook(silent bool) (int, error) {
 	gitDir, err := GetGitDir()
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	hooksDir := filepath.Join(gitDir, "hooks")
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil { //nolint:gosec // Git hooks require executable permissions
-		return fmt.Errorf("failed to create hooks directory: %w", err)
+		return 0, fmt.Errorf("failed to create hooks directory: %w", err)
 	}
 
 	// Determine command prefix based on local_dev setting
@@ -90,6 +91,8 @@ func InstallGitHook(silent bool) error {
 		cmdPrefix = "entire"
 	}
 
+	installedCount := 0
+
 	// Install prepare-commit-msg hook
 	// $1 = commit message file, $2 = source (message, template, merge, squash, commit, or empty)
 	prepareCommitMsgPath := filepath.Join(hooksDir, "prepare-commit-msg")
@@ -98,8 +101,12 @@ func InstallGitHook(silent bool) error {
 %s hooks git prepare-commit-msg "$1" "$2" 2>/dev/null || true
 `, entireHookMarker, cmdPrefix)
 
-	if err := writeHookFile(prepareCommitMsgPath, prepareCommitMsgContent); err != nil {
-		return fmt.Errorf("failed to install prepare-commit-msg hook: %w", err)
+	written, err := writeHookFile(prepareCommitMsgPath, prepareCommitMsgContent)
+	if err != nil {
+		return 0, fmt.Errorf("failed to install prepare-commit-msg hook: %w", err)
+	}
+	if written {
+		installedCount++
 	}
 
 	// Install commit-msg hook
@@ -110,8 +117,12 @@ func InstallGitHook(silent bool) error {
 %s hooks git commit-msg "$1" || exit 1
 `, entireHookMarker, cmdPrefix)
 
-	if err := writeHookFile(commitMsgPath, commitMsgContent); err != nil {
-		return fmt.Errorf("failed to install commit-msg hook: %w", err)
+	written, err = writeHookFile(commitMsgPath, commitMsgContent)
+	if err != nil {
+		return 0, fmt.Errorf("failed to install commit-msg hook: %w", err)
+	}
+	if written {
+		installedCount++
 	}
 
 	// Install post-commit hook
@@ -122,8 +133,12 @@ func InstallGitHook(silent bool) error {
 %s hooks git post-commit 2>/dev/null || true
 `, entireHookMarker, cmdPrefix)
 
-	if err := writeHookFile(postCommitPath, postCommitContent); err != nil {
-		return fmt.Errorf("failed to install post-commit hook: %w", err)
+	written, err = writeHookFile(postCommitPath, postCommitContent)
+	if err != nil {
+		return 0, fmt.Errorf("failed to install post-commit hook: %w", err)
+	}
+	if written {
+		installedCount++
 	}
 
 	// Install pre-push hook
@@ -135,8 +150,12 @@ func InstallGitHook(silent bool) error {
 %s hooks git pre-push "$1" || true
 `, entireHookMarker, cmdPrefix)
 
-	if err := writeHookFile(prePushPath, prePushContent); err != nil {
-		return fmt.Errorf("failed to install pre-push hook: %w", err)
+	written, err = writeHookFile(prePushPath, prePushContent)
+	if err != nil {
+		return 0, fmt.Errorf("failed to install pre-push hook: %w", err)
+	}
+	if written {
+		installedCount++
 	}
 
 	if !silent {
@@ -144,16 +163,23 @@ func InstallGitHook(silent bool) error {
 		fmt.Println("  Hooks delegate to the current strategy at runtime")
 	}
 
-	return nil
+	return installedCount, nil
 }
 
-// writeHookFile writes a hook file with executable permissions.
-func writeHookFile(path, content string) error {
+// writeHookFile writes a hook file if it doesn't exist or has different content.
+// Returns true if the file was written, false if it already had the same content.
+func writeHookFile(path, content string) (bool, error) {
+	// Check if file already exists with same content
+	existing, err := os.ReadFile(path) //nolint:gosec // path is controlled
+	if err == nil && string(existing) == content {
+		return false, nil // Already up to date
+	}
+
 	// Git hooks must be executable (0o755)
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil { //nolint:gosec // Git hooks require executable permissions
-		return fmt.Errorf("failed to write hook file %s: %w", path, err)
+		return false, fmt.Errorf("failed to write hook file %s: %w", path, err)
 	}
-	return nil
+	return true, nil
 }
 
 // isLocalDev reads the local_dev setting from .entire/settings.json
