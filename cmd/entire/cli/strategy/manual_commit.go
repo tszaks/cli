@@ -147,7 +147,8 @@ func (s *ManualCommitStrategy) EnsureSetup() error {
 	}
 	// Install generic hooks (they delegate to strategy at runtime)
 	if !IsGitHookInstalled() {
-		return InstallGitHook(true)
+		_, err := InstallGitHook(true)
+		return err
 	}
 	return nil
 }

@@ -159,16 +159,24 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 	}
 
 	// Setup Claude Code hooks
-	if err := setupClaudeCodeHook(localDev, forceHooks); err != nil {
+	hooksInstalled, err := setupClaudeCodeHook(localDev, forceHooks)
+	if err != nil {
 		return fmt.Errorf("failed to setup Claude Code hooks: %w", err)
 	}
-	fmt.Fprintln(w, "✓ Claude Code hooks installed")
+	if hooksInstalled > 0 {
+		fmt.Fprintln(w, "✓ Claude Code hooks installed")
+	} else {
+		fmt.Fprintln(w, "✓ Claude Code hooks verified")
+	}
 
 	// Setup .entire directory
-	if err := setupEntireDirectory(); err != nil {
+	dirCreated, err := setupEntireDirectory()
+	if err != nil {
 		return fmt.Errorf("failed to setup .entire directory: %w", err)
 	}
-	fmt.Fprintln(w, "✓ .entire directory created")
+	if dirCreated {
+		fmt.Fprintln(w, "✓ .entire directory created")
+	}
 
 	// Save the selected strategy and enable
 	settings := &EntireSettings{
@@ -201,10 +209,15 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 	fmt.Fprintln(w, "✓ Settings saved")
 
 	// Install git hooks (always reinstall to ensure they're up-to-date)
-	if err := strategy.InstallGitHook(true); err != nil {
+	gitHooksInstalled, err := strategy.InstallGitHook(true)
+	if err != nil {
 		return fmt.Errorf("failed to install git hooks: %w", err)
 	}
-	fmt.Fprintln(w, "✓ Git hooks installed")
+	if gitHooksInstalled > 0 {
+		fmt.Fprintln(w, "✓ Git hooks installed")
+	} else {
+		fmt.Fprintln(w, "✓ Git hooks verified")
+	}
 
 	// Let the strategy handle its own setup requirements
 	if err := strat.EnsureSetup(); err != nil {
@@ -251,16 +264,24 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 	}
 
 	// Setup Claude Code hooks
-	if err := setupClaudeCodeHook(localDev, forceHooks); err != nil {
+	hooksInstalled, err := setupClaudeCodeHook(localDev, forceHooks)
+	if err != nil {
 		return fmt.Errorf("failed to setup Claude Code hooks: %w", err)
 	}
-	fmt.Fprintln(w, "✓ Claude Code hooks installed")
+	if hooksInstalled > 0 {
+		fmt.Fprintln(w, "✓ Claude Code hooks installed")
+	} else {
+		fmt.Fprintln(w, "✓ Claude Code hooks verified")
+	}
 
 	// Setup .entire directory
-	if err := setupEntireDirectory(); err != nil {
+	dirCreated, err := setupEntireDirectory()
+	if err != nil {
 		return fmt.Errorf("failed to setup .entire directory: %w", err)
 	}
-	fmt.Fprintln(w, "✓ .entire directory created")
+	if dirCreated {
+		fmt.Fprintln(w, "✓ .entire directory created")
+	}
 
 	// Save the selected strategy and enable
 	settings := &EntireSettings{
@@ -293,10 +314,15 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 	fmt.Fprintln(w, "✓ Settings saved")
 
 	// Install git hooks (always reinstall to ensure they're up-to-date)
-	if err := strategy.InstallGitHook(true); err != nil {
+	gitHooksInstalled, err := strategy.InstallGitHook(true)
+	if err != nil {
 		return fmt.Errorf("failed to install git hooks: %w", err)
 	}
-	fmt.Fprintln(w, "✓ Git hooks installed")
+	if gitHooksInstalled > 0 {
+		fmt.Fprintln(w, "✓ Git hooks installed")
+	} else {
+		fmt.Fprintln(w, "✓ Git hooks verified")
+	}
 
 	// Let the strategy handle its own setup requirements
 	strat, err := strategy.Get(internalStrategy)
@@ -430,23 +456,24 @@ func checkDisabledGuard(w io.Writer) bool {
 
 // setupClaudeCodeHook sets up Claude Code hooks.
 // This is a convenience wrapper that uses the agent package.
-func setupClaudeCodeHook(localDev, forceHooks bool) error {
+// Returns the number of hooks installed (0 if already installed).
+func setupClaudeCodeHook(localDev, forceHooks bool) (int, error) {
 	ag, err := agent.Get(agent.AgentNameClaudeCode)
 	if err != nil {
-		return fmt.Errorf("failed to get claude-code agent: %w", err)
+		return 0, fmt.Errorf("failed to get claude-code agent: %w", err)
 	}
 
 	hookAgent, ok := ag.(agent.HookSupport)
 	if !ok {
-		return errors.New("claude-code agent does not support hooks")
+		return 0, errors.New("claude-code agent does not support hooks")
 	}
 
-	_, err = hookAgent.InstallHooks(localDev, forceHooks)
+	count, err := hookAgent.InstallHooks(localDev, forceHooks)
 	if err != nil {
-		return fmt.Errorf("failed to install claude-code hooks: %w", err)
+		return 0, fmt.Errorf("failed to install claude-code hooks: %w", err)
 	}
 
-	return nil
+	return count, nil
 }
 
 // setupAgentHooksNonInteractive sets up hooks for a specific agent non-interactively.
@@ -502,7 +529,7 @@ func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, for
 	}
 
 	// Install git hooks (always reinstall to ensure they're up-to-date)
-	if err := strategy.InstallGitHook(true); err != nil {
+	if _, err := strategy.InstallGitHook(true); err != nil {
 		return fmt.Errorf("failed to install git hooks: %w", err)
 	}
 
@@ -543,32 +570,44 @@ func determineSettingsTarget(entireDir string, useLocal, useProject bool) (bool,
 	return false, false
 }
 
-func setupEntireDirectory() error {
+// setupEntireDirectory creates the .entire directory and gitignore.
+// Returns true if the directory was created, false if it already existed.
+func setupEntireDirectory() (bool, error) {
 	// Get absolute path for the .entire directory
 	entireDirAbs, err := paths.AbsPath(paths.EntireDir)
 	if err != nil {
 		entireDirAbs = paths.EntireDir // Fallback to relative
 	}
 
+	// Check if directory already exists
+	created := false
+	if _, err := os.Stat(entireDirAbs); os.IsNotExist(err) {
+		created = true
+	}
+
 	// Create .entire directory
 	//nolint:gosec // G301: Project directory needs standard permissions for git
 	if err := os.MkdirAll(entireDirAbs, 0o755); err != nil {
-		return fmt.Errorf("failed to create .entire directory: %w", err)
+		return false, fmt.Errorf("failed to create .entire directory: %w", err)
 	}
 
 	// Create/update .gitignore with all required entries
 	if err := strategy.EnsureEntireGitignore(); err != nil {
-		return fmt.Errorf("failed to setup .gitignore: %w", err)
+		return false, fmt.Errorf("failed to setup .gitignore: %w", err)
 	}
 
-	return nil
+	return created, nil
 }
 
 // setupGitHook installs the prepare-commit-msg hook for context trailers.
 func setupGitHook() error {
 	// Use shared implementation from strategy package
 	// The localDev setting is read from settings.json
-	return strategy.InstallGitHook(false) // not silent - show output during setup
+	_, err := strategy.InstallGitHook(false) // not silent - show output during setup
+	if err != nil {
+		return fmt.Errorf("failed to install git hook: %w", err)
+	}
+	return nil
 }
 
 // newSetupGitHookCmd creates the standalone git-hook setup command
