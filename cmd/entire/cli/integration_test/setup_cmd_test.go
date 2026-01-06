@@ -64,8 +64,8 @@ func TestEnableDisable(t *testing.T) {
 
 		// Re-enable (using --strategy flag for non-interactive mode)
 		stdout = env.RunCLI("enable", "--strategy", strategyName)
-		if !strings.Contains(stdout, "Enabled") {
-			t.Errorf("Expected enable output to contain 'Enabled', got: %s", stdout)
+		if !strings.Contains(stdout, "strategy enabled") {
+			t.Errorf("Expected enable output to contain 'strategy enabled', got: %s", stdout)
 		}
 
 		// Check status is now enabled
@@ -141,8 +141,8 @@ func TestEnableWhenDisabled(t *testing.T) {
 
 		// Enable command should work (using --strategy flag for non-interactive mode)
 		stdout := env.RunCLI("enable", "--strategy", strategyName)
-		if !strings.Contains(stdout, "Enabled") {
-			t.Errorf("Expected enable output to contain 'Enabled', got: %s", stdout)
+		if !strings.Contains(stdout, "strategy enabled") {
+			t.Errorf("Expected enable output to contain 'strategy enabled', got: %s", stdout)
 		}
 
 		// Verify it's now enabled
