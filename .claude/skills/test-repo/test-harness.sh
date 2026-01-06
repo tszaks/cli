@@ -40,13 +40,13 @@ configure-strategy)
   echo "==> Configuring strategy: $STRATEGY"
   cd "$REPO_DIR"
 
-  mkdir -p .entire
-  printf ".entire/\n.claude-test/\n" >.gitignore
+  # Only ignore test-specific dirs in root .gitignore
+  printf ".claude-test/\n" >.gitignore
   git add .gitignore
   "$BIN_PATH" enable --agent claude-code --strategy "$STRATEGY"
-  # Note: .entire is in .gitignore so we don't commit it
+  git add .entire/settings.json .entire/.gitignore
   git add .claude 2>/dev/null || true
-  git commit -m "Configure Entire with $STRATEGY strategy" --allow-empty
+  git commit -m "Configure Entire with $STRATEGY strategy"
 
   git checkout -b feature/test-session
 

@@ -500,6 +500,11 @@ func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, for
 		fmt.Printf("Installed %d hooks for %s\n", count, ag.Description())
 	}
 
+	// Ensure .entire/.gitignore exists with required entries
+	if err := strategy.EnsureEntireGitignore(); err != nil {
+		return fmt.Errorf("failed to setup .entire/.gitignore: %w", err)
+	}
+
 	// Update settings to store the agent choice and strategy
 	settings, _ := LoadEntireSettings() //nolint:errcheck // settings defaults are fine
 	settings.Agent = agentName
