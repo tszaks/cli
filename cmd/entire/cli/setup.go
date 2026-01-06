@@ -290,16 +290,14 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 		Enabled:  true,
 	}
 
-	// Determine which settings file to write to
+	// Determine which settings file to write to (interactive prompt if settings.json exists)
 	entireDirAbs, err := paths.AbsPath(paths.EntireDir)
 	if err != nil {
 		entireDirAbs = paths.EntireDir // Fallback to relative
 	}
-	shouldUseLocal, showNotification := determineSettingsTarget(entireDirAbs, useLocalSettings, useProjectSettings)
-
-	if showNotification {
-		fmt.Fprintln(w, "Info: Project settings exist. Saving to settings.local.json instead.")
-		fmt.Fprintln(w, "  Use --project to update the project settings file.")
+	shouldUseLocal, err := promptSettingsTarget(entireDirAbs, useLocalSettings, useProjectSettings)
+	if err != nil {
+		return err
 	}
 
 	if shouldUseLocal {
@@ -568,6 +566,54 @@ func determineSettingsTarget(entireDir string, useLocal, useProject bool) (bool,
 
 	// Settings file doesn't exist - create it
 	return false, false
+}
+
+// Settings target options for interactive prompt
+const (
+	settingsTargetProject = "project"
+	settingsTargetLocal   = "local"
+)
+
+// promptSettingsTarget interactively asks the user where to save settings
+// when settings.json already exists and no flags were provided.
+// Returns (useLocal, error).
+func promptSettingsTarget(entireDir string, useLocal, useProject bool) (bool, error) {
+	// Explicit --local flag always uses local settings
+	if useLocal {
+		return true, nil
+	}
+
+	// Explicit --project flag always uses project settings
+	if useProject {
+		return false, nil
+	}
+
+	// Check if settings file exists
+	settingsPath := filepath.Join(entireDir, paths.SettingsFileName)
+	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
+		// Settings file doesn't exist - create it (no prompt needed)
+		return false, nil
+	}
+
+	// Settings file exists - prompt user
+	var selected string
+	form := NewAccessibleForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Project settings already exist. Where should settings be saved?").
+				Options(
+					huh.NewOption("Update project settings (settings.json)", settingsTargetProject),
+					huh.NewOption("Use local settings (settings.local.json, gitignored)", settingsTargetLocal),
+				).
+				Value(&selected),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return false, fmt.Errorf("selection cancelled: %w", err)
+	}
+
+	return selected == settingsTargetLocal, nil
 }
 
 // setupEntireDirectory creates the .entire directory and gitignore.
