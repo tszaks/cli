@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"entire.io/cli/cmd/entire/cli/paths"
 )
 
 func TestGetGitDirInPath_RegularRepo(t *testing.T) {
@@ -132,5 +134,39 @@ func TestGetGitDirInPath_NotARepo(t *testing.T) {
 	expectedMsg := "not a git repository"
 	if err.Error() != expectedMsg {
 		t.Errorf("expected error message %q, got %q", expectedMsg, err.Error())
+	}
+}
+
+func TestInstallGitHook_Idempotent(t *testing.T) {
+	// Create a temp directory and initialize a real git repo
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, "git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Clear cache so paths resolve correctly
+	paths.ClearRepoRootCache()
+
+	// First install should install hooks
+	firstCount, err := InstallGitHook(true)
+	if err != nil {
+		t.Fatalf("First InstallGitHook() error = %v", err)
+	}
+	if firstCount == 0 {
+		t.Error("First InstallGitHook() should install hooks (count > 0)")
+	}
+
+	// Second install should return 0 (all hooks already up to date)
+	secondCount, err := InstallGitHook(true)
+	if err != nil {
+		t.Fatalf("Second InstallGitHook() error = %v", err)
+	}
+	if secondCount != 0 {
+		t.Errorf("Second InstallGitHook() returned %d, want 0 (hooks unchanged)", secondCount)
 	}
 }

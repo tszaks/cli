@@ -311,3 +311,75 @@ func TestRunDisable_NoLocalSettings(t *testing.T) {
 		t.Errorf("Project settings should have enabled:false, got: %s", projectContent)
 	}
 }
+
+func TestDetermineSettingsTarget_ExplicitLocalFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create settings.json
+	settingsPath := filepath.Join(tmpDir, paths.SettingsFileName)
+	if err := os.WriteFile(settingsPath, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("Failed to create settings file: %v", err)
+	}
+
+	// With --local flag, should always use local
+	useLocal, showNotification := determineSettingsTarget(tmpDir, true, false)
+	if !useLocal {
+		t.Error("determineSettingsTarget() should return useLocal=true with --local flag")
+	}
+	if showNotification {
+		t.Error("determineSettingsTarget() should not show notification with explicit --local flag")
+	}
+}
+
+func TestDetermineSettingsTarget_ExplicitProjectFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create settings.json
+	settingsPath := filepath.Join(tmpDir, paths.SettingsFileName)
+	if err := os.WriteFile(settingsPath, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("Failed to create settings file: %v", err)
+	}
+
+	// With --project flag, should always use project
+	useLocal, showNotification := determineSettingsTarget(tmpDir, false, true)
+	if useLocal {
+		t.Error("determineSettingsTarget() should return useLocal=false with --project flag")
+	}
+	if showNotification {
+		t.Error("determineSettingsTarget() should not show notification with explicit --project flag")
+	}
+}
+
+func TestDetermineSettingsTarget_SettingsExists_NoFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create settings.json
+	settingsPath := filepath.Join(tmpDir, paths.SettingsFileName)
+	if err := os.WriteFile(settingsPath, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("Failed to create settings file: %v", err)
+	}
+
+	// Without flags, should auto-redirect to local with notification
+	useLocal, showNotification := determineSettingsTarget(tmpDir, false, false)
+	if !useLocal {
+		t.Error("determineSettingsTarget() should return useLocal=true when settings.json exists")
+	}
+	if !showNotification {
+		t.Error("determineSettingsTarget() should show notification when auto-redirecting to local")
+	}
+}
+
+func TestDetermineSettingsTarget_SettingsNotExists_NoFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// No settings.json exists
+
+	// Should use project settings (create new)
+	useLocal, showNotification := determineSettingsTarget(tmpDir, false, false)
+	if useLocal {
+		t.Error("determineSettingsTarget() should return useLocal=false when settings.json doesn't exist")
+	}
+	if showNotification {
+		t.Error("determineSettingsTarget() should not show notification when creating new settings")
+	}
+}
