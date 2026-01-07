@@ -32,7 +32,8 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 	if err != nil {
 		return fmt.Errorf("failed to load session state: %w", err)
 	}
-	if state == nil {
+	// Initialize if state is nil OR BaseCommit is empty (can happen with partial state from warnings)
+	if state == nil || state.BaseCommit == "" {
 		state, err = s.initializeSession(repo, sessionID)
 		if err != nil {
 			return fmt.Errorf("failed to initialize session: %w", err)
@@ -111,8 +112,8 @@ func (s *ManualCommitStrategy) SaveTaskCheckpoint(ctx TaskCheckpointContext) err
 
 	// Load session state
 	state, err := s.loadSessionState(ctx.SessionID)
-	if err != nil || state == nil {
-		// Initialize if needed
+	if err != nil || state == nil || state.BaseCommit == "" {
+		// Initialize if needed (including if BaseCommit is empty from partial warning state)
 		state, err = s.initializeSession(repo, ctx.SessionID)
 		if err != nil {
 			return fmt.Errorf("failed to initialize session for task checkpoint: %w", err)
