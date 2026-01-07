@@ -47,6 +47,16 @@ func newEnableCmd() *cobra.Command {
 		Short: "Enable Entire",
 		Long:  "Enable Entire with interactive setup for session tracking mode",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Check if we're in a git repository first - this is a prerequisite error,
+			// not a usage error, so we silence Cobra's output and use SilentError
+			// to prevent duplicate error output in main.go
+			if _, err := paths.RepoRoot(); err != nil {
+				cmd.SilenceUsage = true
+				cmd.SilenceErrors = true
+				fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository. Please run 'entire enable' from within a git repository.")
+				return NewSilentError(errors.New("not a git repository"))
+			}
+
 			if err := validateSetupFlags(useLocalSettings, useProjectSettings); err != nil {
 				return err
 			}

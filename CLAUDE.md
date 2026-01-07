@@ -49,6 +49,40 @@ mise run lint
 
 ## Code Patterns
 
+### Error Handling
+
+The CLI uses a specific pattern for error output to avoid duplication between Cobra and main.go.
+
+**How it works:**
+- `root.go` sets `SilenceErrors: true` globally - Cobra never prints errors
+- `main.go` prints errors to stderr, unless the error is a `SilentError`
+- Commands return `NewSilentError(err)` when they've already printed a custom message
+
+**When to use `SilentError`:**
+Use `NewSilentError()` when you want to print a custom, user-friendly error message instead of the raw error:
+
+```go
+// In a command's RunE function:
+if _, err := paths.RepoRoot(); err != nil {
+    cmd.SilenceUsage = true  // Don't show usage for prerequisite errors
+    fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository. Please run 'entire enable' from within a git repository.")
+    return NewSilentError(errors.New("not a git repository"))
+}
+```
+
+**When NOT to use `SilentError`:**
+For normal errors where the default error message is sufficient, just return the error directly. main.go will print it:
+
+```go
+// Normal error - main.go will print "unknown strategy: foo"
+return fmt.Errorf("unknown strategy: %s", name)
+```
+
+**Key files:**
+- `errors.go` - Defines `SilentError` type and `NewSilentError()` constructor
+- `root.go` - Sets `SilenceErrors: true` on root command
+- `main.go` - Checks for `SilentError` before printing
+
 ### Git Operations
 
 We use github.com/go-git/go-git for most git operations, but with important exceptions:
