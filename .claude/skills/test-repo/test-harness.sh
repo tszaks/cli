@@ -41,12 +41,12 @@ configure-strategy)
   echo "==> Configuring strategy: $STRATEGY"
   cd "$REPO_DIR"
 
-  mkdir -p .entire
-  printf ".entire/\n.claude-test/\n" >.gitignore
+  # Only ignore test-specific dirs in root .gitignore
+  printf ".claude-test/\n" >.gitignore
   git add .gitignore
   "$BIN_PATH" enable --agent claude-code --strategy "$STRATEGY"
-  git add .entire
-  git add .claude
+  git add .entire/settings.json .entire/.gitignore
+  git add .claude 2>/dev/null || true
   git commit -m "Configure Entire with $STRATEGY strategy"
 
   git checkout -b feature/test-session
@@ -86,6 +86,7 @@ create-transcript)
   cat >"$TRANSCRIPT_DIR/transcript.jsonl" <<EOF
 {"type":"user","uuid":"$(uuidgen | tr '[:upper:]' '[:lower:]')","sessionId":"$SESSION_ID","timestamp":"$TIMESTAMP","message":{"role":"user","content":"Add a hello world function"}}
 {"type":"assistant","uuid":"$(uuidgen | tr '[:upper:]' '[:lower:]')","sessionId":"$SESSION_ID","timestamp":"$TIMESTAMP","message":{"role":"assistant","content":[{"type":"text","text":"I'll add a hello world function to app.js"}]}}
+{"type":"tool_result","tool_use_id":"toolu_test1","content":"File written successfully","timestamp":"$TIMESTAMP"}
 EOF
 
   echo "Created: $TRANSCRIPT_DIR/transcript.jsonl"

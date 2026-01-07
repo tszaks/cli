@@ -38,6 +38,11 @@ const (
 func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOptions) (plumbing.Hash, error) {
 	_ = ctx // Reserved for future use (e.g., cancellation)
 
+	// Validate base commit - required for shadow branch naming
+	if opts.BaseCommit == "" {
+		return plumbing.ZeroHash, errors.New("BaseCommit is required for temporary checkpoint")
+	}
+
 	// Validate session ID to prevent path traversal
 	if err := paths.ValidateSessionID(opts.SessionID); err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("invalid temporary checkpoint options: %w", err)
@@ -178,6 +183,11 @@ func (s *GitStore) ListTemporary(ctx context.Context) ([]TemporaryInfo, error) {
 // Returns the commit hash of the created checkpoint.
 func (s *GitStore) WriteTemporaryTask(ctx context.Context, opts WriteTemporaryTaskOptions) (plumbing.Hash, error) {
 	_ = ctx // Reserved for future use
+
+	// Validate base commit - required for shadow branch naming
+	if opts.BaseCommit == "" {
+		return plumbing.ZeroHash, errors.New("BaseCommit is required for task checkpoint")
+	}
 
 	// Validate identifiers to prevent path traversal and malformed data
 	if err := paths.ValidateSessionID(opts.SessionID); err != nil {
