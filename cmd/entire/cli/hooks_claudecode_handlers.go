@@ -125,8 +125,16 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 
 	if hasConflict {
 		// First time seeing conflict - show warning
+		// Include BaseCommit so session state is complete if conflict later resolves
+		baseCommit := ""
+		if repo, repoErr := strategy.OpenRepository(); repoErr == nil {
+			if head, headErr := repo.Head(); headErr == nil {
+				baseCommit = head.Hash().String()
+			}
+		}
 		newState := &strategy.SessionState{
 			SessionID:              entireSessionID,
+			BaseCommit:             baseCommit,
 			ConcurrentWarningShown: true,
 			StartedAt:              time.Now(),
 		}
