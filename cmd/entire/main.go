@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -25,7 +26,11 @@ func main() {
 	// Create and execute root command
 	rootCmd := cli.NewRootCmd()
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		// Don't print if the command already handled its own error output
+		var silent *cli.SilentError
+		if !errors.As(err, &silent) {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		cancel()
 		os.Exit(1)
 	}

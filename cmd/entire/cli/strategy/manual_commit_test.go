@@ -1289,3 +1289,89 @@ func TestShadowStrategy_CondenseSession_EphemeralBranchTrailer(t *testing.T) {
 		t.Errorf("sessions branch commit should contain %q trailer, got message:\n%s", expectedTrailer, sessionsCommit.Message)
 	}
 }
+
+// TestSaveChanges_EmptyBaseCommit_Recovery verifies that SaveChanges recovers gracefully
+// when a session state exists with empty BaseCommit (can happen from concurrent warning state).
+func TestSaveChanges_EmptyBaseCommit_Recovery(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Create initial commit
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	testFile := filepath.Join(dir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if _, err := worktree.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add file: %v", err)
+	}
+	_, err = worktree.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "2025-01-15-empty-basecommit-test"
+
+	// Create a partial session state with empty BaseCommit
+	// (simulates what checkConcurrentSessions used to create)
+	partialState := &SessionState{
+		SessionID:              sessionID,
+		BaseCommit:             "", // Empty! This is the bug scenario
+		ConcurrentWarningShown: true,
+		StartedAt:              time.Now(),
+	}
+	if err := s.saveSessionState(partialState); err != nil {
+		t.Fatalf("failed to save partial state: %v", err)
+	}
+
+	// Create metadata directory
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
+		t.Fatalf("failed to create metadata dir: %v", err)
+	}
+	transcript := `{"type":"human","message":{"content":"test"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(metadataDirAbs, paths.TranscriptFileName), []byte(transcript), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// SaveChanges should recover by re-initializing the session state
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Test checkpoint",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() should recover from empty BaseCommit, got error: %v", err)
+	}
+
+	// Verify session state now has a valid BaseCommit
+	loaded, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("failed to load session state: %v", err)
+	}
+	if loaded.BaseCommit == "" {
+		t.Error("BaseCommit should be populated after recovery")
+	}
+	if loaded.CheckpointCount != 1 {
+		t.Errorf("CheckpointCount = %d, want 1", loaded.CheckpointCount)
+	}
+}
