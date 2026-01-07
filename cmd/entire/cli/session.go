@@ -42,7 +42,6 @@ func newSessionCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newSessionShowCmd())
-	cmd.AddCommand(newSessionTrailerCmd())
 	cmd.AddCommand(newSessionRawCmd())
 	cmd.AddCommand(newSessionListCmd())
 	cmd.AddCommand(newSessionResumeCmd())
@@ -68,25 +67,6 @@ If no commit is specified, uses HEAD.`,
 				commitRef = args[0]
 			}
 			return runSessionShow(commitRef)
-		},
-	}
-
-	return cmd
-}
-
-func newSessionTrailerCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "trailer",
-		Short: "Output trailer text for current session",
-		Long: `Outputs git trailer lines that link to the current session.
-
-This command is designed to be called from a prepare-commit-msg hook.
-It outputs trailer lines that can be appended to commit messages.
-
-If no session info is available, the command exits silently with no output
-(exit code 0).`,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return runSessionTrailer()
 		},
 	}
 
@@ -148,27 +128,6 @@ func runSessionShow(commitRef string) error {
 	}
 	if hasMetadata {
 		fmt.Printf("Metadata:    %s\n", metadataDir)
-	}
-
-	return nil
-}
-
-func runSessionTrailer() error {
-	start := GetStrategy()
-	info, err := start.GetSessionInfo()
-	if err != nil {
-		// Silently exit if no session info available
-		if errors.Is(err, strategy.ErrNoSession) || errors.Is(err, strategy.ErrNoMetadata) {
-			return nil
-		}
-		// For other errors, still exit silently to not block commits
-		return nil
-	}
-
-	// Output the trailers
-	fmt.Printf("%s: %s\n", paths.SessionTrailerKey, info.SessionID)
-	if info.Reference != "" {
-		fmt.Printf("%s: %s\n", paths.SourceRefTrailerKey, paths.FormatSourceRefTrailer(info.Reference, info.CommitHash))
 	}
 
 	return nil
