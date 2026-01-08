@@ -125,8 +125,26 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 
 	if hasConflict {
 		// First time seeing conflict - show warning
+		// Include BaseCommit so session state is complete if conflict later resolves
+		repo, err := strategy.OpenRepository()
+		if err != nil {
+			// Output user-friendly error message via hook response
+			if outputErr := outputHookResponse(false, fmt.Sprintf("Failed to open git repository: %v\n\nPlease ensure you're in a git repository and try again.", err)); outputErr != nil {
+				return false, outputErr
+			}
+			return true, nil // Skip hook after outputting response
+		}
+		head, err := repo.Head()
+		if err != nil {
+			// Output user-friendly error message via hook response
+			if outputErr := outputHookResponse(false, fmt.Sprintf("Failed to get git HEAD: %v\n\nPlease ensure the repository has at least one commit.", err)); outputErr != nil {
+				return false, outputErr
+			}
+			return true, nil // Skip hook after outputting response
+		}
 		newState := &strategy.SessionState{
 			SessionID:              entireSessionID,
+			BaseCommit:             head.Hash().String(),
 			ConcurrentWarningShown: true,
 			StartedAt:              time.Now(),
 		}

@@ -603,6 +603,35 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to check session state: %w", err)
 	}
+
+	// Check for shadow branch conflict before proceeding
+	// This must happen even if session state exists but has no checkpoints yet
+	// (e.g., state was created by concurrent warning but conflict later resolved)
+	// This catches cases where:
+	// 1. Session state file was cleaned up but shadow branch remains
+	// 2. Shadow branch was created by a session that completed but wasn't committed
+	baseCommitHash := head.Hash().String()
+	if state == nil || state.CheckpointCount == 0 {
+		shadowBranch := getShadowBranchNameForCommit(baseCommitHash)
+		refName := plumbing.NewBranchReferenceName(shadowBranch)
+
+		ref, refErr := repo.Reference(refName, true)
+		if refErr == nil {
+			// Shadow branch exists - check if it has commits from a different session
+			tipCommit, commitErr := repo.CommitObject(ref.Hash())
+			if commitErr == nil {
+				existingSessionID, found := paths.ParseSessionTrailer(tipCommit.Message)
+				if found && existingSessionID != sessionID {
+					return &SessionIDConflictError{
+						ExistingSession: existingSessionID,
+						NewSession:      sessionID,
+						ShadowBranch:    shadowBranch,
+					}
+				}
+			}
+		}
+	}
+
 	if state != nil && state.BaseCommit != "" {
 		// Session is fully initialized
 		needSave := false
@@ -658,31 +687,6 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string) error {
 				LastActivity:     existingState.StartedAt,
 				CurrentSession:   sessionID,
 				CurrentWorktree:  currentWorktree,
-			}
-		}
-	}
-
-	// Check if shadow branch exists with commits from a different session
-	// This catches cases where:
-	// 1. Session state file was cleaned up but shadow branch remains
-	// 2. Shadow branch was created by a session that completed but wasn't committed
-	baseCommitHash := head.Hash().String()
-	shadowBranch := getShadowBranchNameForCommit(baseCommitHash)
-	refName := plumbing.NewBranchReferenceName(shadowBranch)
-
-	ref, err := repo.Reference(refName, true)
-	if err == nil {
-		// Shadow branch exists - check if it has commits from a different session
-		tipCommit, commitErr := repo.CommitObject(ref.Hash())
-		if commitErr == nil {
-			// Extract session ID from the shadow branch tip's commit message
-			existingSessionID, found := paths.ParseSessionTrailer(tipCommit.Message)
-			if found && existingSessionID != sessionID {
-				return &SessionIDConflictError{
-					ExistingSession: existingSessionID,
-					NewSession:      sessionID,
-					ShadowBranch:    shadowBranch,
-				}
 			}
 		}
 	}
