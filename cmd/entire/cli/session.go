@@ -41,54 +41,11 @@ func newSessionCmd() *cobra.Command {
 		Long:  "Commands for viewing and managing AI session information",
 	}
 
-	cmd.AddCommand(newSessionShowCmd())
-	cmd.AddCommand(newSessionTrailerCmd())
 	cmd.AddCommand(newSessionRawCmd())
 	cmd.AddCommand(newSessionListCmd())
 	cmd.AddCommand(newSessionResumeCmd())
 	cmd.AddCommand(newSessionCurrentCmd())
 	cmd.AddCommand(newCleanCmd())
-
-	return cmd
-}
-
-func newSessionShowCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "show [commit]",
-		Short: "Show session information for a commit",
-		Long: `Shows session information for a commit.
-
-If the commit has Entire trailers (Entire-Session, Entire-Source-Ref),
-this command displays the linked session information.
-
-If no commit is specified, uses HEAD.`,
-		RunE: func(_ *cobra.Command, args []string) error {
-			commitRef := "HEAD"
-			if len(args) > 0 {
-				commitRef = args[0]
-			}
-			return runSessionShow(commitRef)
-		},
-	}
-
-	return cmd
-}
-
-func newSessionTrailerCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "trailer",
-		Short: "Output trailer text for current session",
-		Long: `Outputs git trailer lines that link to the current session.
-
-This command is designed to be called from a prepare-commit-msg hook.
-It outputs trailer lines that can be appended to commit messages.
-
-If no session info is available, the command exits silently with no output
-(exit code 0).`,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return runSessionTrailer()
-		},
-	}
 
 	return cmd
 }
@@ -105,73 +62,6 @@ func newSessionRawCmd() *cobra.Command {
 	}
 
 	return cmd
-}
-
-func runSessionShow(commitRef string) error {
-	repo, err := openRepository()
-	if err != nil {
-		return fmt.Errorf("not a git repository: %w", err)
-	}
-
-	// Resolve the commit reference
-	hash, err := repo.ResolveRevision(plumbing.Revision(commitRef))
-	if err != nil {
-		return fmt.Errorf("failed to resolve %s: %w", commitRef, err)
-	}
-
-	commit, err := repo.CommitObject(*hash)
-	if err != nil {
-		return fmt.Errorf("failed to get commit: %w", err)
-	}
-
-	// Parse trailers from the commit message
-	sessionID, sourceRef := parseSessionTrailers(commit.Message)
-
-	// Also check for the original Entire-Metadata trailer (for shadow branch commits)
-	metadataDir, hasMetadata := paths.ParseMetadataTrailer(commit.Message)
-
-	if sessionID == "" && !hasMetadata {
-		fmt.Printf("Commit %s has no Entire session trailers\n", hash.String()[:7])
-		return nil
-	}
-
-	fmt.Printf("Commit: %s\n", hash.String()[:7])
-	fmt.Printf("Author: %s <%s>\n", commit.Author.Name, commit.Author.Email)
-	fmt.Printf("Date:   %s\n", commit.Author.When.Format("Mon Jan 2 15:04:05 2006 -0700"))
-	fmt.Println()
-
-	if sessionID != "" {
-		fmt.Printf("Session:     %s\n", sessionID)
-	}
-	if sourceRef != "" {
-		fmt.Printf("Source Ref:  %s\n", sourceRef)
-	}
-	if hasMetadata {
-		fmt.Printf("Metadata:    %s\n", metadataDir)
-	}
-
-	return nil
-}
-
-func runSessionTrailer() error {
-	start := GetStrategy()
-	info, err := start.GetSessionInfo()
-	if err != nil {
-		// Silently exit if no session info available
-		if errors.Is(err, strategy.ErrNoSession) || errors.Is(err, strategy.ErrNoMetadata) {
-			return nil
-		}
-		// For other errors, still exit silently to not block commits
-		return nil
-	}
-
-	// Output the trailers
-	fmt.Printf("%s: %s\n", paths.SessionTrailerKey, info.SessionID)
-	if info.Reference != "" {
-		fmt.Printf("%s: %s\n", paths.SourceRefTrailerKey, paths.FormatSourceRefTrailer(info.Reference, info.CommitHash))
-	}
-
-	return nil
 }
 
 func runSessionRaw(commitRef string) error {
