@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -414,41 +415,76 @@ func runStatus(w io.Writer) error {
 		return nil //nolint:nilerr // Not being in a git repo is a valid status, not an error
 	}
 
-	// Check if Entire is set up in this repository by checking for settings file
+	// Get absolute paths for settings files
 	settingsPath, err := paths.AbsPath(EntireSettingsFile)
 	if err != nil {
-		// Can't determine path, fall back to relative
 		settingsPath = EntireSettingsFile
 	}
-
-	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
-		// Also check for local settings file
-		localSettingsPath, pathErr := paths.AbsPath(EntireSettingsLocalFile)
-		if pathErr != nil {
-			localSettingsPath = EntireSettingsLocalFile
-		}
-		if _, localErr := os.Stat(localSettingsPath); os.IsNotExist(localErr) {
-			fmt.Fprintln(w, "○ not set up (run `entire enable` to get started)")
-			return nil
-		}
+	localSettingsPath, err := paths.AbsPath(EntireSettingsLocalFile)
+	if err != nil {
+		localSettingsPath = EntireSettingsLocalFile
 	}
 
-	settings, err := LoadEntireSettings()
-	if err != nil {
-		return fmt.Errorf("failed to check status: %w", err)
+	// Check if either settings file exists
+	_, projectErr := os.Stat(settingsPath)
+	_, localErr := os.Stat(localSettingsPath)
+	projectExists := projectErr == nil
+	localExists := localErr == nil
+
+	if !projectExists && !localExists {
+		fmt.Fprintln(w, "○ not set up (run `entire enable` to get started)")
+		return nil
+	}
+
+	// Load and display project settings (if exists)
+	if projectExists {
+		data, readErr := os.ReadFile(settingsPath) //nolint:gosec // path is from AbsPath or constant
+		if readErr != nil {
+			return fmt.Errorf("failed to read project settings: %w", readErr)
+		}
+		projectSettings := &EntireSettings{
+			Strategy: strategy.DefaultStrategyName,
+			Enabled:  true,
+		}
+		if unmarshalErr := json.Unmarshal(data, projectSettings); unmarshalErr != nil {
+			return fmt.Errorf("failed to parse project settings: %w", unmarshalErr)
+		}
+		projectSettings.Strategy = strategy.NormalizeStrategyName(projectSettings.Strategy)
+		fmt.Fprintln(w, formatSettingsStatus("Project", projectSettings))
+	}
+
+	// Load and display local settings (if exists)
+	if localExists {
+		data, readErr := os.ReadFile(localSettingsPath) //nolint:gosec // path is from AbsPath or constant
+		if readErr != nil {
+			return fmt.Errorf("failed to read local settings: %w", readErr)
+		}
+		localSettings := &EntireSettings{
+			Strategy: strategy.DefaultStrategyName,
+			Enabled:  true,
+		}
+		if unmarshalErr := json.Unmarshal(data, localSettings); unmarshalErr != nil {
+			return fmt.Errorf("failed to parse local settings: %w", unmarshalErr)
+		}
+		localSettings.Strategy = strategy.NormalizeStrategyName(localSettings.Strategy)
+		fmt.Fprintln(w, formatSettingsStatus("Local", localSettings))
+	}
+
+	return nil
+}
+
+// formatSettingsStatus formats a settings status line.
+// Output format: "Project, enabled (manual-commit)" or "Local, disabled (auto-commit)"
+func formatSettingsStatus(prefix string, settings *EntireSettings) string {
+	displayName := settings.Strategy
+	if dn, ok := strategyInternalToDisplay[settings.Strategy]; ok {
+		displayName = dn
 	}
 
 	if settings.Enabled {
-		// Use user-friendly display name if available
-		displayName := settings.Strategy
-		if dn, ok := strategyInternalToDisplay[settings.Strategy]; ok {
-			displayName = dn
-		}
-		fmt.Fprintf(w, "● enabled (%s)\n", displayName)
-	} else {
-		fmt.Fprintln(w, "○ disabled")
+		return fmt.Sprintf("%s, enabled (%s)", prefix, displayName)
 	}
-	return nil
+	return fmt.Sprintf("%s, disabled (%s)", prefix, displayName)
 }
 
 // DisabledMessage is the message shown when Entire is disabled

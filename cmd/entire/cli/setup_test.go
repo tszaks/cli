@@ -127,8 +127,8 @@ func TestRunStatus_Enabled(t *testing.T) {
 		t.Fatalf("runStatus() error = %v", err)
 	}
 
-	if !strings.Contains(stdout.String(), "● enabled") {
-		t.Errorf("Expected output to show '● enabled', got: %s", stdout.String())
+	if !strings.Contains(stdout.String(), "Project, enabled") {
+		t.Errorf("Expected output to show 'Project, enabled', got: %s", stdout.String())
 	}
 }
 
@@ -141,8 +141,8 @@ func TestRunStatus_Disabled(t *testing.T) {
 		t.Fatalf("runStatus() error = %v", err)
 	}
 
-	if !strings.Contains(stdout.String(), "○ disabled") {
-		t.Errorf("Expected output to show '○ disabled', got: %s", stdout.String())
+	if !strings.Contains(stdout.String(), "Project, disabled") {
+		t.Errorf("Expected output to show 'Project, disabled', got: %s", stdout.String())
 	}
 }
 
