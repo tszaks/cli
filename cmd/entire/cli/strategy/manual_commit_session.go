@@ -189,7 +189,8 @@ func (s *ManualCommitStrategy) HasOtherActiveSessionsWithCheckpoints(currentSess
 
 // initializeSession creates a new session state or updates a partial one.
 // A partial state may exist if the concurrent session warning was shown.
-func (s *ManualCommitStrategy) initializeSession(repo *git.Repository, sessionID string) (*SessionState, error) {
+// agentType is the human-readable name of the agent (e.g., "Claude Code").
+func (s *ManualCommitStrategy) initializeSession(repo *git.Repository, sessionID string, agentType string) (*SessionState, error) {
 	head, err := repo.Head()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get HEAD: %w", err)
@@ -223,6 +224,7 @@ func (s *ManualCommitStrategy) initializeSession(repo *git.Repository, sessionID
 		CheckpointCount:        0,
 		UntrackedFilesAtStart:  untrackedFiles,
 		ConcurrentWarningShown: concurrentWarningShown, // Preserve the warning flag
+		AgentType:              agentType,
 	}
 
 	if err := s.saveSessionState(state); err != nil {

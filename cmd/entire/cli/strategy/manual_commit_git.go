@@ -34,7 +34,12 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 	}
 	// Initialize if state is nil OR BaseCommit is empty (can happen with partial state from warnings)
 	if state == nil || state.BaseCommit == "" {
-		state, err = s.initializeSession(repo, sessionID)
+		// Preserve existing AgentType if we have a partial state
+		existingAgentType := ""
+		if state != nil {
+			existingAgentType = state.AgentType
+		}
+		state, err = s.initializeSession(repo, sessionID, existingAgentType)
 		if err != nil {
 			return fmt.Errorf("failed to initialize session: %w", err)
 		}
@@ -114,7 +119,12 @@ func (s *ManualCommitStrategy) SaveTaskCheckpoint(ctx TaskCheckpointContext) err
 	state, err := s.loadSessionState(ctx.SessionID)
 	if err != nil || state == nil || state.BaseCommit == "" {
 		// Initialize if needed (including if BaseCommit is empty from partial warning state)
-		state, err = s.initializeSession(repo, ctx.SessionID)
+		// Preserve existing AgentType if we have a partial state
+		existingAgentType := ""
+		if state != nil {
+			existingAgentType = state.AgentType
+		}
+		state, err = s.initializeSession(repo, ctx.SessionID, existingAgentType)
 		if err != nil {
 			return fmt.Errorf("failed to initialize session for task checkpoint: %w", err)
 		}

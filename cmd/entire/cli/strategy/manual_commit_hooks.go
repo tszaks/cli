@@ -18,7 +18,8 @@ import (
 // askConfirmTTY prompts the user for a yes/no confirmation via /dev/tty.
 // This works even when stdin is redirected (e.g., git commit -m).
 // Returns true for yes, false for no. If TTY is unavailable, returns the default.
-func askConfirmTTY(prompt string, defaultYes bool) bool {
+// If context is non-empty, it is displayed on a separate line before the prompt.
+func askConfirmTTY(prompt string, context string, defaultYes bool) bool {
 	// Open /dev/tty for both reading and writing
 	// This is the controlling terminal, which works even when stdin/stderr are redirected
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
@@ -27,6 +28,11 @@ func askConfirmTTY(prompt string, defaultYes bool) bool {
 		return defaultYes
 	}
 	defer tty.Close()
+
+	// Show context if provided
+	if context != "" {
+		fmt.Fprintf(tty, "%s\n", context)
+	}
 
 	// Show prompt with default indicator
 	// Write to tty directly, not stderr, since git hooks may redirect stderr to /dev/null
@@ -262,7 +268,26 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 	if source == "message" {
 		// Using -m or -F: ask user interactively whether to add trailer
 		// (comments won't be stripped by git in this mode)
-		if !askConfirmTTY("Link this commit to Claude session context?", true) {
+
+		// Get the first prompt and agent type to show as context
+		var promptContext string
+		agentName := "Claude Code" // default for backward compatibility
+		if hasNewContent && len(sessionsWithContent) > 0 {
+			session := sessionsWithContent[0]
+			if session.AgentType != "" {
+				agentName = session.AgentType
+			}
+			if firstPrompt := s.getFirstPrompt(repo, session); firstPrompt != "" {
+				// Truncate long prompts for display
+				displayPrompt := firstPrompt
+				if len(displayPrompt) > 80 {
+					displayPrompt = displayPrompt[:77] + "..."
+				}
+				promptContext = "You have an active " + agentName + " session. Prompt:\n\"" + displayPrompt + "\""
+			}
+		}
+
+		if !askConfirmTTY("Link this commit to "+agentName+" session context?", promptContext, true) {
 			// User declined - don't add trailer
 			logging.Debug(logCtx, "prepare-commit-msg: user declined trailer",
 				slog.String("strategy", "manual-commit"),
@@ -586,7 +611,9 @@ func addCheckpointTrailerWithComment(message, checkpointID string) string {
 //
 // If there's an existing shadow branch with activity from a different worktree,
 // returns a ShadowBranchConflictError to allow the caller to inform the user.
-func (s *ManualCommitStrategy) InitializeSession(sessionID string) error {
+//
+// agentType is the human-readable name of the agent (e.g., "Claude Code").
+func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType string) error {
 	repo, err := OpenRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
@@ -692,7 +719,7 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string) error {
 	}
 
 	// Initialize new session
-	_, err = s.initializeSession(repo, sessionID)
+	_, err = s.initializeSession(repo, sessionID, agentType)
 	if err != nil {
 		return fmt.Errorf("failed to initialize session: %w", err)
 	}
@@ -721,6 +748,26 @@ func getStagedFiles(repo *git.Repository) []string {
 		}
 	}
 	return staged
+}
+
+// getFirstPrompt retrieves the first user prompt from a session's shadow branch.
+// Returns empty string if no prompt can be retrieved.
+func (s *ManualCommitStrategy) getFirstPrompt(repo *git.Repository, state *SessionState) string {
+	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit)
+	refName := plumbing.NewBranchReferenceName(shadowBranchName)
+	ref, err := repo.Reference(refName, true)
+	if err != nil {
+		return ""
+	}
+
+	// Extract session data (using 0 as startLine to get all prompts)
+	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, 0, nil)
+	if err != nil || len(sessionData.Prompts) == 0 {
+		return ""
+	}
+
+	// Return the first prompt
+	return sessionData.Prompts[0]
 }
 
 // hasOverlappingFiles checks if any file in stagedFiles appears in filesTouched.

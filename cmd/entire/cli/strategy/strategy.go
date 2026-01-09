@@ -393,7 +393,8 @@ type Strategy interface {
 type SessionInitializer interface {
 	// InitializeSession creates session state for a new session.
 	// Called during UserPromptSubmit hook before any checkpoints are created.
-	InitializeSession(sessionID string) error
+	// agentType is the human-readable name of the agent (e.g., "Claude Code").
+	InitializeSession(sessionID string, agentType string) error
 }
 
 // PrepareCommitMsgHandler is an optional interface for strategies that need to

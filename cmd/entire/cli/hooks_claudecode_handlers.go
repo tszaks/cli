@@ -246,7 +246,12 @@ func captureInitialState() error {
 	// If strategy implements SessionInitializer, call it to initialize session state
 	strat := GetStrategy()
 	if initializer, ok := strat.(strategy.SessionInitializer); ok {
-		if initErr := initializer.InitializeSession(hookData.entireSessionID); initErr != nil {
+		// Use agent description, but trim to just the name part (before " - ")
+		agentType := hookData.agent.Description()
+		if idx := strings.Index(agentType, " - "); idx > 0 {
+			agentType = agentType[:idx]
+		}
+		if initErr := initializer.InitializeSession(hookData.entireSessionID, agentType); initErr != nil {
 			if err := handleSessionInitErrors(hookData.agent, initErr); err != nil {
 				return err
 			}
