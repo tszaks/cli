@@ -171,9 +171,9 @@ type branchCheckpointResult struct {
 	checkpointID      string
 	commitHash        string
 	commitMessage     string
-	newerCommitsExist bool  // true if there are branch-only commits (not merge commits) without checkpoints
-	newerCommitCount  int   // count of branch-only commits without checkpoints
-	mergeCommitsOnly  bool  // true if ALL newer commits are merge commits (no actual branch work)
+	newerCommitsExist bool // true if there are branch-only commits (not merge commits) without checkpoints
+	newerCommitCount  int  // count of branch-only commits without checkpoints
+	mergeCommitsOnly  bool // true if ALL newer commits are merge commits (no actual branch work)
 }
 
 // findBranchCheckpoint finds the most recent commit with an Entire-Checkpoint trailer
@@ -251,9 +251,9 @@ func findBranchCheckpoint(repo *git.Repository, branchName string) (*branchCheck
 // (actual branch work) to avoid false warnings after merging main.
 func findCheckpointInHistory(start *object.Commit, stopAt *plumbing.Hash) *branchCheckpointResult {
 	result := &branchCheckpointResult{}
-	branchWorkCommits := 0  // Regular commits without checkpoints (actual work)
-	mergeCommits := 0       // Merge commits without checkpoints
-	const maxCommits = 100  // Limit search depth
+	branchWorkCommits := 0 // Regular commits without checkpoints (actual work)
+	mergeCommits := 0      // Merge commits without checkpoints
+	const maxCommits = 100 // Limit search depth
 	totalChecked := 0
 
 	current := start
