@@ -50,7 +50,6 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newDisableCmd())
 	cmd.AddCommand(newStatusCmd())
 	cmd.AddCommand(newHooksCmd())
-	// cmd.AddCommand(newSummarizeCmd()) // Disabled: summarize command removed from user-facing CLI
 	cmd.AddCommand(newVersionCmd())
 	cmd.AddCommand(newExplainCmd())
 
