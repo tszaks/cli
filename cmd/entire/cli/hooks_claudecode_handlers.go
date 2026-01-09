@@ -142,11 +142,17 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 			}
 			return true, nil // Skip hook after outputting response
 		}
+		// Derive agent type from agent description (e.g., "Claude Code" from "Claude Code - ...")
+		agentType := ag.Description()
+		if idx := strings.Index(agentType, " - "); idx > 0 {
+			agentType = agentType[:idx]
+		}
 		newState := &strategy.SessionState{
 			SessionID:              entireSessionID,
 			BaseCommit:             head.Hash().String(),
 			ConcurrentWarningShown: true,
 			StartedAt:              time.Now(),
+			AgentType:              agentType,
 		}
 		if saveErr := strategy.SaveSessionState(newState); saveErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save session state: %v\n", saveErr)

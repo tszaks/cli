@@ -186,6 +186,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 	// Determine which checkpoint ID to use
 	var checkpointID string
 	var hasNewContent bool
+	var reusedSession *SessionState
 
 	if len(sessionsWithContent) > 0 {
 		// New content exists - will generate new checkpoint ID below
@@ -224,6 +225,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 			if session.LastCheckpointID != "" &&
 				(len(session.FilesTouched) == 0 || hasOverlappingFiles(stagedFiles, session.FilesTouched)) {
 				checkpointID = session.LastCheckpointID
+				reusedSession = session
 				break
 			}
 		}
@@ -266,7 +268,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 	// Otherwise checkpointID is already set to LastCheckpointID from above
 
 	// Determine agent name and last prompt from session
-	agentName := "Claude Code" // default for backward compatibility
+	agentName := DefaultAgentType // default for backward compatibility
 	var lastPrompt string
 	if hasNewContent && len(sessionsWithContent) > 0 {
 		session := sessionsWithContent[0]
@@ -274,6 +276,12 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 			agentName = session.AgentType
 		}
 		lastPrompt = s.getLastPrompt(repo, session)
+	} else if reusedSession != nil {
+		// Reusing checkpoint from existing session - get agent type and prompt from that session
+		if reusedSession.AgentType != "" {
+			agentName = reusedSession.AgentType
+		}
+		lastPrompt = s.getLastPrompt(repo, reusedSession)
 	}
 
 	// Prepare prompt for display: collapse newlines/whitespace, then truncate (rune-safe)
