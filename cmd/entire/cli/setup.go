@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/paths"
@@ -347,6 +348,12 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 	}
 	if err := strat.EnsureSetup(); err != nil {
 		return fmt.Errorf("failed to setup strategy: %w", err)
+	}
+
+	// Offer to setup shell completion (only if not already configured)
+	if err := promptShellCompletion(w); err != nil {
+		// Non-fatal - just log and continue
+		fmt.Fprintf(w, "Note: Shell completion setup skipped: %v\n", err)
 	}
 
 	// Show success message with display name
@@ -695,4 +702,99 @@ func newSetupGitHookCmd() *cobra.Command {
 	}
 
 	return cmd
+}
+
+// shellCompletionComment is the comment preceding the completion line
+const shellCompletionComment = "# Entire CLI shell completion"
+
+// promptShellCompletion offers to add shell completion to the user's rc file.
+// Only prompts if completion is not already configured.
+func promptShellCompletion(w io.Writer) error {
+	// Get user's home directory
+	home, err := os.UserHomeDir()
+	if err != nil {
+		//nolint:nilerr // Skip silently if we can't determine home - not a fatal error
+		return nil
+	}
+
+	// Determine shell and rc file
+	shell := os.Getenv("SHELL")
+	var rcFile string
+	var completionLine string
+
+	switch {
+	case strings.Contains(shell, "zsh"):
+		rcFile = filepath.Join(home, ".zshrc")
+		completionLine = "source <(entire completion zsh)"
+	case strings.Contains(shell, "bash"):
+		rcFile = filepath.Join(home, ".bashrc")
+		completionLine = "source <(entire completion bash)"
+	default:
+		return nil // Unsupported shell, skip silently
+	}
+
+	// Check if completion is already configured
+	if isCompletionConfigured(rcFile) {
+		return nil // Already configured, skip silently
+	}
+
+	// Prompt user with select-style picker (matching other prompts)
+	var selected string
+	form := NewAccessibleForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Enable shell completion?").
+				Options(
+					huh.NewOption("Yes", "yes"),
+					huh.NewOption("No", "no"),
+				).
+				Value(&selected),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		//nolint:nilerr // User cancelled - not a fatal error, just skip
+		return nil
+	}
+
+	if selected != "yes" {
+		return nil
+	}
+
+	// Append completion to rc file
+	if err := appendShellCompletion(rcFile, completionLine); err != nil {
+		return fmt.Errorf("failed to update %s: %w", rcFile, err)
+	}
+
+	fmt.Fprintf(w, "✓ Shell completion added to %s\n", rcFile)
+	fmt.Fprintln(w, "  Run `source "+rcFile+"` or restart your shell to activate")
+
+	return nil
+}
+
+// isCompletionConfigured checks if shell completion is already in the rc file.
+func isCompletionConfigured(rcFile string) bool {
+	//nolint:gosec // G304: rcFile is constructed from home dir + known filename, not user input
+	content, err := os.ReadFile(rcFile)
+	if err != nil {
+		return false // File doesn't exist or can't read, treat as not configured
+	}
+	return strings.Contains(string(content), "entire completion")
+}
+
+// appendShellCompletion adds the completion line to the rc file.
+func appendShellCompletion(rcFile, completionLine string) error {
+	//nolint:gosec // G302: Shell rc files need 0644 for user readability
+	f, err := os.OpenFile(rcFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("opening file: %w", err)
+	}
+	defer f.Close()
+
+	// Add newline, comment, and completion line
+	_, err = f.WriteString("\n" + shellCompletionComment + "\n" + completionLine + "\n")
+	if err != nil {
+		return fmt.Errorf("writing completion: %w", err)
+	}
+	return nil
 }
