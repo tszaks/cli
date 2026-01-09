@@ -42,6 +42,7 @@ func newEnableCmd() *cobra.Command {
 	var agentName string
 	var strategyFlag string
 	var forceHooks bool
+	var setupShell bool
 
 	cmd := &cobra.Command{
 		Use:   "enable",
@@ -67,9 +68,9 @@ func newEnableCmd() *cobra.Command {
 			}
 			// If strategy is specified via flag, skip interactive selection
 			if strategyFlag != "" {
-				return runEnableWithStrategy(cmd.OutOrStdout(), strategyFlag, localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks)
+				return runEnableWithStrategy(cmd.OutOrStdout(), strategyFlag, localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, setupShell)
 			}
-			return runEnableInteractive(cmd.OutOrStdout(), localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks)
+			return runEnableInteractive(cmd.OutOrStdout(), localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, setupShell)
 		},
 	}
 
@@ -82,6 +83,7 @@ func newEnableCmd() *cobra.Command {
 	cmd.Flags().StringVar(&agentName, "agent", "", "Agent to setup hooks for (e.g., claude-code). Enables non-interactive mode.")
 	cmd.Flags().StringVar(&strategyFlag, "strategy", "", "Strategy to use (manual-commit or auto-commit)")
 	cmd.Flags().BoolVarP(&forceHooks, "force", "f", false, "Force reinstall hooks (removes existing Entire hooks first)")
+	cmd.Flags().BoolVar(&setupShell, "setup-shell", false, "Add shell completion to your rc file (non-interactive)")
 	//nolint:errcheck,gosec // completion is optional, flag is defined above
 	cmd.RegisterFlagCompletionFunc("strategy", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{strategyDisplayManualCommit, strategyDisplayAutoCommit}, cobra.ShellCompDirectiveNoFileComp
@@ -156,7 +158,7 @@ func newStatusCmd() *cobra.Command {
 // runEnableWithStrategy enables Entire with a specified strategy (non-interactive).
 // The selectedStrategy can be either a display name (manual-commit, auto-commit)
 // or an internal name (manual-commit, auto-commit).
-func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, useLocalSettings, useProjectSettings, forceHooks bool) error {
+func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell bool) error {
 	// Map the strategy to internal name if it's a display name
 	internalStrategy := selectedStrategy
 	if mapped, ok := strategyDisplayToInternal[selectedStrategy]; ok {
@@ -240,6 +242,14 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 
+	// Setup shell completion if --setup-shell flag was provided
+	if setupShell {
+		if err := setupShellCompletionNonInteractive(w); err != nil {
+			// Non-fatal - just log and continue
+			fmt.Fprintf(w, "Note: Shell completion setup skipped: %v\n", err)
+		}
+	}
+
 	// Show success message with display name
 	displayName := selectedStrategy
 	if dn, ok := strategyInternalToDisplay[internalStrategy]; ok {
@@ -251,7 +261,7 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 }
 
 // runEnableInteractive runs the interactive enable flow with strategy selection.
-func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProjectSettings, forceHooks bool) error {
+func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell bool) error {
 	// Build strategy options with user-friendly names
 	var selectedStrategy string
 	options := []huh.Option[string]{
@@ -350,10 +360,18 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 
-	// Offer to setup shell completion (only if not already configured)
-	if err := promptShellCompletion(w); err != nil {
-		// Non-fatal - just log and continue
-		fmt.Fprintf(w, "Note: Shell completion setup skipped: %v\n", err)
+	// Setup shell completion - either non-interactively (if --setup-shell) or prompt
+	if setupShell {
+		if err := setupShellCompletionNonInteractive(w); err != nil {
+			// Non-fatal - just log and continue
+			fmt.Fprintf(w, "Note: Shell completion setup skipped: %v\n", err)
+		}
+	} else {
+		// Offer to setup shell completion (only if not already configured)
+		if err := promptShellCompletion(w); err != nil {
+			// Non-fatal - just log and continue
+			fmt.Fprintf(w, "Note: Shell completion setup skipped: %v\n", err)
+		}
 	}
 
 	// Show success message with display name
@@ -796,5 +814,47 @@ func appendShellCompletion(rcFile, completionLine string) error {
 	if err != nil {
 		return fmt.Errorf("writing completion: %w", err)
 	}
+	return nil
+}
+
+// setupShellCompletionNonInteractive adds shell completion without prompting.
+// Used when --setup-shell flag is provided.
+func setupShellCompletionNonInteractive(w io.Writer) error {
+	// Get user's home directory
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine home directory: %w", err)
+	}
+
+	// Determine shell and rc file
+	shell := os.Getenv("SHELL")
+	var rcFile string
+	var completionLine string
+
+	switch {
+	case strings.Contains(shell, "zsh"):
+		rcFile = filepath.Join(home, ".zshrc")
+		completionLine = "source <(entire completion zsh)"
+	case strings.Contains(shell, "bash"):
+		rcFile = filepath.Join(home, ".bashrc")
+		completionLine = "source <(entire completion bash)"
+	default:
+		return fmt.Errorf("unsupported shell: %s (supported: zsh, bash)", shell)
+	}
+
+	// Check if completion is already configured
+	if isCompletionConfigured(rcFile) {
+		fmt.Fprintf(w, "✓ Shell completion already configured in %s\n", rcFile)
+		return nil
+	}
+
+	// Append completion to rc file
+	if err := appendShellCompletion(rcFile, completionLine); err != nil {
+		return fmt.Errorf("failed to update %s: %w", rcFile, err)
+	}
+
+	fmt.Fprintf(w, "✓ Shell completion added to %s\n", rcFile)
+	fmt.Fprintln(w, "  Run `source "+rcFile+"` or restart your shell to activate")
+
 	return nil
 }
