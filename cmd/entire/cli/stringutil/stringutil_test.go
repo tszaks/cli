@@ -2,6 +2,74 @@ package stringutil
 
 import "testing"
 
+func TestCollapseWhitespace(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "no whitespace changes needed",
+			input: "hello world",
+			want:  "hello world",
+		},
+		{
+			name:  "newlines to space",
+			input: "hello\nworld",
+			want:  "hello world",
+		},
+		{
+			name:  "multiple newlines",
+			input: "hello\n\n\nworld",
+			want:  "hello world",
+		},
+		{
+			name:  "tabs to space",
+			input: "hello\tworld",
+			want:  "hello world",
+		},
+		{
+			name:  "mixed whitespace",
+			input: "hello\n\t  world",
+			want:  "hello world",
+		},
+		{
+			name:  "leading and trailing whitespace",
+			input: "  hello world  ",
+			want:  "hello world",
+		},
+		{
+			name:  "multiline text",
+			input: "Fix the bug\nin the login\npage",
+			want:  "Fix the bug in the login page",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "only whitespace",
+			input: "  \n\t  ",
+			want:  "",
+		},
+		{
+			name:  "carriage return",
+			input: "hello\r\nworld",
+			want:  "hello world",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CollapseWhitespace(tt.input)
+			if got != tt.want {
+				t.Errorf("CollapseWhitespace(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTruncateRunes(t *testing.T) {
 	tests := []struct {
 		name     string

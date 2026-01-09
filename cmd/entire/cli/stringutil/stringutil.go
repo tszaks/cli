@@ -2,9 +2,21 @@
 package stringutil
 
 import (
+	"regexp"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
+
+// whitespaceRegex matches one or more whitespace characters (including newlines)
+var whitespaceRegex = regexp.MustCompile(`\s+`)
+
+// CollapseWhitespace replaces sequences of whitespace (including newlines, tabs)
+// with a single space and trims leading/trailing whitespace.
+// Useful for preparing multi-line text for single-line display.
+func CollapseWhitespace(s string) string {
+	return strings.TrimSpace(whitespaceRegex.ReplaceAllString(s, " "))
+}
 
 // TruncateRunes truncates a string to at most maxRunes runes, appending suffix if truncated.
 // This is safe for multi-byte UTF-8 characters unlike byte-based slicing.

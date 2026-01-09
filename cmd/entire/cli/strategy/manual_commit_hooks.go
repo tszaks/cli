@@ -276,8 +276,8 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 		lastPrompt = s.getLastPrompt(repo, session)
 	}
 
-	// Truncate long prompts for display (rune-safe for multi-byte UTF-8)
-	displayPrompt := stringutil.TruncateRunes(lastPrompt, 80, "...")
+	// Prepare prompt for display: collapse newlines/whitespace, then truncate (rune-safe)
+	displayPrompt := stringutil.TruncateRunes(stringutil.CollapseWhitespace(lastPrompt), 80, "...")
 
 	// Add trailer differently based on commit source
 	if source == "message" {
@@ -287,7 +287,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 		// Build context string for interactive prompt
 		var promptContext string
 		if displayPrompt != "" {
-			promptContext = "You have an active " + agentName + " session. Last Prompt:\n\"" + displayPrompt + "\""
+			promptContext = "You have an active " + agentName + " session.\nLast Prompt: " + displayPrompt
 		}
 
 		if !askConfirmTTY("Link this commit to "+agentName+" session context?", promptContext, true) {
@@ -577,7 +577,7 @@ func addCheckpointTrailerWithComment(message, checkpointID, agentName, prompt st
 		"# Remove the Entire-Checkpoint trailer above if you don't want to link this commit to " + agentName + " session context.",
 	}
 	if prompt != "" {
-		commentLines = append(commentLines, "# Last Prompt: \""+prompt+"\"")
+		commentLines = append(commentLines, "# Last Prompt: "+prompt)
 	}
 	commentLines = append(commentLines, "# The trailer will be added to your next commit based on this branch.")
 	comment := strings.Join(commentLines, "\n")

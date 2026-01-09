@@ -768,7 +768,7 @@ func TestAddCheckpointTrailerWithComment_HasComment(t *testing.T) {
 	}
 
 	// Should contain prompt line (after removal comment)
-	if !strings.Contains(result, "# Last Prompt: \"add password hashing\"") {
+	if !strings.Contains(result, "# Last Prompt: add password hashing") {
 		t.Errorf("addCheckpointTrailerWithComment() should contain prompt, got: %q", result)
 	}
 
