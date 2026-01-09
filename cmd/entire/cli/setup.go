@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -427,7 +428,13 @@ func runStatus(w io.Writer) error {
 
 	// Check if either settings file exists
 	_, projectErr := os.Stat(settingsPath)
+	if projectErr != nil && !errors.Is(projectErr, fs.ErrNotExist) {
+		return fmt.Errorf("cannot access project settings file: %w", projectErr)
+	}
 	_, localErr := os.Stat(localSettingsPath)
+	if localErr != nil && !errors.Is(localErr, fs.ErrNotExist) {
+		return fmt.Errorf("cannot access local settings file: %w", localErr)
+	}
 	projectExists := projectErr == nil
 	localExists := localErr == nil
 

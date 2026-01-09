@@ -485,3 +485,70 @@ func TestRunEnableWithStrategy_PreservesLocalSettings(t *testing.T) {
 		t.Errorf("strategy_options.push should be true, got %v", settings.StrategyOptions["push"])
 	}
 }
+
+func TestRunStatus_LocalSettingsOnly(t *testing.T) {
+	setupTestRepo(t)
+	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": true}`)
+
+	var stdout bytes.Buffer
+	if err := runStatus(&stdout); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Local, enabled") {
+		t.Errorf("Expected output to show 'Local, enabled', got: %s", output)
+	}
+	if strings.Contains(output, "Project,") {
+		t.Errorf("Should not show Project settings when only local exists, got: %s", output)
+	}
+}
+
+func TestRunStatus_BothProjectAndLocal(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, `{"strategy": "manual-commit", "enabled": true}`)
+	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": false}`)
+
+	var stdout bytes.Buffer
+	if err := runStatus(&stdout); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Project, enabled (manual-commit)") {
+		t.Errorf("Expected output to show 'Project, enabled (manual-commit)', got: %s", output)
+	}
+	if !strings.Contains(output, "Local, disabled (auto-commit)") {
+		t.Errorf("Expected output to show 'Local, disabled (auto-commit)', got: %s", output)
+	}
+}
+
+func TestRunStatus_ShowsStrategy(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, `{"strategy": "auto-commit", "enabled": true}`)
+
+	var stdout bytes.Buffer
+	if err := runStatus(&stdout); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "(auto-commit)") {
+		t.Errorf("Expected output to show strategy '(auto-commit)', got: %s", output)
+	}
+}
+
+func TestRunStatus_ShowsManualCommitStrategy(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, `{"strategy": "manual-commit", "enabled": false}`)
+
+	var stdout bytes.Buffer
+	if err := runStatus(&stdout); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Project, disabled (manual-commit)") {
+		t.Errorf("Expected output to show 'Project, disabled (manual-commit)', got: %s", output)
+	}
+}
