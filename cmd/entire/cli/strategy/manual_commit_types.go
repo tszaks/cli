@@ -25,6 +25,7 @@ type SessionState struct {
 	FilesTouched             []string  `json:"files_touched,omitempty"`              // Files modified/created/deleted during this session
 	ConcurrentWarningShown   bool      `json:"concurrent_warning_shown,omitempty"`   // True if user was warned about concurrent sessions
 	LastCheckpointID         string    `json:"last_checkpoint_id,omitempty"`         // Checkpoint ID from last condensation, reused for subsequent commits without new content
+	AgentType                string    `json:"agent_type,omitempty"`                 // Agent type identifier (e.g., "Claude Code", "Cursor")
 }
 
 // CheckpointInfo represents checkpoint metadata stored on the sessions branch.

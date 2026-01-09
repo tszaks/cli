@@ -115,6 +115,9 @@ const (
 	gitDir             = ".git"
 	claudeDir          = ".claude"
 	shadowBranchPrefix = "entire/"
+
+	// DefaultAgentType is the generic fallback agent type name
+	DefaultAgentType = "Agent"
 )
 
 // ensureMetadataBranch creates the orphan entire/sessions branch if it doesn't exist.

@@ -10,6 +10,7 @@ import (
 
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/stringutil"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -18,7 +19,8 @@ import (
 // askConfirmTTY prompts the user for a yes/no confirmation via /dev/tty.
 // This works even when stdin is redirected (e.g., git commit -m).
 // Returns true for yes, false for no. If TTY is unavailable, returns the default.
-func askConfirmTTY(prompt string, defaultYes bool) bool {
+// If context is non-empty, it is displayed on a separate line before the prompt.
+func askConfirmTTY(prompt string, context string, defaultYes bool) bool {
 	// Open /dev/tty for both reading and writing
 	// This is the controlling terminal, which works even when stdin/stderr are redirected
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
@@ -27,6 +29,11 @@ func askConfirmTTY(prompt string, defaultYes bool) bool {
 		return defaultYes
 	}
 	defer tty.Close()
+
+	// Show context if provided
+	if context != "" {
+		fmt.Fprintf(tty, "%s\n", context)
+	}
 
 	// Show prompt with default indicator
 	// Write to tty directly, not stderr, since git hooks may redirect stderr to /dev/null
@@ -179,6 +186,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 	// Determine which checkpoint ID to use
 	var checkpointID string
 	var hasNewContent bool
+	var reusedSession *SessionState
 
 	if len(sessionsWithContent) > 0 {
 		// New content exists - will generate new checkpoint ID below
@@ -217,6 +225,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 			if session.LastCheckpointID != "" &&
 				(len(session.FilesTouched) == 0 || hasOverlappingFiles(stagedFiles, session.FilesTouched)) {
 				checkpointID = session.LastCheckpointID
+				reusedSession = session
 				break
 			}
 		}
@@ -258,11 +267,38 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 	}
 	// Otherwise checkpointID is already set to LastCheckpointID from above
 
+	// Determine agent name and last prompt from session
+	agentName := DefaultAgentType // default for backward compatibility
+	var lastPrompt string
+	if hasNewContent && len(sessionsWithContent) > 0 {
+		session := sessionsWithContent[0]
+		if session.AgentType != "" {
+			agentName = session.AgentType
+		}
+		lastPrompt = s.getLastPrompt(repo, session)
+	} else if reusedSession != nil {
+		// Reusing checkpoint from existing session - get agent type and prompt from that session
+		if reusedSession.AgentType != "" {
+			agentName = reusedSession.AgentType
+		}
+		lastPrompt = s.getLastPrompt(repo, reusedSession)
+	}
+
+	// Prepare prompt for display: collapse newlines/whitespace, then truncate (rune-safe)
+	displayPrompt := stringutil.TruncateRunes(stringutil.CollapseWhitespace(lastPrompt), 80, "...")
+
 	// Add trailer differently based on commit source
 	if source == "message" {
 		// Using -m or -F: ask user interactively whether to add trailer
 		// (comments won't be stripped by git in this mode)
-		if !askConfirmTTY("Link this commit to Claude session context?", true) {
+
+		// Build context string for interactive prompt
+		var promptContext string
+		if displayPrompt != "" {
+			promptContext = "You have an active " + agentName + " session.\nLast Prompt: " + displayPrompt
+		}
+
+		if !askConfirmTTY("Link this commit to "+agentName+" session context?", promptContext, true) {
 			// User declined - don't add trailer
 			logging.Debug(logCtx, "prepare-commit-msg: user declined trailer",
 				slog.String("strategy", "manual-commit"),
@@ -273,7 +309,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 		message = addCheckpointTrailer(message, checkpointID)
 	} else {
 		// Normal editor flow: add trailer with explanatory comment (will be stripped by git)
-		message = addCheckpointTrailerWithComment(message, checkpointID)
+		message = addCheckpointTrailerWithComment(message, checkpointID, agentName, displayPrompt)
 	}
 
 	logging.Info(logCtx, "prepare-commit-msg: trailer added",
@@ -542,10 +578,17 @@ func addCheckpointTrailer(message, checkpointID string) string {
 // addCheckpointTrailerWithComment adds the Entire-Checkpoint trailer with an explanatory comment.
 // The trailer is placed above the git comment block but below the user's message area,
 // with a comment explaining that the user can remove it if they don't want to link the commit
-// to the Claude session.
-func addCheckpointTrailerWithComment(message, checkpointID string) string {
+// to the agent session. If prompt is non-empty, it's shown as context.
+func addCheckpointTrailerWithComment(message, checkpointID, agentName, prompt string) string {
 	trailer := paths.CheckpointTrailerKey + ": " + checkpointID
-	comment := "# Remove the Entire-Checkpoint trailer above if you don't want to link this commit to Claude session context.\n# The trailer will be added to your next commit based on this branch."
+	commentLines := []string{
+		"# Remove the Entire-Checkpoint trailer above if you don't want to link this commit to " + agentName + " session context.",
+	}
+	if prompt != "" {
+		commentLines = append(commentLines, "# Last Prompt: "+prompt)
+	}
+	commentLines = append(commentLines, "# The trailer will be added to your next commit based on this branch.")
+	comment := strings.Join(commentLines, "\n")
 
 	lines := strings.Split(message, "\n")
 
@@ -586,7 +629,9 @@ func addCheckpointTrailerWithComment(message, checkpointID string) string {
 //
 // If there's an existing shadow branch with activity from a different worktree,
 // returns a ShadowBranchConflictError to allow the caller to inform the user.
-func (s *ManualCommitStrategy) InitializeSession(sessionID string) error {
+//
+// agentType is the human-readable name of the agent (e.g., "Claude Code").
+func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType string) error {
 	repo, err := OpenRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
@@ -692,7 +737,7 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string) error {
 	}
 
 	// Initialize new session
-	_, err = s.initializeSession(repo, sessionID)
+	_, err = s.initializeSession(repo, sessionID, agentType)
 	if err != nil {
 		return fmt.Errorf("failed to initialize session: %w", err)
 	}
@@ -721,6 +766,26 @@ func getStagedFiles(repo *git.Repository) []string {
 		}
 	}
 	return staged
+}
+
+// getLastPrompt retrieves the most recent user prompt from a session's shadow branch.
+// Returns empty string if no prompt can be retrieved.
+func (s *ManualCommitStrategy) getLastPrompt(repo *git.Repository, state *SessionState) string {
+	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit)
+	refName := plumbing.NewBranchReferenceName(shadowBranchName)
+	ref, err := repo.Reference(refName, true)
+	if err != nil {
+		return ""
+	}
+
+	// Extract session data (using 0 as startLine to get all prompts)
+	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, 0, nil)
+	if err != nil || len(sessionData.Prompts) == 0 {
+		return ""
+	}
+
+	// Return the last prompt (most recent work before commit)
+	return sessionData.Prompts[len(sessionData.Prompts)-1]
 }
 
 // hasOverlappingFiles checks if any file in stagedFiles appears in filesTouched.
