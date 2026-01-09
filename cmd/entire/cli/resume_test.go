@@ -171,7 +171,7 @@ func TestResumeFromCurrentBranch_NoCheckpoint(t *testing.T) {
 	setupResumeTestRepo(t, tmpDir, false)
 
 	// Run resumeFromCurrentBranch - should not error, just report no checkpoint found
-	err := resumeFromCurrentBranch("master")
+	err := resumeFromCurrentBranch("master", false)
 	if err != nil {
 		t.Errorf("resumeFromCurrentBranch() returned error for commit without checkpoint: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestResumeFromCurrentBranch_WithEntireCheckpointTrailer(t *testing.T) {
 	}
 
 	// Run resumeFromCurrentBranch
-	err := resumeFromCurrentBranch("master")
+	err := resumeFromCurrentBranch("master", false)
 	if err != nil {
 		t.Errorf("resumeFromCurrentBranch() returned error: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestRunResume_AlreadyOnBranch(t *testing.T) {
 	}
 
 	// Run resume on the branch we're already on - should skip checkout
-	err := runResume("feature")
+	err := runResume("feature", false)
 	// Should not error (no session, but shouldn't error)
 	if err != nil {
 		t.Errorf("runResume() returned error when already on branch: %v", err)
@@ -278,7 +278,7 @@ func TestRunResume_BranchDoesNotExist(t *testing.T) {
 	setupResumeTestRepo(t, tmpDir, false)
 
 	// Run resume on a branch that doesn't exist
-	err := runResume("nonexistent")
+	err := runResume("nonexistent", false)
 	if err == nil {
 		t.Error("runResume() expected error for nonexistent branch, got nil")
 	}
@@ -297,7 +297,7 @@ func TestRunResume_UncommittedChanges(t *testing.T) {
 	}
 
 	// Run resume - should fail due to uncommitted changes
-	err := runResume("feature")
+	err := runResume("feature", false)
 	if err == nil {
 		t.Error("runResume() expected error for uncommitted changes, got nil")
 	}
@@ -612,7 +612,7 @@ func TestResumeFromCurrentBranch_FallsBackToRemote(t *testing.T) {
 	}
 
 	// Run resumeFromCurrentBranch - should fall back to remote and suggest fetch
-	err = resumeFromCurrentBranch("master")
+	err = resumeFromCurrentBranch("master", false)
 	if err != nil {
 		t.Errorf("resumeFromCurrentBranch() returned error when falling back to remote: %v", err)
 	}

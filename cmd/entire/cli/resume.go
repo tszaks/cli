@@ -12,10 +12,14 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/spf13/cobra"
 )
 
 func newResumeCmd() *cobra.Command {
+	var force bool
+
 	cmd := &cobra.Command{
 		Use:   "resume <branch>",
 		Short: "Switch to a branch and resume its session",
@@ -23,30 +27,35 @@ func newResumeCmd() *cobra.Command {
 
 This command:
 1. Checks out the specified branch
-2. Finds the session ID from the last commit's trailers
+2. Finds the session ID from commits unique to this branch (not on main)
 3. Restores the session log if it doesn't exist locally
 4. Shows the command to resume the session
 
 If the branch doesn't exist locally but exists on origin, you'll be prompted
-to fetch it.`,
+to fetch it.
+
+If newer commits exist on the branch without checkpoints (e.g., after merging main),
+you'll be prompted to confirm resuming from the older checkpoint.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if checkDisabledGuard(cmd.OutOrStdout()) {
 				return nil
 			}
-			return runResume(args[0])
+			return runResume(args[0], force)
 		},
 	}
+
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Resume from older checkpoint without confirmation")
 
 	return cmd
 }
 
-func runResume(branchName string) error {
+func runResume(branchName string, force bool) error {
 	// Check if we're already on this branch
 	currentBranch, err := GetCurrentBranch()
 	if err == nil && currentBranch == branchName {
 		// Already on the branch, skip checkout
-		return resumeFromCurrentBranch(branchName)
+		return resumeFromCurrentBranch(branchName, force)
 	}
 
 	// Check if branch exists locally
@@ -98,33 +107,47 @@ func runResume(branchName string) error {
 		fmt.Fprintf(os.Stderr, "Switched to branch '%s'\n", branchName)
 	}
 
-	return resumeFromCurrentBranch(branchName)
+	return resumeFromCurrentBranch(branchName, force)
 }
 
-func resumeFromCurrentBranch(branchName string) error {
+func resumeFromCurrentBranch(branchName string, force bool) error {
 	repo, err := openRepository()
 	if err != nil {
 		return fmt.Errorf("not a git repository: %w", err)
 	}
 
-	// Get the HEAD commit
-	head, err := repo.Head()
+	// Find a commit with an Entire-Checkpoint trailer, looking at branch-only commits
+	result, err := findBranchCheckpoint(repo, branchName)
 	if err != nil {
-		return fmt.Errorf("failed to get HEAD: %w", err)
+		return err
 	}
-
-	commit, err := repo.CommitObject(head.Hash())
-	if err != nil {
-		return fmt.Errorf("failed to get commit: %w", err)
-	}
-
-	// Extract checkpoint from last commit
-	checkpointID, found := paths.ParseCheckpointTrailer(commit.Message)
-	if !found {
-		fmt.Fprintf(os.Stderr, "No Entire checkpoint found for the last commit on branch '%s'\n", branchName)
-		fmt.Fprintf(os.Stderr, "Commit: %s %s\n", head.Hash().String()[:7], firstLine(commit.Message))
+	if result.checkpointID == "" {
+		fmt.Fprintf(os.Stderr, "No Entire checkpoint found on branch '%s'\n", branchName)
 		return nil
 	}
+
+	// If there are actual branch work commits (not just merge commits) without checkpoints,
+	// ask for confirmation. Merge commits (e.g., from merging main) don't count as "work".
+	if result.newerCommitsExist && !force {
+		fmt.Fprintf(os.Stderr, "Found checkpoint in an older commit.\n")
+		fmt.Fprintf(os.Stderr, "There are %d newer commit(s) on this branch without checkpoints.\n", result.newerCommitCount)
+		fmt.Fprintf(os.Stderr, "Checkpoint from: %s %s\n\n", result.commitHash[:7], firstLine(result.commitMessage))
+
+		shouldResume, err := promptResumeFromOlderCheckpoint()
+		if err != nil {
+			return err
+		}
+		if !shouldResume {
+			fmt.Fprintf(os.Stderr, "Resume cancelled.\n")
+			return nil
+		}
+	} else if result.mergeCommitsOnly {
+		// Just merge commits between HEAD and checkpoint - no warning needed, this is the
+		// common "merged main into feature branch" scenario
+		fmt.Fprintf(os.Stderr, "Resuming from checkpoint (skipping merge commit(s)).\n")
+	}
+
+	checkpointID := result.checkpointID
 
 	// Get metadata branch tree for lookups
 	metadataTree, err := strategy.GetMetadataBranchTree(repo)
@@ -141,6 +164,164 @@ func resumeFromCurrentBranch(branchName string) error {
 	}
 
 	return resumeSession(metadata.SessionID, checkpointID)
+}
+
+// branchCheckpointResult contains the result of searching for a checkpoint on a branch.
+type branchCheckpointResult struct {
+	checkpointID      string
+	commitHash        string
+	commitMessage     string
+	newerCommitsExist bool // true if there are branch-only commits (not merge commits) without checkpoints
+	newerCommitCount  int  // count of branch-only commits without checkpoints
+	mergeCommitsOnly  bool // true if ALL newer commits are merge commits (no actual branch work)
+}
+
+// findBranchCheckpoint finds the most recent commit with an Entire-Checkpoint trailer
+// among commits that are unique to this branch (not reachable from the default branch).
+// This handles the case where main has been merged into the feature branch.
+func findBranchCheckpoint(repo *git.Repository, branchName string) (*branchCheckpointResult, error) {
+	result := &branchCheckpointResult{}
+
+	// Get HEAD commit
+	head, err := repo.Head()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HEAD: %w", err)
+	}
+
+	headCommit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HEAD commit: %w", err)
+	}
+
+	// First, check if HEAD itself has a checkpoint (most common case)
+	if checkpointID, found := paths.ParseCheckpointTrailer(headCommit.Message); found {
+		result.checkpointID = checkpointID
+		result.commitHash = head.Hash().String()
+		result.commitMessage = headCommit.Message
+		result.newerCommitsExist = false
+		return result, nil
+	}
+
+	// HEAD doesn't have a checkpoint - find branch-only commits
+	// Get the default branch name
+	defaultBranch := getDefaultBranchFromRemote(repo)
+	if defaultBranch == "" {
+		// Fallback: try common names
+		for _, name := range []string{"main", "master"} {
+			if _, err := repo.Reference(plumbing.NewBranchReferenceName(name), true); err == nil {
+				defaultBranch = name
+				break
+			}
+		}
+	}
+
+	// If we can't find a default branch, or we're on it, just walk all commits
+	if defaultBranch == "" || defaultBranch == branchName {
+		return findCheckpointInHistory(headCommit, nil), nil
+	}
+
+	// Get the default branch reference
+	defaultRef, err := repo.Reference(plumbing.NewBranchReferenceName(defaultBranch), true)
+	if err != nil {
+		// Default branch doesn't exist locally, fall back to walking all commits
+		return findCheckpointInHistory(headCommit, nil), nil //nolint:nilerr // Intentional fallback
+	}
+
+	defaultCommit, err := repo.CommitObject(defaultRef.Hash())
+	if err != nil {
+		// Can't get default commit, fall back to walking all commits
+		return findCheckpointInHistory(headCommit, nil), nil //nolint:nilerr // Intentional fallback
+	}
+
+	// Find merge base
+	mergeBase, err := headCommit.MergeBase(defaultCommit)
+	if err != nil || len(mergeBase) == 0 {
+		// No common ancestor, fall back to walking all commits
+		return findCheckpointInHistory(headCommit, nil), nil //nolint:nilerr // Intentional fallback
+	}
+
+	// Walk from HEAD to merge base, looking for checkpoint
+	return findCheckpointInHistory(headCommit, &mergeBase[0].Hash), nil
+}
+
+// findCheckpointInHistory walks commit history from start looking for a checkpoint trailer.
+// If stopAt is provided, stops when reaching that commit (exclusive).
+// Returns the first checkpoint found and info about commits between HEAD and the checkpoint.
+// It distinguishes between merge commits (bringing in other branches) and regular commits
+// (actual branch work) to avoid false warnings after merging main.
+func findCheckpointInHistory(start *object.Commit, stopAt *plumbing.Hash) *branchCheckpointResult {
+	result := &branchCheckpointResult{}
+	branchWorkCommits := 0 // Regular commits without checkpoints (actual work)
+	mergeCommits := 0      // Merge commits without checkpoints
+	const maxCommits = 100 // Limit search depth
+	totalChecked := 0
+
+	current := start
+	for current != nil && totalChecked < maxCommits {
+		// Stop if we've reached the boundary
+		if stopAt != nil && current.Hash == *stopAt {
+			break
+		}
+
+		// Check for checkpoint trailer
+		if checkpointID, found := paths.ParseCheckpointTrailer(current.Message); found {
+			result.checkpointID = checkpointID
+			result.commitHash = current.Hash.String()
+			result.commitMessage = current.Message
+			// Only warn about branch work commits, not merge commits
+			result.newerCommitsExist = branchWorkCommits > 0
+			result.newerCommitCount = branchWorkCommits
+			result.mergeCommitsOnly = branchWorkCommits == 0 && mergeCommits > 0
+			return result
+		}
+
+		// Track what kind of commit this is
+		if current.NumParents() > 1 {
+			// This is a merge commit (bringing in another branch)
+			mergeCommits++
+		} else {
+			// This is a regular commit (actual branch work)
+			branchWorkCommits++
+		}
+
+		totalChecked++
+
+		// Move to parent (first parent for merge commits - follows the main line)
+		if current.NumParents() == 0 {
+			break
+		}
+		parent, err := current.Parent(0)
+		if err != nil {
+			// Can't get parent, treat as end of history
+			break
+		}
+		current = parent
+	}
+
+	// No checkpoint found
+	return result
+}
+
+// promptResumeFromOlderCheckpoint asks the user if they want to resume from an older checkpoint.
+func promptResumeFromOlderCheckpoint() (bool, error) {
+	var confirmed bool
+
+	form := NewAccessibleForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Resume from this older checkpoint?").
+				Value(&confirmed),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get confirmation: %w", err)
+	}
+
+	return confirmed, nil
 }
 
 // checkRemoteMetadata checks if checkpoint metadata exists on origin/entire/sessions

@@ -124,29 +124,17 @@ func TestResume_AlreadyOnBranch(t *testing.T) {
 }
 
 // TestResume_NoCheckpointOnBranch tests that resume handles branches without
-// Entire-Checkpoint trailer gracefully.
+// any Entire-Checkpoint trailer in their history gracefully.
 func TestResume_NoCheckpointOnBranch(t *testing.T) {
 	t.Parallel()
 	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
 
-	// First, create a session to ensure the entire/sessions branch exists
-	// This is required for the resume command to work
-	session := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
-	}
-	content := "session content"
-	env.WriteFile("session.txt", content)
-	session.CreateTranscript(
-		"Create session file",
-		[]FileChange{{Path: "session.txt", Content: content}},
-	)
-	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
-		t.Fatalf("SimulateStop failed: %v", err)
-	}
+	// Create a branch directly from master (which has no checkpoints)
+	// Switch to master first
+	env.GitCheckoutBranch(masterBranch)
 
-	// Now create a plain branch without any checkpoint
-	env.GitCheckoutNewBranch("feature/plain")
+	// Create a new branch from master
+	env.GitCheckoutNewBranch("feature/no-session")
 
 	// Create a commit without any session/checkpoint
 	env.WriteFile("plain.txt", "no session here")
@@ -155,10 +143,10 @@ func TestResume_NoCheckpointOnBranch(t *testing.T) {
 
 	plainBranch := env.GetCurrentBranch()
 
-	// Switch to main
+	// Switch back to master
 	env.GitCheckoutBranch(masterBranch)
 
-	// Resume back to the plain branch
+	// Resume to the plain branch - should indicate no checkpoint found
 	output, err := env.RunResume(plainBranch)
 	if err != nil {
 		t.Fatalf("resume failed: %v\nOutput: %s", err, output)
@@ -402,6 +390,79 @@ func TestResume_CheckpointWithoutMetadata(t *testing.T) {
 	}
 }
 
+// TestResume_AfterMergingMain tests that resume finds the checkpoint from branch-only commits
+// when main has been merged into the feature branch (making HEAD a merge commit without trailers).
+// Since the only "newer" commits are merge commits, no confirmation should be required.
+func TestResume_AfterMergingMain(t *testing.T) {
+	t.Parallel()
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+
+	// Create a session on the feature branch
+	session := env.NewSession()
+	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	content := "puts 'Hello from session'"
+	env.WriteFile("hello.rb", content)
+
+	session.CreateTranscript(
+		"Create a hello script",
+		[]FileChange{{Path: "hello.rb", Content: content}},
+	)
+	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop failed: %v", err)
+	}
+
+	// Remember the feature branch name
+	featureBranch := env.GetCurrentBranch()
+
+	// Switch to master and create a new commit (simulating work on main)
+	env.GitCheckoutBranch(masterBranch)
+	env.WriteFile("main_feature.txt", "new feature on main")
+	env.GitAdd("main_feature.txt")
+	env.GitCommit("Add new feature on main")
+
+	// Switch back to feature branch
+	env.GitCheckoutBranch(featureBranch)
+
+	// Merge main into feature branch (this creates a merge commit without Entire trailers)
+	env.GitMerge(masterBranch)
+
+	// Verify HEAD is now a merge commit (doesn't have checkpoint trailer)
+	headMessage := env.GetHeadCommitMessage()
+	if !strings.HasPrefix(headMessage, "Merge branch") {
+		t.Logf("Note: HEAD commit message: %s", headMessage)
+	}
+
+	// Switch to master
+	env.GitCheckoutBranch(masterBranch)
+
+	// Run resume WITHOUT --force - merge commits shouldn't require confirmation
+	output, err := env.RunResume(featureBranch)
+	if err != nil {
+		t.Fatalf("resume failed: %v\nOutput: %s", err, output)
+	}
+
+	// Should switch to the feature branch
+	if branch := env.GetCurrentBranch(); branch != featureBranch {
+		t.Errorf("expected to be on %s, got %s", featureBranch, branch)
+	}
+
+	// Should find the session from the older commit (before the merge)
+	if !strings.Contains(output, "Session:") {
+		t.Errorf("output should contain 'Session:', got: %s", output)
+	}
+	if !strings.Contains(output, "claude -r") {
+		t.Errorf("output should contain 'claude -r', got: %s", output)
+	}
+
+	// Should indicate it's skipping merge commits (informational, not a warning)
+	if !strings.Contains(output, "skipping merge commit") {
+		t.Logf("Note: Expected 'skipping merge commit' message, got: %s", output)
+	}
+}
+
 // RunResume executes the resume command and returns the combined output.
 func (env *TestEnv) RunResume(branchName string) (string, error) {
 	env.T.Helper()
@@ -415,6 +476,57 @@ func (env *TestEnv) RunResume(branchName string) (string, error) {
 
 	output, err := cmd.CombinedOutput()
 	return string(output), err
+}
+
+// RunResumeForce executes the resume command with --force flag.
+func (env *TestEnv) RunResumeForce(branchName string) (string, error) {
+	env.T.Helper()
+
+	ctx := env.T.Context()
+	cmd := exec.CommandContext(ctx, getTestBinary(), "resume", "--force", branchName)
+	cmd.Dir = env.RepoDir
+	cmd.Env = append(os.Environ(),
+		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
+	)
+
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// GitMerge merges a branch into the current branch.
+func (env *TestEnv) GitMerge(branchName string) {
+	env.T.Helper()
+
+	ctx := env.T.Context()
+	cmd := exec.CommandContext(ctx, "git", "merge", branchName, "-m", "Merge branch '"+branchName+"'")
+	cmd.Dir = env.RepoDir
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		env.T.Fatalf("failed to merge branch %s: %v\nOutput: %s", branchName, err, output)
+	}
+}
+
+// GetHeadCommitMessage returns the message of the HEAD commit.
+func (env *TestEnv) GetHeadCommitMessage() string {
+	env.T.Helper()
+
+	repo, err := git.PlainOpen(env.RepoDir)
+	if err != nil {
+		env.T.Fatalf("failed to open git repo: %v", err)
+	}
+
+	head, err := repo.Head()
+	if err != nil {
+		env.T.Fatalf("failed to get HEAD: %v", err)
+	}
+
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		env.T.Fatalf("failed to get commit: %v", err)
+	}
+
+	return commit.Message
 }
 
 // GitCheckoutBranch checks out an existing branch.
