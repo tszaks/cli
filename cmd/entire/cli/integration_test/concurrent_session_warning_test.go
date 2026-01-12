@@ -255,3 +255,121 @@ func TestConcurrentSessionWarning_NoWarningWithoutCheckpoints(t *testing.T) {
 
 	t.Log("No concurrent session warning shown when existing session has no checkpoints")
 }
+
+// TestConcurrentSessions_BothCondensedOnCommit verifies that when two sessions have
+// interleaved checkpoints, committing preserves both sessions' logs on entire/sessions.
+func TestConcurrentSessions_BothCondensedOnCommit(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	env.InitRepo()
+	env.WriteFile("README.md", "# Test")
+	env.GitAdd("README.md")
+	env.GitCommit("Initial commit")
+	env.GitCheckoutNewBranch("feature/test")
+	env.InitEntire(strategy.StrategyNameManualCommit)
+
+	// Session A: create checkpoint
+	sessionA := env.NewSession()
+	if err := env.SimulateUserPromptSubmit(sessionA.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit (sessionA) failed: %v", err)
+	}
+
+	env.WriteFile("fileA.txt", "content from session A")
+	sessionA.CreateTranscript("Add file A", []FileChange{{Path: "fileA.txt", Content: "content from session A"}})
+	if err := env.SimulateStop(sessionA.ID, sessionA.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop (sessionA) failed: %v", err)
+	}
+
+	// Session B: acknowledge warning and create checkpoint
+	sessionB := env.NewSession()
+	// First prompt is blocked with warning
+	_ = env.SimulateUserPromptSubmitWithOutput(sessionB.ID)
+
+	// Second prompt proceeds (after warning was shown)
+	if err := env.SimulateUserPromptSubmit(sessionB.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit (sessionB second prompt) failed: %v", err)
+	}
+
+	env.WriteFile("fileB.txt", "content from session B")
+	sessionB.CreateTranscript("Add file B", []FileChange{{Path: "fileB.txt", Content: "content from session B"}})
+	if err := env.SimulateStop(sessionB.ID, sessionB.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop (sessionB) failed: %v", err)
+	}
+
+	// Verify both sessions have checkpoints
+	stateA, _ := env.GetSessionState(sessionA.ID)
+	stateB, _ := env.GetSessionState(sessionB.ID)
+	if stateA == nil || stateA.CheckpointCount == 0 {
+		t.Fatal("Session A should have checkpoints")
+	}
+	if stateB == nil || stateB.CheckpointCount == 0 {
+		t.Fatal("Session B should have checkpoints")
+	}
+	t.Logf("Session A: %d checkpoints, Session B: %d checkpoints", stateA.CheckpointCount, stateB.CheckpointCount)
+
+	// Commit with hooks - this should condense both sessions
+	env.GitCommitWithShadowHooks("Add files from both sessions", "fileA.txt", "fileB.txt")
+
+	// Get the checkpoint ID from entire/sessions
+	checkpointID := env.GetLatestCheckpointID()
+	if checkpointID == "" {
+		t.Fatal("Failed to get checkpoint ID from entire/sessions branch")
+	}
+	t.Logf("Checkpoint ID: %s", checkpointID)
+
+	// Build the sharded path
+	shardedPath := checkpointID[:2] + "/" + checkpointID[2:]
+
+	// Verify metadata.json exists and has multi-session info
+	metadataContent, found := env.ReadFileFromBranch("entire/sessions", shardedPath+"/metadata.json")
+	if !found {
+		t.Fatal("metadata.json should exist on entire/sessions branch")
+	}
+
+	var metadata struct {
+		SessionCount int      `json:"session_count"`
+		SessionIDs   []string `json:"session_ids"`
+		SessionID    string   `json:"session_id"`
+	}
+	if err := json.Unmarshal([]byte(metadataContent), &metadata); err != nil {
+		t.Fatalf("Failed to parse metadata.json: %v", err)
+	}
+
+	t.Logf("Metadata: session_count=%d, session_ids=%v, session_id=%s",
+		metadata.SessionCount, metadata.SessionIDs, metadata.SessionID)
+
+	// Verify multi-session fields
+	if metadata.SessionCount != 2 {
+		t.Errorf("Expected session_count=2, got %d", metadata.SessionCount)
+	}
+	if len(metadata.SessionIDs) != 2 {
+		t.Errorf("Expected 2 session_ids, got %d", len(metadata.SessionIDs))
+	}
+
+	// Verify session_id points to the latest session (session B)
+	expectedSessionID := "2026-01-12-" + sessionB.ID
+	if metadata.SessionID != expectedSessionID {
+		t.Errorf("Expected session_id=%s (latest session), got %s", expectedSessionID, metadata.SessionID)
+	}
+
+	// Verify archived session exists in subfolder "1/"
+	archivedMetadata, found := env.ReadFileFromBranch("entire/sessions", shardedPath+"/1/metadata.json")
+	if !found {
+		t.Error("Archived session metadata should exist at 1/metadata.json")
+	} else {
+		t.Logf("Archived session metadata found: %s", archivedMetadata[:min(100, len(archivedMetadata))])
+	}
+
+	// Verify transcript exists for current session (at root)
+	if !env.FileExistsInBranch("entire/sessions", shardedPath+"/full.jsonl") {
+		t.Error("Current session transcript should exist at root (full.jsonl)")
+	}
+
+	// Verify transcript exists for archived session
+	if !env.FileExistsInBranch("entire/sessions", shardedPath+"/1/full.jsonl") {
+		t.Error("Archived session transcript should exist at 1/full.jsonl")
+	}
+
+	t.Log("Both sessions successfully condensed with proper archiving")
+}

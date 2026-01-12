@@ -125,7 +125,7 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 
 	if hasConflict {
 		// First time seeing conflict - show warning
-		// Include BaseCommit so session state is complete if conflict later resolves
+		// Include BaseCommit and WorktreePath so session state is complete for condensation
 		repo, err := strategy.OpenRepository()
 		if err != nil {
 			// Output user-friendly error message via hook response
@@ -142,6 +142,11 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 			}
 			return true, nil // Skip hook after outputting response
 		}
+		worktreePath, err := strategy.GetWorktreePath()
+		if err != nil {
+			// Non-fatal: continue without worktree path
+			worktreePath = ""
+		}
 		// Derive agent type from agent description (e.g., "Claude Code" from "Claude Code - ...")
 		agentType := ag.Description()
 		if idx := strings.Index(agentType, " - "); idx > 0 {
@@ -150,6 +155,7 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 		newState := &strategy.SessionState{
 			SessionID:              entireSessionID,
 			BaseCommit:             head.Hash().String(),
+			WorktreePath:           worktreePath,
 			ConcurrentWarningShown: true,
 			StartedAt:              time.Now(),
 			AgentType:              agentType,
