@@ -33,7 +33,7 @@ type Hook struct {
 }
 
 // TestSetupClaudeHooks_AddsAllRequiredHooks is a smoke test verifying that
-// `entire enable claude-hooks` adds all required hooks to the correct file.
+// `entire enable --agent claude-code` adds all required hooks to the correct file.
 // Detailed hook manipulation logic is tested in unit tests (setup_test.go).
 func TestSetupClaudeHooks_AddsAllRequiredHooks(t *testing.T) {
 	t.Parallel()
@@ -46,8 +46,8 @@ func TestSetupClaudeHooks_AddsAllRequiredHooks(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 
-	// Run entire enable claude-hooks (non-interactive)
-	output, err := env.RunCLIWithError("enable", "claude-hooks")
+	// Run entire enable --agent claude-code (non-interactive)
+	output, err := env.RunCLIWithError("enable", "--agent", "claude-code")
 	if err != nil {
 		t.Fatalf("enable claude-hooks command failed: %v\nOutput: %s", err, output)
 	}
@@ -116,7 +116,7 @@ func TestSetupClaudeHooks_PreservesExistingSettings(t *testing.T) {
 	}
 
 	// Run enable claude-hooks
-	output, err := env.RunCLIWithError("enable", "claude-hooks")
+	output, err := env.RunCLIWithError("enable", "--agent", "claude-code")
 	if err != nil {
 		t.Fatalf("enable claude-hooks failed: %v\nOutput: %s", err, output)
 	}

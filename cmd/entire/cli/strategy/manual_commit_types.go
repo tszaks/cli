@@ -6,9 +6,6 @@ const (
 	// sessionStateDirName is the directory name for session state files within git common dir.
 	sessionStateDirName = "entire-sessions"
 
-	// pushSessionsPrompt is the default push_sessions config value.
-	pushSessionsPrompt = "prompt"
-
 	// logsOnlyScanLimit is the maximum number of commits to scan for logs-only points.
 	logsOnlyScanLimit = 50
 )

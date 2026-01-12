@@ -45,6 +45,7 @@ func newEnableCmd() *cobra.Command {
 	var strategyFlag string
 	var forceHooks bool
 	var setupShell bool
+	var skipPushSessions bool
 
 	cmd := &cobra.Command{
 		Use:   "enable",
@@ -66,13 +67,13 @@ func newEnableCmd() *cobra.Command {
 			}
 			// Non-interactive mode if --agent flag is provided
 			if agentName != "" {
-				return setupAgentHooksNonInteractive(agentName, strategyFlag, localDev, forceHooks)
+				return setupAgentHooksNonInteractive(agentName, strategyFlag, localDev, forceHooks, skipPushSessions)
 			}
 			// If strategy is specified via flag, skip interactive selection
 			if strategyFlag != "" {
-				return runEnableWithStrategy(cmd.OutOrStdout(), strategyFlag, localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, setupShell)
+				return runEnableWithStrategy(cmd.OutOrStdout(), strategyFlag, localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions)
 			}
-			return runEnableInteractive(cmd.OutOrStdout(), localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, setupShell)
+			return runEnableInteractive(cmd.OutOrStdout(), localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions)
 		},
 	}
 
@@ -86,6 +87,7 @@ func newEnableCmd() *cobra.Command {
 	cmd.Flags().StringVar(&strategyFlag, "strategy", "", "Strategy to use (manual-commit or auto-commit)")
 	cmd.Flags().BoolVarP(&forceHooks, "force", "f", false, "Force reinstall hooks (removes existing Entire hooks first)")
 	cmd.Flags().BoolVar(&setupShell, "setup-shell", false, "Add shell completion to your rc file (non-interactive)")
+	cmd.Flags().BoolVar(&skipPushSessions, "skip-push-sessions", false, "Disable automatic pushing of session logs on git push")
 	//nolint:errcheck,gosec // completion is optional, flag is defined above
 	cmd.RegisterFlagCompletionFunc("strategy", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{strategyDisplayManualCommit, strategyDisplayAutoCommit}, cobra.ShellCompDirectiveNoFileComp
@@ -93,38 +95,6 @@ func newEnableCmd() *cobra.Command {
 
 	// Add subcommands for automation/testing
 	cmd.AddCommand(newSetupGitHookCmd())
-	cmd.AddCommand(newSetupAgentHooksCmd())
-
-	return cmd
-}
-
-// newSetupAgentHooksCmd creates a command to setup agent hooks non-interactively.
-// This is primarily used for testing and automation.
-func newSetupAgentHooksCmd() *cobra.Command {
-	var localDev bool
-	var agentName string
-	var strategyFlag string
-	var forceHooks bool
-
-	cmd := &cobra.Command{
-		Use:     "agent-hooks",
-		Aliases: []string{"claude-hooks"}, // Backwards compatibility
-		Short:   "Setup agent hooks (non-interactive)",
-		Hidden:  true, // Hidden as it's mainly for testing
-		RunE: func(_ *cobra.Command, _ []string) error {
-			// Default to claude-code if no agent specified (backwards compat)
-			if agentName == "" {
-				agentName = agent.AgentNameClaudeCode
-			}
-			return setupAgentHooksNonInteractive(agentName, strategyFlag, localDev, forceHooks)
-		},
-	}
-
-	cmd.Flags().BoolVar(&localDev, "local-dev", false, "Use go run instead of entire binary for hooks")
-	_ = cmd.Flags().MarkHidden("local-dev") //nolint:errcheck // hidden flag for internal use
-	cmd.Flags().StringVar(&agentName, "agent", "", "Agent to setup hooks for (default: claude-code)")
-	cmd.Flags().StringVar(&strategyFlag, "strategy", "", "Strategy to use (manual-commit or auto-commit)")
-	cmd.Flags().BoolVarP(&forceHooks, "force", "f", false, "Force reinstall hooks (removes existing Entire hooks first)")
 
 	return cmd
 }
@@ -160,7 +130,7 @@ func newStatusCmd() *cobra.Command {
 // runEnableWithStrategy enables Entire with a specified strategy (non-interactive).
 // The selectedStrategy can be either a display name (manual-commit, auto-commit)
 // or an internal name (manual-commit, auto-commit).
-func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell bool) error {
+func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions bool) error {
 	// Map the strategy to internal name if it's a display name
 	internalStrategy := selectedStrategy
 	if mapped, ok := strategyDisplayToInternal[selectedStrategy]; ok {
@@ -203,6 +173,14 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 	settings.Strategy = internalStrategy
 	settings.LocalDev = localDev
 	settings.Enabled = true
+
+	// Set push_sessions option if --skip-push-sessions flag was provided
+	if skipPushSessions {
+		if settings.StrategyOptions == nil {
+			settings.StrategyOptions = make(map[string]interface{})
+		}
+		settings.StrategyOptions["push_sessions"] = false
+	}
 
 	// Determine which settings file to write to
 	entireDirAbs, err := paths.AbsPath(paths.EntireDir)
@@ -263,7 +241,7 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 }
 
 // runEnableInteractive runs the interactive enable flow with strategy selection.
-func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell bool) error {
+func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions bool) error {
 	// Build strategy options with user-friendly names
 	var selectedStrategy string
 	options := []huh.Option[string]{
@@ -319,6 +297,14 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 	settings.Strategy = internalStrategy
 	settings.LocalDev = localDev
 	settings.Enabled = true
+
+	// Set push_sessions option if --skip-push-sessions flag was provided
+	if skipPushSessions {
+		if settings.StrategyOptions == nil {
+			settings.StrategyOptions = make(map[string]interface{})
+		}
+		settings.StrategyOptions["push_sessions"] = false
+	}
 
 	// Determine which settings file to write to (interactive prompt if settings.json exists)
 	entireDirAbs, err := paths.AbsPath(paths.EntireDir)
@@ -562,7 +548,7 @@ func setupClaudeCodeHook(localDev, forceHooks bool) (int, error) {
 
 // setupAgentHooksNonInteractive sets up hooks for a specific agent non-interactively.
 // If strategyName is provided, it sets the strategy; otherwise uses default.
-func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, forceHooks bool) error {
+func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, forceHooks, skipPushSessions bool) error {
 	ag, err := agent.Get(agentName)
 	if err != nil {
 		return fmt.Errorf("unknown agent: %s", agentName)
@@ -592,6 +578,14 @@ func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, for
 	settings.Enabled = true
 	if localDev {
 		settings.LocalDev = localDev
+	}
+
+	// Set push_sessions option if --skip-push-sessions flag was provided
+	if skipPushSessions {
+		if settings.StrategyOptions == nil {
+			settings.StrategyOptions = make(map[string]interface{})
+		}
+		settings.StrategyOptions["push_sessions"] = false
 	}
 
 	// Set strategy if provided
