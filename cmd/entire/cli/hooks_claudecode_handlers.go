@@ -167,9 +167,9 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 		// Build message with other session's prompt if available
 		var message string
 		if otherPrompt != "" {
-			message = fmt.Sprintf("Another session is active: \"%s\"\n\nYou can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, close here and run: %s", otherPrompt, resumeCmd)
+			message = fmt.Sprintf("Another session is active: \"%s\"\n\nYou can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, exit Claude and run: %s\n\nPress the up arrow key to get your prompt back.", otherPrompt, resumeCmd)
 		} else {
-			message = "Another session is active with uncommitted changes. You can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, close here and run: " + resumeCmd
+			message = "Another session is active with uncommitted changes. You can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, exit Claude and run: " + resumeCmd + "\n\nPress the up arrow key to get your prompt back."
 		}
 
 		// Output blocking JSON response - warn about concurrent sessions but allow continuation

@@ -219,7 +219,7 @@ func GetMetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
 	return tree, nil
 }
 
-// ReadSessionPromptFromTree reads the first prompt from a checkpoint's prompt.txt file in a git tree.
+// ReadSessionPromptFromTree reads the first meaningful prompt from a checkpoint's prompt.txt file in a git tree.
 // Returns an empty string if the prompt cannot be read.
 func ReadSessionPromptFromTree(tree *object.Tree, checkpointPath string) string {
 	promptPath := checkpointPath + "/" + paths.PromptFileName
@@ -233,20 +233,41 @@ func ReadSessionPromptFromTree(tree *object.Tree, checkpointPath string) string 
 		return ""
 	}
 
-	// Get the first prompt (prompts are separated by "\n\n---\n\n")
-	firstPrompt := content
-	if idx := strings.Index(content, "\n\n---\n\n"); idx > 0 {
-		firstPrompt = content[:idx]
+	// Prompts are separated by "\n\n---\n\n"
+	// Find the first non-empty prompt
+	prompts := strings.Split(content, "\n\n---\n\n")
+	var firstPrompt string
+	for _, p := range prompts {
+		cleaned := strings.TrimSpace(p)
+		// Skip empty prompts or prompts that are just dashes/separators
+		if cleaned == "" || isOnlySeparators(cleaned) {
+			continue
+		}
+		firstPrompt = cleaned
+		break
+	}
+
+	if firstPrompt == "" {
+		return ""
 	}
 
 	// Truncate to a reasonable length for display
 	const maxLen = 60
-	firstPrompt = strings.TrimSpace(firstPrompt)
 	if len(firstPrompt) > maxLen {
 		firstPrompt = firstPrompt[:maxLen] + "..."
 	}
 
 	return firstPrompt
+}
+
+// isOnlySeparators checks if a string contains only dashes, spaces, and newlines.
+func isOnlySeparators(s string) bool {
+	for _, r := range s {
+		if r != '-' && r != ' ' && r != '\n' && r != '\r' && r != '\t' {
+			return false
+		}
+	}
+	return true
 }
 
 // ReadSessionPromptFromShadow reads the first prompt for a session from the shadow branch.
