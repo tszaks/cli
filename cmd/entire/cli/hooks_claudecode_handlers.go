@@ -962,4 +962,3 @@ func outputHookResponse(continueExec bool, reason string) error {
 	}
 	return nil
 }
-
