@@ -231,6 +231,7 @@ func (s *AutoCommitStrategy) commitMetadataToMetadataBranch(_ *git.Repository, c
 		MetadataDir:  ctx.MetadataDirAbs,     // Copy all files from metadata dir
 		AuthorName:   ctx.AuthorName,
 		AuthorEmail:  ctx.AuthorEmail,
+		Agent:        ctx.AgentType,
 	})
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("failed to write committed checkpoint: %w", err)
@@ -734,6 +735,7 @@ func (s *AutoCommitStrategy) commitTaskMetadataToMetadataBranch(_ *git.Repositor
 		CommitSubject:          messageSubject,
 		AuthorName:             ctx.AuthorName,
 		AuthorEmail:            ctx.AuthorEmail,
+		Agent:                  ctx.AgentType,
 	})
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("failed to write task checkpoint: %w", err)

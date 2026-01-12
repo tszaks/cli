@@ -3,11 +3,13 @@
 package integration
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
 )
@@ -595,6 +597,18 @@ func TestShadow_TranscriptCondensation(t *testing.T) {
 	if !env.FileExistsInBranch("entire/sessions", hashPath) {
 		t.Errorf("content_hash.txt should exist at %s", hashPath)
 	}
+
+	// Verify metadata.json can be read and parsed (agent field is tested in unit tests)
+	metadataContent, found := env.ReadFileFromBranch("entire/sessions", metadataPath)
+	if !found {
+		t.Fatal("metadata.json should be readable")
+	}
+	var metadata checkpoint.CommittedMetadata
+	if err := json.Unmarshal([]byte(metadataContent), &metadata); err != nil {
+		t.Fatalf("failed to parse metadata.json: %v", err)
+	}
+	// Log agent value for debugging (may be empty in test environment due to agent detection)
+	t.Logf("Agent field in metadata.json: %q (empty is OK in test environment)", metadata.Agent)
 
 	// List all files in the checkpoint to help debug
 	t.Log("Files in entire/sessions:")

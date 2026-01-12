@@ -164,6 +164,9 @@ type SaveContext struct {
 
 	// AuthorEmail is the email to use for commits
 	AuthorEmail string
+
+	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
+	AgentType string
 }
 
 // TaskCheckpointContext contains all information needed for saving a task checkpoint.
@@ -239,6 +242,9 @@ type TaskCheckpointContext struct {
 	// Extracted from tool_input.todos where status == "in_progress"
 	// Used for descriptive incremental checkpoint messages
 	TodoContent string
+
+	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
+	AgentType string
 }
 
 // TaskCheckpoint contains the checkpoint information written to checkpoint.json
