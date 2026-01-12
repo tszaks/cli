@@ -111,6 +111,10 @@ type RewindPoint struct {
 	// CheckpointID is the stable 12-hex-char identifier for logs-only points.
 	// Used to retrieve logs from entire/sessions/<id[:2]>/<id[2:]>/full.jsonl
 	CheckpointID string
+
+	// Agent is the human-readable name of the agent that created this checkpoint
+	// (e.g., "Claude Code", "Cursor")
+	Agent string
 }
 
 // RewindPreview describes what will happen when rewinding to a checkpoint.

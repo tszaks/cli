@@ -183,6 +183,7 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(limit int) ([]RewindPoint
 			Date:         c.Author.When,
 			IsLogsOnly:   true,
 			CheckpointID: cpInfo.CheckpointID,
+			Agent:        cpInfo.Agent,
 		})
 
 		return nil

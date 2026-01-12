@@ -323,6 +323,7 @@ func (s *AutoCommitStrategy) GetRewindPoints(limit int) ([]RewindPoint, error) {
 			CheckpointID:     checkpointID,
 			IsTaskCheckpoint: metadata.IsTask,
 			ToolUseID:        metadata.ToolUseID,
+			Agent:            metadata.Agent,
 		})
 
 		return nil

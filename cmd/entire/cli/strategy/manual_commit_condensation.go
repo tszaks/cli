@@ -36,6 +36,7 @@ func (s *ManualCommitStrategy) listCheckpoints() ([]CheckpointInfo, error) {
 			CreatedAt:        c.CreatedAt,
 			CheckpointsCount: c.CheckpointsCount,
 			FilesTouched:     c.FilesTouched,
+			Agent:            c.Agent,
 			IsTask:           c.IsTask,
 			ToolUseID:        c.ToolUseID,
 		})
