@@ -73,7 +73,7 @@ func TestConcurrentSessionWarning_BlocksFirstPrompt(t *testing.T) {
 	}
 
 	// Verify stop reason contains expected message
-	expectedMessage := "another active session with uncommitted changes"
+	expectedMessage := "Another session is active"
 	if !strings.Contains(response.StopReason, expectedMessage) {
 		t.Errorf("StopReason should contain %q, got: %s", expectedMessage, response.StopReason)
 	}
@@ -166,21 +166,28 @@ func TestConcurrentSessionWarning_SubsequentPromptsSucceed(t *testing.T) {
 	}
 	t.Log("First prompt correctly blocked")
 
-	// Second prompt in session B should be skipped entirely (no processing)
-	// Since ConcurrentWarningShown is true, the hook returns nil and produces no output
+	// Second prompt in session B should PROCEED normally (both sessions capture checkpoints)
+	// The warning was shown on first prompt, but subsequent prompts continue to capture state
 	output2 := env.SimulateUserPromptSubmitWithOutput(sessionB.ID)
 
-	// The hook should succeed (no error)
+	// The hook should succeed
 	if output2.Err != nil {
-		t.Errorf("Second prompt should succeed (skip silently), got error: %v", output2.Err)
+		t.Errorf("Second prompt should succeed, got error: %v", output2.Err)
 	}
 
-	// The hook should produce no output (it was skipped)
+	// The hook should process normally (capture state)
+	// Output should contain state capture info, not a blocking response
 	if len(output2.Stdout) > 0 {
-		t.Errorf("Second prompt should produce no output (hook skipped), got: %s", output2.Stdout)
+		// Check if it's a blocking JSON response (which it shouldn't be anymore after the first prompt)
+		var blockResponse struct {
+			Continue bool `json:"continue"`
+		}
+		if json.Unmarshal(output2.Stdout, &blockResponse) == nil && !blockResponse.Continue {
+			t.Errorf("Second prompt should not be blocked after warning was shown, got: %s", output2.Stdout)
+		}
 	}
 
-	// The important assertion: warning flag should still be set
+	// Warning flag should remain set (for tracking)
 	stateB, _ := env.GetSessionState(sessionB.ID)
 	if stateB == nil {
 		t.Fatal("Session B state should exist")
@@ -189,7 +196,7 @@ func TestConcurrentSessionWarning_SubsequentPromptsSucceed(t *testing.T) {
 		t.Error("ConcurrentWarningShown should remain true after second prompt")
 	}
 
-	t.Log("Second prompt correctly skipped (hooks disabled for warned session)")
+	t.Log("Second prompt correctly processed (both sessions capture checkpoints)")
 }
 
 // TestConcurrentSessionWarning_NoWarningWithoutCheckpoints verifies that starting

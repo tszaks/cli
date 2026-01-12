@@ -140,11 +140,28 @@ func runRewindInteractive() error {
 		return nil
 	}
 
+	// Check if there are multiple sessions (to show session identifier)
+	sessionIDs := make(map[string]bool)
+	for _, p := range points {
+		if p.SessionID != "" {
+			sessionIDs[p.SessionID] = true
+		}
+	}
+	hasMultipleSessions := len(sessionIDs) > 1
+
 	// Build options for the select menu
 	options := make([]huh.Option[string], 0, len(points)+1)
 	for _, p := range points {
 		var label string
 		timestamp := p.Date.Format("2006-01-02 15:04")
+
+		// Build session identifier for display when multiple sessions exist
+		sessionLabel := ""
+		if hasMultipleSessions && p.SessionPrompt != "" {
+			// Show truncated prompt to identify the session
+			sessionLabel = fmt.Sprintf(" [%s]", sanitizeForTerminal(p.SessionPrompt))
+		}
+
 		switch {
 		case p.IsLogsOnly:
 			// Committed checkpoint - show commit sha (this is the real user commit)
@@ -152,13 +169,13 @@ func runRewindInteractive() error {
 			if len(shortID) >= 7 {
 				shortID = shortID[:7]
 			}
-			label = fmt.Sprintf("%s (%s) %s", shortID, timestamp, sanitizeForTerminal(p.Message))
+			label = fmt.Sprintf("%s (%s) %s%s", shortID, timestamp, sanitizeForTerminal(p.Message), sessionLabel)
 		case p.IsTaskCheckpoint:
 			// Task checkpoint (uncommitted) - no sha shown
-			label = fmt.Sprintf("        (%s) [Task] %s", timestamp, sanitizeForTerminal(p.Message))
+			label = fmt.Sprintf("        (%s) [Task] %s%s", timestamp, sanitizeForTerminal(p.Message), sessionLabel)
 		default:
 			// Shadow checkpoint (uncommitted) - no sha shown (internal commit)
-			label = fmt.Sprintf("        (%s) %s", timestamp, sanitizeForTerminal(p.Message))
+			label = fmt.Sprintf("        (%s) %s%s", timestamp, sanitizeForTerminal(p.Message), sessionLabel)
 		}
 		options = append(options, huh.NewOption(label, p.ID))
 	}
@@ -333,6 +350,8 @@ func runRewindList() error {
 		ToolUseID        string `json:"tool_use_id,omitempty"`
 		IsLogsOnly       bool   `json:"is_logs_only"`
 		CondensationID   string `json:"condensation_id,omitempty"`
+		SessionID        string `json:"session_id,omitempty"`
+		SessionPrompt    string `json:"session_prompt,omitempty"`
 	}
 
 	output := make([]jsonPoint, len(points))
@@ -346,6 +365,8 @@ func runRewindList() error {
 			ToolUseID:        p.ToolUseID,
 			IsLogsOnly:       p.IsLogsOnly,
 			CondensationID:   p.CheckpointID,
+			SessionID:        p.SessionID,
+			SessionPrompt:    p.SessionPrompt,
 		}
 	}
 

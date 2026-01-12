@@ -115,6 +115,14 @@ type RewindPoint struct {
 	// Agent is the human-readable name of the agent that created this checkpoint
 	// (e.g., "Claude Code", "Cursor")
 	Agent string
+
+	// SessionID is the session identifier for this checkpoint.
+	// Used to distinguish checkpoints from different concurrent sessions.
+	SessionID string
+
+	// SessionPrompt is the initial prompt that started this session.
+	// Used to help users identify which session a checkpoint belongs to.
+	SessionPrompt string
 }
 
 // RewindPreview describes what will happen when rewinding to a checkpoint.

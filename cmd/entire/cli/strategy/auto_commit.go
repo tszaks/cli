@@ -314,6 +314,9 @@ func (s *AutoCommitStrategy) GetRewindPoints(limit int) ([]RewindPoint, error) {
 			metadataDir = checkpointPath + "/tasks/" + metadata.ToolUseID
 		}
 
+		// Read session prompt from metadata tree
+		sessionPrompt := ReadSessionPromptFromTree(metadataTree, checkpointPath)
+
 		points = append(points, RewindPoint{
 			ID:               c.Hash.String(),
 			Message:          message,
@@ -324,6 +327,8 @@ func (s *AutoCommitStrategy) GetRewindPoints(limit int) ([]RewindPoint, error) {
 			IsTaskCheckpoint: metadata.IsTask,
 			ToolUseID:        metadata.ToolUseID,
 			Agent:            metadata.Agent,
+			SessionID:        metadata.SessionID,
+			SessionPrompt:    sessionPrompt,
 		})
 
 		return nil

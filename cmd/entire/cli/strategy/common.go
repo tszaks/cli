@@ -219,6 +219,70 @@ func GetMetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
 	return tree, nil
 }
 
+// ReadSessionPromptFromTree reads the first prompt from a checkpoint's prompt.txt file in a git tree.
+// Returns an empty string if the prompt cannot be read.
+func ReadSessionPromptFromTree(tree *object.Tree, checkpointPath string) string {
+	promptPath := checkpointPath + "/" + paths.PromptFileName
+	file, err := tree.File(promptPath)
+	if err != nil {
+		return ""
+	}
+
+	content, err := file.Contents()
+	if err != nil {
+		return ""
+	}
+
+	// Get the first prompt (prompts are separated by "\n\n---\n\n")
+	firstPrompt := content
+	if idx := strings.Index(content, "\n\n---\n\n"); idx > 0 {
+		firstPrompt = content[:idx]
+	}
+
+	// Truncate to a reasonable length for display
+	const maxLen = 60
+	firstPrompt = strings.TrimSpace(firstPrompt)
+	if len(firstPrompt) > maxLen {
+		firstPrompt = firstPrompt[:maxLen] + "..."
+	}
+
+	return firstPrompt
+}
+
+// ReadSessionPromptFromShadow reads the first prompt for a session from the shadow branch.
+// Returns an empty string if the prompt cannot be read.
+func ReadSessionPromptFromShadow(repo *git.Repository, baseCommit, sessionID string) string {
+	// Get shadow branch for this base commit (try full hash first, then shortened)
+	shadowBranchName := shadowBranchPrefix + baseCommit
+	ref, err := repo.Reference(plumbing.NewBranchReferenceName(shadowBranchName), true)
+	if err != nil {
+		// Try shortened hash (7 chars)
+		if len(baseCommit) > 7 {
+			shadowBranchName = shadowBranchPrefix + baseCommit[:7]
+			ref, err = repo.Reference(plumbing.NewBranchReferenceName(shadowBranchName), true)
+			if err != nil {
+				return ""
+			}
+		} else {
+			return ""
+		}
+	}
+
+	commit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		return ""
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		return ""
+	}
+
+	// Build the path to prompt.txt: .entire/metadata/<session-id>/prompt.txt
+	checkpointPath := paths.EntireMetadataDir + "/" + sessionID
+	return ReadSessionPromptFromTree(tree, checkpointPath)
+}
+
 // GetRemoteMetadataBranchTree returns the tree object for origin/entire/sessions.
 func GetRemoteMetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
 	refName := plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName)

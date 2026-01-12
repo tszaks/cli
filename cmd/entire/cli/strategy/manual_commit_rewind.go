@@ -48,6 +48,9 @@ func (s *ManualCommitStrategy) GetRewindPoints(limit int) ([]RewindPoint, error)
 	var allPoints []RewindPoint
 
 	// Collect checkpoint points from active sessions using checkpoint.GitStore
+	// Cache session prompts by session ID to avoid re-reading the same prompt file
+	sessionPrompts := make(map[string]string)
+
 	for _, state := range sessions {
 		checkpoints, err := store.ListTemporaryCheckpoints(context.Background(), state.BaseCommit, state.SessionID, limit)
 		if err != nil {
@@ -55,6 +58,13 @@ func (s *ManualCommitStrategy) GetRewindPoints(limit int) ([]RewindPoint, error)
 		}
 
 		for _, cp := range checkpoints {
+			// Get session prompt (cached by session ID)
+			sessionPrompt, ok := sessionPrompts[cp.SessionID]
+			if !ok {
+				sessionPrompt = readSessionPrompt(repo, cp.CommitHash, cp.MetadataDir)
+				sessionPrompts[cp.SessionID] = sessionPrompt
+			}
+
 			allPoints = append(allPoints, RewindPoint{
 				ID:               cp.CommitHash.String(),
 				Message:          cp.Message,
@@ -62,6 +72,8 @@ func (s *ManualCommitStrategy) GetRewindPoints(limit int) ([]RewindPoint, error)
 				Date:             cp.Timestamp,
 				IsTaskCheckpoint: cp.IsTaskCheckpoint,
 				ToolUseID:        cp.ToolUseID,
+				SessionID:        cp.SessionID,
+				SessionPrompt:    sessionPrompt,
 			})
 		}
 	}
@@ -140,6 +152,9 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(limit int) ([]RewindPoint
 		}
 	}
 
+	// Get metadata branch tree for reading session prompts (best-effort, ignore errors)
+	metadataTree, _ := GetMetadataBranchTree(repo) //nolint:errcheck // Best-effort for session prompts
+
 	head, err := repo.Head()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get HEAD: %w", err)
@@ -177,13 +192,23 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(limit int) ([]RewindPoint
 
 		// Create logs-only rewind point
 		message := strings.Split(c.Message, "\n")[0]
+
+		// Read session prompt from metadata tree
+		sessionPrompt := ""
+		if metadataTree != nil {
+			checkpointPath := paths.CheckpointPath(cpInfo.CheckpointID)
+			sessionPrompt = ReadSessionPromptFromTree(metadataTree, checkpointPath)
+		}
+
 		points = append(points, RewindPoint{
-			ID:           c.Hash.String(),
-			Message:      message,
-			Date:         c.Author.When,
-			IsLogsOnly:   true,
-			CheckpointID: cpInfo.CheckpointID,
-			Agent:        cpInfo.Agent,
+			ID:            c.Hash.String(),
+			Message:       message,
+			Date:          c.Author.When,
+			IsLogsOnly:    true,
+			CheckpointID:  cpInfo.CheckpointID,
+			Agent:         cpInfo.Agent,
+			SessionID:     cpInfo.SessionID,
+			SessionPrompt: sessionPrompt,
 		})
 
 		return nil
@@ -697,4 +722,46 @@ func (s *ManualCommitStrategy) extractSessionIDFromCommit(commitHash string) str
 	}
 
 	return ""
+}
+
+// readSessionPrompt reads the first prompt from the session's prompt.txt file stored in git.
+// Returns an empty string if the prompt cannot be read.
+func readSessionPrompt(repo *git.Repository, commitHash plumbing.Hash, metadataDir string) string {
+	// Get the commit and its tree
+	commit, err := repo.CommitObject(commitHash)
+	if err != nil {
+		return ""
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		return ""
+	}
+
+	// Look for prompt.txt in the metadata directory
+	promptPath := metadataDir + "/" + paths.PromptFileName
+	promptEntry, err := tree.File(promptPath)
+	if err != nil {
+		return ""
+	}
+
+	content, err := promptEntry.Contents()
+	if err != nil {
+		return ""
+	}
+
+	// Get the first prompt (prompts are separated by "\n\n---\n\n")
+	firstPrompt := content
+	if idx := strings.Index(content, "\n\n---\n\n"); idx > 0 {
+		firstPrompt = content[:idx]
+	}
+
+	// Truncate to a reasonable length for display
+	const maxLen = 60
+	firstPrompt = strings.TrimSpace(firstPrompt)
+	if len(firstPrompt) > maxLen {
+		firstPrompt = firstPrompt[:maxLen] + "..."
+	}
+
+	return firstPrompt
 }
