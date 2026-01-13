@@ -208,6 +208,9 @@ type WriteCommittedOptions struct {
 
 	// Commit message fields (used for task checkpoints)
 	CommitSubject string // Subject line for the metadata commit (overrides default)
+
+	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor")
+	Agent string
 }
 
 // ReadCommittedResult contains the result of reading a committed checkpoint.
@@ -242,6 +245,9 @@ type CommittedInfo struct {
 	// FilesTouched are files modified during the session
 	FilesTouched []string
 
+	// Agent identifies the agent that created this checkpoint
+	Agent string
+
 	// IsTask indicates if this is a task checkpoint
 	IsTask bool
 
@@ -257,6 +263,9 @@ type CommittedMetadata struct {
 	CreatedAt        time.Time `json:"created_at"`
 	CheckpointsCount int       `json:"checkpoints_count"`
 	FilesTouched     []string  `json:"files_touched"`
+
+	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor")
+	Agent string `json:"agent,omitempty"`
 
 	// Task checkpoint fields (only populated for task checkpoints)
 	IsTask    bool   `json:"is_task,omitempty"`

@@ -474,6 +474,12 @@ func commitWithMetadata() error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to ensure strategy setup: %v\n", err)
 	}
 
+	// Get agent type from session state (set during InitializeSession)
+	var agentType string
+	if sessionState != nil {
+		agentType = sessionState.AgentType
+	}
+
 	// Build fully-populated save context and delegate to strategy
 	ctx := strategy.SaveContext{
 		SessionID:      entireSessionID,
@@ -486,6 +492,7 @@ func commitWithMetadata() error {
 		TranscriptPath: transcriptPath,
 		AuthorName:     author.Name,
 		AuthorEmail:    author.Email,
+		AgentType:      agentType,
 	}
 
 	if err := strat.SaveChanges(ctx); err != nil {
@@ -615,6 +622,12 @@ func handlePostTodo() error {
 		// will fall back to "Checkpoint #N" format
 	}
 
+	// Get agent type from session state
+	var agentType string
+	if sessionState, loadErr := strategy.LoadSessionState(entireSessionID); loadErr == nil && sessionState != nil {
+		agentType = sessionState.AgentType
+	}
+
 	// Build incremental checkpoint context
 	ctx := strategy.TaskCheckpointContext{
 		SessionID:           entireSessionID,
@@ -630,6 +643,7 @@ func handlePostTodo() error {
 		IncrementalType:     input.ToolName,
 		IncrementalData:     input.ToolInput,
 		TodoContent:         todoContent,
+		AgentType:           agentType,
 	}
 
 	// Save incremental checkpoint
@@ -710,6 +724,12 @@ func createStartingAgentCheckpoint(input *TaskHookInput) error {
 	// Extract subagent type and description from tool_input for descriptive commit messages
 	subagentType, taskDescription := ParseSubagentTypeAndDescription(input.ToolInput)
 
+	// Get agent type from session state
+	var agentType string
+	if sessionState, loadErr := strategy.LoadSessionState(entireSessionID); loadErr == nil && sessionState != nil {
+		agentType = sessionState.AgentType
+	}
+
 	// Build task checkpoint context for the "starting" checkpoint
 	ctx := strategy.TaskCheckpointContext{
 		SessionID:       entireSessionID,
@@ -719,6 +739,7 @@ func createStartingAgentCheckpoint(input *TaskHookInput) error {
 		AuthorEmail:     author.Email,
 		SubagentType:    subagentType,
 		TaskDescription: taskDescription,
+		AgentType:       agentType,
 		// No file changes yet - this is the starting state
 		ModifiedFiles: nil,
 		NewFiles:      nil,
@@ -848,6 +869,12 @@ func handlePostTask() error {
 
 	entireSessionID := currentSessionIDWithFallback(input.SessionID)
 
+	// Get agent type from session state
+	var agentType string
+	if sessionState, loadErr := strategy.LoadSessionState(entireSessionID); loadErr == nil && sessionState != nil {
+		agentType = sessionState.AgentType
+	}
+
 	// Build task checkpoint context - strategy handles metadata creation
 	// Note: Incremental checkpoints are now created during task execution via handlePostTodo,
 	// so we don't need to collect/cleanup staging area here.
@@ -865,6 +892,7 @@ func handlePostTask() error {
 		AuthorEmail:            author.Email,
 		SubagentType:           subagentType,
 		TaskDescription:        taskDescription,
+		AgentType:              agentType,
 	}
 
 	// Call strategy to save task checkpoint - strategy handles all metadata creation

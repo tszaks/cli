@@ -111,6 +111,10 @@ type RewindPoint struct {
 	// CheckpointID is the stable 12-hex-char identifier for logs-only points.
 	// Used to retrieve logs from entire/sessions/<id[:2]>/<id[2:]>/full.jsonl
 	CheckpointID string
+
+	// Agent is the human-readable name of the agent that created this checkpoint
+	// (e.g., "Claude Code", "Cursor")
+	Agent string
 }
 
 // RewindPreview describes what will happen when rewinding to a checkpoint.
@@ -164,6 +168,9 @@ type SaveContext struct {
 
 	// AuthorEmail is the email to use for commits
 	AuthorEmail string
+
+	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
+	AgentType string
 }
 
 // TaskCheckpointContext contains all information needed for saving a task checkpoint.
@@ -239,6 +246,9 @@ type TaskCheckpointContext struct {
 	// Extracted from tool_input.todos where status == "in_progress"
 	// Used for descriptive incremental checkpoint messages
 	TodoContent string
+
+	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
+	AgentType string
 }
 
 // TaskCheckpoint contains the checkpoint information written to checkpoint.json

@@ -293,6 +293,7 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 		CreatedAt:        time.Now(),
 		CheckpointsCount: opts.CheckpointsCount,
 		FilesTouched:     opts.FilesTouched,
+		Agent:            opts.Agent,
 		IsTask:           opts.IsTask,
 		ToolUseID:        opts.ToolUseID,
 	}
@@ -323,6 +324,9 @@ func (s *GitStore) buildCommitMessage(opts WriteCommittedOptions, taskMetadataPa
 	commitMsg.WriteString(fmt.Sprintf("Checkpoint: %s\n\n", opts.CheckpointID))
 	commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.SessionTrailerKey, opts.SessionID))
 	commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.StrategyTrailerKey, opts.Strategy))
+	if opts.Agent != "" {
+		commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.AgentTrailerKey, opts.Agent))
+	}
 	if opts.EphemeralBranch != "" {
 		commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.EphemeralBranchTrailerKey, opts.EphemeralBranch))
 	}
@@ -464,6 +468,7 @@ func (s *GitStore) ListCommitted(ctx context.Context) ([]CommittedInfo, error) {
 						info.CreatedAt = metadata.CreatedAt
 						info.CheckpointsCount = metadata.CheckpointsCount
 						info.FilesTouched = metadata.FilesTouched
+						info.Agent = metadata.Agent
 						info.IsTask = metadata.IsTask
 						info.ToolUseID = metadata.ToolUseID
 					}
