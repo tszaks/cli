@@ -516,22 +516,19 @@ func TestRewind_DifferentSessions(t *testing.T) {
 			t.Errorf("Expected continue:false in first prompt response, got: %s", output.Stdout)
 		}
 
-		// Clear session1 state file
+		// Clear session1 state file - this makes the shadow branch "orphaned"
 		if err := env.ClearSessionState(session1.ID); err != nil {
 			t.Fatalf("ClearSessionState failed: %v", err)
 		}
 
 		// Session2 had ConcurrentWarningShown=true, but now the conflict is resolved
 		// (session1 state cleared), so the warning flag is cleared and hooks proceed normally.
-		// However, this will fail with session ID conflict because the shadow branch
-		// still has commits from session1.
+		// The orphaned shadow branch (from session1) is reset, allowing session2 to proceed.
 		err := env.SimulateUserPromptSubmit(session2.ID)
-		if err == nil {
-			t.Error("Expected session ID conflict error when shadow branch has commits from different session")
-		} else if !strings.Contains(err.Error(), "session ID conflict") {
-			t.Errorf("Expected 'session ID conflict' error, got: %v", err)
+		if err != nil {
+			t.Errorf("Expected success after orphaned shadow branch is reset, got: %v", err)
 		} else {
-			t.Log("Correctly detected session ID conflict after concurrent warning was resolved")
+			t.Log("Session2 proceeded after orphaned shadow branch was reset")
 		}
 	})
 }

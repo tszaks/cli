@@ -652,9 +652,6 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType str
 	// Check for shadow branch conflict before proceeding
 	// This must happen even if session state exists but has no checkpoints yet
 	// (e.g., state was created by concurrent warning but conflict later resolved)
-	// This catches cases where:
-	// 1. Session state file was cleaned up but shadow branch remains
-	// 2. Shadow branch was created by a session that completed but wasn't committed
 	baseCommitHash := head.Hash().String()
 	if state == nil || state.CheckpointCount == 0 {
 		shadowBranch := getShadowBranchNameForCommit(baseCommitHash)
@@ -667,10 +664,26 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType str
 			if commitErr == nil {
 				existingSessionID, found := paths.ParseSessionTrailer(tipCommit.Message)
 				if found && existingSessionID != sessionID {
-					return &SessionIDConflictError{
-						ExistingSession: existingSessionID,
-						NewSession:      sessionID,
-						ShadowBranch:    shadowBranch,
+					// Check if the existing session has a state file
+					// existingSessionID is the full Entire session ID (YYYY-MM-DD-uuid) from the trailer
+					// We intentionally ignore load errors - treat them as "no state" (orphaned branch)
+					existingState, _ := s.loadSessionState(existingSessionID) //nolint:errcheck // error means no state
+					if existingState == nil {
+						// Orphaned shadow branch - no state file for the existing session
+						// Reset the branch so the new session can proceed
+						fmt.Fprintf(os.Stderr, "Resetting orphaned shadow branch '%s' (previous session %s has no state)\n",
+							shadowBranch, existingSessionID)
+						if err := deleteShadowBranch(repo, shadowBranch); err != nil {
+							return fmt.Errorf("failed to reset orphaned shadow branch: %w", err)
+						}
+					} else {
+						// Existing session has state - this is a real conflict
+						// (e.g., different worktree at same commit)
+						return &SessionIDConflictError{
+							ExistingSession: existingSessionID,
+							NewSession:      sessionID,
+							ShadowBranch:    shadowBranch,
+						}
 					}
 				}
 			}
