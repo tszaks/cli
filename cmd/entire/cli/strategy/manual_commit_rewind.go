@@ -193,22 +193,38 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(limit int) ([]RewindPoint
 		// Create logs-only rewind point
 		message := strings.Split(c.Message, "\n")[0]
 
-		// Read session prompt from metadata tree
-		sessionPrompt := ""
+		// Read session prompts from metadata tree
+		var sessionPrompt string
+		var sessionPrompts []string
 		if metadataTree != nil {
 			checkpointPath := paths.CheckpointPath(cpInfo.CheckpointID)
-			sessionPrompt = ReadSessionPromptFromTree(metadataTree, checkpointPath)
+			// For multi-session checkpoints, read all prompts
+			if cpInfo.SessionCount > 1 && len(cpInfo.SessionIDs) > 1 {
+				sessionPrompts = ReadAllSessionPromptsFromTree(metadataTree, checkpointPath, cpInfo.SessionCount, cpInfo.SessionIDs)
+				// Use the last (most recent) prompt as the main session prompt
+				if len(sessionPrompts) > 0 {
+					sessionPrompt = sessionPrompts[len(sessionPrompts)-1]
+				}
+			} else {
+				sessionPrompt = ReadSessionPromptFromTree(metadataTree, checkpointPath)
+				if sessionPrompt != "" {
+					sessionPrompts = []string{sessionPrompt}
+				}
+			}
 		}
 
 		points = append(points, RewindPoint{
-			ID:            c.Hash.String(),
-			Message:       message,
-			Date:          c.Author.When,
-			IsLogsOnly:    true,
-			CheckpointID:  cpInfo.CheckpointID,
-			Agent:         cpInfo.Agent,
-			SessionID:     cpInfo.SessionID,
-			SessionPrompt: sessionPrompt,
+			ID:             c.Hash.String(),
+			Message:        message,
+			Date:           c.Author.When,
+			IsLogsOnly:     true,
+			CheckpointID:   cpInfo.CheckpointID,
+			Agent:          cpInfo.Agent,
+			SessionID:      cpInfo.SessionID,
+			SessionPrompt:  sessionPrompt,
+			SessionCount:   cpInfo.SessionCount,
+			SessionIDs:     cpInfo.SessionIDs,
+			SessionPrompts: sessionPrompts,
 		})
 
 		return nil
@@ -598,6 +614,7 @@ func (s *ManualCommitStrategy) PreviewRewind(point RewindPoint) (*RewindPreview,
 // RestoreLogsOnly restores session logs from a logs-only rewind point.
 // This fetches the transcript from entire/sessions and writes it to Claude's project directory.
 // Does not modify the working directory.
+// When multiple sessions were condensed to the same checkpoint, ALL sessions are restored.
 func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint) error {
 	if !point.IsLogsOnly {
 		return errors.New("not a logs-only rewind point")
@@ -607,25 +624,25 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint) error {
 		return errors.New("missing checkpoint ID")
 	}
 
-	// Get transcript from entire/sessions
-	content, err := s.getCheckpointLog(point.CheckpointID)
+	// Get checkpoint store
+	store, err := s.getCheckpointStore()
 	if err != nil {
-		return fmt.Errorf("failed to get checkpoint log: %w", err)
+		return fmt.Errorf("failed to get checkpoint store: %w", err)
 	}
 
-	// Extract session ID from the checkpoint metadata
-	sessionID, err := s.getSessionIDFromCheckpoint(point.CheckpointID)
+	// Read full checkpoint data including archived sessions
+	result, err := store.ReadCommitted(context.Background(), point.CheckpointID)
 	if err != nil {
-		// Fall back to extracting from commit's Entire-Session trailer
-		sessionID = s.extractSessionIDFromCommit(point.ID)
-		if sessionID == "" {
-			return fmt.Errorf("failed to determine session ID: %w", err)
-		}
+		return fmt.Errorf("failed to read checkpoint: %w", err)
+	}
+	if result == nil {
+		return fmt.Errorf("checkpoint not found: %s", point.CheckpointID)
+	}
+	if len(result.Transcript) == 0 {
+		return fmt.Errorf("no transcript found for checkpoint: %s", point.CheckpointID)
 	}
 
 	// Get repo root for Claude project path lookup
-	// Use repo root instead of CWD because Claude stores sessions per-repo,
-	// and running from a subdirectory would look up the wrong session directory
 	repoRoot, err := paths.RepoRoot()
 	if err != nil {
 		return fmt.Errorf("failed to get repository root: %w", err)
@@ -641,16 +658,91 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint) error {
 		return fmt.Errorf("failed to create Claude project directory: %w", err)
 	}
 
-	// Write transcript to Claude's session storage
+	// Count sessions to restore
+	totalSessions := 1 + len(result.ArchivedSessions)
+	if totalSessions > 1 {
+		fmt.Fprintf(os.Stderr, "Restoring %d sessions from checkpoint:\n", totalSessions)
+	}
+
+	// Restore archived sessions first (oldest to newest)
+	for _, archived := range result.ArchivedSessions {
+		if len(archived.Transcript) == 0 {
+			continue
+		}
+
+		sessionID := archived.SessionID
+		if sessionID == "" {
+			// Fallback: can't identify session without ID
+			fmt.Fprintf(os.Stderr, "  Warning: archived session %d has no session ID, skipping\n", archived.FolderIndex)
+			continue
+		}
+
+		modelSessionID := paths.ModelSessionID(sessionID)
+		claudeSessionFile := filepath.Join(claudeProjectDir, modelSessionID+".jsonl")
+
+		// Get first prompt for display
+		promptPreview := getFirstPromptPreview(archived.Prompts)
+		if promptPreview != "" {
+			fmt.Fprintf(os.Stderr, "  Session %d: %s\n", archived.FolderIndex, promptPreview)
+		}
+
+		fmt.Fprintf(os.Stderr, "    Writing to: %s\n", claudeSessionFile)
+		if err := os.WriteFile(claudeSessionFile, archived.Transcript, 0o600); err != nil {
+			fmt.Fprintf(os.Stderr, "    Warning: failed to write transcript: %v\n", err)
+			continue
+		}
+	}
+
+	// Restore the most recent session (at root level)
+	sessionID := result.Metadata.SessionID
+	if sessionID == "" {
+		// Fall back to extracting from commit's Entire-Session trailer
+		sessionID = s.extractSessionIDFromCommit(point.ID)
+		if sessionID == "" {
+			return errors.New("failed to determine session ID for latest session")
+		}
+	}
+
 	modelSessionID := paths.ModelSessionID(sessionID)
 	claudeSessionFile := filepath.Join(claudeProjectDir, modelSessionID+".jsonl")
 
-	fmt.Fprintf(os.Stderr, "Writing transcript to: %s\n", claudeSessionFile)
-	if err := os.WriteFile(claudeSessionFile, content, 0o600); err != nil {
+	if totalSessions > 1 {
+		promptPreview := getFirstPromptPreview(result.Prompts)
+		if promptPreview != "" {
+			fmt.Fprintf(os.Stderr, "  Session %d (latest): %s\n", totalSessions, promptPreview)
+		}
+		fmt.Fprintf(os.Stderr, "    Writing to: %s\n", claudeSessionFile)
+	} else {
+		fmt.Fprintf(os.Stderr, "Writing transcript to: %s\n", claudeSessionFile)
+	}
+
+	if err := os.WriteFile(claudeSessionFile, result.Transcript, 0o600); err != nil {
 		return fmt.Errorf("failed to write transcript: %w", err)
 	}
 
 	return nil
+}
+
+// getFirstPromptPreview returns a truncated preview of the first prompt for display.
+func getFirstPromptPreview(prompts string) string {
+	if prompts == "" {
+		return ""
+	}
+
+	// Prompts are separated by "\n\n---\n\n"
+	firstPrompt := prompts
+	if idx := strings.Index(prompts, "\n\n---\n\n"); idx > 0 {
+		firstPrompt = prompts[:idx]
+	}
+
+	// Truncate to reasonable length
+	firstPrompt = strings.TrimSpace(firstPrompt)
+	const maxLen = 50
+	if len(firstPrompt) > maxLen {
+		firstPrompt = firstPrompt[:maxLen] + "..."
+	}
+
+	return firstPrompt
 }
 
 // getSessionIDFromCheckpoint extracts the session ID from a checkpoint's metadata.

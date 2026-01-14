@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -435,6 +436,64 @@ func (s *GitStore) archiveExistingSession(basePath string, existingMetadata *Com
 	}
 }
 
+// readArchivedSessions reads transcript data from archived session subfolders (1/, 2/, etc.).
+// Returns sessions ordered by folder index (oldest first).
+func (s *GitStore) readArchivedSessions(checkpointTree *object.Tree, sessionCount int) []ArchivedSession {
+	var archived []ArchivedSession
+
+	// Archived sessions are in numbered folders: 1/, 2/, etc.
+	// The most recent session is at the root level (not archived).
+	// Session count N means there are N-1 archived sessions.
+	for i := 1; i < sessionCount; i++ {
+		folderName := strconv.Itoa(i)
+
+		// Try to get the archived session subtree
+		subTree, err := checkpointTree.Tree(folderName)
+		if err != nil {
+			continue // Folder doesn't exist, skip
+		}
+
+		session := ArchivedSession{
+			FolderIndex: i,
+		}
+
+		// Read metadata to get session ID
+		if metadataFile, fileErr := subTree.File(paths.MetadataFileName); fileErr == nil {
+			if content, contentErr := metadataFile.Contents(); contentErr == nil {
+				var metadata CommittedMetadata
+				if jsonErr := json.Unmarshal([]byte(content), &metadata); jsonErr == nil {
+					session.SessionID = metadata.SessionID
+				}
+			}
+		}
+
+		// Read transcript (try current format first, then legacy)
+		if file, fileErr := subTree.File(paths.TranscriptFileName); fileErr == nil {
+			if content, contentErr := file.Contents(); contentErr == nil {
+				session.Transcript = []byte(content)
+			}
+		} else if file, fileErr := subTree.File(paths.TranscriptFileNameLegacy); fileErr == nil {
+			if content, contentErr := file.Contents(); contentErr == nil {
+				session.Transcript = []byte(content)
+			}
+		}
+
+		// Read prompts
+		if file, fileErr := subTree.File(paths.PromptFileName); fileErr == nil {
+			if content, contentErr := file.Contents(); contentErr == nil {
+				session.Prompts = content
+			}
+		}
+
+		// Only add if we got a transcript
+		if len(session.Transcript) > 0 {
+			archived = append(archived, session)
+		}
+	}
+
+	return archived
+}
+
 // buildCommitMessage constructs the commit message with proper trailers.
 func (s *GitStore) buildCommitMessage(opts WriteCommittedOptions, taskMetadataPath string) string {
 	var commitMsg strings.Builder
@@ -529,6 +588,11 @@ func (s *GitStore) ReadCommitted(ctx context.Context, checkpointID string) (*Rea
 		if content, contentErr := file.Contents(); contentErr == nil {
 			result.Context = content
 		}
+	}
+
+	// Read archived sessions if this is a multi-session checkpoint
+	if result.Metadata.SessionCount > 1 {
+		result.ArchivedSessions = s.readArchivedSessions(checkpointTree, result.Metadata.SessionCount)
 	}
 
 	return result, nil

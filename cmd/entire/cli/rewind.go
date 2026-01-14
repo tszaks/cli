@@ -508,10 +508,9 @@ func handleLogsOnlyRewindNonInteractive(start strategy.Strategy, point strategy.
 		return fmt.Errorf("failed to restore logs: %w", err)
 	}
 
-	// Get session ID for output message
-	sessionID := extractSessionIDFromLogsOnlyPoint(start, point)
+	// Show resume commands for all sessions
+	printMultiSessionResumeCommands(point)
 
-	fmt.Printf("Restored session logs from logs-only point. %s\n", formatResumeCommand(sessionID))
 	fmt.Println("Note: Working directory unchanged. Use interactive mode for full checkout.")
 	return nil
 }
@@ -540,15 +539,15 @@ func handleLogsOnlyResetNonInteractive(start strategy.Strategy, point strategy.R
 		return fmt.Errorf("failed to reset branch: %w", err)
 	}
 
-	// Get session ID for output message
-	sessionID := extractSessionIDFromLogsOnlyPoint(start, point)
-
 	shortID := point.ID
 	if len(shortID) > 7 {
 		shortID = shortID[:7]
 	}
 
-	fmt.Printf("Reset branch to %s. %s\n", shortID, formatResumeCommand(sessionID))
+	fmt.Printf("Reset branch to %s.\n", shortID)
+
+	// Show resume commands for all sessions
+	printMultiSessionResumeCommands(point)
 
 	// Show recovery instructions
 	if currentHead != "" && currentHead != point.ID {
@@ -796,10 +795,9 @@ func handleLogsOnlyRestore(start strategy.Strategy, point strategy.RewindPoint) 
 		return fmt.Errorf("failed to restore logs: %w", err)
 	}
 
-	// Get session ID for output message
-	sessionID := extractSessionIDFromLogsOnlyPoint(start, point)
-
-	fmt.Printf("Restored session logs. %s\n", formatResumeCommand(sessionID))
+	// Show resume commands for all sessions
+	fmt.Println("Restored session logs.")
+	printMultiSessionResumeCommands(point)
 	return nil
 }
 
@@ -832,8 +830,7 @@ func handleLogsOnlyCheckout(start strategy.Strategy, point strategy.RewindPoint,
 
 	if !confirm {
 		fmt.Println("Checkout cancelled. Session logs were still restored.")
-		sessionID := extractSessionIDFromLogsOnlyPoint(start, point)
-		fmt.Printf("%s\n", formatResumeCommand(sessionID))
+		printMultiSessionResumeCommands(point)
 		return nil
 	}
 
@@ -842,10 +839,8 @@ func handleLogsOnlyCheckout(start strategy.Strategy, point strategy.RewindPoint,
 		return fmt.Errorf("failed to checkout commit: %w", err)
 	}
 
-	// Get session ID for output message
-	sessionID := extractSessionIDFromLogsOnlyPoint(start, point)
-
-	fmt.Printf("Checked out %s (detached HEAD). %s\n", shortID, formatResumeCommand(sessionID))
+	fmt.Printf("Checked out %s (detached HEAD).\n", shortID)
+	printMultiSessionResumeCommands(point)
 	return nil
 }
 
@@ -908,8 +903,7 @@ func handleLogsOnlyReset(start strategy.Strategy, point strategy.RewindPoint, sh
 
 	if !confirm {
 		fmt.Println("Reset cancelled. Session logs were still restored.")
-		sessionID := extractSessionIDFromLogsOnlyPoint(start, point)
-		fmt.Printf("%s\n", formatResumeCommand(sessionID))
+		printMultiSessionResumeCommands(point)
 		return nil
 	}
 
@@ -918,10 +912,8 @@ func handleLogsOnlyReset(start strategy.Strategy, point strategy.RewindPoint, sh
 		return fmt.Errorf("failed to reset branch: %w", err)
 	}
 
-	// Get session ID for output message
-	sessionID := extractSessionIDFromLogsOnlyPoint(start, point)
-
-	fmt.Printf("Reset branch to %s. %s\n", shortID, formatResumeCommand(sessionID))
+	fmt.Printf("Reset branch to %s.\n", shortID)
+	printMultiSessionResumeCommands(point)
 
 	// Show recovery instructions
 	if currentHead != "" && currentHead != point.ID {
@@ -1122,4 +1114,54 @@ func formatResumeCommand(entireSessionID string) string {
 	}
 	agentSessionID := ag.ExtractAgentSessionID(entireSessionID)
 	return ag.FormatResumeCommand(agentSessionID)
+}
+
+// printMultiSessionResumeCommands prints resume commands for all sessions in a rewind point.
+// For single-session checkpoints, prints a single resume command.
+// For multi-session checkpoints, prints all sessions with prompts as comments.
+func printMultiSessionResumeCommands(point strategy.RewindPoint) {
+	// Check if this is a multi-session checkpoint
+	if point.SessionCount > 1 && len(point.SessionIDs) > 1 {
+		fmt.Printf("\nRestored %d sessions. Resume with:\n", point.SessionCount)
+
+		// Print each session with prompt as comment
+		for i, sessionID := range point.SessionIDs {
+			cmd := formatResumeCommand(sessionID)
+
+			// Get prompt for this session (if available)
+			var prompt string
+			if i < len(point.SessionPrompts) {
+				prompt = point.SessionPrompts[i]
+			}
+
+			// Add "(most recent)" label to the last session
+			if i == len(point.SessionIDs)-1 {
+				if prompt != "" {
+					fmt.Printf("  %s  # %s (most recent)\n", cmd, prompt)
+				} else {
+					fmt.Printf("  %s  # (most recent)\n", cmd)
+				}
+			} else {
+				if prompt != "" {
+					fmt.Printf("  %s  # %s\n", cmd, prompt)
+				} else {
+					fmt.Printf("  %s\n", cmd)
+				}
+			}
+		}
+	} else {
+		// Single session - use traditional format with prompt if available
+		sessionID := point.SessionID
+		if sessionID == "" && len(point.SessionIDs) > 0 {
+			sessionID = point.SessionIDs[len(point.SessionIDs)-1]
+		}
+		if sessionID != "" {
+			cmd := formatResumeCommand(sessionID)
+			if point.SessionPrompt != "" {
+				fmt.Printf("%s  # %s\n", cmd, point.SessionPrompt)
+			} else {
+				fmt.Printf("%s\n", cmd)
+			}
+		}
+	}
 }

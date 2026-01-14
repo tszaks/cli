@@ -39,6 +39,8 @@ func (s *ManualCommitStrategy) listCheckpoints() ([]CheckpointInfo, error) {
 			Agent:            c.Agent,
 			IsTask:           c.IsTask,
 			ToolUseID:        c.ToolUseID,
+			SessionCount:     c.SessionCount,
+			SessionIDs:       c.SessionIDs,
 		})
 	}
 

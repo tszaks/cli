@@ -218,14 +218,35 @@ type ReadCommittedResult struct {
 	// Metadata contains the checkpoint metadata
 	Metadata CommittedMetadata
 
-	// Transcript is the session transcript content
+	// Transcript is the session transcript content (most recent session)
 	Transcript []byte
 
-	// Prompts contains user prompts
+	// Prompts contains user prompts (most recent session)
 	Prompts string
 
 	// Context is the context.md content
 	Context string
+
+	// ArchivedSessions contains transcripts from previous sessions when multiple
+	// sessions were condensed to the same checkpoint. Ordered from oldest to newest
+	// (1/, 2/, etc.). The root-level Transcript is the most recent session.
+	ArchivedSessions []ArchivedSession
+}
+
+// ArchivedSession contains transcript data from a previous session
+// that was archived when multiple sessions contributed to the same checkpoint.
+type ArchivedSession struct {
+	// SessionID is the session identifier for this archived session
+	SessionID string
+
+	// Transcript is the session transcript content
+	Transcript []byte
+
+	// Prompts contains user prompts from this session
+	Prompts string
+
+	// FolderIndex is the archive folder number (1, 2, etc.)
+	FolderIndex int
 }
 
 // CommittedInfo contains summary information about a committed checkpoint.

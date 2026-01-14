@@ -123,6 +123,19 @@ type RewindPoint struct {
 	// SessionPrompt is the initial prompt that started this session.
 	// Used to help users identify which session a checkpoint belongs to.
 	SessionPrompt string
+
+	// SessionCount is the number of sessions in this checkpoint (1 for single-session).
+	// Only populated for logs-only points with multi-session checkpoints.
+	SessionCount int
+
+	// SessionIDs contains all session IDs when this is a multi-session checkpoint.
+	// The last entry is the most recent session (same as SessionID).
+	// Only populated for logs-only points with multi-session checkpoints.
+	SessionIDs []string
+
+	// SessionPrompts contains the first prompt for each session (parallel to SessionIDs).
+	// Used to display context when showing resume commands for multi-session checkpoints.
+	SessionPrompts []string
 }
 
 // RewindPreview describes what will happen when rewinding to a checkpoint.

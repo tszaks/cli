@@ -270,6 +270,34 @@ func isOnlySeparators(s string) bool {
 	return true
 }
 
+// ReadAllSessionPromptsFromTree reads the first prompt for all sessions in a multi-session checkpoint.
+// Returns a slice of prompts parallel to sessionIDs (oldest to newest).
+// For single-session checkpoints, returns a slice with just the root prompt.
+func ReadAllSessionPromptsFromTree(tree *object.Tree, checkpointPath string, sessionCount int, sessionIDs []string) []string {
+	if sessionCount <= 1 || len(sessionIDs) <= 1 {
+		// Single session - just return the root prompt
+		prompt := ReadSessionPromptFromTree(tree, checkpointPath)
+		if prompt != "" {
+			return []string{prompt}
+		}
+		return nil
+	}
+
+	// Multi-session: read prompts from archived folders (1/, 2/, etc.) and root
+	prompts := make([]string, len(sessionIDs))
+
+	// Read archived session prompts (folders 1, 2, ... N-1)
+	for i := 1; i < sessionCount; i++ {
+		archivedPath := fmt.Sprintf("%s/%d", checkpointPath, i)
+		prompts[i-1] = ReadSessionPromptFromTree(tree, archivedPath)
+	}
+
+	// Read the most recent session prompt (at root level)
+	prompts[len(prompts)-1] = ReadSessionPromptFromTree(tree, checkpointPath)
+
+	return prompts
+}
+
 // ReadSessionPromptFromShadow reads the first prompt for a session from the shadow branch.
 // Returns an empty string if the prompt cannot be read.
 func ReadSessionPromptFromShadow(repo *git.Repository, baseCommit, sessionID string) string {
