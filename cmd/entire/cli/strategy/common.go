@@ -219,17 +219,11 @@ func GetMetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
 	return tree, nil
 }
 
-// ReadSessionPromptFromTree reads the first meaningful prompt from a checkpoint's prompt.txt file in a git tree.
-// Returns an empty string if the prompt cannot be read.
-func ReadSessionPromptFromTree(tree *object.Tree, checkpointPath string) string {
-	promptPath := checkpointPath + "/" + paths.PromptFileName
-	file, err := tree.File(promptPath)
-	if err != nil {
-		return ""
-	}
-
-	content, err := file.Contents()
-	if err != nil {
+// ExtractFirstPrompt extracts and truncates the first meaningful prompt from prompt content.
+// Prompts are separated by "\n\n---\n\n". Skips empty prompts and separator-only content.
+// Returns empty string if no valid prompt is found.
+func ExtractFirstPrompt(content string) string {
+	if content == "" {
 		return ""
 	}
 
@@ -251,13 +245,24 @@ func ReadSessionPromptFromTree(tree *object.Tree, checkpointPath string) string 
 		return ""
 	}
 
-	// Truncate to a reasonable length for display
-	const maxLen = 60
-	if len(firstPrompt) > maxLen {
-		firstPrompt = firstPrompt[:maxLen] + "..."
+	return TruncateDescription(firstPrompt, MaxDescriptionLength)
+}
+
+// ReadSessionPromptFromTree reads the first meaningful prompt from a checkpoint's prompt.txt file in a git tree.
+// Returns an empty string if the prompt cannot be read.
+func ReadSessionPromptFromTree(tree *object.Tree, checkpointPath string) string {
+	promptPath := checkpointPath + "/" + paths.PromptFileName
+	file, err := tree.File(promptPath)
+	if err != nil {
+		return ""
 	}
 
-	return firstPrompt
+	content, err := file.Contents()
+	if err != nil {
+		return ""
+	}
+
+	return ExtractFirstPrompt(content)
 }
 
 // isOnlySeparators checks if a string contains only dashes, spaces, and newlines.

@@ -1,10 +1,7 @@
 package strategy
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -669,13 +666,13 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 		sessions := s.classifySessionsForRestore(claudeProjectDir, result)
 		hasConflicts := false
 		for _, sess := range sessions {
-			if sess.Status == statusLocalNewer {
+			if sess.Status == StatusLocalNewer {
 				hasConflicts = true
 				break
 			}
 		}
 		if hasConflicts {
-			shouldOverwrite, promptErr := promptOverwriteNewerLogs(sessions)
+			shouldOverwrite, promptErr := PromptOverwriteNewerLogs(sessions)
 			if promptErr != nil {
 				return promptErr
 			}
@@ -709,7 +706,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 		claudeSessionFile := filepath.Join(claudeProjectDir, modelSessionID+".jsonl")
 
 		// Get first prompt for display
-		promptPreview := getFirstPromptPreview(archived.Prompts)
+		promptPreview := ExtractFirstPrompt(archived.Prompts)
 		if promptPreview != "" {
 			fmt.Fprintf(os.Stderr, "  Session %d: %s\n", archived.FolderIndex, promptPreview)
 		}
@@ -735,7 +732,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 	claudeSessionFile := filepath.Join(claudeProjectDir, modelSessionID+".jsonl")
 
 	if totalSessions > 1 {
-		promptPreview := getFirstPromptPreview(result.Prompts)
+		promptPreview := ExtractFirstPrompt(result.Prompts)
 		if promptPreview != "" {
 			fmt.Fprintf(os.Stderr, "  Session %d (latest): %s\n", totalSessions, promptPreview)
 		}
@@ -749,73 +746,6 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 	}
 
 	return nil
-}
-
-// getFirstPromptPreview returns a truncated preview of the first prompt for display.
-func getFirstPromptPreview(prompts string) string {
-	if prompts == "" {
-		return ""
-	}
-
-	// Prompts are separated by "\n\n---\n\n"
-	firstPrompt := prompts
-	if idx := strings.Index(prompts, "\n\n---\n\n"); idx > 0 {
-		firstPrompt = prompts[:idx]
-	}
-
-	// Truncate to reasonable length
-	firstPrompt = strings.TrimSpace(firstPrompt)
-	const maxLen = 50
-	if len(firstPrompt) > maxLen {
-		firstPrompt = firstPrompt[:maxLen] + "..."
-	}
-
-	return firstPrompt
-}
-
-// getSessionIDFromCheckpoint extracts the session ID from a checkpoint's metadata.
-func (s *ManualCommitStrategy) getSessionIDFromCheckpoint(checkpointID string) (string, error) {
-	repo, err := OpenRepository()
-	if err != nil {
-		return "", err
-	}
-
-	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
-	ref, err := repo.Reference(refName, true)
-	if err != nil {
-		return "", fmt.Errorf("failed to get sessions branch ref: %w", err)
-	}
-
-	commit, err := repo.CommitObject(ref.Hash())
-	if err != nil {
-		return "", fmt.Errorf("failed to get commit object: %w", err)
-	}
-
-	tree, err := commit.Tree()
-	if err != nil {
-		return "", fmt.Errorf("failed to get commit tree: %w", err)
-	}
-
-	// Read metadata.json from the sharded checkpoint folder
-	metadataPath := paths.CheckpointPath(checkpointID) + "/metadata.json"
-	file, err := tree.File(metadataPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to get metadata file: %w", err)
-	}
-
-	content, err := file.Contents()
-	if err != nil {
-		return "", fmt.Errorf("failed to read metadata file: %w", err)
-	}
-
-	var metadata struct {
-		SessionID string `json:"session_id"`
-	}
-	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
-		return "", fmt.Errorf("failed to parse metadata JSON: %w", err)
-	}
-
-	return metadata.SessionID, nil
 }
 
 // extractSessionIDFromCommit extracts the session ID from a commit's Entire-Session trailer.
@@ -870,45 +800,32 @@ func readSessionPrompt(repo *git.Repository, commitHash plumbing.Hash, metadataD
 		return ""
 	}
 
-	// Get the first prompt (prompts are separated by "\n\n---\n\n")
-	firstPrompt := content
-	if idx := strings.Index(content, "\n\n---\n\n"); idx > 0 {
-		firstPrompt = content[:idx]
-	}
-
-	// Truncate to a reasonable length for display
-	const maxLen = 60
-	firstPrompt = strings.TrimSpace(firstPrompt)
-	if len(firstPrompt) > maxLen {
-		firstPrompt = firstPrompt[:maxLen] + "..."
-	}
-
-	return firstPrompt
+	return ExtractFirstPrompt(content)
 }
 
-// sessionRestoreStatus represents the status of a session being restored.
-type sessionRestoreStatus int
+// SessionRestoreStatus represents the status of a session being restored.
+type SessionRestoreStatus int
 
 const (
-	statusNew             sessionRestoreStatus = iota // Local file doesn't exist
-	statusUnchanged                                   // Local and checkpoint are the same
-	statusCheckpointNewer                             // Checkpoint has newer entries
-	statusLocalNewer                                  // Local has newer entries (conflict)
+	StatusNew             SessionRestoreStatus = iota // Local file doesn't exist
+	StatusUnchanged                                   // Local and checkpoint are the same
+	StatusCheckpointNewer                             // Checkpoint has newer entries
+	StatusLocalNewer                                  // Local has newer entries (conflict)
 )
 
-// sessionRestoreInfo contains information about a session being restored.
-type sessionRestoreInfo struct {
+// SessionRestoreInfo contains information about a session being restored.
+type SessionRestoreInfo struct {
 	SessionID      string
 	Prompt         string               // First prompt preview for display
-	Status         sessionRestoreStatus // Status of this session
+	Status         SessionRestoreStatus // Status of this session
 	LocalTime      time.Time
 	CheckpointTime time.Time
 }
 
 // classifySessionsForRestore checks all sessions in a checkpoint result and returns info
 // about each session, including whether local logs have newer timestamps.
-func (s *ManualCommitStrategy) classifySessionsForRestore(claudeProjectDir string, result *cpkg.ReadCommittedResult) []sessionRestoreInfo {
-	var sessions []sessionRestoreInfo
+func (s *ManualCommitStrategy) classifySessionsForRestore(claudeProjectDir string, result *cpkg.ReadCommittedResult) []SessionRestoreInfo {
+	var sessions []SessionRestoreInfo
 
 	// Check archived sessions
 	for _, archived := range result.ArchivedSessions {
@@ -919,13 +836,13 @@ func (s *ManualCommitStrategy) classifySessionsForRestore(claudeProjectDir strin
 		modelSessionID := paths.ModelSessionID(archived.SessionID)
 		localPath := filepath.Join(claudeProjectDir, modelSessionID+".jsonl")
 
-		localTime := getLastTimestampFromFile(localPath)
-		checkpointTime := getLastTimestampFromBytes(archived.Transcript)
-		status := classifyTimestamps(localTime, checkpointTime)
+		localTime := paths.GetLastTimestampFromFile(localPath)
+		checkpointTime := paths.GetLastTimestampFromBytes(archived.Transcript)
+		status := ClassifyTimestamps(localTime, checkpointTime)
 
-		sessions = append(sessions, sessionRestoreInfo{
+		sessions = append(sessions, SessionRestoreInfo{
 			SessionID:      archived.SessionID,
-			Prompt:         getFirstPromptPreview(archived.Prompts),
+			Prompt:         ExtractFirstPrompt(archived.Prompts),
 			Status:         status,
 			LocalTime:      localTime,
 			CheckpointTime: checkpointTime,
@@ -937,13 +854,13 @@ func (s *ManualCommitStrategy) classifySessionsForRestore(claudeProjectDir strin
 		modelSessionID := paths.ModelSessionID(result.Metadata.SessionID)
 		localPath := filepath.Join(claudeProjectDir, modelSessionID+".jsonl")
 
-		localTime := getLastTimestampFromFile(localPath)
-		checkpointTime := getLastTimestampFromBytes(result.Transcript)
-		status := classifyTimestamps(localTime, checkpointTime)
+		localTime := paths.GetLastTimestampFromFile(localPath)
+		checkpointTime := paths.GetLastTimestampFromBytes(result.Transcript)
+		status := ClassifyTimestamps(localTime, checkpointTime)
 
-		sessions = append(sessions, sessionRestoreInfo{
+		sessions = append(sessions, SessionRestoreInfo{
 			SessionID:      result.Metadata.SessionID,
-			Prompt:         getFirstPromptPreview(result.Prompts),
+			Prompt:         ExtractFirstPrompt(result.Prompts),
 			Status:         status,
 			LocalTime:      localTime,
 			CheckpointTime: checkpointTime,
@@ -953,107 +870,51 @@ func (s *ManualCommitStrategy) classifySessionsForRestore(claudeProjectDir strin
 	return sessions
 }
 
-// classifyTimestamps determines the restore status based on local and checkpoint timestamps.
-func classifyTimestamps(localTime, checkpointTime time.Time) sessionRestoreStatus {
+// ClassifyTimestamps determines the restore status based on local and checkpoint timestamps.
+func ClassifyTimestamps(localTime, checkpointTime time.Time) SessionRestoreStatus {
 	// Local file doesn't exist (no timestamp found)
 	if localTime.IsZero() {
-		return statusNew
+		return StatusNew
 	}
 
 	// Can't determine checkpoint time - treat as new/safe
 	if checkpointTime.IsZero() {
-		return statusNew
+		return StatusNew
 	}
 
 	// Compare timestamps
 	if localTime.After(checkpointTime) {
-		return statusLocalNewer
+		return StatusLocalNewer
 	}
 	if checkpointTime.After(localTime) {
-		return statusCheckpointNewer
+		return StatusCheckpointNewer
 	}
-	return statusUnchanged
+	return StatusUnchanged
 }
 
-// statusToText returns a human-readable status string.
-func statusToText(status sessionRestoreStatus) string {
+// StatusToText returns a human-readable status string.
+func StatusToText(status SessionRestoreStatus) string {
 	switch status {
-	case statusNew:
+	case StatusNew:
 		return "(new)"
-	case statusUnchanged:
+	case StatusUnchanged:
 		return "(unchanged)"
-	case statusCheckpointNewer:
+	case StatusCheckpointNewer:
 		return "(checkpoint is newer)"
-	case statusLocalNewer:
+	case StatusLocalNewer:
 		return "(local is newer)" // shouldn't appear in non-conflict list
 	default:
 		return ""
 	}
 }
 
-// getLastTimestampFromFile reads the last non-empty line from a JSONL file
-// and extracts the timestamp field. Returns zero time if not found.
-func getLastTimestampFromFile(path string) time.Time {
-	file, err := os.Open(path) //nolint:gosec // path is constructed from controlled session directory
-	if err != nil {
-		return time.Time{}
-	}
-	defer file.Close()
-
-	var lastLine string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line != "" {
-			lastLine = line
-		}
-	}
-
-	return parseTimestampFromJSONL(lastLine)
-}
-
-// getLastTimestampFromBytes extracts the timestamp from the last non-empty line
-// of JSONL content. Returns zero time if not found.
-func getLastTimestampFromBytes(data []byte) time.Time {
-	var lastLine string
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line != "" {
-			lastLine = line
-		}
-	}
-
-	return parseTimestampFromJSONL(lastLine)
-}
-
-// parseTimestampFromJSONL extracts the timestamp from a JSONL line.
-func parseTimestampFromJSONL(line string) time.Time {
-	if line == "" {
-		return time.Time{}
-	}
-
-	var entry struct {
-		Timestamp string `json:"timestamp"`
-	}
-	if err := json.Unmarshal([]byte(line), &entry); err != nil {
-		return time.Time{}
-	}
-
-	t, err := time.Parse(time.RFC3339, entry.Timestamp)
-	if err != nil {
-		return time.Time{}
-	}
-	return t
-}
-
-// promptOverwriteNewerLogs asks the user for confirmation to overwrite local
+// PromptOverwriteNewerLogs asks the user for confirmation to overwrite local
 // session logs that have newer timestamps than the checkpoint versions.
-func promptOverwriteNewerLogs(sessions []sessionRestoreInfo) (bool, error) {
+func PromptOverwriteNewerLogs(sessions []SessionRestoreInfo) (bool, error) {
 	// Separate conflicting and non-conflicting sessions
-	var conflicting, nonConflicting []sessionRestoreInfo
+	var conflicting, nonConflicting []SessionRestoreInfo
 	for _, s := range sessions {
-		if s.Status == statusLocalNewer {
+		if s.Status == StatusLocalNewer {
 			conflicting = append(conflicting, s)
 		} else {
 			nonConflicting = append(nonConflicting, s)
@@ -1076,7 +937,7 @@ func promptOverwriteNewerLogs(sessions []sessionRestoreInfo) (bool, error) {
 	if len(nonConflicting) > 0 {
 		fmt.Fprintf(os.Stderr, "\nThese other session(s) will also be restored:\n")
 		for _, info := range nonConflicting {
-			statusText := statusToText(info.Status)
+			statusText := StatusToText(info.Status)
 			if info.Prompt != "" {
 				fmt.Fprintf(os.Stderr, "  \"%s\" %s\n", info.Prompt, statusText)
 			} else {

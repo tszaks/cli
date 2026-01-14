@@ -1,14 +1,10 @@
 package cli
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/paths"
@@ -130,8 +126,8 @@ func resumeFromCurrentBranch(branchName string, force bool) error {
 		return nil
 	}
 
-	// If there are actual branch work commits (not just merge commits) without checkpoints,
-	// ask for confirmation. Merge commits (e.g., from merging main) don't count as "work".
+	// If there are newer commits without checkpoints, ask for confirmation.
+	// Merge commits (e.g., from merging main) don't count as "work" and are skipped silently.
 	if result.newerCommitsExist && !force {
 		fmt.Fprintf(os.Stderr, "Found checkpoint in an older commit.\n")
 		fmt.Fprintf(os.Stderr, "There are %d newer commit(s) on this branch without checkpoints.\n", result.newerCommitCount)
@@ -145,10 +141,6 @@ func resumeFromCurrentBranch(branchName string, force bool) error {
 			fmt.Fprintf(os.Stderr, "Resume cancelled.\n")
 			return nil
 		}
-	} else if result.mergeCommitsOnly {
-		// Just merge commits between HEAD and checkpoint - no warning needed, this is the
-		// common "merged main into feature branch" scenario
-		fmt.Fprintf(os.Stderr, "Resuming from checkpoint (skipping merge commit(s)).\n")
 	}
 
 	checkpointID := result.checkpointID
@@ -177,7 +169,6 @@ type branchCheckpointResult struct {
 	commitMessage     string
 	newerCommitsExist bool // true if there are branch-only commits (not merge commits) without checkpoints
 	newerCommitCount  int  // count of branch-only commits without checkpoints
-	mergeCommitsOnly  bool // true if ALL newer commits are merge commits (no actual branch work)
 }
 
 // findBranchCheckpoint finds the most recent commit with an Entire-Checkpoint trailer
@@ -256,7 +247,6 @@ func findBranchCheckpoint(repo *git.Repository, branchName string) (*branchCheck
 func findCheckpointInHistory(start *object.Commit, stopAt *plumbing.Hash) *branchCheckpointResult {
 	result := &branchCheckpointResult{}
 	branchWorkCommits := 0 // Regular commits without checkpoints (actual work)
-	mergeCommits := 0      // Merge commits without checkpoints
 	const maxCommits = 100 // Limit search depth
 	totalChecked := 0
 
@@ -275,16 +265,11 @@ func findCheckpointInHistory(start *object.Commit, stopAt *plumbing.Hash) *branc
 			// Only warn about branch work commits, not merge commits
 			result.newerCommitsExist = branchWorkCommits > 0
 			result.newerCommitCount = branchWorkCommits
-			result.mergeCommitsOnly = branchWorkCommits == 0 && mergeCommits > 0
 			return result
 		}
 
-		// Track what kind of commit this is
-		if current.NumParents() > 1 {
-			// This is a merge commit (bringing in another branch)
-			mergeCommits++
-		} else {
-			// This is a regular commit (actual branch work)
+		// Only count regular commits (not merge commits) as "branch work"
+		if current.NumParents() <= 1 {
 			branchWorkCommits++
 		}
 
@@ -489,14 +474,20 @@ func resumeSingleSession(ag agent.Agent, sessionID, checkpointID, sessionDir, re
 
 	// Check if local file has newer timestamps than checkpoint
 	if !force {
-		localTime := getLastTimestampFromFile(sessionLogPath)
-		checkpointTime := getLastTimestampFromBytes(logContent)
+		localTime := paths.GetLastTimestampFromFile(sessionLogPath)
+		checkpointTime := paths.GetLastTimestampFromBytes(logContent)
+		status := strategy.ClassifyTimestamps(localTime, checkpointTime)
 
-		// Only prompt if both have valid timestamps and local is newer
-		if !localTime.IsZero() && !checkpointTime.IsZero() && localTime.After(checkpointTime) {
-			shouldOverwrite, promptErr := promptOverwriteNewerLog(localTime, checkpointTime)
+		if status == strategy.StatusLocalNewer {
+			sessions := []strategy.SessionRestoreInfo{{
+				SessionID:      sessionID,
+				Status:         status,
+				LocalTime:      localTime,
+				CheckpointTime: checkpointTime,
+			}}
+			shouldOverwrite, promptErr := strategy.PromptOverwriteNewerLogs(sessions)
 			if promptErr != nil {
-				return promptErr
+				return fmt.Errorf("failed to get confirmation: %w", promptErr)
 			}
 			if !shouldOverwrite {
 				fmt.Fprintf(os.Stderr, "Resume cancelled. Local session log preserved.\n")
@@ -556,87 +547,4 @@ func firstLine(s string) string {
 		}
 	}
 	return s
-}
-
-// getLastTimestampFromFile reads the last non-empty line from a JSONL file
-// and extracts the timestamp field. Returns zero time if not found.
-func getLastTimestampFromFile(path string) time.Time {
-	file, err := os.Open(path) //nolint:gosec // path is from controlled session directory
-	if err != nil {
-		return time.Time{}
-	}
-	defer file.Close()
-
-	var lastLine string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line != "" {
-			lastLine = line
-		}
-	}
-
-	return parseTimestampFromJSONL(lastLine)
-}
-
-// getLastTimestampFromBytes extracts the timestamp from the last non-empty line
-// of JSONL content. Returns zero time if not found.
-func getLastTimestampFromBytes(data []byte) time.Time {
-	var lastLine string
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line != "" {
-			lastLine = line
-		}
-	}
-
-	return parseTimestampFromJSONL(lastLine)
-}
-
-// parseTimestampFromJSONL extracts the timestamp from a JSONL line.
-func parseTimestampFromJSONL(line string) time.Time {
-	if line == "" {
-		return time.Time{}
-	}
-
-	var entry struct {
-		Timestamp string `json:"timestamp"`
-	}
-	if err := json.Unmarshal([]byte(line), &entry); err != nil {
-		return time.Time{}
-	}
-
-	t, err := time.Parse(time.RFC3339, entry.Timestamp)
-	if err != nil {
-		return time.Time{}
-	}
-	return t
-}
-
-// promptOverwriteNewerLog asks the user for confirmation to overwrite a local
-// session log that has a newer timestamp than the checkpoint's version.
-func promptOverwriteNewerLog(localTime, checkpointTime time.Time) (bool, error) {
-	fmt.Fprintf(os.Stderr, "\nWarning: Local session log has newer entries than the checkpoint.\n")
-	fmt.Fprintf(os.Stderr, "  Local log last entry:      %s\n", localTime.Local().Format("2006-01-02 15:04:05"))
-	fmt.Fprintf(os.Stderr, "  Checkpoint last entry:     %s\n", checkpointTime.Local().Format("2006-01-02 15:04:05"))
-	fmt.Fprintf(os.Stderr, "\nOverwriting will lose the newer local entries.\n\n")
-
-	var confirmed bool
-	form := NewAccessibleForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Overwrite local session log with checkpoint version?").
-				Value(&confirmed),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return false, nil
-		}
-		return false, fmt.Errorf("failed to get confirmation: %w", err)
-	}
-
-	return confirmed, nil
 }
