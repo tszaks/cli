@@ -1,6 +1,8 @@
 package strategy
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,9 +11,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
+	cpkg "entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/paths"
 
+	"github.com/charmbracelet/huh"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
@@ -615,7 +620,8 @@ func (s *ManualCommitStrategy) PreviewRewind(point RewindPoint) (*RewindPreview,
 // This fetches the transcript from entire/sessions and writes it to Claude's project directory.
 // Does not modify the working directory.
 // When multiple sessions were condensed to the same checkpoint, ALL sessions are restored.
-func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint) error {
+// If force is false, prompts for confirmation when local logs have newer timestamps.
+func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) error {
 	if !point.IsLogsOnly {
 		return errors.New("not a logs-only rewind point")
 	}
@@ -656,6 +662,28 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint) error {
 	// Ensure project directory exists
 	if err := os.MkdirAll(claudeProjectDir, 0o750); err != nil {
 		return fmt.Errorf("failed to create Claude project directory: %w", err)
+	}
+
+	// Check for newer local logs if not forcing
+	if !force {
+		sessions := s.classifySessionsForRestore(claudeProjectDir, result)
+		hasConflicts := false
+		for _, sess := range sessions {
+			if sess.Status == statusLocalNewer {
+				hasConflicts = true
+				break
+			}
+		}
+		if hasConflicts {
+			shouldOverwrite, promptErr := promptOverwriteNewerLogs(sessions)
+			if promptErr != nil {
+				return promptErr
+			}
+			if !shouldOverwrite {
+				fmt.Fprintf(os.Stderr, "Resume cancelled. Local session logs preserved.\n")
+				return nil
+			}
+		}
 	}
 
 	// Count sessions to restore
@@ -856,4 +884,227 @@ func readSessionPrompt(repo *git.Repository, commitHash plumbing.Hash, metadataD
 	}
 
 	return firstPrompt
+}
+
+// sessionRestoreStatus represents the status of a session being restored.
+type sessionRestoreStatus int
+
+const (
+	statusNew             sessionRestoreStatus = iota // Local file doesn't exist
+	statusUnchanged                                   // Local and checkpoint are the same
+	statusCheckpointNewer                             // Checkpoint has newer entries
+	statusLocalNewer                                  // Local has newer entries (conflict)
+)
+
+// sessionRestoreInfo contains information about a session being restored.
+type sessionRestoreInfo struct {
+	SessionID      string
+	Prompt         string               // First prompt preview for display
+	Status         sessionRestoreStatus // Status of this session
+	LocalTime      time.Time
+	CheckpointTime time.Time
+}
+
+// classifySessionsForRestore checks all sessions in a checkpoint result and returns info
+// about each session, including whether local logs have newer timestamps.
+func (s *ManualCommitStrategy) classifySessionsForRestore(claudeProjectDir string, result *cpkg.ReadCommittedResult) []sessionRestoreInfo {
+	var sessions []sessionRestoreInfo
+
+	// Check archived sessions
+	for _, archived := range result.ArchivedSessions {
+		if len(archived.Transcript) == 0 || archived.SessionID == "" {
+			continue
+		}
+
+		modelSessionID := paths.ModelSessionID(archived.SessionID)
+		localPath := filepath.Join(claudeProjectDir, modelSessionID+".jsonl")
+
+		localTime := getLastTimestampFromFile(localPath)
+		checkpointTime := getLastTimestampFromBytes(archived.Transcript)
+		status := classifyTimestamps(localTime, checkpointTime)
+
+		sessions = append(sessions, sessionRestoreInfo{
+			SessionID:      archived.SessionID,
+			Prompt:         getFirstPromptPreview(archived.Prompts),
+			Status:         status,
+			LocalTime:      localTime,
+			CheckpointTime: checkpointTime,
+		})
+	}
+
+	// Check primary session
+	if result.Metadata.SessionID != "" && len(result.Transcript) > 0 {
+		modelSessionID := paths.ModelSessionID(result.Metadata.SessionID)
+		localPath := filepath.Join(claudeProjectDir, modelSessionID+".jsonl")
+
+		localTime := getLastTimestampFromFile(localPath)
+		checkpointTime := getLastTimestampFromBytes(result.Transcript)
+		status := classifyTimestamps(localTime, checkpointTime)
+
+		sessions = append(sessions, sessionRestoreInfo{
+			SessionID:      result.Metadata.SessionID,
+			Prompt:         getFirstPromptPreview(result.Prompts),
+			Status:         status,
+			LocalTime:      localTime,
+			CheckpointTime: checkpointTime,
+		})
+	}
+
+	return sessions
+}
+
+// classifyTimestamps determines the restore status based on local and checkpoint timestamps.
+func classifyTimestamps(localTime, checkpointTime time.Time) sessionRestoreStatus {
+	// Local file doesn't exist (no timestamp found)
+	if localTime.IsZero() {
+		return statusNew
+	}
+
+	// Can't determine checkpoint time - treat as new/safe
+	if checkpointTime.IsZero() {
+		return statusNew
+	}
+
+	// Compare timestamps
+	if localTime.After(checkpointTime) {
+		return statusLocalNewer
+	}
+	if checkpointTime.After(localTime) {
+		return statusCheckpointNewer
+	}
+	return statusUnchanged
+}
+
+// statusToText returns a human-readable status string.
+func statusToText(status sessionRestoreStatus) string {
+	switch status {
+	case statusNew:
+		return "(new)"
+	case statusUnchanged:
+		return "(unchanged)"
+	case statusCheckpointNewer:
+		return "(checkpoint is newer)"
+	case statusLocalNewer:
+		return "(local is newer)" // shouldn't appear in non-conflict list
+	default:
+		return ""
+	}
+}
+
+// getLastTimestampFromFile reads the last non-empty line from a JSONL file
+// and extracts the timestamp field. Returns zero time if not found.
+func getLastTimestampFromFile(path string) time.Time {
+	file, err := os.Open(path) //nolint:gosec // path is constructed from controlled session directory
+	if err != nil {
+		return time.Time{}
+	}
+	defer file.Close()
+
+	var lastLine string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != "" {
+			lastLine = line
+		}
+	}
+
+	return parseTimestampFromJSONL(lastLine)
+}
+
+// getLastTimestampFromBytes extracts the timestamp from the last non-empty line
+// of JSONL content. Returns zero time if not found.
+func getLastTimestampFromBytes(data []byte) time.Time {
+	var lastLine string
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != "" {
+			lastLine = line
+		}
+	}
+
+	return parseTimestampFromJSONL(lastLine)
+}
+
+// parseTimestampFromJSONL extracts the timestamp from a JSONL line.
+func parseTimestampFromJSONL(line string) time.Time {
+	if line == "" {
+		return time.Time{}
+	}
+
+	var entry struct {
+		Timestamp string `json:"timestamp"`
+	}
+	if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		return time.Time{}
+	}
+
+	t, err := time.Parse(time.RFC3339, entry.Timestamp)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+// promptOverwriteNewerLogs asks the user for confirmation to overwrite local
+// session logs that have newer timestamps than the checkpoint versions.
+func promptOverwriteNewerLogs(sessions []sessionRestoreInfo) (bool, error) {
+	// Separate conflicting and non-conflicting sessions
+	var conflicting, nonConflicting []sessionRestoreInfo
+	for _, s := range sessions {
+		if s.Status == statusLocalNewer {
+			conflicting = append(conflicting, s)
+		} else {
+			nonConflicting = append(nonConflicting, s)
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "\nWarning: Local session log(s) have newer entries than the checkpoint:\n")
+	for _, info := range conflicting {
+		// Show prompt if available, otherwise fall back to session ID
+		if info.Prompt != "" {
+			fmt.Fprintf(os.Stderr, "  \"%s\"\n", info.Prompt)
+		} else {
+			fmt.Fprintf(os.Stderr, "  Session: %s\n", info.SessionID)
+		}
+		fmt.Fprintf(os.Stderr, "    Local last entry:      %s\n", info.LocalTime.Local().Format("2006-01-02 15:04:05"))
+		fmt.Fprintf(os.Stderr, "    Checkpoint last entry: %s\n", info.CheckpointTime.Local().Format("2006-01-02 15:04:05"))
+	}
+
+	// Show non-conflicting sessions with their status
+	if len(nonConflicting) > 0 {
+		fmt.Fprintf(os.Stderr, "\nThese other session(s) will also be restored:\n")
+		for _, info := range nonConflicting {
+			statusText := statusToText(info.Status)
+			if info.Prompt != "" {
+				fmt.Fprintf(os.Stderr, "  \"%s\" %s\n", info.Prompt, statusText)
+			} else {
+				fmt.Fprintf(os.Stderr, "  Session: %s %s\n", info.SessionID, statusText)
+			}
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "\nOverwriting will lose the newer local entries.\n\n")
+
+	var confirmed bool
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Overwrite local session logs with checkpoint versions?").
+				Value(&confirmed),
+		),
+	)
+	if isAccessibleMode() {
+		form = form.WithAccessible(true)
+	}
+
+	if err := form.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get confirmation: %w", err)
+	}
+
+	return confirmed, nil
 }

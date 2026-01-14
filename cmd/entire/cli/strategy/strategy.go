@@ -479,7 +479,8 @@ type LogsOnlyRestorer interface {
 	// RestoreLogsOnly restores session logs from a logs-only rewind point.
 	// Does not modify the working directory - only restores the transcript
 	// to Claude's project directory.
-	RestoreLogsOnly(point RewindPoint) error
+	// If force is false, prompts for confirmation when local logs have newer timestamps.
+	RestoreLogsOnly(point RewindPoint, force bool) error
 }
 
 // SessionResetter is an optional interface for strategies that support

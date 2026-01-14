@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"bufio"
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/paths"
@@ -163,7 +167,7 @@ func resumeFromCurrentBranch(branchName string, force bool) error {
 		return checkRemoteMetadata(repo, checkpointID)
 	}
 
-	return resumeSession(metadata.SessionID, checkpointID)
+	return resumeSession(metadata.SessionID, checkpointID, force)
 }
 
 // branchCheckpointResult contains the result of searching for a checkpoint on a branch.
@@ -351,7 +355,9 @@ func checkRemoteMetadata(repo *git.Repository, checkpointID string) error {
 }
 
 // resumeSession restores and displays the resume command for a specific session.
-func resumeSession(sessionID, checkpointID string) error {
+// For multi-session checkpoints, restores ALL sessions and shows commands for each.
+// If force is false, prompts for confirmation when local logs have newer timestamps.
+func resumeSession(sessionID, checkpointID string, force bool) error {
 	// Get the current agent (auto-detect or use default)
 	ag, err := agent.Detect()
 	if err != nil {
@@ -374,48 +380,146 @@ func resumeSession(sessionID, checkpointID string) error {
 		return fmt.Errorf("failed to determine session directory: %w", err)
 	}
 
-	// Extract agent-specific session ID from Entire session ID
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+		return fmt.Errorf("failed to create session directory: %w", err)
+	}
+
+	// Get strategy and restore sessions using full checkpoint data
+	strat := GetStrategy()
+
+	// Use RestoreLogsOnly via LogsOnlyRestorer interface for multi-session support
+	if restorer, ok := strat.(strategy.LogsOnlyRestorer); ok {
+		// Create a logs-only rewind point to trigger full multi-session restore
+		point := strategy.RewindPoint{
+			IsLogsOnly:   true,
+			CheckpointID: checkpointID,
+		}
+
+		if err := restorer.RestoreLogsOnly(point, force); err != nil {
+			// Fall back to single-session restore
+			return resumeSingleSession(ag, sessionID, checkpointID, sessionDir, repoRoot, force)
+		}
+
+		// Get checkpoint metadata to show all sessions
+		repo, err := openRepository()
+		if err != nil {
+			// Just show the primary session - graceful fallback
+			agentSID := ag.ExtractAgentSessionID(sessionID)
+			fmt.Fprintf(os.Stderr, "Session: %s\n", sessionID)
+			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
+			fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSID))
+			return nil //nolint:nilerr // Graceful fallback to single session
+		}
+
+		metadataTree, err := strategy.GetMetadataBranchTree(repo)
+		if err != nil {
+			agentSID := ag.ExtractAgentSessionID(sessionID)
+			fmt.Fprintf(os.Stderr, "Session: %s\n", sessionID)
+			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
+			fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSID))
+			return nil //nolint:nilerr // Graceful fallback to single session
+		}
+
+		metadata, err := strategy.ReadCheckpointMetadata(metadataTree, paths.CheckpointPath(checkpointID))
+		if err != nil || metadata.SessionCount <= 1 {
+			// Single session or can't read metadata - show standard single session output
+			agentSID := ag.ExtractAgentSessionID(sessionID)
+			fmt.Fprintf(os.Stderr, "Session: %s\n", sessionID)
+			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
+			fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSID))
+			return nil //nolint:nilerr // Graceful fallback to single session
+		}
+
+		// Multi-session: show all resume commands with prompts
+		checkpointPath := paths.CheckpointPath(checkpointID)
+		sessionPrompts := strategy.ReadAllSessionPromptsFromTree(metadataTree, checkpointPath, metadata.SessionCount, metadata.SessionIDs)
+
+		fmt.Fprintf(os.Stderr, "\nRestored %d sessions. To continue, run:\n", metadata.SessionCount)
+		for i, sid := range metadata.SessionIDs {
+			agentSID := ag.ExtractAgentSessionID(sid)
+			cmd := ag.FormatResumeCommand(agentSID)
+
+			var prompt string
+			if i < len(sessionPrompts) {
+				prompt = sessionPrompts[i]
+			}
+
+			if i == len(metadata.SessionIDs)-1 {
+				if prompt != "" {
+					fmt.Fprintf(os.Stderr, "  %s  # %s (most recent)\n", cmd, prompt)
+				} else {
+					fmt.Fprintf(os.Stderr, "  %s  # (most recent)\n", cmd)
+				}
+			} else {
+				if prompt != "" {
+					fmt.Fprintf(os.Stderr, "  %s  # %s\n", cmd, prompt)
+				} else {
+					fmt.Fprintf(os.Stderr, "  %s\n", cmd)
+				}
+			}
+		}
+
+		return nil
+	}
+
+	// Strategy doesn't support LogsOnlyRestorer, fall back to single session
+	return resumeSingleSession(ag, sessionID, checkpointID, sessionDir, repoRoot, force)
+}
+
+// resumeSingleSession restores a single session (fallback when multi-session restore fails).
+// Always overwrites existing session logs to ensure consistency with checkpoint state.
+// If force is false, prompts for confirmation when local log has newer timestamps.
+func resumeSingleSession(ag agent.Agent, sessionID, checkpointID, sessionDir, repoRoot string, force bool) error {
 	agentSessionID := ag.ExtractAgentSessionID(sessionID)
 	sessionLogPath := filepath.Join(sessionDir, agentSessionID+".jsonl")
 
-	// Check if session log already exists
-	if !fileExists(sessionLogPath) {
-		// Restore the session log
-		strat := GetStrategy()
+	strat := GetStrategy()
 
-		logContent, _, err := strat.GetSessionLog(checkpointID)
-		if err != nil {
-			if errors.Is(err, strategy.ErrNoMetadata) {
-				fmt.Fprintf(os.Stderr, "Session '%s' found in commit trailer but session log not available\n", sessionID)
-				fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
-				fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSessionID))
-				return nil
-			}
-			return fmt.Errorf("failed to get session log: %w", err)
+	logContent, _, err := strat.GetSessionLog(checkpointID)
+	if err != nil {
+		if errors.Is(err, strategy.ErrNoMetadata) {
+			fmt.Fprintf(os.Stderr, "Session '%s' found in commit trailer but session log not available\n", sessionID)
+			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
+			fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSessionID))
+			return nil
 		}
-
-		// Create an AgentSession with the native data
-		agentSession := &agent.AgentSession{
-			SessionID:  agentSessionID,
-			AgentName:  ag.Name(),
-			RepoPath:   repoRoot,
-			SessionRef: sessionLogPath,
-			NativeData: logContent,
-		}
-
-		// Create directory if it doesn't exist
-		if err := os.MkdirAll(sessionDir, 0o700); err != nil {
-			return fmt.Errorf("failed to create session directory: %w", err)
-		}
-
-		// Write the session using the agent's WriteSession method
-		if err := ag.WriteSession(agentSession); err != nil {
-			return fmt.Errorf("failed to write session: %w", err)
-		}
-
-		fmt.Fprintf(os.Stderr, "Session restored to: %s\n", sessionLogPath)
+		return fmt.Errorf("failed to get session log: %w", err)
 	}
 
+	// Check if local file has newer timestamps than checkpoint
+	if !force {
+		localTime := getLastTimestampFromFile(sessionLogPath)
+		checkpointTime := getLastTimestampFromBytes(logContent)
+
+		// Only prompt if both have valid timestamps and local is newer
+		if !localTime.IsZero() && !checkpointTime.IsZero() && localTime.After(checkpointTime) {
+			shouldOverwrite, promptErr := promptOverwriteNewerLog(localTime, checkpointTime)
+			if promptErr != nil {
+				return promptErr
+			}
+			if !shouldOverwrite {
+				fmt.Fprintf(os.Stderr, "Resume cancelled. Local session log preserved.\n")
+				return nil
+			}
+		}
+	}
+
+	// Create an AgentSession with the native data
+	agentSession := &agent.AgentSession{
+		SessionID:  agentSessionID,
+		AgentName:  ag.Name(),
+		RepoPath:   repoRoot,
+		SessionRef: sessionLogPath,
+		NativeData: logContent,
+	}
+
+	// Write the session using the agent's WriteSession method
+	if err := ag.WriteSession(agentSession); err != nil {
+		return fmt.Errorf("failed to write session: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Session restored to: %s\n", sessionLogPath)
 	fmt.Fprintf(os.Stderr, "Session: %s\n", sessionID)
 	fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
 	fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSessionID))
@@ -452,4 +556,87 @@ func firstLine(s string) string {
 		}
 	}
 	return s
+}
+
+// getLastTimestampFromFile reads the last non-empty line from a JSONL file
+// and extracts the timestamp field. Returns zero time if not found.
+func getLastTimestampFromFile(path string) time.Time {
+	file, err := os.Open(path) //nolint:gosec // path is from controlled session directory
+	if err != nil {
+		return time.Time{}
+	}
+	defer file.Close()
+
+	var lastLine string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != "" {
+			lastLine = line
+		}
+	}
+
+	return parseTimestampFromJSONL(lastLine)
+}
+
+// getLastTimestampFromBytes extracts the timestamp from the last non-empty line
+// of JSONL content. Returns zero time if not found.
+func getLastTimestampFromBytes(data []byte) time.Time {
+	var lastLine string
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line != "" {
+			lastLine = line
+		}
+	}
+
+	return parseTimestampFromJSONL(lastLine)
+}
+
+// parseTimestampFromJSONL extracts the timestamp from a JSONL line.
+func parseTimestampFromJSONL(line string) time.Time {
+	if line == "" {
+		return time.Time{}
+	}
+
+	var entry struct {
+		Timestamp string `json:"timestamp"`
+	}
+	if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		return time.Time{}
+	}
+
+	t, err := time.Parse(time.RFC3339, entry.Timestamp)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+// promptOverwriteNewerLog asks the user for confirmation to overwrite a local
+// session log that has a newer timestamp than the checkpoint's version.
+func promptOverwriteNewerLog(localTime, checkpointTime time.Time) (bool, error) {
+	fmt.Fprintf(os.Stderr, "\nWarning: Local session log has newer entries than the checkpoint.\n")
+	fmt.Fprintf(os.Stderr, "  Local log last entry:      %s\n", localTime.Local().Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(os.Stderr, "  Checkpoint last entry:     %s\n", checkpointTime.Local().Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(os.Stderr, "\nOverwriting will lose the newer local entries.\n\n")
+
+	var confirmed bool
+	form := NewAccessibleForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Overwrite local session log with checkpoint version?").
+				Value(&confirmed),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get confirmation: %w", err)
+	}
+
+	return confirmed, nil
 }

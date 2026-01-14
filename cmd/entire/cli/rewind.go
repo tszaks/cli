@@ -504,7 +504,7 @@ func handleLogsOnlyRewindNonInteractive(start strategy.Strategy, point strategy.
 		return errors.New("strategy does not support logs-only restoration")
 	}
 
-	if err := restorer.RestoreLogsOnly(point); err != nil {
+	if err := restorer.RestoreLogsOnly(point, true); err != nil { // force=true for explicit rewind
 		return fmt.Errorf("failed to restore logs: %w", err)
 	}
 
@@ -530,7 +530,7 @@ func handleLogsOnlyResetNonInteractive(start strategy.Strategy, point strategy.R
 	}
 
 	// Restore logs first
-	if err := restorer.RestoreLogsOnly(point); err != nil {
+	if err := restorer.RestoreLogsOnly(point, true); err != nil { // force=true for explicit rewind
 		return fmt.Errorf("failed to restore logs: %w", err)
 	}
 
@@ -791,7 +791,7 @@ func handleLogsOnlyRestore(start strategy.Strategy, point strategy.RewindPoint) 
 	}
 
 	// Restore logs
-	if err := restorer.RestoreLogsOnly(point); err != nil {
+	if err := restorer.RestoreLogsOnly(point, true); err != nil { // force=true for explicit rewind
 		return fmt.Errorf("failed to restore logs: %w", err)
 	}
 
@@ -809,7 +809,7 @@ func handleLogsOnlyCheckout(start strategy.Strategy, point strategy.RewindPoint,
 		return errors.New("strategy does not support logs-only restoration")
 	}
 
-	if err := restorer.RestoreLogsOnly(point); err != nil {
+	if err := restorer.RestoreLogsOnly(point, true); err != nil { // force=true for explicit rewind
 		return fmt.Errorf("failed to restore logs: %w", err)
 	}
 
@@ -852,7 +852,7 @@ func handleLogsOnlyReset(start strategy.Strategy, point strategy.RewindPoint, sh
 		return errors.New("strategy does not support logs-only restoration")
 	}
 
-	if err := restorer.RestoreLogsOnly(point); err != nil {
+	if err := restorer.RestoreLogsOnly(point, true); err != nil { // force=true for explicit rewind
 		return fmt.Errorf("failed to restore logs: %w", err)
 	}
 
