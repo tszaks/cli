@@ -125,7 +125,7 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 
 	if hasConflict {
 		// First time seeing conflict - show warning
-		// Include BaseCommit so session state is complete if conflict later resolves
+		// Include BaseCommit and WorktreePath so session state is complete for condensation
 		repo, err := strategy.OpenRepository()
 		if err != nil {
 			// Output user-friendly error message via hook response
@@ -142,6 +142,11 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 			}
 			return true, nil // Skip hook after outputting response
 		}
+		worktreePath, err := strategy.GetWorktreePath()
+		if err != nil {
+			// Non-fatal: continue without worktree path
+			worktreePath = ""
+		}
 		// Derive agent type from agent description (e.g., "Claude Code" from "Claude Code - ...")
 		agentType := ag.Description()
 		if idx := strings.Index(agentType, " - "); idx > 0 {
@@ -150,6 +155,7 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 		newState := &strategy.SessionState{
 			SessionID:              entireSessionID,
 			BaseCommit:             head.Hash().String(),
+			WorktreePath:           worktreePath,
 			ConcurrentWarningShown: true,
 			StartedAt:              time.Now(),
 			AgentType:              agentType,
@@ -161,11 +167,23 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 		// Get resume command for the other session
 		resumeCmd := ag.FormatResumeCommand(ag.ExtractAgentSessionID(otherSession.SessionID))
 
-		// Output blocking JSON response
-		if err := outputHookResponse(false, "You have another active session with uncommitted changes. Please commit them first and then start a new Claude session. If you continue here, your prompt and resulting changes will not be captured.\n\nTo resume the active session, close Claude Code and run: "+resumeCmd); err != nil {
+		// Try to read the other session's initial prompt
+		otherPrompt := strategy.ReadSessionPromptFromShadow(repo, otherSession.BaseCommit, otherSession.SessionID)
+
+		// Build message with other session's prompt if available
+		var message string
+		if otherPrompt != "" {
+			message = fmt.Sprintf("Another session is active: \"%s\"\n\nYou can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, exit Claude and run: %s\n\nPress the up arrow key to get your prompt back.", otherPrompt, resumeCmd)
+		} else {
+			message = "Another session is active with uncommitted changes. You can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, exit Claude and run: " + resumeCmd + "\n\nPress the up arrow key to get your prompt back."
+		}
+
+		// Output blocking JSON response - warn about concurrent sessions but allow continuation
+		// Both sessions will capture checkpoints, which will be interleaved on the shadow branch
+		if err := outputHookResponse(false, message); err != nil {
 			return false, err // Failed to output response
 		}
-		// Successfully output blocking response - skip rest of hook processing
+		// Block the first prompt to show the warning, but subsequent prompts will proceed
 		return true, nil
 	}
 
@@ -302,11 +320,6 @@ func commitWithMetadata() error {
 
 	// Get the Entire session ID, preferring the persisted value to handle midnight boundary
 	entireSessionID := currentSessionIDWithFallback(modelSessionID)
-
-	// Skip if this session was warned about concurrent sessions and user continued
-	if shouldSkipHooksForWarnedSession(entireSessionID) {
-		return nil
-	}
 
 	transcriptPath := input.SessionRef
 	if transcriptPath == "" || !fileExists(transcriptPath) {
@@ -549,11 +562,6 @@ func handlePostTodo() error {
 		slog.String("tool_use_id", input.ToolUseID),
 	)
 
-	// Check if this session was warned about concurrent sessions and user continued
-	if shouldSkipHooksForWarnedSession(currentSessionIDWithFallback(input.SessionID)) {
-		return nil
-	}
-
 	// Check if we're in a subagent context by looking for an active pre-task file
 	taskToolUseID, found := FindActivePreTaskFile()
 	if !found {
@@ -679,11 +687,6 @@ func handlePreTask() error {
 		slog.String("tool_use_id", input.ToolUseID),
 	)
 
-	// Check if this session was warned about concurrent sessions and user continued
-	if shouldSkipHooksForWarnedSession(currentSessionIDWithFallback(input.SessionID)) {
-		return nil
-	}
-
 	// Log context to stdout
 	logPreTaskHookContext(os.Stdout, input)
 
@@ -789,11 +792,6 @@ func handlePostTask() error {
 		slog.String("agent_id", input.AgentID),
 		slog.String("subagent_type", subagentType),
 	)
-
-	// Check if this session was warned about concurrent sessions and user continued
-	if shouldSkipHooksForWarnedSession(currentSessionIDWithFallback(input.SessionID)) {
-		return nil
-	}
 
 	// Determine subagent transcript path
 	transcriptDir := filepath.Dir(input.TranscriptPath)
@@ -963,37 +961,4 @@ func outputHookResponse(continueExec bool, reason string) error {
 		return fmt.Errorf("failed to encode hook response: %w", err)
 	}
 	return nil
-}
-
-// shouldSkipHooksForWarnedSession checks if hooks should be skipped for a session
-// that was warned about concurrent sessions and the user continued anyway.
-// Returns true only if ConcurrentWarningShown is set AND the conflict still exists.
-// If the conflict is resolved (e.g., user committed), clears the flag and returns false.
-func shouldSkipHooksForWarnedSession(entireSessionID string) bool {
-	state, err := strategy.LoadSessionState(entireSessionID)
-	if err != nil || state == nil || !state.ConcurrentWarningShown {
-		return false
-	}
-
-	// Re-check if the conflict still exists
-	strat := GetStrategy()
-
-	concurrentChecker, ok := strat.(strategy.ConcurrentSessionChecker)
-	if !ok {
-		return false
-	}
-
-	otherSession, checkErr := concurrentChecker.HasOtherActiveSessionsWithCheckpoints(entireSessionID)
-	if checkErr != nil || otherSession == nil {
-		// Conflict is resolved - clear the flag and allow hooks to proceed
-		state.ConcurrentWarningShown = false
-		// Best effort to save - don't fail if it doesn't work
-		if saveErr := strategy.SaveSessionState(state); saveErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to clear concurrent warning flag: %v\n", saveErr)
-		}
-		return false
-	}
-
-	// Conflict still exists - skip hooks
-	return true
 }

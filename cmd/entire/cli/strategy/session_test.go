@@ -327,6 +327,138 @@ func TestGetSessionNotFound(t *testing.T) {
 	}
 }
 
+// TestListSessionsMultiSessionCheckpoint verifies that archived sessions in multi-session
+// checkpoints are listed correctly. When multiple sessions are condensed to the same
+// checkpoint, they are stored as:
+//   - Root level: latest session (SessionID)
+//   - 1/, 2/, etc.: archived sessions (in SessionIDs array)
+//
+// ListSessions should return ALL sessions from SessionIDs, not just SessionID.
+func TestListSessionsMultiSessionCheckpoint(t *testing.T) {
+	tmpDir := t.TempDir()
+	resolved, err := filepath.EvalSymlinks(tmpDir)
+	if err != nil {
+		t.Fatalf("filepath.EvalSymlinks() failed: %v", err)
+	}
+	tmpDir = resolved
+
+	initTestRepo(t, tmpDir)
+	t.Chdir(tmpDir)
+
+	repo, err := OpenRepository()
+	if err != nil {
+		t.Fatalf("OpenRepository() failed: %v", err)
+	}
+
+	// Create a multi-session checkpoint with 2 sessions:
+	// - session-A: archived in 1/ subfolder
+	// - session-B: latest at root level
+	sessionA := "2025-01-14-session-A"
+	sessionB := "2025-01-15-session-B"
+	checkpointID := "multi12345678"
+
+	createTestMultiSessionCheckpoint(t, repo, checkpointID, sessionB, []string{sessionA, sessionB})
+
+	sessions, err := ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions() error = %v, want nil", err)
+	}
+
+	// Should return 2 sessions - one for each session ID in the checkpoint
+	if len(sessions) != 2 {
+		t.Fatalf("ListSessions() returned %d sessions, want 2 (both session-A and session-B)", len(sessions))
+	}
+
+	// Verify both sessions are present
+	sessionIDs := make(map[string]bool)
+	for _, sess := range sessions {
+		sessionIDs[sess.ID] = true
+	}
+
+	if !sessionIDs[sessionA] {
+		t.Errorf("ListSessions() missing archived session %q", sessionA)
+	}
+	if !sessionIDs[sessionB] {
+		t.Errorf("ListSessions() missing latest session %q", sessionB)
+	}
+
+	// Both sessions should have the same checkpoint
+	for _, sess := range sessions {
+		if len(sess.Checkpoints) != 1 {
+			t.Errorf("Session %q has %d checkpoints, want 1", sess.ID, len(sess.Checkpoints))
+		}
+		if len(sess.Checkpoints) > 0 && sess.Checkpoints[0].CheckpointID != checkpointID {
+			t.Errorf("Session %q checkpoint ID = %q, want %q", sess.ID, sess.Checkpoints[0].CheckpointID, checkpointID)
+		}
+	}
+}
+
+// Helper function to create a test metadata branch with a multi-session checkpoint
+func createTestMultiSessionCheckpoint(t *testing.T, repo *git.Repository, checkpointID, primarySessionID string, allSessionIDs []string) {
+	t.Helper()
+
+	entries := make(map[string]object.TreeEntry)
+	checkpointPath := paths.CheckpointPath(checkpointID)
+
+	// Create metadata.json with SessionIDs array
+	metadata := CheckpointInfo{
+		CheckpointID: checkpointID,
+		SessionID:    primarySessionID,
+		SessionCount: len(allSessionIDs),
+		SessionIDs:   allSessionIDs,
+		CreatedAt:    time.Now(),
+	}
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		t.Fatalf("failed to marshal metadata: %v", err)
+	}
+	metadataBlobHash, err := checkpoint.CreateBlobFromContent(repo, metadataJSON)
+	if err != nil {
+		t.Fatalf("failed to create metadata blob: %v", err)
+	}
+	entries[checkpointPath+"/"+paths.MetadataFileName] = object.TreeEntry{
+		Name: checkpointPath + "/" + paths.MetadataFileName,
+		Mode: filemode.Regular,
+		Hash: metadataBlobHash,
+	}
+
+	// Build tree
+	treeHash, err := checkpoint.BuildTreeFromEntries(repo, entries)
+	if err != nil {
+		t.Fatalf("failed to build tree: %v", err)
+	}
+
+	// Create orphan commit
+	now := time.Now()
+	sig := object.Signature{
+		Name:  "Test",
+		Email: "test@test.com",
+		When:  now,
+	}
+	commit := &object.Commit{
+		TreeHash:  treeHash,
+		Author:    sig,
+		Committer: sig,
+		Message:   "Multi-session checkpoint\n\n" + paths.SessionTrailerKey + ": " + primarySessionID,
+	}
+
+	commitObj := repo.Storer.NewEncodedObject()
+	if err := commit.Encode(commitObj); err != nil {
+		t.Fatalf("failed to encode commit: %v", err)
+	}
+	commitHash, err := repo.Storer.SetEncodedObject(commitObj)
+	if err != nil {
+		t.Fatalf("failed to store commit: %v", err)
+	}
+
+	// Create branch reference
+	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
+	ref := plumbing.NewHashReference(refName, commitHash)
+	if err := repo.Storer.SetReference(ref); err != nil {
+		t.Fatalf("failed to create branch: %v", err)
+	}
+}
+
 // Helper function to create a test metadata branch with a checkpoint (uses testCheckpointID)
 func createTestMetadataBranch(t *testing.T, repo *git.Repository, sessionID string) {
 	t.Helper()

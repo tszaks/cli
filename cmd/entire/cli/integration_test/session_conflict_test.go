@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,9 +18,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-// TestSessionIDConflict_DifferentSessionOnShadowBranch tests that starting a new session
-// fails when the shadow branch has commits from a different session.
-func TestSessionIDConflict_DifferentSessionOnShadowBranch(t *testing.T) {
+// TestSessionIDConflict_OrphanedBranchIsReset tests that starting a new session
+// resets an orphaned shadow branch (one with no session state file).
+func TestSessionIDConflict_OrphanedBranchIsReset(t *testing.T) {
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -68,18 +69,28 @@ func TestSessionIDConflict_DifferentSessionOnShadowBranch(t *testing.T) {
 		}
 	}
 
-	// Try to start a new session (should fail due to session ID conflict)
+	// Try to start a new session - should succeed by resetting the orphaned branch
 	session2 := env.NewSession()
 	err = env.SimulateUserPromptSubmit(session2.ID)
 
-	// Expect an error about session ID conflict
-	if err == nil {
-		t.Error("Expected error when starting new session with existing shadow branch from different session")
+	// Expect success - orphaned branch is reset
+	if err != nil {
+		t.Errorf("Expected success when starting new session with orphaned shadow branch, got: %v", err)
+	}
+
+	// Verify the new session can create checkpoints
+	env.WriteFile("test2.txt", "content from session 2")
+	session2.CreateTranscript("Add test2 file", []FileChange{{Path: "test2.txt", Content: "content from session 2"}})
+	if err := env.SimulateStop(session2.ID, session2.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop (session2) failed: %v", err)
+	}
+
+	// Verify shadow branch now has session2's checkpoint
+	state2, _ := env.GetSessionState(session2.ID)
+	if state2 == nil || state2.CheckpointCount == 0 {
+		t.Error("Session 2 should have checkpoints after orphaned branch was reset")
 	} else {
-		t.Logf("Got expected error: %v", err)
-		if !strings.Contains(err.Error(), "session ID conflict") {
-			t.Errorf("Expected 'session ID conflict' in error message, got: %v", err)
-		}
+		t.Logf("Session 2 has %d checkpoint(s)", state2.CheckpointCount)
 	}
 }
 
@@ -149,79 +160,9 @@ func TestSessionIDConflict_NoShadowBranch(t *testing.T) {
 	}
 }
 
-// TestSessionIDConflict_WithMultipleCheckpoints tests that session ID conflict is detected
-// even when the shadow branch has multiple checkpoints.
-func TestSessionIDConflict_WithMultipleCheckpoints(t *testing.T) {
-	env := NewTestEnv(t)
-	defer env.Cleanup()
-
-	// Setup
-	env.InitRepo()
-	env.WriteFile("README.md", "# Test")
-	env.GitAdd("README.md")
-	env.GitCommit("Initial commit")
-
-	env.GitCheckoutNewBranch("feature/test")
-	env.InitEntire(strategy.StrategyNameManualCommit)
-
-	baseHead := env.GetHeadHash()
-	shadowBranch := "entire/" + baseHead[:7]
-
-	// Create a session with multiple checkpoints
-	session1 := env.NewSession()
-	if err := env.SimulateUserPromptSubmit(session1.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
-	}
-
-	// First checkpoint
-	env.WriteFile("test1.txt", "content1")
-	session1.CreateTranscript("Add test1", []FileChange{{Path: "test1.txt", Content: "content1"}})
-	if err := env.SimulateStop(session1.ID, session1.TranscriptPath); err != nil {
-		t.Fatalf("SimulateStop (checkpoint 1) failed: %v", err)
-	}
-
-	// Continue session with second checkpoint
-	if err := env.SimulateUserPromptSubmit(session1.ID); err != nil {
-		t.Fatalf("SimulateUserPromptSubmit (checkpoint 2) failed: %v", err)
-	}
-
-	env.WriteFile("test2.txt", "content2")
-	session1.TranscriptBuilder = NewTranscriptBuilder() // Reset transcript builder
-	session1.CreateTranscript("Add test2", []FileChange{{Path: "test2.txt", Content: "content2"}})
-	if err := env.SimulateStop(session1.ID, session1.TranscriptPath); err != nil {
-		t.Fatalf("SimulateStop (checkpoint 2) failed: %v", err)
-	}
-
-	// Verify shadow branch exists
-	if !env.BranchExists(shadowBranch) {
-		t.Fatalf("Shadow branch %s should exist", shadowBranch)
-	}
-
-	// Clear session state files
-	sessionStateDir := filepath.Join(env.RepoDir, ".git", "entire-sessions")
-	entries, err := os.ReadDir(sessionStateDir)
-	if err == nil {
-		for _, entry := range entries {
-			if strings.HasSuffix(entry.Name(), ".json") {
-				_ = os.Remove(filepath.Join(sessionStateDir, entry.Name()))
-			}
-		}
-	}
-
-	// Try to start a new session - should fail
-	session2 := env.NewSession()
-	err = env.SimulateUserPromptSubmit(session2.ID)
-
-	if err == nil {
-		t.Error("Expected session ID conflict error when shadow branch has multiple checkpoints from different session")
-	} else if !strings.Contains(err.Error(), "session ID conflict") {
-		t.Errorf("Expected 'session ID conflict' in error, got: %v", err)
-	}
-}
-
-// TestSessionIDConflict_OrphanedShadowBranch tests detection of orphaned shadow branches
-// (shadow branch exists but has no corresponding session state file).
-func TestSessionIDConflict_OrphanedShadowBranch(t *testing.T) {
+// TestSessionIDConflict_ManuallyCreatedOrphanedBranch tests that a manually created
+// orphaned shadow branch (simulating a crash scenario) is reset when a new session starts.
+func TestSessionIDConflict_ManuallyCreatedOrphanedBranch(t *testing.T) {
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -238,7 +179,7 @@ func TestSessionIDConflict_OrphanedShadowBranch(t *testing.T) {
 	shadowBranch := "entire/" + baseHead[:7]
 
 	// Manually create a shadow branch with a different session ID
-	// This simulates a shadow branch that was left behind
+	// This simulates a shadow branch that was left behind (e.g., from a crash)
 	createOrphanedShadowBranch(t, env.RepoDir, shadowBranch, "orphaned-session-id")
 
 	// Verify shadow branch exists
@@ -246,12 +187,92 @@ func TestSessionIDConflict_OrphanedShadowBranch(t *testing.T) {
 		t.Fatalf("Shadow branch %s should exist after manual creation", shadowBranch)
 	}
 
-	// Try to start a new session - should detect conflict from shadow branch trailer
+	// Try to start a new session - should succeed by resetting the orphaned branch
 	session := env.NewSession()
 	err := env.SimulateUserPromptSubmit(session.ID)
 
+	if err != nil {
+		t.Errorf("Expected success when orphaned shadow branch is reset, got: %v", err)
+	}
+
+	// Verify the new session can create checkpoints
+	env.WriteFile("new_file.txt", "new content")
+	session.CreateTranscript("Add new file", []FileChange{{Path: "new_file.txt", Content: "new content"}})
+	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop failed: %v", err)
+	}
+
+	// Verify session has checkpoints
+	state, _ := env.GetSessionState(session.ID)
+	if state == nil || state.CheckpointCount == 0 {
+		t.Error("Session should have checkpoints after orphaned branch was reset")
+	} else {
+		t.Logf("New session has %d checkpoint(s)", state.CheckpointCount)
+	}
+}
+
+// TestSessionIDConflict_ExistingSessionWithState tests that when a shadow branch exists
+// from a different session AND that session has a state file (not orphaned), a conflict
+// error is returned. This simulates the cross-worktree scenario.
+func TestSessionIDConflict_ExistingSessionWithState(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	// Setup
+	env.InitRepo()
+	env.WriteFile("README.md", "# Test")
+	env.GitAdd("README.md")
+	env.GitCommit("Initial commit")
+
+	env.GitCheckoutNewBranch("feature/test")
+	env.InitEntire(strategy.StrategyNameManualCommit)
+
+	baseHead := env.GetHeadHash()
+	shadowBranch := "entire/" + baseHead[:7]
+
+	// Create a shadow branch with a specific session ID
+	otherSessionID := "other-session-id"
+	createOrphanedShadowBranch(t, env.RepoDir, shadowBranch, otherSessionID)
+
+	// Verify shadow branch exists
+	if !env.BranchExists(shadowBranch) {
+		t.Fatalf("Shadow branch %s should exist after creation", shadowBranch)
+	}
+
+	// Manually create a state file for the other session (simulating cross-worktree scenario)
+	// This makes the shadow branch NOT orphaned
+	entireOtherSessionID := paths.EntireSessionID(otherSessionID)
+	otherState := &strategy.SessionState{
+		SessionID:       entireOtherSessionID,
+		BaseCommit:      baseHead,
+		WorktreePath:    "/some/other/worktree", // Different worktree
+		CheckpointCount: 1,
+	}
+	// Write state file directly to test repo (can't use strategy.SaveSessionState as it uses cwd)
+	stateDir := filepath.Join(env.RepoDir, ".git", "entire-sessions")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatalf("Failed to create session state dir: %v", err)
+	}
+	stateData, err := json.Marshal(otherState)
+	if err != nil {
+		t.Fatalf("Failed to marshal session state: %v", err)
+	}
+	stateFile := filepath.Join(stateDir, entireOtherSessionID+".json")
+	if err := os.WriteFile(stateFile, stateData, 0o644); err != nil {
+		t.Fatalf("Failed to write session state file: %v", err)
+	}
+
+	// Verify state file exists
+	if _, err := os.Stat(stateFile); err != nil {
+		t.Fatalf("State file should exist: %v", err)
+	}
+
+	// Try to start a new session - should fail with conflict because other session has state
+	session := env.NewSession()
+	err = env.SimulateUserPromptSubmit(session.ID)
+
 	if err == nil {
-		t.Error("Expected session ID conflict error when orphaned shadow branch exists")
+		t.Error("Expected session ID conflict error when shadow branch has commits from session with state file")
 	} else {
 		t.Logf("Got expected error: %v", err)
 		if !strings.Contains(err.Error(), "session ID conflict") {

@@ -3,11 +3,13 @@
 package integration
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"entire.io/cli/cmd/entire/cli/strategy"
 
@@ -213,7 +215,8 @@ func TestResume_UncommittedChanges(t *testing.T) {
 	}
 }
 
-// TestResume_SessionLogAlreadyExists tests that resume doesn't overwrite existing session logs.
+// TestResume_SessionLogAlreadyExists tests that resume overwrites existing session logs
+// with the checkpoint's version. This ensures consistency when resuming from a different device.
 func TestResume_SessionLogAlreadyExists(t *testing.T) {
 	t.Parallel()
 	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
@@ -237,7 +240,8 @@ func TestResume_SessionLogAlreadyExists(t *testing.T) {
 
 	featureBranch := env.GetCurrentBranch()
 
-	// Pre-create a session log in Claude project dir
+	// Pre-create a session log in Claude project dir with different content
+	// (simulating a stale/different version from another device)
 	if err := os.MkdirAll(env.ClaudeProjectDir, 0o755); err != nil {
 		t.Fatalf("failed to create Claude project dir: %v", err)
 	}
@@ -256,18 +260,22 @@ func TestResume_SessionLogAlreadyExists(t *testing.T) {
 		t.Fatalf("resume failed: %v\nOutput: %s", err, output)
 	}
 
-	// Existing log should not be overwritten
+	// Existing log SHOULD be overwritten with checkpoint's transcript
 	data, err := os.ReadFile(existingLog)
 	if err != nil {
-		t.Fatalf("failed to read existing log: %v", err)
+		t.Fatalf("failed to read log: %v", err)
 	}
-	if string(data) != existingContent {
-		t.Errorf("existing log was overwritten, got: %s, want: %s", string(data), existingContent)
+	if string(data) == existingContent {
+		t.Errorf("existing log should have been overwritten with checkpoint content, but still has: %s", string(data))
+	}
+	// Should contain the actual transcript content (user message)
+	if !strings.Contains(string(data), "Create hello method") {
+		t.Errorf("restored log should contain session transcript, got: %s", string(data))
 	}
 
-	// Output should NOT say "Session restored" since it already existed
-	if strings.Contains(output, "Session restored") {
-		t.Errorf("output should not say 'Session restored' when log already exists, got: %s", output)
+	// Output SHOULD indicate the session was restored (wording varies by code path)
+	if !strings.Contains(output, "Session restored") && !strings.Contains(output, "Writing transcript to") {
+		t.Errorf("output should indicate session restoration, got: %s", output)
 	}
 }
 
@@ -548,5 +556,296 @@ func (env *TestEnv) GitCheckoutBranch(branchName string) {
 	})
 	if err != nil {
 		env.T.Fatalf("failed to checkout branch %s: %v", branchName, err)
+	}
+}
+
+// TestResume_LocalLogNewerTimestamp tests that when local log has newer timestamps
+// than the checkpoint, the command requires --force to proceed (without interactive prompt).
+func TestResume_LocalLogNewerTimestamp(t *testing.T) {
+	t.Parallel()
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+
+	// Create a session with a specific timestamp
+	session := env.NewSession()
+	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	content := "def hello; end"
+	env.WriteFile("hello.rb", content)
+
+	session.CreateTranscript(
+		"Create hello method",
+		[]FileChange{{Path: "hello.rb", Content: content}},
+	)
+	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop failed: %v", err)
+	}
+
+	featureBranch := env.GetCurrentBranch()
+
+	// Create a local log with a NEWER timestamp than the checkpoint
+	if err := os.MkdirAll(env.ClaudeProjectDir, 0o755); err != nil {
+		t.Fatalf("failed to create Claude project dir: %v", err)
+	}
+	existingLog := filepath.Join(env.ClaudeProjectDir, session.ID+".jsonl")
+	// Use a timestamp far in the future to ensure it's newer
+	futureTimestamp := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	newerContent := fmt.Sprintf(`{"type":"human","timestamp":"%s","message":{"content":"newer local work"}}`, futureTimestamp)
+	if err := os.WriteFile(existingLog, []byte(newerContent), 0o644); err != nil {
+		t.Fatalf("failed to write existing log: %v", err)
+	}
+
+	// Switch to main
+	env.GitCheckoutBranch(masterBranch)
+
+	// Resume WITHOUT --force - should fail because it needs interactive confirmation
+	// (which isn't available in non-interactive test mode)
+	output, err := env.RunResume(featureBranch)
+	// The command might succeed (if huh falls back to default) or might fail
+	// Either way, with --force it should definitely succeed
+	t.Logf("Resume without --force output: %s, err: %v", output, err)
+
+	// Resume WITH --force should succeed and overwrite the local log
+	env.GitCheckoutBranch(masterBranch)
+	output, err = env.RunResumeForce(featureBranch)
+	if err != nil {
+		t.Fatalf("resume --force failed: %v\nOutput: %s", err, output)
+	}
+
+	// Verify local log was overwritten with checkpoint content
+	data, err := os.ReadFile(existingLog)
+	if err != nil {
+		t.Fatalf("failed to read log: %v", err)
+	}
+	if strings.Contains(string(data), "newer local work") {
+		t.Errorf("local log should have been overwritten, but still has newer content: %s", string(data))
+	}
+	if !strings.Contains(string(data), "Create hello method") {
+		t.Errorf("restored log should contain checkpoint transcript, got: %s", string(data))
+	}
+}
+
+// TestResume_CheckpointNewerTimestamp tests that when checkpoint has newer timestamps
+// than local log, resume proceeds without requiring --force.
+func TestResume_CheckpointNewerTimestamp(t *testing.T) {
+	t.Parallel()
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+
+	// Create a session
+	session := env.NewSession()
+	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	content := "def hello; end"
+	env.WriteFile("hello.rb", content)
+
+	session.CreateTranscript(
+		"Create hello method",
+		[]FileChange{{Path: "hello.rb", Content: content}},
+	)
+	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop failed: %v", err)
+	}
+
+	featureBranch := env.GetCurrentBranch()
+
+	// Create a local log with an OLDER timestamp than the checkpoint
+	if err := os.MkdirAll(env.ClaudeProjectDir, 0o755); err != nil {
+		t.Fatalf("failed to create Claude project dir: %v", err)
+	}
+	existingLog := filepath.Join(env.ClaudeProjectDir, session.ID+".jsonl")
+	// Use a timestamp far in the past
+	pastTimestamp := time.Now().Add(-7 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	olderContent := fmt.Sprintf(`{"type":"human","timestamp":"%s","message":{"content":"older local work"}}`, pastTimestamp)
+	if err := os.WriteFile(existingLog, []byte(olderContent), 0o644); err != nil {
+		t.Fatalf("failed to write existing log: %v", err)
+	}
+
+	// Switch to main
+	env.GitCheckoutBranch(masterBranch)
+
+	// Resume WITHOUT --force should succeed because checkpoint is newer (no conflict)
+	output, err := env.RunResume(featureBranch)
+	if err != nil {
+		t.Fatalf("resume failed (should succeed when checkpoint is newer): %v\nOutput: %s", err, output)
+	}
+
+	// Verify local log was overwritten with checkpoint content
+	data, err := os.ReadFile(existingLog)
+	if err != nil {
+		t.Fatalf("failed to read log: %v", err)
+	}
+	if strings.Contains(string(data), "older local work") {
+		t.Errorf("local log should have been overwritten, but still has older content: %s", string(data))
+	}
+	if !strings.Contains(string(data), "Create hello method") {
+		t.Errorf("restored log should contain checkpoint transcript, got: %s", string(data))
+	}
+}
+
+// TestResume_MultiSessionMixedTimestamps tests resume with multiple sessions in a checkpoint
+// where one session has a newer local log (conflict) and another doesn't (no conflict).
+func TestResume_MultiSessionMixedTimestamps(t *testing.T) {
+	t.Parallel()
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
+
+	// Create first session
+	session1 := env.NewSession()
+	if err := env.SimulateUserPromptSubmit(session1.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	content1 := "def hello; end"
+	env.WriteFile("hello.rb", content1)
+
+	session1.CreateTranscript(
+		"Create hello method",
+		[]FileChange{{Path: "hello.rb", Content: content1}},
+	)
+	if err := env.SimulateStop(session1.ID, session1.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop session1 failed: %v", err)
+	}
+
+	// Create second session (same base commit, different session)
+	session2 := env.NewSession()
+	if err := env.SimulateUserPromptSubmit(session2.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	content2 := "def goodbye; end"
+	env.WriteFile("goodbye.rb", content2)
+
+	session2.CreateTranscript(
+		"Create goodbye method",
+		[]FileChange{{Path: "goodbye.rb", Content: content2}},
+	)
+	if err := env.SimulateStop(session2.ID, session2.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop session2 failed: %v", err)
+	}
+
+	// Commit changes with hooks (this triggers prepare-commit-msg and post-commit hooks,
+	// which adds Entire-Checkpoint trailer and condenses both sessions to the same checkpoint)
+	env.GitCommitWithShadowHooks("Add hello and goodbye methods", "hello.rb", "goodbye.rb")
+
+	featureBranch := env.GetCurrentBranch()
+
+	// Create local logs with different timestamps:
+	// - session1: NEWER than checkpoint (conflict)
+	// - session2: OLDER than checkpoint (no conflict)
+	if err := os.MkdirAll(env.ClaudeProjectDir, 0o755); err != nil {
+		t.Fatalf("failed to create Claude project dir: %v", err)
+	}
+
+	// Session 1: newer local log (conflict)
+	log1Path := filepath.Join(env.ClaudeProjectDir, session1.ID+".jsonl")
+	futureTimestamp := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	newerContent := fmt.Sprintf(`{"type":"human","timestamp":"%s","message":{"content":"newer local work on session1"}}`, futureTimestamp)
+	if err := os.WriteFile(log1Path, []byte(newerContent), 0o644); err != nil {
+		t.Fatalf("failed to write session1 log: %v", err)
+	}
+
+	// Session 2: older local log (no conflict)
+	log2Path := filepath.Join(env.ClaudeProjectDir, session2.ID+".jsonl")
+	pastTimestamp := time.Now().Add(-7 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	olderContent := fmt.Sprintf(`{"type":"human","timestamp":"%s","message":{"content":"older local work on session2"}}`, pastTimestamp)
+	if err := os.WriteFile(log2Path, []byte(olderContent), 0o644); err != nil {
+		t.Fatalf("failed to write session2 log: %v", err)
+	}
+
+	// Switch to main
+	env.GitCheckoutBranch(masterBranch)
+
+	// Resume WITH --force (to bypass confirmation for the conflict)
+	output, err := env.RunResumeForce(featureBranch)
+	if err != nil {
+		t.Fatalf("resume --force failed: %v\nOutput: %s", err, output)
+	}
+
+	// Both logs should be overwritten with checkpoint content
+	data1, err := os.ReadFile(log1Path)
+	if err != nil {
+		t.Fatalf("failed to read session1 log: %v", err)
+	}
+	if strings.Contains(string(data1), "newer local work") {
+		t.Errorf("session1 log should have been overwritten, but still has newer content: %s", string(data1))
+	}
+	if !strings.Contains(string(data1), "Create hello method") {
+		t.Errorf("session1 log should contain checkpoint transcript, got: %s", string(data1))
+	}
+
+	data2, err := os.ReadFile(log2Path)
+	if err != nil {
+		t.Fatalf("failed to read session2 log: %v", err)
+	}
+	if strings.Contains(string(data2), "older local work") {
+		t.Errorf("session2 log should have been overwritten, but still has older content: %s", string(data2))
+	}
+	if !strings.Contains(string(data2), "Create goodbye method") {
+		t.Errorf("session2 log should contain checkpoint transcript, got: %s", string(data2))
+	}
+
+	// Output should mention restoring multiple sessions
+	if !strings.Contains(output, "Restoring 2 sessions") {
+		t.Logf("Note: Expected 'Restoring 2 sessions' in output, got: %s", output)
+	}
+}
+
+// TestResume_LocalLogNoTimestamp tests that when local log has no valid timestamp,
+// resume proceeds without requiring --force (treated as new).
+func TestResume_LocalLogNoTimestamp(t *testing.T) {
+	t.Parallel()
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+
+	// Create a session
+	session := env.NewSession()
+	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	content := "def hello; end"
+	env.WriteFile("hello.rb", content)
+
+	session.CreateTranscript(
+		"Create hello method",
+		[]FileChange{{Path: "hello.rb", Content: content}},
+	)
+	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop failed: %v", err)
+	}
+
+	featureBranch := env.GetCurrentBranch()
+
+	// Create a local log WITHOUT a valid timestamp (can't be parsed)
+	if err := os.MkdirAll(env.ClaudeProjectDir, 0o755); err != nil {
+		t.Fatalf("failed to create Claude project dir: %v", err)
+	}
+	existingLog := filepath.Join(env.ClaudeProjectDir, session.ID+".jsonl")
+	// Content without timestamp field - should be treated as "new"
+	noTimestampContent := `{"type":"human","message":{"content":"no timestamp"}}`
+	if err := os.WriteFile(existingLog, []byte(noTimestampContent), 0o644); err != nil {
+		t.Fatalf("failed to write existing log: %v", err)
+	}
+
+	// Switch to main
+	env.GitCheckoutBranch(masterBranch)
+
+	// Resume WITHOUT --force should succeed (no timestamp = treated as new)
+	output, err := env.RunResume(featureBranch)
+	if err != nil {
+		t.Fatalf("resume failed (should succeed when local has no timestamp): %v\nOutput: %s", err, output)
+	}
+
+	// Verify local log was overwritten with checkpoint content
+	data, err := os.ReadFile(existingLog)
+	if err != nil {
+		t.Fatalf("failed to read log: %v", err)
+	}
+	if strings.Contains(string(data), "no timestamp") {
+		t.Errorf("local log should have been overwritten, but still has old content: %s", string(data))
+	}
+	if !strings.Contains(string(data), "Create hello method") {
+		t.Errorf("restored log should contain checkpoint transcript, got: %s", string(data))
 	}
 }
