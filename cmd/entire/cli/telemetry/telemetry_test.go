@@ -2,7 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -11,7 +10,7 @@ import (
 func TestNewClientOptOut(t *testing.T) {
 	t.Setenv("ENTIRE_TELEMETRY_OPTOUT", "1")
 
-	client := NewClient("1.0.0")
+	client := NewClient("1.0.0", nil)
 
 	if _, ok := client.(*NoOpClient); !ok {
 		t.Error("ENTIRE_TELEMETRY_OPTOUT=1 should return NoOpClient")
@@ -21,10 +20,19 @@ func TestNewClientOptOut(t *testing.T) {
 func TestNewClientOptOutWithAnyValue(t *testing.T) {
 	t.Setenv("ENTIRE_TELEMETRY_OPTOUT", "yes")
 
-	client := NewClient("1.0.0")
+	client := NewClient("1.0.0", nil)
 
 	if _, ok := client.(*NoOpClient); !ok {
 		t.Error("ENTIRE_TELEMETRY_OPTOUT with any value should return NoOpClient")
+	}
+}
+
+func TestNewClientTelemetryDisabledInSettings(t *testing.T) {
+	disabled := false
+	client := NewClient("1.0.0", &disabled)
+
+	if _, ok := client.(*NoOpClient); !ok {
+		t.Error("telemetryEnabled=false should return NoOpClient")
 	}
 }
 
@@ -118,18 +126,24 @@ func TestPostHogClientClose(_ *testing.T) {
 	client.Close()
 }
 
-func TestCommandStringReturnsFullCommand(t *testing.T) {
-	// Save original os.Args
-	originalArgs := os.Args
-	defer func() { os.Args = originalArgs }()
-
-	// Set test args
-	os.Args = []string{"entire", "session", "list", "--all", "-n", "5"}
-
-	result := CommandString()
-	expected := "entire session list --all -n 5"
-
-	if result != expected {
-		t.Errorf("CommandString() = %q, want %q", result, expected)
+func TestTrackCommandUsesCommandPath(t *testing.T) {
+	client := &PostHogClient{
+		machineID: "test-id",
 	}
+
+	cmd := &cobra.Command{
+		Use: "session",
+	}
+	rootCmd := &cobra.Command{
+		Use: "entire",
+	}
+	rootCmd.AddCommand(cmd)
+
+	// Should not panic - just verify the command path is accessible
+	if cmd.CommandPath() != "entire session" {
+		t.Errorf("CommandPath() = %q, want %q", cmd.CommandPath(), "entire session")
+	}
+
+	// TrackCommand should not panic with nil internal client
+	client.TrackCommand(cmd)
 }

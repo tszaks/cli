@@ -10,11 +10,14 @@ import (
 	"github.com/denisbrodbeck/machineid"
 	"github.com/posthog/posthog-go"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
 	// PostHogAPIKey is set at build time for production
 	PostHogAPIKey = "phc_development_key"
+	// PostHogEndpoint is set at build time for production
+	PostHogEndpoint = "https://eu.i.posthog.com"
 )
 
 // Client defines the telemetry interface
@@ -33,7 +36,7 @@ func WithClient(ctx context.Context, client Client) context.Context {
 
 // GetClient retrieves the telemetry client from context
 //
-//nolint:ireturn // Returns interface for NoOp/PostHog polymorphism
+
 func GetClient(ctx context.Context) Client {
 	if client, ok := ctx.Value(contextKey{}).(Client); ok {
 		return client
@@ -55,11 +58,18 @@ type PostHogClient struct {
 	mu         sync.RWMutex
 }
 
-// NewClient creates a new telemetry client based on opt-out settings
+// NewClient creates a new telemetry client based on opt-out settings.
+// The telemetryEnabled parameter comes from settings; nil means not configured (default to enabled).
 //
-//nolint:ireturn // Returns interface for NoOp/PostHog polymorphism
-func NewClient(version string) Client {
+
+func NewClient(version string, telemetryEnabled *bool) Client {
+	// Environment variable takes priority
 	if os.Getenv("ENTIRE_TELEMETRY_OPTOUT") != "" {
+		return &NoOpClient{}
+	}
+
+	// Check settings preference (nil = not set, default to enabled)
+	if telemetryEnabled != nil && !*telemetryEnabled {
 		return &NoOpClient{}
 	}
 
@@ -69,7 +79,7 @@ func NewClient(version string) Client {
 	}
 
 	client, err := posthog.NewWithConfig(PostHogAPIKey, posthog.Config{
-		Endpoint:     "https://us.i.posthog.com",
+		Endpoint:     PostHogEndpoint,
 		DisableGeoIP: posthog.Ptr(true),
 		DefaultEventProperties: posthog.NewProperties().
 			Set("cli_version", version).
@@ -107,18 +117,25 @@ func (p *PostHogClient) TrackCommand(cmd *cobra.Command) {
 		return
 	}
 
+	// Collect flag names (not values) for privacy
+	var flags []string
+	cmd.Flags().Visit(func(flag *pflag.Flag) {
+		flags = append(flags, flag.Name)
+	})
+
+	props := posthog.NewProperties().
+		Set("command", cmd.CommandPath())
+
+	if len(flags) > 0 {
+		props.Set("flags", strings.Join(flags, ","))
+	}
+
 	//nolint:errcheck // Best-effort telemetry, failures should not affect CLI
 	_ = c.Enqueue(posthog.Capture{
 		DistinctId: id,
 		Event:      "cli_command_executed",
-		Properties: posthog.NewProperties().
-			Set("command", CommandString()),
+		Properties: props,
 	})
-}
-
-// CommandString returns the full command line for telemetry
-func CommandString() string {
-	return strings.Join(os.Args, " ")
 }
 
 // Close flushes pending events
