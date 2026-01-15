@@ -398,21 +398,9 @@ func runDisable(w io.Writer, useProjectSettings bool) error {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
 	} else {
-		// Check if local settings file exists - if so, write there
-		localSettingsAbs, pathErr := paths.AbsPath(EntireSettingsLocalFile)
-		if pathErr != nil {
-			localSettingsAbs = EntireSettingsLocalFile
-		}
-		if _, statErr := os.Stat(localSettingsAbs); statErr == nil {
-			// Local settings exists, write there
-			if err := SaveEntireSettingsLocal(settings); err != nil {
-				return fmt.Errorf("failed to save local settings: %w", err)
-			}
-		} else {
-			// No local settings, write to project settings
-			if err := SaveEntireSettings(settings); err != nil {
-				return fmt.Errorf("failed to save settings: %w", err)
-			}
+		// Always write to local settings file (create if doesn't exist)
+		if err := SaveEntireSettingsLocal(settings); err != nil {
+			return fmt.Errorf("failed to save local settings: %w", err)
 		}
 	}
 
