@@ -36,7 +36,7 @@ func WithClient(ctx context.Context, client Client) context.Context {
 
 // GetClient retrieves the telemetry client from context
 //
-
+//nolint:ireturn // Returns interface by design - retrieves from context
 func GetClient(ctx context.Context) Client {
 	if client, ok := ctx.Value(contextKey{}).(Client); ok {
 		return client
@@ -61,7 +61,7 @@ type PostHogClient struct {
 // NewClient creates a new telemetry client based on opt-out settings.
 // The telemetryEnabled parameter comes from settings; nil means not configured (default to enabled).
 //
-
+//nolint:ireturn // Factory function - returns NoOpClient or PostHogClient based on settings
 func NewClient(version string, telemetryEnabled *bool) Client {
 	// Environment variable takes priority
 	if os.Getenv("ENTIRE_TELEMETRY_OPTOUT") != "" {
