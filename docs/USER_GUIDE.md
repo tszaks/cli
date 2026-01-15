@@ -39,7 +39,7 @@ entire resume <branch>
 4. [Commands Reference](#commands-reference)
 5. [Workflow Examples](#workflow-examples)
 6. [Collaboration](#collaboration)
-7. [Storage & Privacy](#storage--privacy)
+7. [Session Data Storage](#session-data-storage)
 8. [Concurrent Usage](#concurrent-usage)
 9. [Upgrading Entire](#upgrading-entire)
 10. [Uninstallation](#uninstallation)
@@ -146,8 +146,23 @@ Personal overrides, gitignored by default:
 | `agent` | `claude-code`, `gemini`, etc. | AI agent to integrate with |
 | `agent_auto_detect` | `true`, `false` | Auto-detect agent if not set (default: true) |
 | `log_level` | `debug`, `info`, `warn`, `error` | Logging verbosity |
-| `strategy_options` | object | Strategy-specific settings (e.g., `{"push_sessions": true}`) |
-| `agent_options` | object | Agent-specific settings, keyed by agent name |
+| `strategy_options` | object | Strategy-specific settings (see below) |
+
+
+**Strategy Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `push_sessions` | boolean | `true` | Auto-push `entire/sessions` branch on git push. Set via `entire enable --skip-push-sessions` or manually in settings. |
+
+```json
+{
+  "strategy": "manual-commit",
+  "strategy_options": {
+    "push_sessions": false
+  }
+}
+```
 
 ### Settings Priority
 
@@ -234,7 +249,7 @@ A **session** represents a complete interaction with your AI agent, from start t
 - Timestamps and metadata
 
 **Session properties:**
-- **ID**: Unique identifier in format `YYYY-MM-DD-<UUID>` (e.g., `2025-01-08-abc123de-f456-7890-abcd-ef1234567890`)
+- **ID**: Unique identifier in format `YYYY-MM-DD-<UUID>` (e.g., `2026-01-08-abc123de-f456-7890-abcd-ef1234567890`)
 - **Strategy**: Which strategy created this session (`manual-commit` or `auto-commit`)
 - **Description**: Human-readable summary (typically derived from your first prompt)
 - **Checkpoints**: List of save points within the session
@@ -322,11 +337,11 @@ Shadow branches are local-only and don't get pushed to your remote.
 
 ### The entire/sessions Branch
 
-The `entire/sessions` branch is an orphan branch (no parent commits) that stores all session metadata permanently.
+The `entire/sessions` branch is an orphan branch that stores all session metadata permanently, meaning it shares no git history with your main/feature branches.
 
 **Characteristics:**
 - **Auto-created**: On first checkpoint, not during `entire enable`
-- **Orphan branch**: Has no parent commits, separate from your code history
+- **Orphan branch**: No parent commits, completely separate from your code history
 - **Sharded storage**: Checkpoints stored in `<first-2-chars>/<remaining-10-chars>/` structure
 - **Pushed automatically**: Via `pre-push` hook (unless `--skip-push-sessions` was used)
 
@@ -375,7 +390,6 @@ entire enable --skip-push-sessions      # Disable auto-push of session logs
 **Example output:**
 ```
 ✓ Claude Code hooks installed
-✓ Gemini CLI hooks verified
 ✓ Project settings saved (.entire/settings.json)
 ✓ Git hooks installed
 
@@ -469,7 +483,7 @@ entire session list
 ```
   session-id           Checkpoints  Description
   ───────────────────  ───────────  ────────────────────────────────────────
-  2026-01-13-21a2e002  4            I think the checkpoint id is less important...
+  2026-01-13-21a2e002  4            can you review the contents   of...
   2026-01-13-dc577197  3            can you update CLAUDE.md to reflect the new...
   2026-01-12-deeac353  1            can you look at the changes in this branch...
 
@@ -512,9 +526,9 @@ entire session resume <session-id>   # Resume specific session
 
 **Prefix matching:** You don't need the full session ID. The first matching session is used:
 ```bash
-entire session resume 2025-01        # First session from Jan 2025
-entire session resume 2025-01-13     # First session from Jan 13
-entire session resume 2025-01-13-8f  # More specific match
+entire session resume 2026-01        # First session from Jan 2026
+entire session resume 2026-01-13     # First session from Jan 13
+entire session resume 2026-01-13-8f  # More specific match
 ```
 
 #### entire session cleanup
@@ -553,8 +567,8 @@ entire resume feature/new-thing
 **Example output:**
 ```
 Switched to branch 'feature/new-thing'
-Session restored to: .claude/projects/.../2025-01-08-abc123.jsonl
-Session: 2025-01-08-abc123def456
+Session restored to: .claude/projects/.../2026-01-08-abc123.jsonl
+Session: 2026-01-08-abc123def456
 
 To continue this session, run:
   claude --resume
@@ -605,7 +619,7 @@ entire version
 **Example output:**
 ```
 Entire CLI v1.0.0 (abc123def)
-Go version: go1.24.0
+Built with: go1.24.0
 OS/Arch: darwin/arm64
 ```
 
@@ -730,7 +744,7 @@ entire explain --session <session-id>
 
 ---
 
-## Storage & Privacy
+## Session Data Storage
 
 ### Where Data is Stored
 
@@ -749,17 +763,6 @@ entire explain --session <session-id>
 - File paths that were modified
 - Tool usage details
 
-### Sensitive Data Considerations
-
-Transcripts may contain:
-- Code snippets and file contents
-- API keys or secrets if mentioned in prompts
-- Internal project details
-
-**Recommendations:**
-- Avoid pasting secrets directly into prompts
-- Review transcripts before pushing if working with sensitive code
-- Use `.gitignore` to exclude sensitive files from agent context
 
 ### Purging Session Data
 
@@ -790,11 +793,11 @@ Each developer gets their own independent sessions:
 ```bash
 # Developer A on their machine
 entire enable
-claude                    # Creates session 2025-01-13-abc123
+claude                    # Creates session 2026-01-13-abc123
 
 # Developer B on their machine (same repo)
 entire enable
-claude                    # Creates session 2025-01-13-def456
+claude                    # Creates session 2026-01-13-def456
 ```
 
 **No conflicts:** Sessions use UUIDs, so they're always unique even if started at the same time.
@@ -805,10 +808,10 @@ You can run multiple Claude instances in the same repository:
 
 ```bash
 # Terminal 1
-claude                    # Session: 2025-01-13-abc123
+claude                    # Session: 2026-01-13-abc123
 
 # Terminal 2 (same repo, different terminal)
-claude                    # Session: 2025-01-13-def456
+claude                    # Session: 2026-01-13-def456
 ```
 
 Each instance creates its own session with a unique UUID.
@@ -1025,18 +1028,18 @@ This uses simpler text prompts instead of interactive TUI elements.
 
 | Command | Description |
 |---------|-------------|
-| `entire enable` | Set up Entire in repository |
-| `entire disable` | Temporarily disable Entire |
-| `entire status` | Show current status |
-| `entire rewind` | Rewind to a checkpoint |
-| `entire rewind reset` | Reset shadow branch for current commit |
-| `entire session list` | List all sessions |
-| `entire session current` | Show current session details |
-| `entire session resume` | Resume a session and restore agent memory |
-| `entire session cleanup` | Remove orphaned session data |
-| `entire resume <branch>` | Switch to branch and resume its session |
-| `entire explain` | Explain current session or commit |
-| `entire version` | Show version info |
+| [`entire enable`](#entire-enable) | Set up Entire in repository |
+| [`entire disable`](#entire-disable) | Temporarily disable Entire |
+| [`entire status`](#entire-status) | Show current status |
+| [`entire rewind`](#entire-rewind) | Rewind to a checkpoint |
+| [`entire rewind reset`](#entire-rewind-reset) | Reset shadow branch for current commit |
+| [`entire session list`](#entire-session-list) | List all sessions |
+| [`entire session current`](#entire-session-current) | Show current session details |
+| [`entire session resume`](#entire-session-resume) | Resume a session and restore agent memory |
+| [`entire session cleanup`](#entire-session-cleanup) | Remove orphaned session data |
+| [`entire resume <branch>`](#entire-resume) | Switch to branch and resume its session |
+| [`entire explain`](#entire-explain) | Explain current session or commit |
+| [`entire version`](#entire-version) | Show version info |
 
 ### Flags Quick Reference
 
@@ -1066,7 +1069,7 @@ This uses simpler text prompts instead of interactive TUI elements.
 | **Session** | A complete interaction with an AI agent from start to finish, identified by a unique `YYYY-MM-DD-<UUID>` ID. |
 | **Shadow branch** | Ephemeral branch (`entire/<commit-hash>`) used by manual-commit strategy to store checkpoints before condensation. |
 | **Transcript** | JSONL file containing all prompts and responses in a session. |
-| **entire/sessions** | Orphan branch storing all session metadata permanently. |
+| **`entire/sessions`** | Orphan branch storing all session metadata permanently. |
 
 ---
 
@@ -1084,6 +1087,8 @@ entire <command> --help    # Command-specific help
 - **GitHub Issues:** Report bugs or request features at https://github.com/entireio/cli/issues
 - **Documentation:** See the project [README](../README.md) and [CONTRIBUTING.md](../CONTRIBUTING.md)
 - **Source Code:** https://github.com/entireio/cli
+- **Slack:** [Join the community](https://entire-community.slack.com)
+- **Improve this guide:** Found an error or want to improve this documentation? PRs are welcome! See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
 
 ### Reporting Issues
 
@@ -1096,3 +1101,7 @@ When reporting issues, please include:
 3. Steps to reproduce (exact commands)
 4. Expected vs actual behavior
 5. Debug logs if applicable (`ENTIRE_LOG_LEVEL=debug`)
+
+---
+
+*Last updated for Entire CLI v1.x*
