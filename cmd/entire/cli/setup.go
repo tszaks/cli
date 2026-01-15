@@ -46,6 +46,7 @@ func newEnableCmd() *cobra.Command {
 	var forceHooks bool
 	var setupShell bool
 	var skipPushSessions bool
+	var noTelemetry bool
 
 	cmd := &cobra.Command{
 		Use:   "enable",
@@ -67,13 +68,13 @@ func newEnableCmd() *cobra.Command {
 			}
 			// Non-interactive mode if --agent flag is provided
 			if agentName != "" {
-				return setupAgentHooksNonInteractive(agentName, strategyFlag, localDev, forceHooks, skipPushSessions)
+				return setupAgentHooksNonInteractive(agentName, strategyFlag, localDev, forceHooks, skipPushSessions, noTelemetry)
 			}
 			// If strategy is specified via flag, skip interactive selection
 			if strategyFlag != "" {
-				return runEnableWithStrategy(cmd.OutOrStdout(), strategyFlag, localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions)
+				return runEnableWithStrategy(cmd.OutOrStdout(), strategyFlag, localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions, noTelemetry)
 			}
-			return runEnableInteractive(cmd.OutOrStdout(), localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions)
+			return runEnableInteractive(cmd.OutOrStdout(), localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions, noTelemetry)
 		},
 	}
 
@@ -88,6 +89,7 @@ func newEnableCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&forceHooks, "force", "f", false, "Force reinstall hooks (removes existing Entire hooks first)")
 	cmd.Flags().BoolVar(&setupShell, "setup-shell", false, "Add shell completion to your rc file (non-interactive)")
 	cmd.Flags().BoolVar(&skipPushSessions, "skip-push-sessions", false, "Disable automatic pushing of session logs on git push")
+	cmd.Flags().BoolVar(&noTelemetry, "no-telemetry", false, "Disable anonymous usage analytics")
 	//nolint:errcheck,gosec // completion is optional, flag is defined above
 	cmd.RegisterFlagCompletionFunc("strategy", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{strategyDisplayManualCommit, strategyDisplayAutoCommit}, cobra.ShellCompDirectiveNoFileComp
@@ -130,7 +132,7 @@ func newStatusCmd() *cobra.Command {
 // runEnableWithStrategy enables Entire with a specified strategy (non-interactive).
 // The selectedStrategy can be either a display name (manual-commit, auto-commit)
 // or an internal name (manual-commit, auto-commit).
-func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions bool) error {
+func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions, noTelemetry bool) error {
 	// Map the strategy to internal name if it's a display name
 	internalStrategy := selectedStrategy
 	if mapped, ok := strategyDisplayToInternal[selectedStrategy]; ok {
@@ -180,6 +182,17 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 			settings.StrategyOptions = make(map[string]interface{})
 		}
 		settings.StrategyOptions["push_sessions"] = false
+	}
+
+	// Handle telemetry for non-interactive mode
+	if noTelemetry || os.Getenv("ENTIRE_TELEMETRY_OPTOUT") != "" {
+		// --no-telemetry flag always overrides existing setting
+		f := false
+		settings.Telemetry = &f
+	} else if settings.Telemetry == nil {
+		// Default to enabled in non-interactive mode (only if not already set)
+		t := true
+		settings.Telemetry = &t
 	}
 
 	// Determine which settings file to write to
@@ -241,7 +254,7 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 }
 
 // runEnableInteractive runs the interactive enable flow with strategy selection.
-func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions bool) error {
+func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions, noTelemetry bool) error {
 	// Build strategy options with user-friendly names
 	var selectedStrategy string
 	options := []huh.Option[string]{
@@ -304,6 +317,11 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 			settings.StrategyOptions = make(map[string]interface{})
 		}
 		settings.StrategyOptions["push_sessions"] = false
+	}
+
+	// Ask about telemetry consent (only if not already asked)
+	if err := promptTelemetryConsent(settings, noTelemetry); err != nil {
+		return fmt.Errorf("telemetry consent: %w", err)
 	}
 
 	// Determine which settings file to write to (interactive prompt if settings.json exists)
@@ -398,21 +416,9 @@ func runDisable(w io.Writer, useProjectSettings bool) error {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
 	} else {
-		// Check if local settings file exists - if so, write there
-		localSettingsAbs, pathErr := paths.AbsPath(EntireSettingsLocalFile)
-		if pathErr != nil {
-			localSettingsAbs = EntireSettingsLocalFile
-		}
-		if _, statErr := os.Stat(localSettingsAbs); statErr == nil {
-			// Local settings exists, write there
-			if err := SaveEntireSettingsLocal(settings); err != nil {
-				return fmt.Errorf("failed to save local settings: %w", err)
-			}
-		} else {
-			// No local settings, write to project settings
-			if err := SaveEntireSettings(settings); err != nil {
-				return fmt.Errorf("failed to save settings: %w", err)
-			}
+		// Always write to local settings file (create if doesn't exist)
+		if err := SaveEntireSettingsLocal(settings); err != nil {
+			return fmt.Errorf("failed to save local settings: %w", err)
 		}
 	}
 
@@ -548,7 +554,7 @@ func setupClaudeCodeHook(localDev, forceHooks bool) (int, error) {
 
 // setupAgentHooksNonInteractive sets up hooks for a specific agent non-interactively.
 // If strategyName is provided, it sets the strategy; otherwise uses default.
-func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, forceHooks, skipPushSessions bool) error {
+func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, forceHooks, skipPushSessions, noTelemetry bool) error {
 	ag, err := agent.Get(agentName)
 	if err != nil {
 		return fmt.Errorf("unknown agent: %s", agentName)
@@ -600,6 +606,17 @@ func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, for
 			return fmt.Errorf("unknown strategy: %s (use manual-commit or auto-commit)", strategyName)
 		}
 		settings.Strategy = internalStrategy
+	}
+
+	// Handle telemetry for non-interactive mode
+	if noTelemetry || os.Getenv("ENTIRE_TELEMETRY_OPTOUT") != "" {
+		// --no-telemetry flag always overrides existing setting
+		f := false
+		settings.Telemetry = &f
+	} else if settings.Telemetry == nil {
+		// Default to enabled in non-interactive mode (only if not already set)
+		t := true
+		settings.Telemetry = &t
 	}
 
 	if err := SaveEntireSettings(settings); err != nil {
@@ -893,5 +910,48 @@ func setupShellCompletionNonInteractive(w io.Writer) error {
 	fmt.Fprintf(w, "✓ Shell completion added to %s\n", rcFile)
 	fmt.Fprintln(w, "  Run `source "+rcFile+"` or restart your shell to activate")
 
+	return nil
+}
+
+// promptTelemetryConsent asks the user if they want to enable telemetry.
+// It modifies settings.Telemetry based on the user's choice or flags.
+// The caller is responsible for saving settings.
+func promptTelemetryConsent(settings *EntireSettings, noTelemetryFlag bool) error {
+	// Handle --no-telemetry flag first (always overrides existing setting)
+	if noTelemetryFlag {
+		f := false
+		settings.Telemetry = &f
+		return nil
+	}
+
+	// Skip if already asked
+	if settings.Telemetry != nil {
+		return nil
+	}
+
+	// Skip if env var disables telemetry (record as disabled)
+	if os.Getenv("ENTIRE_TELEMETRY_OPTOUT") != "" {
+		f := false
+		settings.Telemetry = &f
+		return nil
+	}
+
+	consent := true // Default to Yes
+	form := NewAccessibleForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Help improve Entire CLI?").
+				Description("Share anonymous usage data. No code or personal info collected.").
+				Affirmative("Yes").
+				Negative("No").
+				Value(&consent),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return fmt.Errorf("telemetry prompt: %w", err)
+	}
+
+	settings.Telemetry = &consent
 	return nil
 }

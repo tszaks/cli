@@ -56,6 +56,10 @@ type EntireSettings struct {
 	// AgentOptions contains agent-specific configuration
 	// Keyed by agent name, e.g., {"claude-code": {"ignore_untracked": false}}
 	AgentOptions map[string]interface{} `json:"agent_options,omitempty"`
+
+	// Telemetry controls anonymous usage analytics.
+	// nil = not asked yet (show prompt), true = opted in, false = opted out
+	Telemetry *bool `json:"telemetry,omitempty"`
 }
 
 // LoadEntireSettings loads the Entire settings from .entire/settings.json,
@@ -210,6 +214,15 @@ func mergeSettingsJSON(settings *EntireSettings, data []byte) error {
 				settings.AgentOptions[k] = v
 			}
 		}
+	}
+
+	// Override telemetry if present
+	if telemetryRaw, ok := raw["telemetry"]; ok {
+		var t bool
+		if err := json.Unmarshal(telemetryRaw, &t); err != nil {
+			return fmt.Errorf("parsing telemetry field: %w", err)
+		}
+		settings.Telemetry = &t
 	}
 
 	return nil
