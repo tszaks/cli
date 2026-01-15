@@ -283,38 +283,6 @@ func TestRunDisable_WithProjectFlag(t *testing.T) {
 	}
 }
 
-// TestRunDisable_NoLocalSettings is commented out - old behavior expected
-// writing to project settings when local doesn't exist. New behavior is to
-// always create local settings. See TestRunDisable_CreatesLocalSettingsWhenMissing.
-// func TestRunDisable_NoLocalSettings(t *testing.T) {
-// 	setupTestDir(t)
-// 	// Only create project settings
-// 	writeSettings(t, testSettingsEnabled)
-//
-// 	var stdout bytes.Buffer
-// 	if err := runDisable(&stdout, false); err != nil {
-// 		t.Fatalf("runDisable() error = %v", err)
-// 	}
-//
-// 	// Should be disabled
-// 	enabled, err := IsEnabled()
-// 	if err != nil {
-// 		t.Fatalf("IsEnabled() error = %v", err)
-// 	}
-// 	if enabled {
-// 		t.Error("Entire should be disabled after running disable command")
-// 	}
-//
-// 	// Project settings should be updated
-// 	projectContent, err := os.ReadFile(EntireSettingsFile)
-// 	if err != nil {
-// 		t.Fatalf("Failed to read project settings: %v", err)
-// 	}
-// 	if !strings.Contains(string(projectContent), `"enabled":false`) && !strings.Contains(string(projectContent), `"enabled": false`) {
-// 		t.Errorf("Project settings should have enabled:false, got: %s", projectContent)
-// 	}
-// }
-
 // TestRunDisable_CreatesLocalSettingsWhenMissing verifies that running
 // `entire disable` without --project creates settings.local.json when it
 // doesn't exist, rather than writing to settings.json.
