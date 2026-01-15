@@ -5,6 +5,7 @@ import (
 	"runtime"
 
 	"entire.io/cli/cmd/entire/cli/commands"
+	"entire.io/cli/cmd/entire/cli/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -40,6 +41,9 @@ func NewRootCmd() *cobra.Command {
 		// Hide completion command from help but keep it functional
 		CompletionOptions: cobra.CompletionOptions{
 			HiddenDefaultCmd: true,
+		},
+		PersistentPostRun: func(cmd *cobra.Command, _ []string) {
+			telemetry.GetClient(cmd.Context()).TrackCommand(cmd)
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()

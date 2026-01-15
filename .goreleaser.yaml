@@ -15,6 +15,8 @@ builds:
       - -s -w
       - -X entire.io/cli/cmd/entire/cli.Version={{.Version}}
       - -X entire.io/cli/cmd/entire/cli.Commit={{.ShortCommit}}
+      - -X entire.io/cli/cmd/entire/cli/telemetry.PostHogAPIKey={{.Env.POSTHOG_API_KEY}}
+      - -X entire.io/cli/cmd/entire/cli/telemetry.PostHogEndpoint={{.Env.POSTHOG_ENDPOINT}}
 
 notarize:
   macos:
