@@ -234,6 +234,7 @@ func (s *AutoCommitStrategy) commitMetadataToMetadataBranch(_ *git.Repository, c
 		Agent:                  ctx.AgentType,
 		TranscriptUUIDAtStart:  ctx.TranscriptUUIDAtStart,
 		TranscriptLinesAtStart: ctx.TranscriptLinesAtStart,
+		TokenUsage:             ctx.TokenUsage,
 	})
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("failed to write committed checkpoint: %w", err)

@@ -316,6 +316,7 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 		SessionIDs:             []string{opts.SessionID},
 		TranscriptUUIDAtStart:  opts.TranscriptUUIDAtStart,
 		TranscriptLinesAtStart: opts.TranscriptLinesAtStart,
+		TokenUsage:             opts.TokenUsage,
 	}
 
 	// Merge with existing metadata if present (multi-session checkpoint)
