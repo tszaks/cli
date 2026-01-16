@@ -35,6 +35,7 @@ func WriteTaskCheckpoint(taskMetadataDir string, checkpoint *TaskCheckpoint) err
 	if err != nil {
 		return fmt.Errorf("failed to marshal checkpoint: %w", err)
 	}
+	data = append(data, '\n')
 
 	checkpointFile := filepath.Join(taskMetadataDir, paths.CheckpointFileName)
 	if err := os.WriteFile(checkpointFile, data, 0o600); err != nil {

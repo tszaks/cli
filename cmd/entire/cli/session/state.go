@@ -130,6 +130,7 @@ func (s *StateStore) Save(ctx context.Context, state *State) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal session state: %w", err)
 	}
+	data = append(data, '\n')
 
 	stateFile := s.stateFilePath(state.SessionID)
 

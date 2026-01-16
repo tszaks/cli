@@ -79,6 +79,7 @@ func SaveSessionState(state *SessionState) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal session state: %w", err)
 	}
+	data = append(data, '\n')
 
 	stateFile, err := sessionStateFile(state.SessionID)
 	if err != nil {

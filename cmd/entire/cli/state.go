@@ -59,6 +59,7 @@ func CapturePrePromptState(sessionID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
+	data = append(data, '\n')
 
 	if err := os.WriteFile(stateFile, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write state file: %w", err)
@@ -250,6 +251,7 @@ func CapturePreTaskState(toolUseID string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
+	data = append(data, '\n')
 
 	if err := os.WriteFile(stateFile, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write state file: %w", err)

@@ -239,6 +239,7 @@ func (env *TestEnv) InitEntireWithOptions(strategyName string, strategyOptions m
 	if err != nil {
 		env.T.Fatalf("failed to marshal settings: %v", err)
 	}
+	data = append(data, '\n')
 	settingsPath := filepath.Join(entireDir, paths.SettingsFileName)
 	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
 		env.T.Fatalf("failed to write %s: %v", paths.SettingsFileName, err)

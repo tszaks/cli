@@ -36,6 +36,7 @@ func (env *TestEnv) SetEnabled(enabled bool) {
 	if err != nil {
 		env.T.Fatalf("failed to marshal settings: %v", err)
 	}
+	data = append(data, '\n')
 	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
 		env.T.Fatalf("failed to write settings: %v", err)
 	}
