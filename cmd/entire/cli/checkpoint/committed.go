@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 
 	"github.com/go-git/go-git/v5"
@@ -138,7 +139,7 @@ func (s *GitStore) writeIncrementalTaskCheckpoint(opts WriteCommittedOptions, ta
 		Timestamp: time.Now().UTC(),
 		Data:      opts.IncrementalData,
 	}
-	cpData, err := json.MarshalIndent(checkpoint, "", "  ")
+	cpData, err := jsonutil.MarshalIndentWithNewline(checkpoint, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal incremental checkpoint: %w", err)
 	}
@@ -165,7 +166,7 @@ func (s *GitStore) writeFinalTaskCheckpoint(opts WriteCommittedOptions, taskPath
 		CheckpointUUID: opts.CheckpointUUID,
 		AgentID:        opts.AgentID,
 	}
-	checkpointData, err := json.MarshalIndent(checkpoint, "", "  ")
+	checkpointData, err := jsonutil.MarshalIndentWithNewline(checkpoint, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal task checkpoint: %w", err)
 	}
@@ -341,7 +342,7 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 		metadata.CheckpointsCount = existingMetadata.CheckpointsCount + opts.CheckpointsCount
 	}
 
-	metadataJSON, err := json.MarshalIndent(metadata, "", "  ")
+	metadataJSON, err := jsonutil.MarshalIndentWithNewline(metadata, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
