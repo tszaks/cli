@@ -192,6 +192,10 @@ type SaveContext struct {
 
 	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
 	AgentType string
+
+	// Transcript position at checkpoint start - tracks what was added during this checkpoint
+	TranscriptUUIDAtStart  string // Last UUID when checkpoint started
+	TranscriptLinesAtStart int    // Line count when checkpoint started
 }
 
 // TaskCheckpointContext contains all information needed for saving a task checkpoint.

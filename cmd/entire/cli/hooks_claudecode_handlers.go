@@ -275,8 +275,8 @@ func captureInitialState() error {
 		return nil
 	}
 
-	// CLI captures state directly
-	if err := CapturePrePromptState(hookData.entireSessionID); err != nil {
+	// CLI captures state directly (including transcript position)
+	if err := CapturePrePromptState(hookData.entireSessionID, hookData.input.SessionRef); err != nil {
 		return err
 	}
 
@@ -506,19 +506,29 @@ func commitWithMetadata() error {
 		agentType = sessionState.AgentType
 	}
 
+	// Get transcript position from pre-prompt state (captured at checkpoint start)
+	var transcriptUUIDAtStart string
+	var transcriptLinesAtStart int
+	if preState != nil {
+		transcriptUUIDAtStart = preState.LastTranscriptUUID
+		transcriptLinesAtStart = preState.LastTranscriptLineCount
+	}
+
 	// Build fully-populated save context and delegate to strategy
 	ctx := strategy.SaveContext{
-		SessionID:      entireSessionID,
-		ModifiedFiles:  relModifiedFiles,
-		NewFiles:       relNewFiles,
-		DeletedFiles:   relDeletedFiles,
-		MetadataDir:    sessionDir,
-		MetadataDirAbs: sessionDirAbs,
-		CommitMessage:  commitMessage,
-		TranscriptPath: transcriptPath,
-		AuthorName:     author.Name,
-		AuthorEmail:    author.Email,
-		AgentType:      agentType,
+		SessionID:              entireSessionID,
+		ModifiedFiles:          relModifiedFiles,
+		NewFiles:               relNewFiles,
+		DeletedFiles:           relDeletedFiles,
+		MetadataDir:            sessionDir,
+		MetadataDirAbs:         sessionDirAbs,
+		CommitMessage:          commitMessage,
+		TranscriptPath:         transcriptPath,
+		AuthorName:             author.Name,
+		AuthorEmail:            author.Email,
+		AgentType:              agentType,
+		TranscriptUUIDAtStart:  transcriptUUIDAtStart,
+		TranscriptLinesAtStart: transcriptLinesAtStart,
 	}
 
 	if err := strat.SaveChanges(ctx); err != nil {

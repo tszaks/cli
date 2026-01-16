@@ -211,6 +211,10 @@ type WriteCommittedOptions struct {
 
 	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor")
 	Agent string
+
+	// Transcript position at checkpoint start - tracks what was added during this checkpoint
+	TranscriptUUIDAtStart  string // Last UUID when checkpoint started
+	TranscriptLinesAtStart int    // Line count when checkpoint started
 }
 
 // ReadCommittedResult contains the result of reading a committed checkpoint.
@@ -299,6 +303,10 @@ type CommittedMetadata struct {
 	// Task checkpoint fields (only populated for task checkpoints)
 	IsTask    bool   `json:"is_task,omitempty"`
 	ToolUseID string `json:"tool_use_id,omitempty"`
+
+	// Transcript position at checkpoint start - tracks what was added during this checkpoint
+	TranscriptUUIDAtStart  string `json:"transcript_uuid_at_start,omitempty"`  // Last UUID when checkpoint started
+	TranscriptLinesAtStart int    `json:"transcript_lines_at_start,omitempty"` // Line count when checkpoint started
 }
 
 // Info provides summary information for listing checkpoints.
