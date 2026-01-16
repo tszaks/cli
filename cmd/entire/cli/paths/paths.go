@@ -70,6 +70,10 @@ const CheckpointTrailerKey = "Entire-Checkpoint"
 // Format: full branch name e.g. "entire/2b4c177"
 const EphemeralBranchTrailerKey = "Ephemeral-branch"
 
+// AgentTrailerKey identifies the agent that created a checkpoint.
+// Format: human-readable agent name e.g. "Claude Code", "Cursor"
+const AgentTrailerKey = "Entire-Agent"
+
 // repoRootCache caches the repository root to avoid repeated git commands.
 // The cache is keyed by the current working directory to handle directory changes.
 var (

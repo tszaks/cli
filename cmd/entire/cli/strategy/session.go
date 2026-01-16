@@ -95,32 +95,46 @@ func ListSessions() ([]Session, error) {
 	}
 
 	// Group checkpoints by session ID
+	// For multi-session checkpoints, expand SessionIDs array so each session gets the checkpoint
 	sessionMap := make(map[string]*Session)
 	for _, cp := range checkpoints {
-		if existing, ok := sessionMap[cp.SessionID]; ok {
-			existing.Checkpoints = append(existing.Checkpoints, Checkpoint{
-				CheckpointID:     cp.CheckpointID,
-				Message:          "Checkpoint: " + cp.CheckpointID,
-				Timestamp:        cp.CreatedAt,
-				IsTaskCheckpoint: cp.IsTask,
-				ToolUseID:        cp.ToolUseID,
-			})
-		} else {
-			// Get description from the checkpoint tree
-			description := getDescriptionForCheckpoint(repo, cp.CheckpointID)
+		// Determine which session IDs this checkpoint belongs to
+		// Multi-session checkpoints have SessionIDs populated; single-session use SessionID
+		sessionIDs := cp.SessionIDs
+		if len(sessionIDs) == 0 {
+			sessionIDs = []string{cp.SessionID}
+		}
 
-			sessionMap[cp.SessionID] = &Session{
-				ID:          cp.SessionID,
-				Description: description,
-				Strategy:    "", // Will be set from metadata if available
-				StartTime:   cp.CreatedAt,
-				Checkpoints: []Checkpoint{{
+		for _, sessionID := range sessionIDs {
+			if sessionID == "" {
+				continue
+			}
+
+			if existing, ok := sessionMap[sessionID]; ok {
+				existing.Checkpoints = append(existing.Checkpoints, Checkpoint{
 					CheckpointID:     cp.CheckpointID,
 					Message:          "Checkpoint: " + cp.CheckpointID,
 					Timestamp:        cp.CreatedAt,
 					IsTaskCheckpoint: cp.IsTask,
 					ToolUseID:        cp.ToolUseID,
-				}},
+				})
+			} else {
+				// Get description from the checkpoint tree
+				description := getDescriptionForCheckpoint(repo, cp.CheckpointID)
+
+				sessionMap[sessionID] = &Session{
+					ID:          sessionID,
+					Description: description,
+					Strategy:    "", // Will be set from metadata if available
+					StartTime:   cp.CreatedAt,
+					Checkpoints: []Checkpoint{{
+						CheckpointID:     cp.CheckpointID,
+						Message:          "Checkpoint: " + cp.CheckpointID,
+						Timestamp:        cp.CreatedAt,
+						IsTaskCheckpoint: cp.IsTask,
+						ToolUseID:        cp.ToolUseID,
+					}},
+				}
 			}
 		}
 	}

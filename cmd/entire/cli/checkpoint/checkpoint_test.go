@@ -1,11 +1,17 @@
 package checkpoint
 
 import (
+	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"entire.io/cli/cmd/entire/cli/paths"
+
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -78,5 +84,101 @@ func TestCopyMetadataDir_SkipsSymlinks(t *testing.T) {
 	// Verify the correct number of entries
 	if len(entries) != 1 {
 		t.Errorf("expected 1 entry, got %d", len(entries))
+	}
+}
+
+// TestWriteCommitted_AgentField verifies that the Agent field is written
+// to both metadata.json and the commit message trailer.
+func TestWriteCommitted_AgentField(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Initialize a git repository with an initial commit
+	repo, err := git.PlainInit(tempDir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Create worktree and make initial commit
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	readmeFile := filepath.Join(tempDir, "README.md")
+	if err := os.WriteFile(readmeFile, []byte("# Test"), 0o644); err != nil {
+		t.Fatalf("failed to write README: %v", err)
+	}
+	if _, err := worktree.Add("README.md"); err != nil {
+		t.Fatalf("failed to add README: %v", err)
+	}
+	if _, err := worktree.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com"},
+	}); err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	// Create checkpoint store
+	store := NewGitStore(repo)
+
+	// Write a committed checkpoint with Agent field
+	checkpointID := "a1b2c3d4e5f6"
+	sessionID := "test-session-123"
+	agentName := "Claude Code"
+
+	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		CheckpointID: checkpointID,
+		SessionID:    sessionID,
+		Strategy:     "manual-commit",
+		Agent:        agentName,
+		Transcript:   []byte("test transcript content"),
+		AuthorName:   "Test Author",
+		AuthorEmail:  "test@example.com",
+	})
+	if err != nil {
+		t.Fatalf("WriteCommitted() error = %v", err)
+	}
+
+	// Verify metadata.json contains agent field
+	ref, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	if err != nil {
+		t.Fatalf("failed to get metadata branch reference: %v", err)
+	}
+
+	commit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		t.Fatalf("failed to get commit object: %v", err)
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		t.Fatalf("failed to get tree: %v", err)
+	}
+
+	// Read metadata.json from the sharded path
+	shardedPath := paths.CheckpointPath(checkpointID)
+	metadataPath := shardedPath + "/" + paths.MetadataFileName
+	metadataFile, err := tree.File(metadataPath)
+	if err != nil {
+		t.Fatalf("failed to find metadata.json at %s: %v", metadataPath, err)
+	}
+
+	content, err := metadataFile.Contents()
+	if err != nil {
+		t.Fatalf("failed to read metadata.json: %v", err)
+	}
+
+	var metadata CommittedMetadata
+	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
+		t.Fatalf("failed to parse metadata.json: %v", err)
+	}
+
+	if metadata.Agent != agentName {
+		t.Errorf("metadata.Agent = %q, want %q", metadata.Agent, agentName)
+	}
+
+	// Verify commit message contains Entire-Agent trailer
+	if !strings.Contains(commit.Message, paths.AgentTrailerKey+": "+agentName) {
+		t.Errorf("commit message should contain %s trailer with value %q, got:\n%s",
+			paths.AgentTrailerKey, agentName, commit.Message)
 	}
 }

@@ -127,8 +127,8 @@ func TestRunStatus_Enabled(t *testing.T) {
 		t.Fatalf("runStatus() error = %v", err)
 	}
 
-	if !strings.Contains(stdout.String(), "● enabled") {
-		t.Errorf("Expected output to show '● enabled', got: %s", stdout.String())
+	if !strings.Contains(stdout.String(), "Project, enabled") {
+		t.Errorf("Expected output to show 'Project, enabled', got: %s", stdout.String())
 	}
 }
 
@@ -141,8 +141,8 @@ func TestRunStatus_Disabled(t *testing.T) {
 		t.Fatalf("runStatus() error = %v", err)
 	}
 
-	if !strings.Contains(stdout.String(), "○ disabled") {
-		t.Errorf("Expected output to show '○ disabled', got: %s", stdout.String())
+	if !strings.Contains(stdout.String(), "Project, disabled") {
+		t.Errorf("Expected output to show 'Project, disabled', got: %s", stdout.String())
 	}
 }
 
@@ -283,9 +283,12 @@ func TestRunDisable_WithProjectFlag(t *testing.T) {
 	}
 }
 
-func TestRunDisable_NoLocalSettings(t *testing.T) {
+// TestRunDisable_CreatesLocalSettingsWhenMissing verifies that running
+// `entire disable` without --project creates settings.local.json when it
+// doesn't exist, rather than writing to settings.json.
+func TestRunDisable_CreatesLocalSettingsWhenMissing(t *testing.T) {
 	setupTestDir(t)
-	// Only create project settings
+	// Only create project settings (no local settings)
 	writeSettings(t, testSettingsEnabled)
 
 	var stdout bytes.Buffer
@@ -302,13 +305,22 @@ func TestRunDisable_NoLocalSettings(t *testing.T) {
 		t.Error("Entire should be disabled after running disable command")
 	}
 
-	// Project settings should be updated
+	// Local settings file should be created with enabled:false
+	localContent, err := os.ReadFile(EntireSettingsLocalFile)
+	if err != nil {
+		t.Fatalf("Local settings file should have been created: %v", err)
+	}
+	if !strings.Contains(string(localContent), `"enabled":false`) && !strings.Contains(string(localContent), `"enabled": false`) {
+		t.Errorf("Local settings should have enabled:false, got: %s", localContent)
+	}
+
+	// Project settings should remain unchanged (still enabled)
 	projectContent, err := os.ReadFile(EntireSettingsFile)
 	if err != nil {
 		t.Fatalf("Failed to read project settings: %v", err)
 	}
-	if !strings.Contains(string(projectContent), `"enabled":false`) && !strings.Contains(string(projectContent), `"enabled": false`) {
-		t.Errorf("Project settings should have enabled:false, got: %s", projectContent)
+	if !strings.Contains(string(projectContent), `"enabled":true`) && !strings.Contains(string(projectContent), `"enabled": true`) {
+		t.Errorf("Project settings should still have enabled:true, got: %s", projectContent)
 	}
 }
 
@@ -405,7 +417,7 @@ func TestRunEnableWithStrategy_PreservesExistingSettings(t *testing.T) {
 
 	// Run enable with a different strategy
 	var stdout bytes.Buffer
-	err := runEnableWithStrategy(&stdout, "auto-commit", false, false, false, true, false)
+	err := runEnableWithStrategy(&stdout, "auto-commit", false, false, false, true, false, false, false, false)
 	if err != nil {
 		t.Fatalf("runEnableWithStrategy() error = %v", err)
 	}
@@ -461,7 +473,7 @@ func TestRunEnableWithStrategy_PreservesLocalSettings(t *testing.T) {
 
 	// Run enable with --local flag
 	var stdout bytes.Buffer
-	err := runEnableWithStrategy(&stdout, "auto-commit", false, false, true, false, false)
+	err := runEnableWithStrategy(&stdout, "auto-commit", false, false, true, false, false, false, false, false)
 	if err != nil {
 		t.Fatalf("runEnableWithStrategy() error = %v", err)
 	}
@@ -483,5 +495,72 @@ func TestRunEnableWithStrategy_PreservesLocalSettings(t *testing.T) {
 	}
 	if settings.StrategyOptions["push"] != true {
 		t.Errorf("strategy_options.push should be true, got %v", settings.StrategyOptions["push"])
+	}
+}
+
+func TestRunStatus_LocalSettingsOnly(t *testing.T) {
+	setupTestRepo(t)
+	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": true}`)
+
+	var stdout bytes.Buffer
+	if err := runStatus(&stdout); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Local, enabled") {
+		t.Errorf("Expected output to show 'Local, enabled', got: %s", output)
+	}
+	if strings.Contains(output, "Project,") {
+		t.Errorf("Should not show Project settings when only local exists, got: %s", output)
+	}
+}
+
+func TestRunStatus_BothProjectAndLocal(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, `{"strategy": "manual-commit", "enabled": true}`)
+	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": false}`)
+
+	var stdout bytes.Buffer
+	if err := runStatus(&stdout); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Project, enabled (manual-commit)") {
+		t.Errorf("Expected output to show 'Project, enabled (manual-commit)', got: %s", output)
+	}
+	if !strings.Contains(output, "Local, disabled (auto-commit)") {
+		t.Errorf("Expected output to show 'Local, disabled (auto-commit)', got: %s", output)
+	}
+}
+
+func TestRunStatus_ShowsStrategy(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, `{"strategy": "auto-commit", "enabled": true}`)
+
+	var stdout bytes.Buffer
+	if err := runStatus(&stdout); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "(auto-commit)") {
+		t.Errorf("Expected output to show strategy '(auto-commit)', got: %s", output)
+	}
+}
+
+func TestRunStatus_ShowsManualCommitStrategy(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, `{"strategy": "manual-commit", "enabled": false}`)
+
+	var stdout bytes.Buffer
+	if err := runStatus(&stdout); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Project, disabled (manual-commit)") {
+		t.Errorf("Expected output to show 'Project, disabled (manual-commit)', got: %s", output)
 	}
 }

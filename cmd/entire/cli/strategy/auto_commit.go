@@ -100,10 +100,11 @@ func (s *AutoCommitStrategy) Description() string {
 	return "Auto-commits code to active branch with metadata on entire/sessions"
 }
 
-// AllowsMainBranch returns false because auto-commit strategy creates commits on the
-// working branch, which would pollute main branch history.
+// AllowsMainBranch returns true to allow auto-commit strategy on main branch.
+// The strategy creates clean commits with Entire-Checkpoint trailers, and detailed
+// metadata is stored on the separate entire/sessions orphan branch.
 func (s *AutoCommitStrategy) AllowsMainBranch() bool {
-	return false
+	return true
 }
 
 func (s *AutoCommitStrategy) ValidateRepository() error {
@@ -230,6 +231,7 @@ func (s *AutoCommitStrategy) commitMetadataToMetadataBranch(_ *git.Repository, c
 		MetadataDir:  ctx.MetadataDirAbs,     // Copy all files from metadata dir
 		AuthorName:   ctx.AuthorName,
 		AuthorEmail:  ctx.AuthorEmail,
+		Agent:        ctx.AgentType,
 	})
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("failed to write committed checkpoint: %w", err)
@@ -312,6 +314,9 @@ func (s *AutoCommitStrategy) GetRewindPoints(limit int) ([]RewindPoint, error) {
 			metadataDir = checkpointPath + "/tasks/" + metadata.ToolUseID
 		}
 
+		// Read session prompt from metadata tree
+		sessionPrompt := ReadSessionPromptFromTree(metadataTree, checkpointPath)
+
 		points = append(points, RewindPoint{
 			ID:               c.Hash.String(),
 			Message:          message,
@@ -321,6 +326,9 @@ func (s *AutoCommitStrategy) GetRewindPoints(limit int) ([]RewindPoint, error) {
 			CheckpointID:     checkpointID,
 			IsTaskCheckpoint: metadata.IsTask,
 			ToolUseID:        metadata.ToolUseID,
+			Agent:            metadata.Agent,
+			SessionID:        metadata.SessionID,
+			SessionPrompt:    sessionPrompt,
 		})
 
 		return nil
@@ -733,6 +741,7 @@ func (s *AutoCommitStrategy) commitTaskMetadataToMetadataBranch(_ *git.Repositor
 		CommitSubject:          messageSubject,
 		AuthorName:             ctx.AuthorName,
 		AuthorEmail:            ctx.AuthorEmail,
+		Agent:                  ctx.AgentType,
 	})
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("failed to write task checkpoint: %w", err)

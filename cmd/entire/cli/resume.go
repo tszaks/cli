@@ -126,8 +126,8 @@ func resumeFromCurrentBranch(branchName string, force bool) error {
 		return nil
 	}
 
-	// If there are actual branch work commits (not just merge commits) without checkpoints,
-	// ask for confirmation. Merge commits (e.g., from merging main) don't count as "work".
+	// If there are newer commits without checkpoints, ask for confirmation.
+	// Merge commits (e.g., from merging main) don't count as "work" and are skipped silently.
 	if result.newerCommitsExist && !force {
 		fmt.Fprintf(os.Stderr, "Found checkpoint in an older commit.\n")
 		fmt.Fprintf(os.Stderr, "There are %d newer commit(s) on this branch without checkpoints.\n", result.newerCommitCount)
@@ -141,10 +141,6 @@ func resumeFromCurrentBranch(branchName string, force bool) error {
 			fmt.Fprintf(os.Stderr, "Resume cancelled.\n")
 			return nil
 		}
-	} else if result.mergeCommitsOnly {
-		// Just merge commits between HEAD and checkpoint - no warning needed, this is the
-		// common "merged main into feature branch" scenario
-		fmt.Fprintf(os.Stderr, "Resuming from checkpoint (skipping merge commit(s)).\n")
 	}
 
 	checkpointID := result.checkpointID
@@ -163,7 +159,7 @@ func resumeFromCurrentBranch(branchName string, force bool) error {
 		return checkRemoteMetadata(repo, checkpointID)
 	}
 
-	return resumeSession(metadata.SessionID, checkpointID)
+	return resumeSession(metadata.SessionID, checkpointID, force)
 }
 
 // branchCheckpointResult contains the result of searching for a checkpoint on a branch.
@@ -173,7 +169,6 @@ type branchCheckpointResult struct {
 	commitMessage     string
 	newerCommitsExist bool // true if there are branch-only commits (not merge commits) without checkpoints
 	newerCommitCount  int  // count of branch-only commits without checkpoints
-	mergeCommitsOnly  bool // true if ALL newer commits are merge commits (no actual branch work)
 }
 
 // findBranchCheckpoint finds the most recent commit with an Entire-Checkpoint trailer
@@ -252,7 +247,6 @@ func findBranchCheckpoint(repo *git.Repository, branchName string) (*branchCheck
 func findCheckpointInHistory(start *object.Commit, stopAt *plumbing.Hash) *branchCheckpointResult {
 	result := &branchCheckpointResult{}
 	branchWorkCommits := 0 // Regular commits without checkpoints (actual work)
-	mergeCommits := 0      // Merge commits without checkpoints
 	const maxCommits = 100 // Limit search depth
 	totalChecked := 0
 
@@ -271,16 +265,11 @@ func findCheckpointInHistory(start *object.Commit, stopAt *plumbing.Hash) *branc
 			// Only warn about branch work commits, not merge commits
 			result.newerCommitsExist = branchWorkCommits > 0
 			result.newerCommitCount = branchWorkCommits
-			result.mergeCommitsOnly = branchWorkCommits == 0 && mergeCommits > 0
 			return result
 		}
 
-		// Track what kind of commit this is
-		if current.NumParents() > 1 {
-			// This is a merge commit (bringing in another branch)
-			mergeCommits++
-		} else {
-			// This is a regular commit (actual branch work)
+		// Only count regular commits (not merge commits) as "branch work"
+		if current.NumParents() <= 1 {
 			branchWorkCommits++
 		}
 
@@ -351,7 +340,9 @@ func checkRemoteMetadata(repo *git.Repository, checkpointID string) error {
 }
 
 // resumeSession restores and displays the resume command for a specific session.
-func resumeSession(sessionID, checkpointID string) error {
+// For multi-session checkpoints, restores ALL sessions and shows commands for each.
+// If force is false, prompts for confirmation when local logs have newer timestamps.
+func resumeSession(sessionID, checkpointID string, force bool) error {
 	// Get the current agent (auto-detect or use default)
 	ag, err := agent.Detect()
 	if err != nil {
@@ -361,59 +352,165 @@ func resumeSession(sessionID, checkpointID string) error {
 		}
 	}
 
-	// Get session directory for this agent
-	cwd, err := os.Getwd()
+	// Get repo root for session directory lookup
+	// Use repo root instead of CWD because Claude stores sessions per-repo,
+	// and running from a subdirectory would look up the wrong session directory
+	repoRoot, err := paths.RepoRoot()
 	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
+		return fmt.Errorf("failed to get repository root: %w", err)
 	}
 
-	sessionDir, err := ag.GetSessionDir(cwd)
+	sessionDir, err := ag.GetSessionDir(repoRoot)
 	if err != nil {
 		return fmt.Errorf("failed to determine session directory: %w", err)
 	}
 
-	// Extract agent-specific session ID from Entire session ID
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
+		return fmt.Errorf("failed to create session directory: %w", err)
+	}
+
+	// Get strategy and restore sessions using full checkpoint data
+	strat := GetStrategy()
+
+	// Use RestoreLogsOnly via LogsOnlyRestorer interface for multi-session support
+	if restorer, ok := strat.(strategy.LogsOnlyRestorer); ok {
+		// Create a logs-only rewind point to trigger full multi-session restore
+		point := strategy.RewindPoint{
+			IsLogsOnly:   true,
+			CheckpointID: checkpointID,
+		}
+
+		if err := restorer.RestoreLogsOnly(point, force); err != nil {
+			// Fall back to single-session restore
+			return resumeSingleSession(ag, sessionID, checkpointID, sessionDir, repoRoot, force)
+		}
+
+		// Get checkpoint metadata to show all sessions
+		repo, err := openRepository()
+		if err != nil {
+			// Just show the primary session - graceful fallback
+			agentSID := ag.ExtractAgentSessionID(sessionID)
+			fmt.Fprintf(os.Stderr, "Session: %s\n", sessionID)
+			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
+			fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSID))
+			return nil //nolint:nilerr // Graceful fallback to single session
+		}
+
+		metadataTree, err := strategy.GetMetadataBranchTree(repo)
+		if err != nil {
+			agentSID := ag.ExtractAgentSessionID(sessionID)
+			fmt.Fprintf(os.Stderr, "Session: %s\n", sessionID)
+			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
+			fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSID))
+			return nil //nolint:nilerr // Graceful fallback to single session
+		}
+
+		metadata, err := strategy.ReadCheckpointMetadata(metadataTree, paths.CheckpointPath(checkpointID))
+		if err != nil || metadata.SessionCount <= 1 {
+			// Single session or can't read metadata - show standard single session output
+			agentSID := ag.ExtractAgentSessionID(sessionID)
+			fmt.Fprintf(os.Stderr, "Session: %s\n", sessionID)
+			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
+			fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSID))
+			return nil //nolint:nilerr // Graceful fallback to single session
+		}
+
+		// Multi-session: show all resume commands with prompts
+		checkpointPath := paths.CheckpointPath(checkpointID)
+		sessionPrompts := strategy.ReadAllSessionPromptsFromTree(metadataTree, checkpointPath, metadata.SessionCount, metadata.SessionIDs)
+
+		fmt.Fprintf(os.Stderr, "\nRestored %d sessions. To continue, run:\n", metadata.SessionCount)
+		for i, sid := range metadata.SessionIDs {
+			agentSID := ag.ExtractAgentSessionID(sid)
+			cmd := ag.FormatResumeCommand(agentSID)
+
+			var prompt string
+			if i < len(sessionPrompts) {
+				prompt = sessionPrompts[i]
+			}
+
+			if i == len(metadata.SessionIDs)-1 {
+				if prompt != "" {
+					fmt.Fprintf(os.Stderr, "  %s  # %s (most recent)\n", cmd, prompt)
+				} else {
+					fmt.Fprintf(os.Stderr, "  %s  # (most recent)\n", cmd)
+				}
+			} else {
+				if prompt != "" {
+					fmt.Fprintf(os.Stderr, "  %s  # %s\n", cmd, prompt)
+				} else {
+					fmt.Fprintf(os.Stderr, "  %s\n", cmd)
+				}
+			}
+		}
+
+		return nil
+	}
+
+	// Strategy doesn't support LogsOnlyRestorer, fall back to single session
+	return resumeSingleSession(ag, sessionID, checkpointID, sessionDir, repoRoot, force)
+}
+
+// resumeSingleSession restores a single session (fallback when multi-session restore fails).
+// Always overwrites existing session logs to ensure consistency with checkpoint state.
+// If force is false, prompts for confirmation when local log has newer timestamps.
+func resumeSingleSession(ag agent.Agent, sessionID, checkpointID, sessionDir, repoRoot string, force bool) error {
 	agentSessionID := ag.ExtractAgentSessionID(sessionID)
 	sessionLogPath := filepath.Join(sessionDir, agentSessionID+".jsonl")
 
-	// Check if session log already exists
-	if !fileExists(sessionLogPath) {
-		// Restore the session log
-		strat := GetStrategy()
+	strat := GetStrategy()
 
-		logContent, _, err := strat.GetSessionLog(checkpointID)
-		if err != nil {
-			if errors.Is(err, strategy.ErrNoMetadata) {
-				fmt.Fprintf(os.Stderr, "Session '%s' found in commit trailer but session log not available\n", sessionID)
-				fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
-				fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSessionID))
-				return nil
-			}
-			return fmt.Errorf("failed to get session log: %w", err)
+	logContent, _, err := strat.GetSessionLog(checkpointID)
+	if err != nil {
+		if errors.Is(err, strategy.ErrNoMetadata) {
+			fmt.Fprintf(os.Stderr, "Session '%s' found in commit trailer but session log not available\n", sessionID)
+			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
+			fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSessionID))
+			return nil
 		}
-
-		// Create an AgentSession with the native data
-		agentSession := &agent.AgentSession{
-			SessionID:  agentSessionID,
-			AgentName:  ag.Name(),
-			RepoPath:   cwd,
-			SessionRef: sessionLogPath,
-			NativeData: logContent,
-		}
-
-		// Create directory if it doesn't exist
-		if err := os.MkdirAll(sessionDir, 0o700); err != nil {
-			return fmt.Errorf("failed to create session directory: %w", err)
-		}
-
-		// Write the session using the agent's WriteSession method
-		if err := ag.WriteSession(agentSession); err != nil {
-			return fmt.Errorf("failed to write session: %w", err)
-		}
-
-		fmt.Fprintf(os.Stderr, "Session restored to: %s\n", sessionLogPath)
+		return fmt.Errorf("failed to get session log: %w", err)
 	}
 
+	// Check if local file has newer timestamps than checkpoint
+	if !force {
+		localTime := paths.GetLastTimestampFromFile(sessionLogPath)
+		checkpointTime := paths.GetLastTimestampFromBytes(logContent)
+		status := strategy.ClassifyTimestamps(localTime, checkpointTime)
+
+		if status == strategy.StatusLocalNewer {
+			sessions := []strategy.SessionRestoreInfo{{
+				SessionID:      sessionID,
+				Status:         status,
+				LocalTime:      localTime,
+				CheckpointTime: checkpointTime,
+			}}
+			shouldOverwrite, promptErr := strategy.PromptOverwriteNewerLogs(sessions)
+			if promptErr != nil {
+				return fmt.Errorf("failed to get confirmation: %w", promptErr)
+			}
+			if !shouldOverwrite {
+				fmt.Fprintf(os.Stderr, "Resume cancelled. Local session log preserved.\n")
+				return nil
+			}
+		}
+	}
+
+	// Create an AgentSession with the native data
+	agentSession := &agent.AgentSession{
+		SessionID:  agentSessionID,
+		AgentName:  ag.Name(),
+		RepoPath:   repoRoot,
+		SessionRef: sessionLogPath,
+		NativeData: logContent,
+	}
+
+	// Write the session using the agent's WriteSession method
+	if err := ag.WriteSession(agentSession); err != nil {
+		return fmt.Errorf("failed to write session: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Session restored to: %s\n", sessionLogPath)
 	fmt.Fprintf(os.Stderr, "Session: %s\n", sessionID)
 	fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
 	fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSessionID))

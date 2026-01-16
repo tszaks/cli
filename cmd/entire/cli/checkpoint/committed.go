@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -201,7 +202,21 @@ func (s *GitStore) writeFinalTaskCheckpoint(opts WriteCommittedOptions, taskPath
 }
 
 // writeStandardCheckpointEntries writes transcript, prompts, context, metadata.json and any additional files.
+// If the checkpoint already exists (from a previous session), archives the existing files to a numbered subfolder.
 func (s *GitStore) writeStandardCheckpointEntries(opts WriteCommittedOptions, basePath string, entries map[string]object.TreeEntry) error {
+	// Check if checkpoint already exists (multi-session support)
+	var existingMetadata *CommittedMetadata
+	metadataPath := basePath + paths.MetadataFileName
+	if entry, exists := entries[metadataPath]; exists {
+		// Read existing metadata to get session count
+		existing, err := s.readMetadataFromBlob(entry.Hash)
+		if err == nil {
+			existingMetadata = existing
+			// Archive existing session files to numbered subfolder
+			s.archiveExistingSession(basePath, existingMetadata, entries)
+		}
+	}
+
 	// Write transcript (from in-memory content or file path)
 	if err := s.writeTranscript(opts, basePath, entries); err != nil {
 		return err
@@ -241,8 +256,8 @@ func (s *GitStore) writeStandardCheckpointEntries(opts WriteCommittedOptions, ba
 		}
 	}
 
-	// Write metadata.json
-	return s.writeMetadataJSON(opts, basePath, entries)
+	// Write metadata.json (with merged info if existing metadata present)
+	return s.writeMetadataJSON(opts, basePath, entries, existingMetadata)
 }
 
 // writeTranscript writes the transcript file from in-memory content or file path.
@@ -285,7 +300,8 @@ func (s *GitStore) writeTranscript(opts WriteCommittedOptions, basePath string, 
 }
 
 // writeMetadataJSON writes the metadata.json file for the checkpoint.
-func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string, entries map[string]object.TreeEntry) error {
+// If existingMetadata is provided, merges session info from the previous session(s).
+func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string, entries map[string]object.TreeEntry, existingMetadata *CommittedMetadata) error {
 	metadata := CommittedMetadata{
 		CheckpointID:     opts.CheckpointID,
 		SessionID:        opts.SessionID,
@@ -293,9 +309,38 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 		CreatedAt:        time.Now(),
 		CheckpointsCount: opts.CheckpointsCount,
 		FilesTouched:     opts.FilesTouched,
+		Agent:            opts.Agent,
 		IsTask:           opts.IsTask,
 		ToolUseID:        opts.ToolUseID,
+		SessionCount:     1,
+		SessionIDs:       []string{opts.SessionID},
 	}
+
+	// Merge with existing metadata if present (multi-session checkpoint)
+	if existingMetadata != nil {
+		// Get existing session count (default to 1 for backwards compat)
+		existingCount := existingMetadata.SessionCount
+		if existingCount == 0 {
+			existingCount = 1
+		}
+		metadata.SessionCount = existingCount + 1
+
+		// Merge session IDs
+		existingIDs := existingMetadata.SessionIDs
+		if len(existingIDs) == 0 {
+			// Backwards compat: old metadata only had SessionID
+			existingIDs = []string{existingMetadata.SessionID}
+		}
+		metadata.SessionIDs = append(metadata.SessionIDs[:0], existingIDs...)
+		metadata.SessionIDs = append(metadata.SessionIDs, opts.SessionID)
+
+		// Merge files touched (deduplicated)
+		metadata.FilesTouched = mergeFilesTouched(existingMetadata.FilesTouched, opts.FilesTouched)
+
+		// Sum checkpoint counts
+		metadata.CheckpointsCount = existingMetadata.CheckpointsCount + opts.CheckpointsCount
+	}
+
 	metadataJSON, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -312,6 +357,143 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 	return nil
 }
 
+// mergeFilesTouched combines two file lists, removing duplicates.
+func mergeFilesTouched(existing, additional []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+
+	for _, f := range existing {
+		if !seen[f] {
+			seen[f] = true
+			result = append(result, f)
+		}
+	}
+	for _, f := range additional {
+		if !seen[f] {
+			seen[f] = true
+			result = append(result, f)
+		}
+	}
+
+	sort.Strings(result)
+	return result
+}
+
+// readMetadataFromBlob reads CommittedMetadata from a blob hash.
+func (s *GitStore) readMetadataFromBlob(hash plumbing.Hash) (*CommittedMetadata, error) {
+	blob, err := s.repo.BlobObject(hash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blob: %w", err)
+	}
+
+	reader, err := blob.Reader()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blob reader: %w", err)
+	}
+	defer reader.Close()
+
+	var metadata CommittedMetadata
+	if err := json.NewDecoder(reader).Decode(&metadata); err != nil {
+		return nil, fmt.Errorf("failed to decode metadata: %w", err)
+	}
+
+	return &metadata, nil
+}
+
+// archiveExistingSession moves existing session files to a numbered subfolder.
+// The subfolder number is based on the current session count (so first archived session goes to "1/").
+func (s *GitStore) archiveExistingSession(basePath string, existingMetadata *CommittedMetadata, entries map[string]object.TreeEntry) {
+	// Determine archive folder number
+	sessionCount := existingMetadata.SessionCount
+	if sessionCount == 0 {
+		sessionCount = 1 // backwards compat
+	}
+	archivePath := fmt.Sprintf("%s%d/", basePath, sessionCount)
+
+	// Files to archive (standard checkpoint files at basePath, excluding tasks/ subfolder)
+	filesToArchive := []string{
+		paths.MetadataFileName,
+		paths.TranscriptFileName,
+		paths.PromptFileName,
+		paths.ContextFileName,
+		paths.ContentHashFileName,
+	}
+
+	// Move each file to archive folder
+	for _, filename := range filesToArchive {
+		srcPath := basePath + filename
+		if entry, exists := entries[srcPath]; exists {
+			// Add to archive location
+			dstPath := archivePath + filename
+			entries[dstPath] = object.TreeEntry{
+				Name: dstPath,
+				Mode: entry.Mode,
+				Hash: entry.Hash,
+			}
+			// Remove from original location (will be overwritten by new session)
+			delete(entries, srcPath)
+		}
+	}
+}
+
+// readArchivedSessions reads transcript data from archived session subfolders (1/, 2/, etc.).
+// Returns sessions ordered by folder index (oldest first).
+func (s *GitStore) readArchivedSessions(checkpointTree *object.Tree, sessionCount int) []ArchivedSession {
+	var archived []ArchivedSession
+
+	// Archived sessions are in numbered folders: 1/, 2/, etc.
+	// The most recent session is at the root level (not archived).
+	// Session count N means there are N-1 archived sessions.
+	for i := 1; i < sessionCount; i++ {
+		folderName := strconv.Itoa(i)
+
+		// Try to get the archived session subtree
+		subTree, err := checkpointTree.Tree(folderName)
+		if err != nil {
+			continue // Folder doesn't exist, skip
+		}
+
+		session := ArchivedSession{
+			FolderIndex: i,
+		}
+
+		// Read metadata to get session ID
+		if metadataFile, fileErr := subTree.File(paths.MetadataFileName); fileErr == nil {
+			if content, contentErr := metadataFile.Contents(); contentErr == nil {
+				var metadata CommittedMetadata
+				if jsonErr := json.Unmarshal([]byte(content), &metadata); jsonErr == nil {
+					session.SessionID = metadata.SessionID
+				}
+			}
+		}
+
+		// Read transcript (try current format first, then legacy)
+		if file, fileErr := subTree.File(paths.TranscriptFileName); fileErr == nil {
+			if content, contentErr := file.Contents(); contentErr == nil {
+				session.Transcript = []byte(content)
+			}
+		} else if file, fileErr := subTree.File(paths.TranscriptFileNameLegacy); fileErr == nil {
+			if content, contentErr := file.Contents(); contentErr == nil {
+				session.Transcript = []byte(content)
+			}
+		}
+
+		// Read prompts
+		if file, fileErr := subTree.File(paths.PromptFileName); fileErr == nil {
+			if content, contentErr := file.Contents(); contentErr == nil {
+				session.Prompts = content
+			}
+		}
+
+		// Only add if we got a transcript
+		if len(session.Transcript) > 0 {
+			archived = append(archived, session)
+		}
+	}
+
+	return archived
+}
+
 // buildCommitMessage constructs the commit message with proper trailers.
 func (s *GitStore) buildCommitMessage(opts WriteCommittedOptions, taskMetadataPath string) string {
 	var commitMsg strings.Builder
@@ -323,6 +505,9 @@ func (s *GitStore) buildCommitMessage(opts WriteCommittedOptions, taskMetadataPa
 	commitMsg.WriteString(fmt.Sprintf("Checkpoint: %s\n\n", opts.CheckpointID))
 	commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.SessionTrailerKey, opts.SessionID))
 	commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.StrategyTrailerKey, opts.Strategy))
+	if opts.Agent != "" {
+		commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.AgentTrailerKey, opts.Agent))
+	}
 	if opts.EphemeralBranch != "" {
 		commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.EphemeralBranchTrailerKey, opts.EphemeralBranch))
 	}
@@ -405,6 +590,11 @@ func (s *GitStore) ReadCommitted(ctx context.Context, checkpointID string) (*Rea
 		}
 	}
 
+	// Read archived sessions if this is a multi-session checkpoint
+	if result.Metadata.SessionCount > 1 {
+		result.ArchivedSessions = s.readArchivedSessions(checkpointTree, result.Metadata.SessionCount)
+	}
+
 	return result, nil
 }
 
@@ -464,8 +654,11 @@ func (s *GitStore) ListCommitted(ctx context.Context) ([]CommittedInfo, error) {
 						info.CreatedAt = metadata.CreatedAt
 						info.CheckpointsCount = metadata.CheckpointsCount
 						info.FilesTouched = metadata.FilesTouched
+						info.Agent = metadata.Agent
 						info.IsTask = metadata.IsTask
 						info.ToolUseID = metadata.ToolUseID
+						info.SessionCount = metadata.SessionCount
+						info.SessionIDs = metadata.SessionIDs
 					}
 				}
 			}

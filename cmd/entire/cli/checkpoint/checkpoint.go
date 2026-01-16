@@ -208,6 +208,9 @@ type WriteCommittedOptions struct {
 
 	// Commit message fields (used for task checkpoints)
 	CommitSubject string // Subject line for the metadata commit (overrides default)
+
+	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor")
+	Agent string
 }
 
 // ReadCommittedResult contains the result of reading a committed checkpoint.
@@ -215,14 +218,35 @@ type ReadCommittedResult struct {
 	// Metadata contains the checkpoint metadata
 	Metadata CommittedMetadata
 
-	// Transcript is the session transcript content
+	// Transcript is the session transcript content (most recent session)
 	Transcript []byte
 
-	// Prompts contains user prompts
+	// Prompts contains user prompts (most recent session)
 	Prompts string
 
 	// Context is the context.md content
 	Context string
+
+	// ArchivedSessions contains transcripts from previous sessions when multiple
+	// sessions were condensed to the same checkpoint. Ordered from oldest to newest
+	// (1/, 2/, etc.). The root-level Transcript is the most recent session.
+	ArchivedSessions []ArchivedSession
+}
+
+// ArchivedSession contains transcript data from a previous session
+// that was archived when multiple sessions contributed to the same checkpoint.
+type ArchivedSession struct {
+	// SessionID is the session identifier for this archived session
+	SessionID string
+
+	// Transcript is the session transcript content
+	Transcript []byte
+
+	// Prompts contains user prompts from this session
+	Prompts string
+
+	// FolderIndex is the archive folder number (1, 2, etc.)
+	FolderIndex int
 }
 
 // CommittedInfo contains summary information about a committed checkpoint.
@@ -230,23 +254,30 @@ type CommittedInfo struct {
 	// CheckpointID is the stable 12-hex-char identifier
 	CheckpointID string
 
-	// SessionID is the session identifier
+	// SessionID is the session identifier (most recent session for multi-session checkpoints)
 	SessionID string
 
 	// CreatedAt is when the checkpoint was created
 	CreatedAt time.Time
 
-	// CheckpointsCount is the number of checkpoints in the session
+	// CheckpointsCount is the total number of checkpoints across all sessions
 	CheckpointsCount int
 
-	// FilesTouched are files modified during the session
+	// FilesTouched are files modified during all sessions
 	FilesTouched []string
+
+	// Agent identifies the agent that created this checkpoint
+	Agent string
 
 	// IsTask indicates if this is a task checkpoint
 	IsTask bool
 
 	// ToolUseID is the tool use ID for task checkpoints
 	ToolUseID string
+
+	// Multi-session support
+	SessionCount int      // Number of sessions (1 if single session)
+	SessionIDs   []string // All session IDs that contributed
 }
 
 // CommittedMetadata contains the metadata stored in metadata.json for each checkpoint.
@@ -257,6 +288,13 @@ type CommittedMetadata struct {
 	CreatedAt        time.Time `json:"created_at"`
 	CheckpointsCount int       `json:"checkpoints_count"`
 	FilesTouched     []string  `json:"files_touched"`
+
+	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor")
+	Agent string `json:"agent,omitempty"`
+
+	// Multi-session support: when multiple sessions contribute to the same checkpoint
+	SessionCount int      `json:"session_count,omitempty"` // Number of sessions (1 if omitted for backwards compat)
+	SessionIDs   []string `json:"session_ids,omitempty"`   // All session IDs that contributed
 
 	// Task checkpoint fields (only populated for task checkpoints)
 	IsTask    bool   `json:"is_task,omitempty"`

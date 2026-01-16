@@ -219,6 +219,124 @@ func GetMetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
 	return tree, nil
 }
 
+// ExtractFirstPrompt extracts and truncates the first meaningful prompt from prompt content.
+// Prompts are separated by "\n\n---\n\n". Skips empty prompts and separator-only content.
+// Returns empty string if no valid prompt is found.
+func ExtractFirstPrompt(content string) string {
+	if content == "" {
+		return ""
+	}
+
+	// Prompts are separated by "\n\n---\n\n"
+	// Find the first non-empty prompt
+	prompts := strings.Split(content, "\n\n---\n\n")
+	var firstPrompt string
+	for _, p := range prompts {
+		cleaned := strings.TrimSpace(p)
+		// Skip empty prompts or prompts that are just dashes/separators
+		if cleaned == "" || isOnlySeparators(cleaned) {
+			continue
+		}
+		firstPrompt = cleaned
+		break
+	}
+
+	if firstPrompt == "" {
+		return ""
+	}
+
+	return TruncateDescription(firstPrompt, MaxDescriptionLength)
+}
+
+// ReadSessionPromptFromTree reads the first meaningful prompt from a checkpoint's prompt.txt file in a git tree.
+// Returns an empty string if the prompt cannot be read.
+func ReadSessionPromptFromTree(tree *object.Tree, checkpointPath string) string {
+	promptPath := checkpointPath + "/" + paths.PromptFileName
+	file, err := tree.File(promptPath)
+	if err != nil {
+		return ""
+	}
+
+	content, err := file.Contents()
+	if err != nil {
+		return ""
+	}
+
+	return ExtractFirstPrompt(content)
+}
+
+// isOnlySeparators checks if a string contains only dashes, spaces, and newlines.
+func isOnlySeparators(s string) bool {
+	for _, r := range s {
+		if r != '-' && r != ' ' && r != '\n' && r != '\r' && r != '\t' {
+			return false
+		}
+	}
+	return true
+}
+
+// ReadAllSessionPromptsFromTree reads the first prompt for all sessions in a multi-session checkpoint.
+// Returns a slice of prompts parallel to sessionIDs (oldest to newest).
+// For single-session checkpoints, returns a slice with just the root prompt.
+func ReadAllSessionPromptsFromTree(tree *object.Tree, checkpointPath string, sessionCount int, sessionIDs []string) []string {
+	if sessionCount <= 1 || len(sessionIDs) <= 1 {
+		// Single session - just return the root prompt
+		prompt := ReadSessionPromptFromTree(tree, checkpointPath)
+		if prompt != "" {
+			return []string{prompt}
+		}
+		return nil
+	}
+
+	// Multi-session: read prompts from archived folders (1/, 2/, etc.) and root
+	prompts := make([]string, len(sessionIDs))
+
+	// Read archived session prompts (folders 1, 2, ... N-1)
+	for i := 1; i < sessionCount; i++ {
+		archivedPath := fmt.Sprintf("%s/%d", checkpointPath, i)
+		prompts[i-1] = ReadSessionPromptFromTree(tree, archivedPath)
+	}
+
+	// Read the most recent session prompt (at root level)
+	prompts[len(prompts)-1] = ReadSessionPromptFromTree(tree, checkpointPath)
+
+	return prompts
+}
+
+// ReadSessionPromptFromShadow reads the first prompt for a session from the shadow branch.
+// Returns an empty string if the prompt cannot be read.
+func ReadSessionPromptFromShadow(repo *git.Repository, baseCommit, sessionID string) string {
+	// Get shadow branch for this base commit (try full hash first, then shortened)
+	shadowBranchName := shadowBranchPrefix + baseCommit
+	ref, err := repo.Reference(plumbing.NewBranchReferenceName(shadowBranchName), true)
+	if err != nil {
+		// Try shortened hash (7 chars)
+		if len(baseCommit) > 7 {
+			shadowBranchName = shadowBranchPrefix + baseCommit[:7]
+			ref, err = repo.Reference(plumbing.NewBranchReferenceName(shadowBranchName), true)
+			if err != nil {
+				return ""
+			}
+		} else {
+			return ""
+		}
+	}
+
+	commit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		return ""
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		return ""
+	}
+
+	// Build the path to prompt.txt: .entire/metadata/<session-id>/prompt.txt
+	checkpointPath := paths.EntireMetadataDir + "/" + sessionID
+	return ReadSessionPromptFromTree(tree, checkpointPath)
+}
+
 // GetRemoteMetadataBranchTree returns the tree object for origin/entire/sessions.
 func GetRemoteMetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
 	refName := plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName)
@@ -721,9 +839,18 @@ const (
 // The stageCtx parameter is used for user-facing messages to indicate whether
 // this is staging for a session checkpoint or a task checkpoint.
 func StageFiles(worktree *git.Worktree, modified, newFiles, deleted []string, stageCtx StageFilesContext) {
+	// Get repo root for resolving file paths
+	// This is critical because fileExists() uses os.Stat() which resolves relative to CWD,
+	// but worktree.Add/Remove resolve relative to repo root. If CWD != repo root,
+	// fileExists() could return false for existing files, causing worktree.Remove()
+	// to incorrectly delete them.
+	repoRoot := worktree.Filesystem.Root()
+
 	// Stage modified files
 	for _, file := range modified {
-		if fileExists(file) {
+		// Resolve path relative to repo root for existence check
+		absPath := filepath.Join(repoRoot, file)
+		if fileExists(absPath) {
 			if _, err := worktree.Add(file); err != nil {
 				fmt.Fprintf(os.Stderr, "  Failed to stage %s: %v\n", file, err)
 			} else {

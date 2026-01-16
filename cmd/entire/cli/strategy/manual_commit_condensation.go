@@ -36,8 +36,11 @@ func (s *ManualCommitStrategy) listCheckpoints() ([]CheckpointInfo, error) {
 			CreatedAt:        c.CreatedAt,
 			CheckpointsCount: c.CheckpointsCount,
 			FilesTouched:     c.FilesTouched,
+			Agent:            c.Agent,
 			IsTask:           c.IsTask,
 			ToolUseID:        c.ToolUseID,
+			SessionCount:     c.SessionCount,
+			SessionIDs:       c.SessionIDs,
 		})
 	}
 
@@ -130,6 +133,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		EphemeralBranch:  shadowBranchName,
 		AuthorName:       authorName,
 		AuthorEmail:      authorEmail,
+		Agent:            state.AgentType,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to write checkpoint metadata: %w", err)
 	}

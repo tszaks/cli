@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"entire.io/cli/cmd/entire/cli"
+	"entire.io/cli/cmd/entire/cli/telemetry"
 )
 
 func main() {
@@ -23,9 +24,22 @@ func main() {
 		cancel()
 	}()
 
+	// Load telemetry preference from settings (ignore errors - default to enabled)
+	var telemetryEnabled *bool
+	if settings, err := cli.LoadEntireSettings(); err == nil {
+		telemetryEnabled = settings.Telemetry
+	}
+
+	// Initialize telemetry client and add to context
+	telemetryClient := telemetry.NewClient(cli.Version, telemetryEnabled)
+	ctx = telemetry.WithClient(ctx, telemetryClient)
+	defer telemetryClient.Close()
+
 	// Create and execute root command
 	rootCmd := cli.NewRootCmd()
-	if err := rootCmd.ExecuteContext(ctx); err != nil {
+	err := rootCmd.ExecuteContext(ctx)
+
+	if err != nil {
 		// Don't print if the command already handled its own error output
 		var silent *cli.SilentError
 		if !errors.As(err, &silent) {

@@ -3,11 +3,13 @@
 package integration
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
 )
@@ -456,23 +458,111 @@ func TestShadow_MultipleConcurrentSessions(t *testing.T) {
 		t.Errorf("Expected 2 session state files after second session attempt, got %d", len(entries))
 	}
 
-	// Clear session1 state file
+	// Clear session1 state file - this makes the shadow branch "orphaned"
 	if err := env.ClearSessionState(session1.ID); err != nil {
 		t.Fatalf("ClearSessionState failed: %v", err)
 	}
 
 	// Session2 had ConcurrentWarningShown=true, but now the conflict is resolved
 	// (session1 state cleared), so the warning flag is cleared and hooks proceed normally.
-	// However, this will fail with session ID conflict because the shadow branch
-	// still has commits from session1.
+	// The orphaned shadow branch (from session1) is reset, allowing session2 to proceed.
 	err = env.SimulateUserPromptSubmit(session2.ID)
-	if err == nil {
-		t.Error("Expected session ID conflict error when shadow branch has commits from different session")
-	} else if !strings.Contains(err.Error(), "session ID conflict") {
-		t.Errorf("Expected 'session ID conflict' error, got: %v", err)
+	if err != nil {
+		t.Errorf("Expected success after orphaned shadow branch is reset, got: %v", err)
 	} else {
-		t.Log("Correctly detected session ID conflict after concurrent warning was resolved")
+		t.Log("Session2 proceeded after orphaned shadow branch was reset")
 	}
+}
+
+// TestShadow_ShadowBranchMigrationOnPull verifies that when the base commit changes
+// (e.g., after stash → pull → apply), the shadow branch is moved to the new commit.
+func TestShadow_ShadowBranchMigrationOnPull(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	env.InitRepo()
+
+	env.WriteFile("README.md", "# Test")
+	env.GitAdd("README.md")
+	env.GitCommit("Initial commit")
+
+	env.GitCheckoutNewBranch("feature/test")
+	env.InitEntire(strategy.StrategyNameManualCommit)
+
+	originalHead := env.GetHeadHash()
+	originalShadowBranch := "entire/" + originalHead[:7]
+
+	// Start session and create checkpoint
+	session := env.NewSession()
+	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	env.WriteFile("file.txt", "content")
+	session.CreateTranscript("Add file", []FileChange{{Path: "file.txt", Content: "content"}})
+	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop failed: %v", err)
+	}
+
+	// Verify shadow branch exists at original commit
+	if !env.BranchExists(originalShadowBranch) {
+		t.Fatalf("Shadow branch %s should exist", originalShadowBranch)
+	}
+	t.Logf("Original shadow branch: %s", originalShadowBranch)
+
+	// Simulate pull: create a new commit (simulating what pull would do)
+	// In real scenario: stash → pull → apply
+	// Here we just create a commit to simulate HEAD moving
+	env.WriteFile("pulled.txt", "from remote")
+	env.GitAdd("pulled.txt")
+	env.GitCommit("Simulated pull commit")
+
+	newHead := env.GetHeadHash()
+	newShadowBranch := "entire/" + newHead[:7]
+	t.Logf("After simulated pull: old=%s new=%s", originalHead[:7], newHead[:7])
+
+	// Restore the file (simulating stash apply)
+	env.WriteFile("file.txt", "content")
+
+	// Next prompt should migrate the shadow branch
+	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit after pull failed: %v", err)
+	}
+
+	// Verify old shadow branch is gone and new one exists
+	if env.BranchExists(originalShadowBranch) {
+		t.Errorf("Old shadow branch %s should be deleted after migration", originalShadowBranch)
+	}
+	if !env.BranchExists(newShadowBranch) {
+		t.Errorf("New shadow branch %s should exist after migration", newShadowBranch)
+	}
+
+	// Verify we can still create checkpoints on the new shadow branch
+	env.WriteFile("file2.txt", "more content")
+	session.TranscriptBuilder = NewTranscriptBuilder()
+	session.CreateTranscript("Add file2", []FileChange{{Path: "file2.txt", Content: "more content"}})
+	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop after migration failed: %v", err)
+	}
+
+	// Verify session state has updated base commit and preserves agent type
+	state, err := env.GetSessionState(session.ID)
+	if err != nil {
+		t.Fatalf("GetSessionState failed: %v", err)
+	}
+	if state.BaseCommit != newHead {
+		t.Errorf("Session base commit should be %s, got %s", newHead[:7], state.BaseCommit[:7])
+	}
+	if state.CheckpointCount != 2 {
+		t.Errorf("Expected 2 checkpoints after migration, got %d", state.CheckpointCount)
+	}
+	// Verify agent_type is preserved across checkpoints and migration
+	expectedAgentType := "Claude Code"
+	if state.AgentType != expectedAgentType {
+		t.Errorf("Session AgentType should be %q, got %q", expectedAgentType, state.AgentType)
+	}
+
+	t.Log("Shadow branch successfully migrated after base commit change")
 }
 
 // TestShadow_ShadowBranchNaming verifies shadow branches follow the
@@ -596,11 +686,22 @@ func TestShadow_TranscriptCondensation(t *testing.T) {
 		t.Errorf("content_hash.txt should exist at %s", hashPath)
 	}
 
-	// List all files in the checkpoint to help debug
-	t.Log("Files in entire/sessions:")
-	branches := env.ListBranchesWithPrefix("entire/sessions")
-	for _, b := range branches {
-		t.Logf("  Branch: %s", b)
+	// Verify metadata.json can be read and parsed
+	metadataContent, found := env.ReadFileFromBranch("entire/sessions", metadataPath)
+	if !found {
+		t.Fatal("metadata.json should be readable")
+	}
+	var metadata checkpoint.CommittedMetadata
+	if err := json.Unmarshal([]byte(metadataContent), &metadata); err != nil {
+		t.Fatalf("failed to parse metadata.json: %v", err)
+	}
+
+	// Verify agent field is populated (from ClaudeCodeAgent.Description())
+	expectedAgent := "Claude Code"
+	if metadata.Agent != expectedAgent {
+		t.Errorf("metadata.json Agent = %q, want %q", metadata.Agent, expectedAgent)
+	} else {
+		t.Logf("✓ metadata.json has agent: %q", metadata.Agent)
 	}
 }
 
@@ -1566,4 +1667,68 @@ func TestShadow_TrailerRemovalSkipsCondensation(t *testing.T) {
 	}
 
 	t.Log("Trailer removal opt-out test completed successfully!")
+}
+
+// TestShadow_SessionsBranchCommitTrailers verifies that commits on the entire/sessions
+// branch contain the expected trailers: Entire-Session, Entire-Strategy, and Entire-Agent.
+func TestShadow_SessionsBranchCommitTrailers(t *testing.T) {
+	env := NewTestEnv(t)
+	defer env.Cleanup()
+
+	// Setup
+	env.InitRepo()
+	env.WriteFile("README.md", "# Test Repository")
+	env.GitAdd("README.md")
+	env.GitCommit("Initial commit")
+	env.GitCheckoutNewBranch("feature/trailer-test")
+	env.InitEntire(strategy.StrategyNameManualCommit)
+
+	// Start session and create checkpoint
+	session := env.NewSession()
+	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	fileContent := "package main\n\nfunc main() {}\n"
+	env.WriteFile("main.go", fileContent)
+	session.CreateTranscript("Create main.go", []FileChange{{Path: "main.go", Content: fileContent}})
+
+	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop failed: %v", err)
+	}
+
+	// Commit to trigger condensation
+	env.GitCommitWithShadowHooks("Add main.go", "main.go")
+
+	// Get the commit message on entire/sessions branch
+	sessionsCommitMsg := env.GetLatestCommitMessageOnBranch("entire/sessions")
+	t.Logf("entire/sessions commit message:\n%s", sessionsCommitMsg)
+
+	// Verify required trailers are present
+	requiredTrailers := map[string]string{
+		paths.SessionTrailerKey:  "",                                // Entire-Session: <session-id>
+		paths.StrategyTrailerKey: strategy.StrategyNameManualCommit, // Entire-Strategy: manual-commit
+		paths.AgentTrailerKey:    "Claude Code",                     // Entire-Agent: Claude Code
+	}
+
+	for trailerKey, expectedValue := range requiredTrailers {
+		if !strings.Contains(sessionsCommitMsg, trailerKey+":") {
+			t.Errorf("entire/sessions commit should have %s trailer", trailerKey)
+			continue
+		}
+
+		// If we have an expected value, verify it
+		if expectedValue != "" {
+			expectedTrailer := trailerKey + ": " + expectedValue
+			if !strings.Contains(sessionsCommitMsg, expectedTrailer) {
+				t.Errorf("entire/sessions commit should have %q, got message:\n%s", expectedTrailer, sessionsCommitMsg)
+			} else {
+				t.Logf("✓ Found trailer: %s", expectedTrailer)
+			}
+		} else {
+			t.Logf("✓ Found trailer: %s", trailerKey)
+		}
+	}
+
+	t.Log("Sessions branch commit trailers test completed successfully!")
 }

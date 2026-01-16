@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/paths"
@@ -41,6 +44,9 @@ func newEnableCmd() *cobra.Command {
 	var agentName string
 	var strategyFlag string
 	var forceHooks bool
+	var setupShell bool
+	var skipPushSessions bool
+	var noTelemetry bool
 
 	cmd := &cobra.Command{
 		Use:   "enable",
@@ -62,13 +68,13 @@ func newEnableCmd() *cobra.Command {
 			}
 			// Non-interactive mode if --agent flag is provided
 			if agentName != "" {
-				return setupAgentHooksNonInteractive(agentName, strategyFlag, localDev, forceHooks)
+				return setupAgentHooksNonInteractive(agentName, strategyFlag, localDev, forceHooks, skipPushSessions, noTelemetry)
 			}
 			// If strategy is specified via flag, skip interactive selection
 			if strategyFlag != "" {
-				return runEnableWithStrategy(cmd.OutOrStdout(), strategyFlag, localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks)
+				return runEnableWithStrategy(cmd.OutOrStdout(), strategyFlag, localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions, noTelemetry)
 			}
-			return runEnableInteractive(cmd.OutOrStdout(), localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks)
+			return runEnableInteractive(cmd.OutOrStdout(), localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions, noTelemetry)
 		},
 	}
 
@@ -81,6 +87,9 @@ func newEnableCmd() *cobra.Command {
 	cmd.Flags().StringVar(&agentName, "agent", "", "Agent to setup hooks for (e.g., claude-code). Enables non-interactive mode.")
 	cmd.Flags().StringVar(&strategyFlag, "strategy", "", "Strategy to use (manual-commit or auto-commit)")
 	cmd.Flags().BoolVarP(&forceHooks, "force", "f", false, "Force reinstall hooks (removes existing Entire hooks first)")
+	cmd.Flags().BoolVar(&setupShell, "setup-shell", false, "Add shell completion to your rc file (non-interactive)")
+	cmd.Flags().BoolVar(&skipPushSessions, "skip-push-sessions", false, "Disable automatic pushing of session logs on git push")
+	cmd.Flags().BoolVar(&noTelemetry, "no-telemetry", false, "Disable anonymous usage analytics")
 	//nolint:errcheck,gosec // completion is optional, flag is defined above
 	cmd.RegisterFlagCompletionFunc("strategy", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{strategyDisplayManualCommit, strategyDisplayAutoCommit}, cobra.ShellCompDirectiveNoFileComp
@@ -88,38 +97,6 @@ func newEnableCmd() *cobra.Command {
 
 	// Add subcommands for automation/testing
 	cmd.AddCommand(newSetupGitHookCmd())
-	cmd.AddCommand(newSetupAgentHooksCmd())
-
-	return cmd
-}
-
-// newSetupAgentHooksCmd creates a command to setup agent hooks non-interactively.
-// This is primarily used for testing and automation.
-func newSetupAgentHooksCmd() *cobra.Command {
-	var localDev bool
-	var agentName string
-	var strategyFlag string
-	var forceHooks bool
-
-	cmd := &cobra.Command{
-		Use:     "agent-hooks",
-		Aliases: []string{"claude-hooks"}, // Backwards compatibility
-		Short:   "Setup agent hooks (non-interactive)",
-		Hidden:  true, // Hidden as it's mainly for testing
-		RunE: func(_ *cobra.Command, _ []string) error {
-			// Default to claude-code if no agent specified (backwards compat)
-			if agentName == "" {
-				agentName = agent.AgentNameClaudeCode
-			}
-			return setupAgentHooksNonInteractive(agentName, strategyFlag, localDev, forceHooks)
-		},
-	}
-
-	cmd.Flags().BoolVar(&localDev, "local-dev", false, "Use go run instead of entire binary for hooks")
-	_ = cmd.Flags().MarkHidden("local-dev") //nolint:errcheck // hidden flag for internal use
-	cmd.Flags().StringVar(&agentName, "agent", "", "Agent to setup hooks for (default: claude-code)")
-	cmd.Flags().StringVar(&strategyFlag, "strategy", "", "Strategy to use (manual-commit or auto-commit)")
-	cmd.Flags().BoolVarP(&forceHooks, "force", "f", false, "Force reinstall hooks (removes existing Entire hooks first)")
 
 	return cmd
 }
@@ -155,7 +132,7 @@ func newStatusCmd() *cobra.Command {
 // runEnableWithStrategy enables Entire with a specified strategy (non-interactive).
 // The selectedStrategy can be either a display name (manual-commit, auto-commit)
 // or an internal name (manual-commit, auto-commit).
-func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, useLocalSettings, useProjectSettings, forceHooks bool) error {
+func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions, noTelemetry bool) error {
 	// Map the strategy to internal name if it's a display name
 	internalStrategy := selectedStrategy
 	if mapped, ok := strategyDisplayToInternal[selectedStrategy]; ok {
@@ -210,6 +187,25 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 	settings.LocalDev = localDev
 	settings.Enabled = true
 
+	// Set push_sessions option if --skip-push-sessions flag was provided
+	if skipPushSessions {
+		if settings.StrategyOptions == nil {
+			settings.StrategyOptions = make(map[string]interface{})
+		}
+		settings.StrategyOptions["push_sessions"] = false
+	}
+
+	// Handle telemetry for non-interactive mode
+	if noTelemetry || os.Getenv("ENTIRE_TELEMETRY_OPTOUT") != "" {
+		// --no-telemetry flag always overrides existing setting
+		f := false
+		settings.Telemetry = &f
+	} else if settings.Telemetry == nil {
+		// Default to enabled in non-interactive mode (only if not already set)
+		t := true
+		settings.Telemetry = &t
+	}
+
 	// Determine which settings file to write to
 	entireDirAbs, err := paths.AbsPath(paths.EntireDir)
 	if err != nil {
@@ -250,6 +246,14 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 
+	// Setup shell completion if --setup-shell flag was provided
+	if setupShell {
+		if err := setupShellCompletionNonInteractive(w); err != nil {
+			// Non-fatal - just log and continue
+			fmt.Fprintf(w, "Note: Shell completion setup skipped: %v\n", err)
+		}
+	}
+
 	// Show success message with display name
 	displayName := selectedStrategy
 	if dn, ok := strategyInternalToDisplay[internalStrategy]; ok {
@@ -261,7 +265,7 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 }
 
 // runEnableInteractive runs the interactive enable flow with strategy selection.
-func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProjectSettings, forceHooks bool) error {
+func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions, noTelemetry bool) error {
 	// Build strategy options with user-friendly names
 	var selectedStrategy string
 	options := []huh.Option[string]{
@@ -329,6 +333,19 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 	settings.LocalDev = localDev
 	settings.Enabled = true
 
+	// Set push_sessions option if --skip-push-sessions flag was provided
+	if skipPushSessions {
+		if settings.StrategyOptions == nil {
+			settings.StrategyOptions = make(map[string]interface{})
+		}
+		settings.StrategyOptions["push_sessions"] = false
+	}
+
+	// Ask about telemetry consent (only if not already asked)
+	if err := promptTelemetryConsent(settings, noTelemetry); err != nil {
+		return fmt.Errorf("telemetry consent: %w", err)
+	}
+
 	// Determine which settings file to write to (interactive prompt if settings.json exists)
 	entireDirAbs, err := paths.AbsPath(paths.EntireDir)
 	if err != nil {
@@ -371,6 +388,20 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 
+	// Setup shell completion - either non-interactively (if --setup-shell) or prompt
+	if setupShell {
+		if err := setupShellCompletionNonInteractive(w); err != nil {
+			// Non-fatal - just log and continue
+			fmt.Fprintf(w, "Note: Shell completion setup skipped: %v\n", err)
+		}
+	} else {
+		// Offer to setup shell completion (only if not already configured)
+		if err := promptShellCompletion(w); err != nil {
+			// Non-fatal - just log and continue
+			fmt.Fprintf(w, "Note: Shell completion setup skipped: %v\n", err)
+		}
+	}
+
 	// Show success message with display name
 	fmt.Fprintf(w, "\n✓ %s strategy enabled\n", selectedStrategy)
 
@@ -407,21 +438,9 @@ func runDisable(w io.Writer, useProjectSettings bool) error {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
 	} else {
-		// Check if local settings file exists - if so, write there
-		localSettingsAbs, pathErr := paths.AbsPath(EntireSettingsLocalFile)
-		if pathErr != nil {
-			localSettingsAbs = EntireSettingsLocalFile
-		}
-		if _, statErr := os.Stat(localSettingsAbs); statErr == nil {
-			// Local settings exists, write there
-			if err := SaveEntireSettingsLocal(settings); err != nil {
-				return fmt.Errorf("failed to save local settings: %w", err)
-			}
-		} else {
-			// No local settings, write to project settings
-			if err := SaveEntireSettings(settings); err != nil {
-				return fmt.Errorf("failed to save settings: %w", err)
-			}
+		// Always write to local settings file (create if doesn't exist)
+		if err := SaveEntireSettingsLocal(settings); err != nil {
+			return fmt.Errorf("failed to save local settings: %w", err)
 		}
 	}
 
@@ -436,41 +455,82 @@ func runStatus(w io.Writer) error {
 		return nil //nolint:nilerr // Not being in a git repo is a valid status, not an error
 	}
 
-	// Check if Entire is set up in this repository by checking for settings file
+	// Get absolute paths for settings files
 	settingsPath, err := paths.AbsPath(EntireSettingsFile)
 	if err != nil {
-		// Can't determine path, fall back to relative
 		settingsPath = EntireSettingsFile
 	}
-
-	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
-		// Also check for local settings file
-		localSettingsPath, pathErr := paths.AbsPath(EntireSettingsLocalFile)
-		if pathErr != nil {
-			localSettingsPath = EntireSettingsLocalFile
-		}
-		if _, localErr := os.Stat(localSettingsPath); os.IsNotExist(localErr) {
-			fmt.Fprintln(w, "○ not set up (run `entire enable` to get started)")
-			return nil
-		}
+	localSettingsPath, err := paths.AbsPath(EntireSettingsLocalFile)
+	if err != nil {
+		localSettingsPath = EntireSettingsLocalFile
 	}
 
-	settings, err := LoadEntireSettings()
-	if err != nil {
-		return fmt.Errorf("failed to check status: %w", err)
+	// Check if either settings file exists
+	_, projectErr := os.Stat(settingsPath)
+	if projectErr != nil && !errors.Is(projectErr, fs.ErrNotExist) {
+		return fmt.Errorf("cannot access project settings file: %w", projectErr)
+	}
+	_, localErr := os.Stat(localSettingsPath)
+	if localErr != nil && !errors.Is(localErr, fs.ErrNotExist) {
+		return fmt.Errorf("cannot access local settings file: %w", localErr)
+	}
+	projectExists := projectErr == nil
+	localExists := localErr == nil
+
+	if !projectExists && !localExists {
+		fmt.Fprintln(w, "○ not set up (run `entire enable` to get started)")
+		return nil
+	}
+
+	// Load and display project settings (if exists)
+	if projectExists {
+		data, readErr := os.ReadFile(settingsPath) //nolint:gosec // path is from AbsPath or constant
+		if readErr != nil {
+			return fmt.Errorf("failed to read project settings: %w", readErr)
+		}
+		projectSettings := &EntireSettings{
+			Strategy: strategy.DefaultStrategyName,
+			Enabled:  true,
+		}
+		if unmarshalErr := json.Unmarshal(data, projectSettings); unmarshalErr != nil {
+			return fmt.Errorf("failed to parse project settings: %w", unmarshalErr)
+		}
+		projectSettings.Strategy = strategy.NormalizeStrategyName(projectSettings.Strategy)
+		fmt.Fprintln(w, formatSettingsStatus("Project", projectSettings))
+	}
+
+	// Load and display local settings (if exists)
+	if localExists {
+		data, readErr := os.ReadFile(localSettingsPath) //nolint:gosec // path is from AbsPath or constant
+		if readErr != nil {
+			return fmt.Errorf("failed to read local settings: %w", readErr)
+		}
+		localSettings := &EntireSettings{
+			Strategy: strategy.DefaultStrategyName,
+			Enabled:  true,
+		}
+		if unmarshalErr := json.Unmarshal(data, localSettings); unmarshalErr != nil {
+			return fmt.Errorf("failed to parse local settings: %w", unmarshalErr)
+		}
+		localSettings.Strategy = strategy.NormalizeStrategyName(localSettings.Strategy)
+		fmt.Fprintln(w, formatSettingsStatus("Local", localSettings))
+	}
+
+	return nil
+}
+
+// formatSettingsStatus formats a settings status line.
+// Output format: "Project, enabled (manual-commit)" or "Local, disabled (auto-commit)"
+func formatSettingsStatus(prefix string, settings *EntireSettings) string {
+	displayName := settings.Strategy
+	if dn, ok := strategyInternalToDisplay[settings.Strategy]; ok {
+		displayName = dn
 	}
 
 	if settings.Enabled {
-		// Use user-friendly display name if available
-		displayName := settings.Strategy
-		if dn, ok := strategyInternalToDisplay[settings.Strategy]; ok {
-			displayName = dn
-		}
-		fmt.Fprintf(w, "● enabled (%s)\n", displayName)
-	} else {
-		fmt.Fprintln(w, "○ disabled")
+		return fmt.Sprintf("%s, enabled (%s)", prefix, displayName)
 	}
-	return nil
+	return fmt.Sprintf("%s, disabled (%s)", prefix, displayName)
 }
 
 // DisabledMessage is the message shown when Entire is disabled
@@ -538,7 +598,7 @@ func setupGeminiCLIHook(localDev, forceHooks bool) (int, error) {
 
 // setupAgentHooksNonInteractive sets up hooks for a specific agent non-interactively.
 // If strategyName is provided, it sets the strategy; otherwise uses default.
-func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, forceHooks bool) error {
+func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, forceHooks, skipPushSessions, noTelemetry bool) error {
 	ag, err := agent.Get(agentName)
 	if err != nil {
 		return fmt.Errorf("unknown agent: %s", agentName)
@@ -570,6 +630,14 @@ func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, for
 		settings.LocalDev = localDev
 	}
 
+	// Set push_sessions option if --skip-push-sessions flag was provided
+	if skipPushSessions {
+		if settings.StrategyOptions == nil {
+			settings.StrategyOptions = make(map[string]interface{})
+		}
+		settings.StrategyOptions["push_sessions"] = false
+	}
+
 	// Set strategy if provided
 	if strategyName != "" {
 		// Map display name to internal name if needed
@@ -582,6 +650,17 @@ func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, for
 			return fmt.Errorf("unknown strategy: %s (use manual-commit or auto-commit)", strategyName)
 		}
 		settings.Strategy = internalStrategy
+	}
+
+	// Handle telemetry for non-interactive mode
+	if noTelemetry || os.Getenv("ENTIRE_TELEMETRY_OPTOUT") != "" {
+		// --no-telemetry flag always overrides existing setting
+		f := false
+		settings.Telemetry = &f
+	} else if settings.Telemetry == nil {
+		// Default to enabled in non-interactive mode (only if not already set)
+		t := true
+		settings.Telemetry = &t
 	}
 
 	if err := SaveEntireSettings(settings); err != nil {
@@ -739,4 +818,184 @@ func newSetupGitHookCmd() *cobra.Command {
 	}
 
 	return cmd
+}
+
+// shellCompletionComment is the comment preceding the completion line
+const shellCompletionComment = "# Entire CLI shell completion"
+
+// promptShellCompletion offers to add shell completion to the user's rc file.
+// Only prompts if completion is not already configured.
+func promptShellCompletion(w io.Writer) error {
+	// Get user's home directory
+	home, err := os.UserHomeDir()
+	if err != nil {
+		//nolint:nilerr // Skip silently if we can't determine home - not a fatal error
+		return nil
+	}
+
+	// Determine shell and rc file
+	shell := os.Getenv("SHELL")
+	var rcFile string
+	var completionLine string
+
+	switch {
+	case strings.Contains(shell, "zsh"):
+		rcFile = filepath.Join(home, ".zshrc")
+		completionLine = "source <(entire completion zsh)"
+	case strings.Contains(shell, "bash"):
+		rcFile = filepath.Join(home, ".bashrc")
+		completionLine = "source <(entire completion bash)"
+	default:
+		return nil // Unsupported shell, skip silently
+	}
+
+	// Check if completion is already configured
+	if isCompletionConfigured(rcFile) {
+		return nil // Already configured, skip silently
+	}
+
+	// Prompt user with select-style picker (matching other prompts)
+	var selected string
+	form := NewAccessibleForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Enable shell completion?").
+				Options(
+					huh.NewOption("Yes", "yes"),
+					huh.NewOption("No", "no"),
+				).
+				Value(&selected),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		//nolint:nilerr // User cancelled - not a fatal error, just skip
+		return nil
+	}
+
+	if selected != "yes" {
+		return nil
+	}
+
+	// Append completion to rc file
+	if err := appendShellCompletion(rcFile, completionLine); err != nil {
+		return fmt.Errorf("failed to update %s: %w", rcFile, err)
+	}
+
+	fmt.Fprintf(w, "✓ Shell completion added to %s\n", rcFile)
+	fmt.Fprintln(w, "  Run `source "+rcFile+"` or restart your shell to activate")
+
+	return nil
+}
+
+// isCompletionConfigured checks if shell completion is already in the rc file.
+func isCompletionConfigured(rcFile string) bool {
+	//nolint:gosec // G304: rcFile is constructed from home dir + known filename, not user input
+	content, err := os.ReadFile(rcFile)
+	if err != nil {
+		return false // File doesn't exist or can't read, treat as not configured
+	}
+	return strings.Contains(string(content), "entire completion")
+}
+
+// appendShellCompletion adds the completion line to the rc file.
+func appendShellCompletion(rcFile, completionLine string) error {
+	//nolint:gosec // G302: Shell rc files need 0644 for user readability
+	f, err := os.OpenFile(rcFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("opening file: %w", err)
+	}
+	defer f.Close()
+
+	// Add newline, comment, and completion line
+	_, err = f.WriteString("\n" + shellCompletionComment + "\n" + completionLine + "\n")
+	if err != nil {
+		return fmt.Errorf("writing completion: %w", err)
+	}
+	return nil
+}
+
+// setupShellCompletionNonInteractive adds shell completion without prompting.
+// Used when --setup-shell flag is provided.
+func setupShellCompletionNonInteractive(w io.Writer) error {
+	// Get user's home directory
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine home directory: %w", err)
+	}
+
+	// Determine shell and rc file
+	shell := os.Getenv("SHELL")
+	var rcFile string
+	var completionLine string
+
+	switch {
+	case strings.Contains(shell, "zsh"):
+		rcFile = filepath.Join(home, ".zshrc")
+		completionLine = "source <(entire completion zsh)"
+	case strings.Contains(shell, "bash"):
+		rcFile = filepath.Join(home, ".bashrc")
+		completionLine = "source <(entire completion bash)"
+	default:
+		return fmt.Errorf("unsupported shell: %s (supported: zsh, bash)", shell)
+	}
+
+	// Check if completion is already configured
+	if isCompletionConfigured(rcFile) {
+		fmt.Fprintf(w, "✓ Shell completion already configured in %s\n", rcFile)
+		return nil
+	}
+
+	// Append completion to rc file
+	if err := appendShellCompletion(rcFile, completionLine); err != nil {
+		return fmt.Errorf("failed to update %s: %w", rcFile, err)
+	}
+
+	fmt.Fprintf(w, "✓ Shell completion added to %s\n", rcFile)
+	fmt.Fprintln(w, "  Run `source "+rcFile+"` or restart your shell to activate")
+
+	return nil
+}
+
+// promptTelemetryConsent asks the user if they want to enable telemetry.
+// It modifies settings.Telemetry based on the user's choice or flags.
+// The caller is responsible for saving settings.
+func promptTelemetryConsent(settings *EntireSettings, noTelemetryFlag bool) error {
+	// Handle --no-telemetry flag first (always overrides existing setting)
+	if noTelemetryFlag {
+		f := false
+		settings.Telemetry = &f
+		return nil
+	}
+
+	// Skip if already asked
+	if settings.Telemetry != nil {
+		return nil
+	}
+
+	// Skip if env var disables telemetry (record as disabled)
+	if os.Getenv("ENTIRE_TELEMETRY_OPTOUT") != "" {
+		f := false
+		settings.Telemetry = &f
+		return nil
+	}
+
+	consent := true // Default to Yes
+	form := NewAccessibleForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Help improve Entire CLI?").
+				Description("Share anonymous usage data. No code or personal info collected.").
+				Affirmative("Yes").
+				Negative("No").
+				Value(&consent),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return fmt.Errorf("telemetry prompt: %w", err)
+	}
+
+	settings.Telemetry = &consent
+	return nil
 }

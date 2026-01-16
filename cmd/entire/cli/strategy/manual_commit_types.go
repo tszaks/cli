@@ -6,9 +6,6 @@ const (
 	// sessionStateDirName is the directory name for session state files within git common dir.
 	sessionStateDirName = "entire-sessions"
 
-	// pushSessionsPrompt is the default push_sessions config value.
-	pushSessionsPrompt = "prompt"
-
 	// logsOnlyScanLimit is the maximum number of commits to scan for logs-only points.
 	logsOnlyScanLimit = 50
 )
@@ -36,8 +33,11 @@ type CheckpointInfo struct {
 	CreatedAt        time.Time `json:"created_at"`
 	CheckpointsCount int       `json:"checkpoints_count"`
 	FilesTouched     []string  `json:"files_touched"`
+	Agent            string    `json:"agent,omitempty"` // Human-readable agent name (e.g., "Claude Code")
 	IsTask           bool      `json:"is_task,omitempty"`
 	ToolUseID        string    `json:"tool_use_id,omitempty"`
+	SessionCount     int       `json:"session_count,omitempty"` // Number of sessions (1 if omitted)
+	SessionIDs       []string  `json:"session_ids,omitempty"`   // All session IDs in this checkpoint
 }
 
 // CondenseResult contains the result of a session condensation operation.

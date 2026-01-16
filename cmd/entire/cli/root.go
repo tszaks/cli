@@ -5,6 +5,7 @@ import (
 	"runtime"
 
 	"entire.io/cli/cmd/entire/cli/commands"
+	"entire.io/cli/cmd/entire/cli/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -37,6 +38,13 @@ func NewRootCmd() *cobra.Command {
 		Long:  "A command-line interface for Entire" + gettingStarted + accessibilityHelp,
 		// Let main.go handle error printing to avoid duplication
 		SilenceErrors: true,
+		// Hide completion command from help but keep it functional
+		CompletionOptions: cobra.CompletionOptions{
+			HiddenDefaultCmd: true,
+		},
+		PersistentPostRun: func(cmd *cobra.Command, _ []string) {
+			telemetry.GetClient(cmd.Context()).TrackCommand(cmd)
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},
@@ -50,7 +58,6 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newDisableCmd())
 	cmd.AddCommand(newStatusCmd())
 	cmd.AddCommand(newHooksCmd())
-	cmd.AddCommand(newSummarizeCmd())
 	cmd.AddCommand(newVersionCmd())
 	cmd.AddCommand(newExplainCmd())
 

@@ -778,6 +778,30 @@ func (env *TestEnv) ReadFileFromBranch(branchName, filePath string) (string, boo
 	return content, true
 }
 
+// GetLatestCommitMessageOnBranch returns the commit message of the latest commit on the given branch.
+func (env *TestEnv) GetLatestCommitMessageOnBranch(branchName string) string {
+	env.T.Helper()
+
+	repo, err := git.PlainOpen(env.RepoDir)
+	if err != nil {
+		env.T.Fatalf("failed to open git repo: %v", err)
+	}
+
+	// Get the branch reference
+	ref, err := repo.Reference(plumbing.NewBranchReferenceName(branchName), true)
+	if err != nil {
+		env.T.Fatalf("failed to get branch %s reference: %v", branchName, err)
+	}
+
+	// Get the commit
+	commit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		env.T.Fatalf("failed to get commit object: %v", err)
+	}
+
+	return commit.Message
+}
+
 // GitCommitWithShadowHooks stages and commits files, simulating the prepare-commit-msg and post-commit hooks.
 // This is used for testing manual-commit strategy which needs:
 // - prepare-commit-msg hook: adds the Entire-Checkpoint trailer

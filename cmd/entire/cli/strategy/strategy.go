@@ -111,6 +111,31 @@ type RewindPoint struct {
 	// CheckpointID is the stable 12-hex-char identifier for logs-only points.
 	// Used to retrieve logs from entire/sessions/<id[:2]>/<id[2:]>/full.jsonl
 	CheckpointID string
+
+	// Agent is the human-readable name of the agent that created this checkpoint
+	// (e.g., "Claude Code", "Cursor")
+	Agent string
+
+	// SessionID is the session identifier for this checkpoint.
+	// Used to distinguish checkpoints from different concurrent sessions.
+	SessionID string
+
+	// SessionPrompt is the initial prompt that started this session.
+	// Used to help users identify which session a checkpoint belongs to.
+	SessionPrompt string
+
+	// SessionCount is the number of sessions in this checkpoint (1 for single-session).
+	// Only populated for logs-only points with multi-session checkpoints.
+	SessionCount int
+
+	// SessionIDs contains all session IDs when this is a multi-session checkpoint.
+	// The last entry is the most recent session (same as SessionID).
+	// Only populated for logs-only points with multi-session checkpoints.
+	SessionIDs []string
+
+	// SessionPrompts contains the first prompt for each session (parallel to SessionIDs).
+	// Used to display context when showing resume commands for multi-session checkpoints.
+	SessionPrompts []string
 }
 
 // RewindPreview describes what will happen when rewinding to a checkpoint.
@@ -164,6 +189,9 @@ type SaveContext struct {
 
 	// AuthorEmail is the email to use for commits
 	AuthorEmail string
+
+	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
+	AgentType string
 }
 
 // TaskCheckpointContext contains all information needed for saving a task checkpoint.
@@ -239,6 +267,9 @@ type TaskCheckpointContext struct {
 	// Extracted from tool_input.todos where status == "in_progress"
 	// Used for descriptive incremental checkpoint messages
 	TodoContent string
+
+	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
+	AgentType string
 }
 
 // TaskCheckpoint contains the checkpoint information written to checkpoint.json
@@ -448,7 +479,8 @@ type LogsOnlyRestorer interface {
 	// RestoreLogsOnly restores session logs from a logs-only rewind point.
 	// Does not modify the working directory - only restores the transcript
 	// to Claude's project directory.
-	RestoreLogsOnly(point RewindPoint) error
+	// If force is false, prompts for confirmation when local logs have newer timestamps.
+	RestoreLogsOnly(point RewindPoint, force bool) error
 }
 
 // SessionResetter is an optional interface for strategies that support

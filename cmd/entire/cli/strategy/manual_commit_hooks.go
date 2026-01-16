@@ -652,9 +652,6 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType str
 	// Check for shadow branch conflict before proceeding
 	// This must happen even if session state exists but has no checkpoints yet
 	// (e.g., state was created by concurrent warning but conflict later resolved)
-	// This catches cases where:
-	// 1. Session state file was cleaned up but shadow branch remains
-	// 2. Shadow branch was created by a session that completed but wasn't committed
 	baseCommitHash := head.Hash().String()
 	if state == nil || state.CheckpointCount == 0 {
 		shadowBranch := getShadowBranchNameForCommit(baseCommitHash)
@@ -667,10 +664,26 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType str
 			if commitErr == nil {
 				existingSessionID, found := paths.ParseSessionTrailer(tipCommit.Message)
 				if found && existingSessionID != sessionID {
-					return &SessionIDConflictError{
-						ExistingSession: existingSessionID,
-						NewSession:      sessionID,
-						ShadowBranch:    shadowBranch,
+					// Check if the existing session has a state file
+					// existingSessionID is the full Entire session ID (YYYY-MM-DD-uuid) from the trailer
+					// We intentionally ignore load errors - treat them as "no state" (orphaned branch)
+					existingState, _ := s.loadSessionState(existingSessionID) //nolint:errcheck // error means no state
+					if existingState == nil {
+						// Orphaned shadow branch - no state file for the existing session
+						// Reset the branch so the new session can proceed
+						fmt.Fprintf(os.Stderr, "Resetting orphaned shadow branch '%s' (previous session %s has no state)\n",
+							shadowBranch, existingSessionID)
+						if err := deleteShadowBranch(repo, shadowBranch); err != nil {
+							return fmt.Errorf("failed to reset orphaned shadow branch: %w", err)
+						}
+					} else {
+						// Existing session has state - this is a real conflict
+						// (e.g., different worktree at same commit)
+						return &SessionIDConflictError{
+							ExistingSession: existingSessionID,
+							NewSession:      sessionID,
+							ShadowBranch:    shadowBranch,
+						}
 					}
 				}
 			}
@@ -681,6 +694,12 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType str
 		// Session is fully initialized
 		needSave := false
 
+		// Backfill AgentType if empty (for sessions created before the agent_type field was added)
+		if state.AgentType == "" && agentType != "" {
+			state.AgentType = agentType
+			needSave = true
+		}
+
 		// Clear LastCheckpointID on every new prompt
 		// This is set during PostCommit when a checkpoint is created, and should be
 		// cleared when the user enters a new prompt (starting fresh work)
@@ -689,11 +708,39 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType str
 			needSave = true
 		}
 
-		// Check if HEAD has moved (user committed)
+		// Check if HEAD has moved (user pulled/rebased or committed)
 		if state.BaseCommit != head.Hash().String() {
-			state.BaseCommit = head.Hash().String()
+			oldBaseCommit := state.BaseCommit
+			newBaseCommit := head.Hash().String()
+
+			// Check if old shadow branch exists - if so, user did NOT commit (would have been deleted)
+			// This happens when user does: stash → pull → stash apply, or rebase, etc.
+			oldShadowBranch := getShadowBranchNameForCommit(oldBaseCommit)
+			oldRefName := plumbing.NewBranchReferenceName(oldShadowBranch)
+			if oldRef, err := repo.Reference(oldRefName, true); err == nil {
+				// Old shadow branch exists - move it to new base commit
+				newShadowBranch := getShadowBranchNameForCommit(newBaseCommit)
+				newRefName := plumbing.NewBranchReferenceName(newShadowBranch)
+
+				// Create new reference pointing to same commit
+				newRef := plumbing.NewHashReference(newRefName, oldRef.Hash())
+				if err := repo.Storer.SetReference(newRef); err != nil {
+					return fmt.Errorf("failed to create new shadow branch %s: %w", newShadowBranch, err)
+				}
+
+				// Delete old reference
+				if err := repo.Storer.RemoveReference(oldRefName); err != nil {
+					// Non-fatal: log but continue
+					fmt.Fprintf(os.Stderr, "Warning: failed to remove old shadow branch %s: %v\n", oldShadowBranch, err)
+				}
+
+				fmt.Fprintf(os.Stderr, "Moved shadow branch from %s to %s (base commit changed after pull/rebase)\n",
+					oldShadowBranch, newShadowBranch)
+			}
+
+			state.BaseCommit = newBaseCommit
 			needSave = true
-			fmt.Fprintf(os.Stderr, "Updated session base commit to %s\n", head.Hash().String()[:7])
+			fmt.Fprintf(os.Stderr, "Updated session base commit to %s\n", newBaseCommit[:7])
 		}
 
 		if needSave {

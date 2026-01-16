@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"entire.io/cli/cmd/entire/cli/checkpoint"
+	"entire.io/cli/cmd/entire/cli/paths"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -19,11 +20,16 @@ import (
 
 // pushSessionsBranchCommon is the shared implementation for pushing session branches.
 // Used by both manual-commit and auto-commit strategies.
-// Configuration options (stored in .entire/settings.json under strategy_options.push_sessions):
-//   - "auto": always push automatically
-//   - "prompt" (default): ask user with option to enable auto
-//   - "false"/"off"/"no": never push
+// By default, session logs are pushed automatically alongside user pushes.
+// Configuration (stored in .entire/settings.json under strategy_options.push_sessions):
+//   - false: disable automatic pushing
+//   - true or not set: push automatically (default)
 func pushSessionsBranchCommon(remote, branchName string) error {
+	// Check if pushing is disabled
+	if isPushSessionsDisabled() {
+		return nil
+	}
+
 	repo, err := OpenRepository()
 	if err != nil {
 		return nil //nolint:nilerr // Hook must be silent on failure
@@ -43,18 +49,7 @@ func pushSessionsBranchCommon(remote, branchName string) error {
 		return nil
 	}
 
-	// Get configuration
-	pushMode := getPushSessionsConfig()
-
-	switch pushMode {
-	case "false", "off", "no":
-		return nil
-	case "auto":
-		return doPushSessionsBranch(remote, branchName)
-	default:
-		// "prompt" or any other value - ask user
-		return promptAndPushSessionsCommon(remote, branchName)
-	}
+	return doPushSessionsBranch(remote, branchName)
 }
 
 // hasUnpushedSessionsCommon checks if the local branch differs from the remote.
@@ -73,151 +68,65 @@ func hasUnpushedSessionsCommon(repo *git.Repository, remote string, localHash pl
 	return localHash != remoteRef.Hash()
 }
 
-// getPushSessionsConfig reads the push_sessions setting from strategy options.
+// isPushSessionsDisabled checks if push_sessions is disabled in settings.
+// Returns true if push_sessions is explicitly set to false.
 // Checks settings.local.json first (user preference), then settings.json (shared).
-func getPushSessionsConfig() string {
+func isPushSessionsDisabled() bool {
+	// Use repo root to find settings files when run from a subdirectory
+	localSettingsPath, err := paths.AbsPath(".entire/settings.local.json")
+	if err != nil {
+		localSettingsPath = ".entire/settings.local.json" // Fallback
+	}
+	sharedSettingsPath, err := paths.AbsPath(".entire/settings.json")
+	if err != nil {
+		sharedSettingsPath = ".entire/settings.json" // Fallback
+	}
+
 	// Try local settings first (user preference, not committed)
-	if val := readPushSessionsFromFile(".entire/settings.local.json"); val != "" {
-		return val
+	if disabled, found := readPushSessionsFromFile(localSettingsPath); found {
+		return disabled
 	}
 
 	// Fall back to shared settings
-	if val := readPushSessionsFromFile(".entire/settings.json"); val != "" {
-		return val
+	if disabled, found := readPushSessionsFromFile(sharedSettingsPath); found {
+		return disabled
 	}
 
-	return pushSessionsPrompt
+	// Default: push is enabled
+	return false
 }
 
 // readPushSessionsFromFile reads push_sessions from a specific settings file.
-func readPushSessionsFromFile(settingsPath string) string {
+// Returns (isDisabled, found). If not found, returns (false, false).
+func readPushSessionsFromFile(settingsPath string) (bool, bool) {
 	//nolint:gosec // G304: settingsPath is always a hardcoded constant from this package
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
-		return ""
+		return false, false
 	}
 
 	var settings struct {
 		StrategyOptions map[string]interface{} `json:"strategy_options"`
 	}
 	if err := json.Unmarshal(data, &settings); err != nil {
-		return ""
+		return false, false
 	}
 
 	if settings.StrategyOptions == nil {
-		return ""
+		return false, false
 	}
 
-	if val, ok := settings.StrategyOptions["push_sessions"].(string); ok {
-		return val
-	}
-	return ""
-}
-
-// setPushSessionsConfig saves the push_sessions setting to settings.local.json.
-// This is a user preference that should not be committed to the repository.
-func setPushSessionsConfig(value string) error {
-	localSettingsFile := ".entire/settings.local.json"
-
-	// Read existing local settings or start fresh
-	var settings map[string]interface{}
-	data, err := os.ReadFile(localSettingsFile)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("failed to read local settings: %w", err)
-		}
-		// File doesn't exist, start with empty settings
-		settings = make(map[string]interface{})
-	} else {
-		if err := json.Unmarshal(data, &settings); err != nil {
-			return fmt.Errorf("failed to parse local settings: %w", err)
-		}
+	val, exists := settings.StrategyOptions["push_sessions"]
+	if !exists {
+		return false, false
 	}
 
-	// Update strategy_options
-	strategyOptions, ok := settings["strategy_options"].(map[string]interface{})
-	if !ok || strategyOptions == nil {
-		strategyOptions = make(map[string]interface{})
-	}
-	strategyOptions["push_sessions"] = value
-	settings["strategy_options"] = strategyOptions
-
-	newData, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to serialize local settings: %w", err)
+	// Handle boolean value
+	if boolVal, ok := val.(bool); ok {
+		return !boolVal, true // disabled = !push_sessions
 	}
 
-	//nolint:gosec // G306: Settings file needs to be readable by user
-	if err := os.WriteFile(localSettingsFile, newData, 0o644); err != nil {
-		return fmt.Errorf("failed to write local settings: %w", err)
-	}
-	return nil
-}
-
-// promptAndPushSessionsCommon prompts the user and optionally pushes the sessions branch.
-func promptAndPushSessionsCommon(remote, branchName string) error {
-	// Open /dev/tty for interactive input in hook context
-	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
-	if err != nil {
-		// Can't prompt (non-interactive), skip silently
-		return nil
-	}
-	defer tty.Close()
-
-	fmt.Fprintf(tty, "\n[entire] Push session logs to %s?\n", remote)
-	fmt.Fprintf(tty, "  1) Yes, and always do this automatically\n")
-	fmt.Fprintf(tty, "  2) Yes\n")
-	fmt.Fprintf(tty, "  3) No\n")
-	fmt.Fprintf(tty, "Choice [1]: ")
-
-	// Read response with timeout to avoid hanging indefinitely
-	type readResult struct {
-		data []byte
-		err  error
-	}
-	resultCh := make(chan readResult, 1)
-
-	go func() {
-		buf := make([]byte, 10)
-		n, err := tty.Read(buf)
-		resultCh <- readResult{data: buf[:n], err: err}
-	}()
-
-	const ttyReadTimeout = 60 * time.Second
-	var choice string
-	select {
-	case result := <-resultCh:
-		if result.err != nil {
-			return nil
-		}
-		choice = strings.TrimSpace(string(result.data))
-	case <-time.After(ttyReadTimeout):
-		fmt.Fprintf(tty, "\n[entire] Timed out waiting for input, skipping.\n")
-		return nil
-	}
-
-	if choice == "" {
-		choice = "1" // Default
-	}
-
-	switch choice {
-	case "1":
-		// Save preference and push
-		if err := setPushSessionsConfig("auto"); err != nil {
-			fmt.Fprintf(tty, "[entire] Warning: couldn't save preference: %v\n", err)
-		} else {
-			fmt.Fprintf(tty, "[entire] Preference saved. Future pushes will be automatic.\n")
-		}
-		return doPushSessionsBranch(remote, branchName)
-	case "2":
-		return doPushSessionsBranch(remote, branchName)
-	case "3":
-		fmt.Fprintf(tty, "[entire] Skipping session logs push.\n")
-		return nil
-	default:
-		fmt.Fprintf(tty, "[entire] Invalid choice, skipping.\n")
-		return nil
-	}
+	return false, false
 }
 
 // doPushSessionsBranch pushes the sessions branch to the remote.
