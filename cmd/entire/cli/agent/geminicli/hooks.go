@@ -92,8 +92,10 @@ func (g *GeminiCLIAgent) InstallHooks(localDev bool, force bool) (int, error) {
 		rawSettings = make(map[string]json.RawMessage)
 	}
 
-	// Enable hooks in tools config
+	// Enable hooks in tools config and hooks config
+	// Both settings are required for Gemini CLI to execute hooks
 	settings.Tools.EnableHooks = true
+	settings.Hooks.Enabled = true
 
 	// Define hook commands based on localDev mode
 	var cmdPrefix string

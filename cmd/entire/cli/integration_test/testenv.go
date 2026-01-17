@@ -213,14 +213,25 @@ func (env *TestEnv) InitRepo() {
 }
 
 // InitEntire initializes the .entire directory with the specified strategy.
-func (env *TestEnv) InitEntire(strategy string) {
+func (env *TestEnv) InitEntire(strategyName string) {
+	env.InitEntireWithOptions(strategyName, nil)
+}
+
+// InitEntireWithOptions initializes the .entire directory with the specified strategy and options.
+func (env *TestEnv) InitEntireWithOptions(strategyName string, strategyOptions map[string]any) {
 	env.T.Helper()
-	env.InitEntireWithAgent(strategy, "") // empty string = default agent (claude-code)
+	env.initEntireInternal(strategyName, "", strategyOptions)
 }
 
 // InitEntireWithAgent initializes an Entire test environment with a specific agent.
 // If agentName is empty, defaults to claude-code.
-func (env *TestEnv) InitEntireWithAgent(strategy, agentName string) {
+func (env *TestEnv) InitEntireWithAgent(strategyName, agentName string) {
+	env.T.Helper()
+	env.initEntireInternal(strategyName, agentName, nil)
+}
+
+// initEntireInternal is the common implementation for InitEntire variants.
+func (env *TestEnv) initEntireInternal(strategyName, agentName string, strategyOptions map[string]any) {
 	env.T.Helper()
 
 	// Create .entire directory structure
@@ -236,13 +247,16 @@ func (env *TestEnv) InitEntireWithAgent(strategy, agentName string) {
 	}
 
 	// Write settings.json
-	settings := map[string]interface{}{
-		"strategy":  strategy,
+	settings := map[string]any{
+		"strategy":  strategyName,
 		"local_dev": true, // Use go run for hooks in tests
 	}
 	// Only add agent if specified (otherwise defaults to claude-code)
 	if agentName != "" {
 		settings["agent"] = agentName
+	}
+	if strategyOptions != nil {
+		settings["strategy_options"] = strategyOptions
 	}
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {

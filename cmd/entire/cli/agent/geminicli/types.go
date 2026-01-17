@@ -15,6 +15,8 @@ type GeminiToolsConfig struct {
 
 // GeminiHooks contains all hook configurations
 type GeminiHooks struct {
+	// Enabled must be true for Gemini CLI to execute hooks (required in addition to tools.enableHooks)
+	Enabled             bool                `json:"enabled,omitempty"`
 	SessionStart        []GeminiHookMatcher `json:"SessionStart,omitempty"`
 	SessionEnd          []GeminiHookMatcher `json:"SessionEnd,omitempty"`
 	BeforeAgent         []GeminiHookMatcher `json:"BeforeAgent,omitempty"`
