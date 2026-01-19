@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 )
 
@@ -32,7 +33,7 @@ func (env *TestEnv) SetEnabled(enabled bool) {
 	settings["enabled"] = enabled
 
 	// Write back
-	data, err := json.MarshalIndent(settings, "", "  ")
+	data, err := jsonutil.MarshalIndentWithNewline(settings, "", "  ")
 	if err != nil {
 		env.T.Fatalf("failed to marshal settings: %v", err)
 	}
