@@ -2,6 +2,20 @@
 
 The Entire CLI helps you track and restore your development sessions when working with AI coding tools like Claude Code. It automatically creates checkpoints of your work, allowing you to rewind to any point or resume previous sessions.
 
+## Installation
+
+First, tap the repository (requires SSH access):
+
+```bash
+brew tap entirehq/tap git@github.com:entirehq/homebrew-entire.git
+```
+
+Then install:
+
+```bash
+brew install entirehq/tap/entire
+```
+
 ## Typical Workflow
 
 ### 1. Enable Entire in Your Repository
@@ -54,15 +68,16 @@ This removes the git hooks. Your code and commit history remain untouched—only
 
 ## Other Useful Commands
 
-| Command | Description |
-| --- | --- |
+| Command          | Description                                              |
+| ---------------- | -------------------------------------------------------- |
 | `entire session` | View and manage sessions (list, show details, view logs) |
-| `entire explain` | Explain a session or commit |
-| `entire version` | Show Entire CLI version |
+| `entire explain` | Explain a session or commit                              |
+| `entire version` | Show Entire CLI version                                  |
 
 ## How It Works
 
 Entire uses hooks to capture your development sessions automatically:
+
 - **Checkpoints**: Saved automatically when Claude Code makes changes
 - **Metadata**: Stored in special git branches (never mixed with your code)
 - **Clean History**: Your main branch stays clean—no extra commits from Entire
@@ -119,4 +134,3 @@ mise run fmt
 - `cmd/entire/cli/checkpoint/` - Checkpoint storage abstractions
 - `cmd/entire/cli/session/` - Session state management
 - `cmd/entire/cli/integration_test/` - Integration tests
-
