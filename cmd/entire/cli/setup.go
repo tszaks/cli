@@ -164,9 +164,9 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 		return fmt.Errorf("failed to setup Gemini CLI hooks: %w", err)
 	}
 	if geminiHooksInstalled > 0 {
-		fmt.Fprintln(w, "✓ Gemini CLI hooks installed")
+		fmt.Fprintln(w, "✓ Gemini CLI hooks installed - This is a work in progress")
 	} else {
-		fmt.Fprintln(w, "✓ Gemini CLI hooks verified")
+		fmt.Fprintln(w, "✓ Gemini CLI hooks verified - This is a work in progress")
 	}
 
 	// Setup .entire directory
@@ -318,9 +318,9 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 		return fmt.Errorf("failed to setup Gemini CLI hooks: %w", err)
 	}
 	if geminiHooksInstalled > 0 {
-		fmt.Fprintln(w, "✓ Gemini CLI hooks installed")
+		fmt.Fprintln(w, "✓ Gemini CLI hooks installed - This is a work in progress")
 	} else {
-		fmt.Fprintln(w, "✓ Gemini CLI hooks verified")
+		fmt.Fprintln(w, "✓ Gemini CLI hooks verified - This is a work in progress")
 	}
 
 	// Setup .entire directory
@@ -635,9 +635,17 @@ func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, for
 	}
 
 	if count == 0 {
-		fmt.Printf("Hooks for %s already installed\n", ag.Description())
+		msg := fmt.Sprintf("Hooks for %s already installed", ag.Description())
+		if agentName == agent.AgentNameGemini {
+			msg += " - This is a work in progress"
+		}
+		fmt.Println(msg)
 	} else {
-		fmt.Printf("Installed %d hooks for %s\n", count, ag.Description())
+		msg := fmt.Sprintf("Installed %d hooks for %s", count, ag.Description())
+		if agentName == agent.AgentNameGemini {
+			msg += " - This is a work in progress"
+		}
+		fmt.Println(msg)
 	}
 
 	// Update settings to store the agent choice and strategy
