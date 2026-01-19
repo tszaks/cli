@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -472,6 +473,8 @@ func TestResume_AfterMergingMain(t *testing.T) {
 }
 
 // RunResume executes the resume command and returns the combined output.
+// The subprocess is detached from the controlling terminal (via Setsid) to prevent
+// interactive prompts from hanging tests. This simulates non-interactive environments like CI.
 func (env *TestEnv) RunResume(branchName string) (string, error) {
 	env.T.Helper()
 
@@ -481,6 +484,8 @@ func (env *TestEnv) RunResume(branchName string) (string, error) {
 	cmd.Env = append(os.Environ(),
 		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 	)
+	// Detach from controlling terminal so huh can't open /dev/tty for interactive prompts
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	output, err := cmd.CombinedOutput()
 	return string(output), err
@@ -559,9 +564,10 @@ func (env *TestEnv) GitCheckoutBranch(branchName string) {
 	}
 }
 
-// TestResume_LocalLogNewerTimestamp tests that when local log has newer timestamps
-// than the checkpoint, the command requires --force to proceed (without interactive prompt).
-func TestResume_LocalLogNewerTimestamp(t *testing.T) {
+// TestResume_LocalLogNewerTimestamp_RequiresForce tests that when local log has newer
+// timestamps than the checkpoint, the command fails in non-interactive mode (no TTY)
+// and does NOT overwrite the local log. This ensures safe behavior in CI environments.
+func TestResume_LocalLogNewerTimestamp_RequiresForce(t *testing.T) {
 	t.Parallel()
 	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
 
@@ -599,16 +605,66 @@ func TestResume_LocalLogNewerTimestamp(t *testing.T) {
 	// Switch to main
 	env.GitCheckoutBranch(masterBranch)
 
-	// Resume WITHOUT --force - should fail because it needs interactive confirmation
-	// (which isn't available in non-interactive test mode)
+	// Resume WITHOUT --force in non-interactive mode (no TTY due to Setsid)
+	// Should fail because it can't prompt for confirmation
 	output, err := env.RunResume(featureBranch)
-	// The command might succeed (if huh falls back to default) or might fail
-	// Either way, with --force it should definitely succeed
-	t.Logf("Resume without --force output: %s, err: %v", output, err)
+	if err == nil {
+		t.Errorf("expected error when resuming without --force in non-interactive mode, got success.\nOutput: %s", output)
+	}
+
+	// Verify local log was NOT overwritten (safe behavior)
+	data, err := os.ReadFile(existingLog)
+	if err != nil {
+		t.Fatalf("failed to read log: %v", err)
+	}
+	if !strings.Contains(string(data), "newer local work") {
+		t.Errorf("local log should NOT have been overwritten without --force, but content changed to: %s", string(data))
+	}
+}
+
+// TestResume_LocalLogNewerTimestamp_ForceOverwrites tests that when local log has newer
+// timestamps than the checkpoint, the --force flag bypasses the confirmation prompt
+// and overwrites the local log.
+func TestResume_LocalLogNewerTimestamp_ForceOverwrites(t *testing.T) {
+	t.Parallel()
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+
+	// Create a session with a specific timestamp
+	session := env.NewSession()
+	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
+		t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
+	}
+
+	content := "def hello; end"
+	env.WriteFile("hello.rb", content)
+
+	session.CreateTranscript(
+		"Create hello method",
+		[]FileChange{{Path: "hello.rb", Content: content}},
+	)
+	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop failed: %v", err)
+	}
+
+	featureBranch := env.GetCurrentBranch()
+
+	// Create a local log with a NEWER timestamp than the checkpoint
+	if err := os.MkdirAll(env.ClaudeProjectDir, 0o755); err != nil {
+		t.Fatalf("failed to create Claude project dir: %v", err)
+	}
+	existingLog := filepath.Join(env.ClaudeProjectDir, session.ID+".jsonl")
+	// Use a timestamp far in the future to ensure it's newer
+	futureTimestamp := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	newerContent := fmt.Sprintf(`{"type":"human","timestamp":"%s","message":{"content":"newer local work"}}`, futureTimestamp)
+	if err := os.WriteFile(existingLog, []byte(newerContent), 0o644); err != nil {
+		t.Fatalf("failed to write existing log: %v", err)
+	}
+
+	// Switch to main
+	env.GitCheckoutBranch(masterBranch)
 
 	// Resume WITH --force should succeed and overwrite the local log
-	env.GitCheckoutBranch(masterBranch)
-	output, err = env.RunResumeForce(featureBranch)
+	output, err := env.RunResumeForce(featureBranch)
 	if err != nil {
 		t.Fatalf("resume --force failed: %v\nOutput: %s", err, output)
 	}
