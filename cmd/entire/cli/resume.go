@@ -87,7 +87,8 @@ func runResume(branchName string, force bool) error {
 		// Fetch and checkout the remote branch
 		fmt.Fprintf(os.Stderr, "Fetching branch '%s' from origin...\n", branchName)
 		if err := FetchAndCheckoutRemoteBranch(branchName); err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "Failed to checkout branch: %v\n", err)
+			return NewSilentError(errors.New("failed to checkout branch"))
 		}
 		fmt.Fprintf(os.Stderr, "Switched to branch '%s'\n", branchName)
 	} else {
@@ -102,7 +103,8 @@ func runResume(branchName string, force bool) error {
 
 		// Checkout the branch
 		if err := CheckoutBranch(branchName); err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "Failed to checkout branch: %v\n", err)
+			return NewSilentError(errors.New("failed to checkout branch"))
 		}
 		fmt.Fprintf(os.Stderr, "Switched to branch '%s'\n", branchName)
 	}
@@ -336,7 +338,7 @@ func checkRemoteMetadata(repo *git.Repository, checkpointID string) error {
 	if err := FetchMetadataBranch(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to fetch metadata: %v\n", err)
 		fmt.Fprintf(os.Stderr, "You can try manually: git fetch origin entire/sessions:entire/sessions\n")
-		return nil
+		return NewSilentError(errors.New("failed to fetch metadata"))
 	}
 
 	// Now resume the session with the fetched metadata
