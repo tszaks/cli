@@ -256,7 +256,6 @@ func saveSettingsToFile(settings *EntireSettings, filePath string) error {
 	if err != nil {
 		return fmt.Errorf("marshaling settings: %w", err)
 	}
-	data = append(data, '\n')
 
 	//nolint:gosec // G306: settings file is config, not secrets; 0o644 is appropriate
 	if err := os.WriteFile(filePathAbs, data, 0o644); err != nil {
