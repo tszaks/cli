@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"runtime"
 
-	"entire.io/cli/cmd/entire/cli/commands"
 	"entire.io/cli/cmd/entire/cli/telemetry"
 	"github.com/spf13/cobra"
 )
@@ -62,7 +61,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newExplainCmd())
 
 	// Replace default help command with custom one that supports -t flag
-	cmd.SetHelpCommand(commands.NewHelpCmd(cmd))
+	cmd.SetHelpCommand(NewHelpCmd(cmd))
 
 	return cmd
 }
