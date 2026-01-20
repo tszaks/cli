@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"entire.io/cli/cmd/entire/cli/agent"
+	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
@@ -251,7 +252,7 @@ func saveSettingsToFile(settings *EntireSettings, filePath string) error {
 		return fmt.Errorf("creating settings directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(settings, "", "  ")
+	data, err := jsonutil.MarshalIndentWithNewline(settings, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling settings: %w", err)
 	}

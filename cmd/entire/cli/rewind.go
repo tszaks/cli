@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
 
@@ -371,7 +371,7 @@ func runRewindList() error {
 	}
 
 	// Print as JSON
-	data, err := json.MarshalIndent(output, "", "  ")
+	data, err := jsonutil.MarshalIndentWithNewline(output, "", "  ")
 	if err != nil {
 		return err
 	}

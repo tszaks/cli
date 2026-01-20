@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 
 	"github.com/go-git/go-git/v5"
@@ -274,7 +275,7 @@ func (s *GitStore) addTaskMetadataToTree(baseTreeHash plumbing.Hash, opts WriteT
 			Timestamp: time.Now().UTC(),
 			Data:      opts.IncrementalData,
 		}
-		cpData, err := json.MarshalIndent(incrementalCheckpoint, "", "  ")
+		cpData, err := jsonutil.MarshalIndentWithNewline(incrementalCheckpoint, "", "  ")
 		if err != nil {
 			return plumbing.ZeroHash, fmt.Errorf("failed to marshal incremental checkpoint: %w", err)
 		}

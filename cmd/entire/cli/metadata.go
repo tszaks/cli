@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 )
 
@@ -31,7 +32,7 @@ func WriteTaskCheckpoint(taskMetadataDir string, checkpoint *TaskCheckpoint) err
 		return fmt.Errorf("failed to create task metadata directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(checkpoint, "", "  ")
+	data, err := jsonutil.MarshalIndentWithNewline(checkpoint, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal checkpoint: %w", err)
 	}
