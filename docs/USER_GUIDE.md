@@ -8,7 +8,7 @@ Entire hooks into your git workflow to capture AI agent sessions on every push. 
 
 ```bash
 # Install
-curl -fsSL https://entire.io/install.sh | bash
+brew install entire
 
 # Enable in your project
 cd your-project && entire enable
@@ -36,17 +36,15 @@ entire resume <branch>
    - [Hooks](#hooks)
    - [Shadow Branches](#shadow-branches)
    - [The entire/sessions Branch](#the-entiresessions-branch)
-4. [Commands Reference](#commands-reference)
-5. [Workflow Examples](#workflow-examples)
-6. [Collaboration](#collaboration)
-7. [Session Data Storage](#session-data-storage)
-8. [Concurrent Usage](#concurrent-usage)
-9. [Upgrading Entire](#upgrading-entire)
-10. [Uninstallation](#uninstallation)
-11. [Troubleshooting](#troubleshooting)
-12. [Quick Reference](#quick-reference)
-13. [Glossary](#glossary)
-14. [Getting Help](#getting-help)
+4. [Workflow Examples](#workflow-examples)
+5. [Collaboration](#collaboration)
+6. [Session Data Storage](#session-data-storage)
+7. [Concurrent Usage](#concurrent-usage)
+8. [Upgrading Entire](#upgrading-entire)
+9. [Uninstallation](#uninstallation)
+10. [Troubleshooting](#troubleshooting)
+11. [Glossary](#glossary)
+12. [Getting Help](#getting-help)
 
 ---
 
@@ -61,13 +59,10 @@ entire resume <branch>
 ### Installation
 
 ```bash
-# Option 1: Install script (recommended)
-curl -fsSL https://entire.io/install.sh | bash
-
-# Option 2: Homebrew
+# Option 1: Homebrew (recommended)
 brew install entire
 
-# Option 3: Build from source
+# Option 2: Build from source
 git clone https://github.com/entireio/cli.git
 cd cli
 go build -o entire ./cmd/entire
@@ -360,271 +355,6 @@ The `entire/sessions` branch is an orphan branch that stores all session metadat
 
 ---
 
-## Commands Reference
-
-### entire enable
-
-Initialize Entire in your repository.
-
-```bash
-entire enable                           # Interactive setup
-entire enable --strategy manual-commit  # Skip strategy prompt
-entire enable --local                   # Save to settings.local.json
-entire enable --project                 # Save to settings.json
-entire enable --force                   # Reinstall hooks
-entire enable --setup-shell             # Add shell completion to rc file
-entire enable --skip-push-sessions      # Disable auto-push of session logs
-```
-
-**Flags:**
-| Flag | Description |
-|------|-------------|
-| `--strategy` | Strategy to use: `manual-commit` or `auto-commit` |
-| `--local` | Write settings to `settings.local.json` |
-| `--project` | Write to `settings.json` even if it exists |
-| `-f, --force` | Force reinstall hooks |
-| `--setup-shell` | Add shell completion to rc file (non-interactive) |
-| `--skip-push-sessions` | Disable automatic pushing of session logs on git push |
-| `--agent` | Agent to setup hooks for (e.g., `claude-code`, `gemini`) |
-
-**Example output:**
-```
-✓ Claude Code hooks installed
-✓ Project settings saved (.entire/settings.json)
-✓ Git hooks installed
-
-✓ manual-commit strategy enabled
-```
-
-### entire disable
-
-Temporarily disable Entire. Hooks will exit silently without errors - this is expected and safe behavior.
-
-```bash
-entire disable                  # Writes to settings.local.json
-entire disable --project        # Writes to settings.json
-```
-
-**Example output:**
-```
-Entire is now disabled.
-```
-
-To re-enable, run `entire enable`.
-
-### entire status
-
-Show current Entire status and configuration.
-
-```bash
-entire status
-```
-
-**Example output (both settings files exist):**
-```
-Project, enabled (manual-commit)
-Local, disabled (manual-commit)
-```
-
-**Example output (not set up):**
-```
-○ not set up (run `entire enable` to get started)
-```
-
-### entire rewind
-
-Restore code to a previous checkpoint.
-
-```bash
-entire rewind                        # Interactive selection
-entire rewind --list                 # List all rewind points as JSON
-entire rewind --to <checkpoint-id>   # Rewind to specific checkpoint
-entire rewind --logs-only            # Restore logs only (not files)
-```
-
-**Example output (--list):**
-```json
-[
-  {
-    "id": "097e675a0ede1789d6e806a477bde5e9af378110",
-    "message": "more similar issues with CWD",
-    "date": "2026-01-12T21:40:44+01:00",
-    "is_task_checkpoint": false,
-    "is_logs_only": true,
-    "condensation_id": "2372de7ea2ff"
-  }
-]
-```
-
-### entire rewind reset
-
-Reset the shadow branch for the current commit (manual-commit strategy).
-
-```bash
-entire rewind reset              # Prompts for confirmation
-entire rewind reset --force      # Skip confirmation
-```
-
-**When to use:** If you see a shadow branch conflict error, this gives you a clean start. See [Troubleshooting](#troubleshooting).
-
-### entire session
-
-Manage and view sessions. All session-related commands are subcommands of `entire session`.
-
-#### entire session list
-
-List all sessions stored by the current strategy.
-
-```bash
-entire session list
-```
-
-**Example output:**
-```
-  session-id           Checkpoints  Description
-  ───────────────────  ───────────  ────────────────────────────────────────
-  2026-01-13-21a2e002  4            can you review the contents   of...
-  2026-01-13-dc577197  3            can you update CLAUDE.md to reflect the new...
-  2026-01-12-deeac353  1            can you look at the changes in this branch...
-
-Resume a session: entire session resume <session-id>
-```
-
-#### entire session current
-
-Show details of the current session.
-
-```bash
-entire session current
-```
-
-**Example output:**
-```
-Session:     2026-01-13-21a2e002-8b63-45db-8e0d-1978fe0600aa
-Strategy:    manual-commit
-Description: I think the checkpoint id is less important...
-Started:     2026-01-13 20:36
-Checkpoints: 4
-```
-
-#### entire session raw
-
-Output the raw session transcript for a commit.
-
-```bash
-entire session raw <commit-sha>
-```
-
-#### entire session resume
-
-Resume a session and restore agent memory. Supports prefix matching for session IDs.
-
-```bash
-entire session resume                # Interactive picker
-entire session resume <session-id>   # Resume specific session
-```
-
-**Prefix matching:** You don't need the full session ID. The first matching session is used:
-```bash
-entire session resume 2026-01        # First session from Jan 2026
-entire session resume 2026-01-13     # First session from Jan 13
-entire session resume 2026-01-13-8f  # More specific match
-```
-
-#### entire session cleanup
-
-Remove orphaned session data that wasn't cleaned up automatically. This finds and removes:
-
-- **Shadow branches** (`entire/<commit-hash>`) - Created by manual-commit strategy
-- **Session state files** (`.git/entire-sessions/`) - Track active sessions
-- **Checkpoint metadata** (`entire/sessions` branch) - For auto-commit checkpoints
-
-```bash
-entire session cleanup           # Dry run, shows what would be removed
-entire session cleanup --force   # Actually delete orphaned items
-```
-
-### entire resume
-
-Switch to a branch and resume its session with agent memory.
-
-```bash
-entire resume <branch>
-entire resume <branch> --force   # Resume without confirmation if newer commits exist
-```
-
-**How it differs from `entire session resume`:**
-- `entire resume <branch>` - Switches to the branch AND restores its session
-- `entire session resume [id]` - Restores a session WITHOUT changing branches
-
-Use `entire resume` when switching between feature branches. Use `entire session resume` when you want to restore a session on your current branch.
-
-**Example:**
-```bash
-entire resume feature/new-thing
-```
-
-**Example output:**
-```
-Switched to branch 'feature/new-thing'
-Session restored to: .claude/projects/.../2026-01-08-abc123.jsonl
-Session: 2026-01-08-abc123def456
-
-To continue this session, run:
-  claude --resume
-```
-
-### entire explain
-
-Get a human-readable explanation of sessions or commits.
-
-```bash
-entire explain                       # Explain current session
-entire explain --session <id>        # Explain specific session (prefix match supported)
-entire explain --commit <sha>        # Explain specific commit
-entire explain --no-pager            # Don't use pager for output
-```
-
-**Example output:**
-```
-Session: 2026-01-13-21a2e002-8b63-45db-8e0d-1978fe0600aa
-Strategy: manual-commit
-Started: 2026-01-13 20:36:00
-Source Ref: entire/sessions@abc123def456
-Checkpoints: 4
-
-─── Checkpoint 1 [a3b2c4d5e6f7] 2026-01-13 20:40 ───
-
-## Prompt
-
-Can you update the README with installation instructions?
-
-## Responses
-
-I'll update the README with comprehensive installation instructions...
-
-Files Modified (2):
-  - README.md
-  - docs/INSTALL.md
-```
-
-### entire version
-
-Show version and build information.
-
-```bash
-entire version
-```
-
-**Example output:**
-```
-Entire CLI v1.0.0 (abc123def)
-Built with: go1.24.0
-OS/Arch: darwin/arm64
-```
-
----
-
 ## Workflow Examples
 
 ### Manual-Commit Workflow
@@ -866,11 +596,6 @@ entire version
 
 ### Upgrade Methods
 
-**Via install script (same as initial install):**
-```bash
-curl -fsSL https://entire.io/install.sh | bash
-```
-
 **Via Homebrew:**
 ```bash
 brew update && brew upgrade entire
@@ -1021,42 +746,6 @@ entire enable
 ```
 
 This uses simpler text prompts instead of interactive TUI elements.
-
----
-
-## Quick Reference
-
-| Command | Description |
-|---------|-------------|
-| [`entire enable`](#entire-enable) | Set up Entire in repository |
-| [`entire disable`](#entire-disable) | Temporarily disable Entire |
-| [`entire status`](#entire-status) | Show current status |
-| [`entire rewind`](#entire-rewind) | Rewind to a checkpoint |
-| [`entire rewind reset`](#entire-rewind-reset) | Reset shadow branch for current commit |
-| [`entire session list`](#entire-session-list) | List all sessions |
-| [`entire session current`](#entire-session-current) | Show current session details |
-| [`entire session resume`](#entire-session-resume) | Resume a session and restore agent memory |
-| [`entire session cleanup`](#entire-session-cleanup) | Remove orphaned session data |
-| [`entire resume <branch>`](#entire-resume) | Switch to branch and resume its session |
-| [`entire explain`](#entire-explain) | Explain current session or commit |
-| [`entire version`](#entire-version) | Show version info |
-
-### Flags Quick Reference
-
-| Flag | Commands | Description |
-|------|----------|-------------|
-| `--project` | enable, disable | Write to settings.json |
-| `--local` | enable | Write to settings.local.json |
-| `--strategy` | enable | Set strategy (manual-commit or auto-commit) |
-| `--setup-shell` | enable | Add shell completion to rc file |
-| `--skip-push-sessions` | enable | Don't auto-push session logs |
-| `--force, -f` | enable, resume, rewind reset, session cleanup | Skip confirmations / force reinstall |
-| `--list` | rewind | List rewind points as JSON |
-| `--to <id>` | rewind | Specify checkpoint ID |
-| `--logs-only` | rewind | Restore logs only, not files |
-| `--session <id>` | explain | Explain specific session |
-| `--commit <sha>` | explain | Explain specific commit |
-| `--no-pager` | explain | Disable pager output |
 
 ---
 
