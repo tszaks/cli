@@ -4,7 +4,7 @@ Thank you for your interest in contributing to Entire! We welcome contributions 
 
 Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
 
-> **New to Entire?** See the [CLI User Guide](docs/USER_GUIDE.md) for setup and usage documentation.
+> **New to Entire?** See the [README](README.md) for setup and usage documentation.
 
 ---
 
@@ -277,7 +277,7 @@ Join the Entire community:
 
 ## Additional Resources
 
-- [CLI User Guide](docs/USER_GUIDE.md) - Usage documentation
+- [README](README.md) - Setup and usage documentation
 - [CLAUDE.md](CLAUDE.md) - Architecture and development reference
 - [Code of Conduct](CODE_OF_CONDUCT.md) - Community guidelines
 - [Security Policy](SECURITY.md) - Reporting security vulnerabilities
