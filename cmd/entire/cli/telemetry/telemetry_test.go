@@ -1,7 +1,6 @@
 package telemetry
 
 import (
-	"context"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -51,31 +50,9 @@ func TestNoOpClientMethods(_ *testing.T) {
 	client := &NoOpClient{}
 
 	// Should not panic
-	client.TrackCommand(nil)
-	client.TrackCommand(&cobra.Command{Use: "test"})
+	client.TrackCommand(nil, "", "", false)
+	client.TrackCommand(&cobra.Command{Use: "test"}, "manual-commit", "claude-code", true)
 	client.Close()
-}
-
-func TestWithClientAndGetClient(t *testing.T) {
-	ctx := context.Background()
-	client := &NoOpClient{}
-
-	ctx = WithClient(ctx, client)
-	retrieved := GetClient(ctx)
-
-	if _, ok := retrieved.(*NoOpClient); !ok {
-		t.Error("GetClient should return the client set with WithClient")
-	}
-}
-
-func TestGetClientReturnsNoOpWhenNotSet(t *testing.T) {
-	ctx := context.Background()
-
-	client := GetClient(ctx)
-
-	if _, ok := client.(*NoOpClient); !ok {
-		t.Error("GetClient should return NoOpClient when no client is set")
-	}
 }
 
 func TestPostHogClientSkipsHiddenCommands(_ *testing.T) {
@@ -89,7 +66,7 @@ func TestPostHogClientSkipsHiddenCommands(_ *testing.T) {
 	}
 
 	// Should not panic and should skip hidden commands
-	client.TrackCommand(hiddenCmd)
+	client.TrackCommand(hiddenCmd, "manual-commit", "claude-code", true)
 }
 
 func TestPostHogClientSkipsHelpCommand(_ *testing.T) {
@@ -102,7 +79,7 @@ func TestPostHogClientSkipsHelpCommand(_ *testing.T) {
 	}
 
 	// Should not panic and should skip help command
-	client.TrackCommand(helpCmd)
+	client.TrackCommand(helpCmd, "manual-commit", "claude-code", true)
 }
 
 func TestPostHogClientSkipsCompletionCommand(_ *testing.T) {
@@ -115,7 +92,7 @@ func TestPostHogClientSkipsCompletionCommand(_ *testing.T) {
 	}
 
 	// Should not panic and should skip completion command
-	client.TrackCommand(completionCmd)
+	client.TrackCommand(completionCmd, "manual-commit", "claude-code", true)
 }
 
 func TestPostHogClientSkipsNilCommand(_ *testing.T) {
@@ -124,7 +101,7 @@ func TestPostHogClientSkipsNilCommand(_ *testing.T) {
 	}
 
 	// Should not panic with nil command
-	client.TrackCommand(nil)
+	client.TrackCommand(nil, "", "", false)
 }
 
 func TestPostHogClientClose(_ *testing.T) {
@@ -156,5 +133,5 @@ func TestTrackCommandUsesCommandPath(t *testing.T) {
 	}
 
 	// TrackCommand should not panic with nil internal client
-	client.TrackCommand(cmd)
+	client.TrackCommand(cmd, "manual-commit", "claude-code", true)
 }

@@ -1,7 +1,6 @@
 package telemetry
 
 import (
-	"context"
 	"net"
 	"net/http"
 	"os"
@@ -25,33 +24,15 @@ var (
 
 // Client defines the telemetry interface
 type Client interface {
-	TrackCommand(cmd *cobra.Command)
+	TrackCommand(cmd *cobra.Command, strategy string, agent string, isEntireEnabled bool)
 	Close()
-}
-
-// contextKey is used for storing the telemetry client in context
-type contextKey struct{}
-
-// WithClient returns a new context with the telemetry client attached
-func WithClient(ctx context.Context, client Client) context.Context {
-	return context.WithValue(ctx, contextKey{}, client)
-}
-
-// GetClient retrieves the telemetry client from context
-//
-//nolint:ireturn // Returns interface by design - retrieves from context
-func GetClient(ctx context.Context) Client {
-	if client, ok := ctx.Value(contextKey{}).(Client); ok {
-		return client
-	}
-	return &NoOpClient{}
 }
 
 // NoOpClient is a no-op implementation for when telemetry is disabled
 type NoOpClient struct{}
 
-func (n *NoOpClient) TrackCommand(_ *cobra.Command) {}
-func (n *NoOpClient) Close()                        {}
+func (n *NoOpClient) TrackCommand(_ *cobra.Command, _ string, _ string, _ bool) {}
+func (n *NoOpClient) Close()                                                    {}
 
 // silentLogger suppresses PostHog log output - expected for CLI best-effort telemetry
 type silentLogger struct{}
@@ -122,7 +103,7 @@ func NewClient(version string, telemetryEnabled *bool) Client {
 }
 
 // TrackCommand records the command execution
-func (p *PostHogClient) TrackCommand(cmd *cobra.Command) {
+func (p *PostHogClient) TrackCommand(cmd *cobra.Command, strategy string, agent string, isEntireEnabled bool) {
 	if cmd == nil {
 		return
 	}
@@ -147,8 +128,15 @@ func (p *PostHogClient) TrackCommand(cmd *cobra.Command) {
 		flags = append(flags, flag.Name)
 	})
 
+	selectedAgent := agent
+	if selectedAgent == "" {
+		selectedAgent = "auto"
+	}
 	props := posthog.NewProperties().
-		Set("command", cmd.CommandPath())
+		Set("command", cmd.CommandPath()).
+		Set("strategy", strategy).
+		Set("agent", selectedAgent).
+		Set("isEntireEnabled", isEntireEnabled)
 
 	if len(flags) > 0 {
 		props.Set("flags", strings.Join(flags, ","))
