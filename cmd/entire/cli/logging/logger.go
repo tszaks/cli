@@ -327,6 +327,11 @@ func attrsFromContext(ctx context.Context, globalSessionID string) []slog.Attr {
 			attrs = append(attrs, slog.String("component", s))
 		}
 	}
+	if v := ctx.Value(agentKey); v != nil {
+		if s, ok := v.(string); ok && s != "" {
+			attrs = append(attrs, slog.String("agent", s))
+		}
+	}
 
 	return attrs
 }

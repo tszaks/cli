@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// testComponent is defined in logger_test.go
+// testComponent and testAgent are defined in logger_test.go
 
 func TestWithSession(t *testing.T) {
 	ctx := context.Background()
@@ -76,6 +76,17 @@ func TestWithComponent(t *testing.T) {
 	}
 }
 
+func TestWithAgent(t *testing.T) {
+	ctx := context.Background()
+
+	ctx = WithAgent(ctx, testAgent)
+
+	got := AgentFromContext(ctx)
+	if got != testAgent {
+		t.Errorf("AgentFromContext() = %q, want %q", got, testAgent)
+	}
+}
+
 func TestContextValues_Empty(t *testing.T) {
 	ctx := context.Background()
 
@@ -92,6 +103,9 @@ func TestContextValues_Empty(t *testing.T) {
 	if got := ComponentFromContext(ctx); got != "" {
 		t.Errorf("ComponentFromContext() on empty = %q, want empty", got)
 	}
+	if got := AgentFromContext(ctx); got != "" {
+		t.Errorf("AgentFromContext() on empty = %q, want empty", got)
+	}
 }
 
 func TestContextValues_Chaining(t *testing.T) {
@@ -101,6 +115,7 @@ func TestContextValues_Chaining(t *testing.T) {
 	ctx = WithSession(ctx, "session-1")
 	ctx = WithToolCall(ctx, "tool-1")
 	ctx = WithComponent(ctx, testComponent)
+	ctx = WithAgent(ctx, testAgent)
 
 	// All values should be preserved
 	if got := SessionIDFromContext(ctx); got != "session-1" {
@@ -112,6 +127,9 @@ func TestContextValues_Chaining(t *testing.T) {
 	if got := ComponentFromContext(ctx); got != testComponent {
 		t.Errorf("ComponentFromContext() = %q, want %q", got, testComponent)
 	}
+	if got := AgentFromContext(ctx); got != testAgent {
+		t.Errorf("AgentFromContext() = %q, want %q", got, testAgent)
+	}
 }
 
 func TestAttrsFromContext(t *testing.T) {
@@ -120,13 +138,14 @@ func TestAttrsFromContext(t *testing.T) {
 	ctx = WithParentSession(ctx, "parent-456")
 	ctx = WithToolCall(ctx, "tool-789")
 	ctx = WithComponent(ctx, testComponent)
+	ctx = WithAgent(ctx, testAgent)
 
 	// Pass empty string for globalSessionID to include context session_id
 	attrs := attrsFromContext(ctx, "")
 
-	// Should have 4 attrs
-	if len(attrs) != 4 {
-		t.Errorf("attrsFromContext() returned %d attrs, want 4", len(attrs))
+	// Should have 5 attrs
+	if len(attrs) != 5 {
+		t.Errorf("attrsFromContext() returned %d attrs, want 5", len(attrs))
 	}
 
 	// Verify attr values
@@ -146,6 +165,9 @@ func TestAttrsFromContext(t *testing.T) {
 	}
 	if attrMap["component"] != testComponent {
 		t.Errorf("component = %q, want %q", attrMap["component"], testComponent)
+	}
+	if attrMap["agent"] != testAgent {
+		t.Errorf("agent = %q, want %q", attrMap["agent"], testAgent)
 	}
 }
 
