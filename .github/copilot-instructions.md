@@ -49,8 +49,8 @@ worktree.Reset(&git.ResetOptions{Mode: git.HardReset, Commit: hash})
 worktree.Checkout(&git.CheckoutOptions{Branch: ref})
 
 // CORRECT - use CLI wrappers from strategy/common.go and git_operations.go
-HardResetWithProtection(ctx, repoPath, hash)
-CheckoutBranch(ctx, repoPath, branch)
+HardResetWithProtection(hash)
+CheckoutBranch(branch)
 ```
 
 ### Path Handling
