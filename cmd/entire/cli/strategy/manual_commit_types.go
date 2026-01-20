@@ -67,4 +67,5 @@ type ExtractedSessionData struct {
 	Prompts             []string // All user prompts from this portion
 	Context             []byte   // Generated context.md content
 	FilesTouched        []string
+	TokenUsage          *checkpoint.TokenUsage // Token usage calculated from transcript (since TranscriptLinesAtStart)
 }

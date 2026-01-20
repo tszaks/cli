@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"entire.io/cli/cmd/entire/cli/agent/claudecode"
 	cpkg "entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/textutil"
@@ -135,7 +136,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		Agent:                  state.AgentType,
 		TranscriptUUIDAtStart:  state.TranscriptUUIDAtStart,
 		TranscriptLinesAtStart: state.TranscriptLinesAtStart,
-		TokenUsage:             state.TokenUsage,
+		TokenUsage:             sessionData.TokenUsage,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to write checkpoint metadata: %w", err)
 	}
@@ -206,6 +207,14 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 
 	// Use tracked files from session state (not all files in tree)
 	data.FilesTouched = filesTouched
+
+	// Calculate token usage from the extracted transcript portion
+	if len(data.Transcript) > 0 {
+		transcriptLines, err := claudecode.ParseTranscript(data.Transcript)
+		if err == nil && len(transcriptLines) > 0 {
+			data.TokenUsage = claudecode.CalculateTokenUsage(transcriptLines)
+		}
+	}
 
 	return data, nil
 }
