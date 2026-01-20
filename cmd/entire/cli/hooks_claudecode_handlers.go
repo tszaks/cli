@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"entire.io/cli/cmd/entire/cli/agent"
+	"entire.io/cli/cmd/entire/cli/agent/claudecode"
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
@@ -514,6 +516,19 @@ func commitWithMetadata() error {
 		transcriptLinesAtStart = preState.LastTranscriptLineCount
 	}
 
+	// Calculate token usage for this checkpoint (Claude Code specific)
+	var tokenUsage *checkpoint.TokenUsage
+	if transcriptPath != "" {
+		// Subagents are stored in a subagents/ directory next to the main transcript
+		subagentsDir := filepath.Join(filepath.Dir(transcriptPath), entireSessionID, "subagents")
+		usage, err := claudecode.CalculateTotalTokenUsage(transcriptPath, transcriptLinesAtStart, subagentsDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to calculate token usage: %v\n", err)
+		} else {
+			tokenUsage = usage
+		}
+	}
+
 	// Build fully-populated save context and delegate to strategy
 	ctx := strategy.SaveContext{
 		SessionID:              entireSessionID,
@@ -529,6 +544,7 @@ func commitWithMetadata() error {
 		AgentType:              agentType,
 		TranscriptUUIDAtStart:  transcriptUUIDAtStart,
 		TranscriptLinesAtStart: transcriptLinesAtStart,
+		TokenUsage:             tokenUsage,
 	}
 
 	if err := strat.SaveChanges(ctx); err != nil {

@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 )
 
 // ErrNoMetadata is returned when a commit does not have an Entire metadata trailer.
@@ -196,6 +198,9 @@ type SaveContext struct {
 	// Transcript position at checkpoint start - tracks what was added during this checkpoint
 	TranscriptUUIDAtStart  string // Last UUID when checkpoint started
 	TranscriptLinesAtStart int    // Line count when checkpoint started
+
+	// TokenUsage contains the token usage for this checkpoint
+	TokenUsage *checkpoint.TokenUsage
 }
 
 // TaskCheckpointContext contains all information needed for saving a task checkpoint.
