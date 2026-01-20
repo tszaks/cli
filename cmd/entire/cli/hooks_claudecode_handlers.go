@@ -203,25 +203,30 @@ func handleSessionInitErrors(ag agent.Agent, initErr error) error {
 	// Check for shadow branch conflict error (worktree conflict)
 	var conflictErr *strategy.ShadowBranchConflictError
 	if errors.As(initErr, &conflictErr) {
-		fmt.Fprintf(os.Stderr, "\n"+
+		message := fmt.Sprintf(
 			"Warning: Shadow branch conflict detected!\n\n"+
-			"   Branch: %s\n"+
-			"   Existing session: %s\n"+
-			"   From worktree: %s\n"+
-			"   Started: %s\n\n"+
-			"   This may indicate another agent session is active from a different worktree,\n"+
-			"   or a previous session wasn't completed.\n\n"+
-			"   Options:\n"+
-			"   1. Commit your changes (git commit) to create a new base commit\n"+
-			"   2. Run 'entire rewind reset' to discard the shadow branch and start fresh\n"+
-			"   3. Continue the previous session from the original worktree: %s\n\n",
+				"Branch: %s\n"+
+				"Existing session: %s\n"+
+				"From worktree: %s\n"+
+				"Started: %s\n\n"+
+				"This may indicate another agent session is active from a different worktree,\n"+
+				"or a previous session wasn't completed.\n\n"+
+				"Options:\n"+
+				"1. Commit your changes (git commit) to create a new base commit\n"+
+				"2. Run 'entire rewind reset' to discard the shadow branch and start fresh\n"+
+				"3. Continue the previous session from the original worktree: %s",
 			conflictErr.Branch,
 			conflictErr.ExistingSession,
 			conflictErr.ExistingWorktree,
 			conflictErr.LastActivity.Format(time.RFC822),
 			conflictErr.ExistingWorktree,
 		)
-		return fmt.Errorf("shadow branch conflict: %w", initErr)
+		// Output blocking JSON response - user must resolve conflict before continuing
+		if err := outputHookResponse(false, message); err != nil {
+			return err
+		}
+		// Return nil so hook exits cleanly (status 0), not with error status
+		return nil
 	}
 
 	// Check for session ID conflict error (shadow branch has different session)
@@ -234,25 +239,30 @@ func handleSessionInitErrors(ag agent.Agent, initErr error) error {
 		}
 		// Get agent's resume command format
 		resumeCmd := ag.FormatResumeCommand(ag.ExtractAgentSessionID(sessionConflictErr.ExistingSession))
-		fmt.Fprintf(os.Stderr, "\n"+
+		message := fmt.Sprintf(
 			"Warning: Session ID conflict detected!\n\n"+
-			"   Shadow branch: %s\n"+
-			"   Existing session: %s\n"+
-			"   New session: %s\n\n"+
-			"   The shadow branch already has checkpoints from a different session.\n"+
-			"   Starting a new session would orphan the existing work.\n\n"+
-			"   Options:\n"+
-			"   1. Commit your changes (git commit) to create a new base commit\n"+
-			"   2. Run 'entire rewind reset' to discard the shadow branch and start fresh\n"+
-			"   3. Resume the existing session: %s\n\n"+
-			"   To suppress this warning in future sessions, run:\n"+
-			"     entire enable --disable-multisession-warning\n\n",
+				"Shadow branch: %s\n"+
+				"Existing session: %s\n"+
+				"New session: %s\n\n"+
+				"The shadow branch already has checkpoints from a different session.\n"+
+				"Starting a new session would orphan the existing work.\n\n"+
+				"Options:\n"+
+				"1. Commit your changes (git commit) to create a new base commit\n"+
+				"2. Run 'entire rewind reset' to discard the shadow branch and start fresh\n"+
+				"3. Resume the existing session: %s\n\n"+
+				"To suppress this warning in future sessions, run:\n"+
+				"  entire enable --disable-multisession-warning",
 			sessionConflictErr.ShadowBranch,
 			sessionConflictErr.ExistingSession,
 			sessionConflictErr.NewSession,
 			resumeCmd,
 		)
-		return fmt.Errorf("session ID conflict: %w", initErr)
+		// Output blocking JSON response - user must resolve conflict before continuing
+		if err := outputHookResponse(false, message); err != nil {
+			return err
+		}
+		// Return nil so hook exits cleanly (status 0), not with error status
+		return nil
 	}
 
 	// Unknown error type
