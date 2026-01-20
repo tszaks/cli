@@ -223,12 +223,8 @@ func (s *AutoCommitStrategy) commitMetadataToMetadataBranch(repo *git.Repository
 	// Extract session ID from metadata dir
 	sessionID := filepath.Base(ctx.MetadataDir)
 
-	// Get current branch name (if on a branch)
-	var branchName string
-	head, err := repo.Head()
-	if err == nil && head.Name().IsBranch() {
-		branchName = head.Name().Short()
-	}
+	// Get current branch name
+	branchName := GetCurrentBranchName(repo)
 
 	// Write committed checkpoint using the checkpoint store
 	err = store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
@@ -734,12 +730,8 @@ func (s *AutoCommitStrategy) commitTaskMetadataToMetadataBranch(repo *git.Reposi
 		messageSubject = FormatSubagentEndMessage(ctx.SubagentType, ctx.TaskDescription, shortToolUseID)
 	}
 
-	// Get current branch name (if on a branch)
-	var branchName string
-	head, err := repo.Head()
-	if err == nil && head.Name().IsBranch() {
-		branchName = head.Name().Short()
-	}
+	// Get current branch name
+	branchName := GetCurrentBranchName(repo)
 
 	// Write committed checkpoint using the checkpoint store
 	err = store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
