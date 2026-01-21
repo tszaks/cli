@@ -169,13 +169,56 @@ func runExplainCheckpoint(w io.Writer, checkpointIDPrefix string, noPager, verbo
 }
 
 // formatCheckpointOutput formats checkpoint data based on verbosity level.
-// Stub for now - will be implemented in Task 8.
+// Default: Summary (ID, session, timestamp, tokens, intent)
+// Verbose: + prompts, files, session IDs
+// Full: + complete transcript
 func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID string, verbose, full bool) string {
-	// Suppress unused parameter warnings until full implementation
-	_ = result
-	_ = verbose
-	_ = full
-	return fmt.Sprintf("Checkpoint: %s\n", checkpointID)
+	var sb strings.Builder
+	meta := result.Metadata
+
+	// Header - always shown
+	shortID := checkpointID
+	if len(shortID) > 12 {
+		shortID = shortID[:12]
+	}
+	fmt.Fprintf(&sb, "Checkpoint: %s\n", shortID)
+	fmt.Fprintf(&sb, "Session: %s\n", meta.SessionID)
+	fmt.Fprintf(&sb, "Created: %s\n", meta.CreatedAt.Format("2006-01-02 15:04:05"))
+
+	// Token usage
+	if meta.TokenUsage != nil {
+		totalTokens := meta.TokenUsage.InputTokens + meta.TokenUsage.CacheCreationTokens +
+			meta.TokenUsage.CacheReadTokens + meta.TokenUsage.OutputTokens
+		fmt.Fprintf(&sb, "Tokens: %d\n", totalTokens)
+	}
+
+	sb.WriteString("\n")
+
+	// Intent (use first line of prompts as fallback until AI summary is available)
+	intent := "(not generated)"
+	if result.Prompts != "" {
+		lines := strings.Split(result.Prompts, "\n")
+		if len(lines) > 0 && lines[0] != "" {
+			intent = lines[0]
+			if len(intent) > 80 {
+				intent = intent[:77] + "..."
+			}
+		}
+	}
+	fmt.Fprintf(&sb, "Intent: %s\n", intent)
+	sb.WriteString("Outcome: (not generated)\n")
+
+	// Verbose: add files and prompts
+	if verbose || full {
+		// TODO: implement verbose output in Task 10
+	}
+
+	// Full: add transcript
+	if full {
+		// TODO: implement full output in Task 12
+	}
+
+	return sb.String()
 }
 
 // runExplainDefault explains the current session.
