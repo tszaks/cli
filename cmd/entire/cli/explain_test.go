@@ -712,3 +712,35 @@ func TestFormatSessionInfo_DoesNotShowMessageWhenHasInteractions(t *testing.T) {
 		t.Errorf("expected output to contain '## Prompt' when has interactions, got:\n%s", output)
 	}
 }
+
+func TestExplainCmd_HasCheckpointFlag(t *testing.T) {
+	cmd := newExplainCmd()
+
+	flag := cmd.Flags().Lookup("checkpoint")
+	if flag == nil {
+		t.Error("expected --checkpoint flag to exist")
+	}
+}
+
+func TestExplainCmd_HasVerboseFlag(t *testing.T) {
+	cmd := newExplainCmd()
+
+	flag := cmd.Flags().Lookup("verbose")
+	if flag == nil {
+		t.Fatal("expected --verbose flag to exist")
+	}
+
+	// Should have -v shorthand
+	if flag.Shorthand != "v" {
+		t.Errorf("expected -v shorthand, got %q", flag.Shorthand)
+	}
+}
+
+func TestExplainCmd_HasFullFlag(t *testing.T) {
+	cmd := newExplainCmd()
+
+	flag := cmd.Flags().Lookup("full")
+	if flag == nil {
+		t.Error("expected --full flag to exist")
+	}
+}
