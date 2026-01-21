@@ -53,6 +53,11 @@ func outputGeminiBlockingResponse(reason string) {
 // Returns true if the hook should be skipped (warning already shown), false to proceed normally.
 // Note: This function may call os.Exit(0) and not return if a blocking response is needed.
 func checkConcurrentSessionsGemini(entireSessionID string) bool {
+	// Check if warnings are disabled via settings
+	if IsMultiSessionWarningDisabled() {
+		return false
+	}
+
 	// Always use the Gemini agent for resume commands in Gemini hooks
 	// (don't use GetAgent() which may return Claude based on settings)
 	geminiAgent, err := agent.Get("gemini")
@@ -146,9 +151,20 @@ func checkConcurrentSessionsGemini(entireSessionID string) bool {
 			resumeCmd = geminiAgent.FormatResumeCommand(geminiAgent.ExtractAgentSessionID(otherSession.SessionID))
 		}
 
+		// Try to read the other session's initial prompt
+		otherPrompt := strategy.ReadSessionPromptFromShadow(repo, otherSession.BaseCommit, otherSession.SessionID)
+
+		// Build message - matches Claude Code format but with Gemini-specific instructions
+		var message string
+		suppressHint := "\n\nTo suppress this warning in future sessions, run:\n  entire enable --disable-multisession-warning"
+		if otherPrompt != "" {
+			message = fmt.Sprintf("Another session is active: \"%s\"\n\nYou can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, exit Gemini CLI and run: %s%s\n\nPress the up arrow key to get your prompt back.", otherPrompt, resumeCmd, suppressHint)
+		} else {
+			message = "Another session is active with uncommitted changes. You can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, exit Gemini CLI and run: " + resumeCmd + suppressHint + "\n\nPress the up arrow key to get your prompt back."
+		}
+
 		// Output blocking JSON response and exit
-		// Message format matches Claude Code but with Gemini-specific instructions
-		outputGeminiBlockingResponse("You have another active session with uncommitted changes. Please commit them first and then start a new Gemini session. If you continue here, your prompt and resulting changes will not be captured.\n\nTo resume the active session, close Gemini CLI and run: " + resumeCmd)
+		outputGeminiBlockingResponse(message)
 		// outputGeminiBlockingResponse calls os.Exit(0), so this line is never reached
 		return true
 	}
