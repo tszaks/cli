@@ -1,12 +1,15 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"entire.io/cli/cmd/entire/cli/agent"
+	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
 
@@ -358,6 +361,14 @@ func resumeSession(sessionID, checkpointID string, force bool) error {
 		}
 	}
 
+	// Initialize logging context with agent
+	ctx := logging.WithAgent(logging.WithComponent(context.Background(), "resume"), ag.Name())
+
+	logging.Debug(ctx, "resume session started",
+		slog.String("checkpoint_id", checkpointID),
+		slog.String("session_id", sessionID),
+	)
+
 	// Get repo root for session directory lookup
 	// Use repo root instead of CWD because Claude stores sessions per-repo,
 	// and running from a subdirectory would look up the wrong session directory
@@ -389,7 +400,7 @@ func resumeSession(sessionID, checkpointID string, force bool) error {
 
 		if err := restorer.RestoreLogsOnly(point, force); err != nil {
 			// Fall back to single-session restore
-			return resumeSingleSession(ag, sessionID, checkpointID, sessionDir, repoRoot, force)
+			return resumeSingleSession(ctx, ag, sessionID, checkpointID, sessionDir, repoRoot, force)
 		}
 
 		// Get checkpoint metadata to show all sessions
@@ -426,6 +437,11 @@ func resumeSession(sessionID, checkpointID string, force bool) error {
 		checkpointPath := paths.CheckpointPath(checkpointID)
 		sessionPrompts := strategy.ReadAllSessionPromptsFromTree(metadataTree, checkpointPath, metadata.SessionCount, metadata.SessionIDs)
 
+		logging.Debug(ctx, "resume session completed (multi-session)",
+			slog.String("checkpoint_id", checkpointID),
+			slog.Int("session_count", metadata.SessionCount),
+		)
+
 		fmt.Fprintf(os.Stderr, "\nRestored %d sessions. To continue, run:\n", metadata.SessionCount)
 		for i, sid := range metadata.SessionIDs {
 			agentSID := ag.ExtractAgentSessionID(sid)
@@ -455,13 +471,13 @@ func resumeSession(sessionID, checkpointID string, force bool) error {
 	}
 
 	// Strategy doesn't support LogsOnlyRestorer, fall back to single session
-	return resumeSingleSession(ag, sessionID, checkpointID, sessionDir, repoRoot, force)
+	return resumeSingleSession(ctx, ag, sessionID, checkpointID, sessionDir, repoRoot, force)
 }
 
 // resumeSingleSession restores a single session (fallback when multi-session restore fails).
 // Always overwrites existing session logs to ensure consistency with checkpoint state.
 // If force is false, prompts for confirmation when local log has newer timestamps.
-func resumeSingleSession(ag agent.Agent, sessionID, checkpointID, sessionDir, repoRoot string, force bool) error {
+func resumeSingleSession(ctx context.Context, ag agent.Agent, sessionID, checkpointID, sessionDir, repoRoot string, force bool) error {
 	agentSessionID := ag.ExtractAgentSessionID(sessionID)
 	sessionLogPath := filepath.Join(sessionDir, agentSessionID+".jsonl")
 
@@ -470,11 +486,20 @@ func resumeSingleSession(ag agent.Agent, sessionID, checkpointID, sessionDir, re
 	logContent, _, err := strat.GetSessionLog(checkpointID)
 	if err != nil {
 		if errors.Is(err, strategy.ErrNoMetadata) {
+			logging.Debug(ctx, "resume session completed (no metadata)",
+				slog.String("checkpoint_id", checkpointID),
+				slog.String("session_id", sessionID),
+			)
 			fmt.Fprintf(os.Stderr, "Session '%s' found in commit trailer but session log not available\n", sessionID)
 			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
 			fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSessionID))
 			return nil
 		}
+		logging.Error(ctx, "resume session failed",
+			slog.String("checkpoint_id", checkpointID),
+			slog.String("session_id", sessionID),
+			slog.String("error", err.Error()),
+		)
 		return fmt.Errorf("failed to get session log: %w", err)
 	}
 
@@ -513,8 +538,18 @@ func resumeSingleSession(ag agent.Agent, sessionID, checkpointID, sessionDir, re
 
 	// Write the session using the agent's WriteSession method
 	if err := ag.WriteSession(agentSession); err != nil {
+		logging.Error(ctx, "resume session failed during write",
+			slog.String("checkpoint_id", checkpointID),
+			slog.String("session_id", sessionID),
+			slog.String("error", err.Error()),
+		)
 		return fmt.Errorf("failed to write session: %w", err)
 	}
+
+	logging.Debug(ctx, "resume session completed",
+		slog.String("checkpoint_id", checkpointID),
+		slog.String("session_id", sessionID),
+	)
 
 	fmt.Fprintf(os.Stderr, "Session restored to: %s\n", sessionLogPath)
 	fmt.Fprintf(os.Stderr, "Session: %s\n", sessionID)

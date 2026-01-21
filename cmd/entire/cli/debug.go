@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
 
@@ -344,10 +345,24 @@ func getFileChanges() ([]string, []string, []string, []string, error) {
 // findTranscriptForSession attempts to find the transcript file for a session.
 // Returns the path if found, empty string if not found, or error on failure.
 func findTranscriptForSession(sessionID, repoRoot string) (string, error) {
-	// Get the agent
-	ag, err := GetAgent()
+	// Try to get agent type from session state
+	sessionState, err := strategy.LoadSessionState(sessionID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get agent: %w", err)
+		return "", fmt.Errorf("failed to load session state: %w", err)
+	}
+
+	var ag agent.Agent
+	if sessionState != nil && sessionState.AgentType != "" {
+		ag, err = agent.GetByAgentType(sessionState.AgentType)
+		if err != nil {
+			return "", fmt.Errorf("failed to get agent for type %q: %w", sessionState.AgentType, err)
+		}
+	} else {
+		// Fall back to auto-detection if no session state
+		ag, err = GetAgent()
+		if err != nil {
+			return "", fmt.Errorf("failed to get agent: %w", err)
+		}
 	}
 
 	// Get the session directory for this agent

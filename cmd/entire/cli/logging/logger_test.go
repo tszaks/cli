@@ -17,6 +17,7 @@ import (
 const (
 	testSessionID = "2025-01-15-test-session"
 	testComponent = "hooks"
+	testAgent     = "claude-code"
 	levelINFO     = "INFO"
 )
 
@@ -315,6 +316,7 @@ func TestLogging_IncludesContextValues(t *testing.T) {
 	ctx = WithSession(ctx, "context-session-id") // Will be ignored, global takes precedence
 	ctx = WithToolCall(ctx, "toolu_123")
 	ctx = WithComponent(ctx, testComponent)
+	ctx = WithAgent(ctx, testAgent)
 
 	// Log with context
 	Info(ctx, "context test message")
@@ -343,6 +345,9 @@ func TestLogging_IncludesContextValues(t *testing.T) {
 	}
 	if logEntry["component"] != testComponent {
 		t.Errorf("Expected component='%s', got %v", testComponent, logEntry["component"])
+	}
+	if logEntry["agent"] != testAgent {
+		t.Errorf("Expected agent='%s', got %v", testAgent, logEntry["agent"])
 	}
 }
 
