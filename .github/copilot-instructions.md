@@ -84,6 +84,15 @@ if isAccessibleMode() {
 }
 ```
 
+### Logging vs User Output
+
+- **Internal/debug logging**: Use `logging.Debug/Info/Warn/Error(ctx, msg, attrs...)` from `cli/logging/`. Writes to `.entire/logs/`.
+- **User-facing output**: Use `fmt.Fprint*(cmd.OutOrStdout(), ...)` or `cmd.ErrOrStderr()`.
+
+Don't use `fmt.Print*` for operational messages (checkpoint saves, hook invocations) - use the `logging` package.
+
+**Privacy**: Don't log user content (prompts, file contents, commit messages). Log only operational metadata (IDs, counts, paths, durations).
+
 ## Project Structure
 
 ```
