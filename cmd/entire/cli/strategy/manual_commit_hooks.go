@@ -207,6 +207,9 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 
 		// Filter to sessions where BaseCommit matches current HEAD
 		// This prevents reusing checkpoint IDs from old sessions
+		// Note: With the fix to PostCommit (always updating BaseCommit), sessions
+		// should always have current BaseCommit. If none match, we don't add a trailer
+		// rather than falling back to old sessions which could have stale checkpoint IDs.
 		var currentSessions []*SessionState
 		for _, session := range sessions {
 			if session.BaseCommit == currentHeadHash {
@@ -214,10 +217,16 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 			}
 		}
 
-		// If no sessions match current HEAD, fall back to all sessions
-		// (for backward compatibility with sessions created before BaseCommit tracking)
 		if len(currentSessions) == 0 {
-			currentSessions = sessions
+			// No sessions match current HEAD - don't try to reuse checkpoint IDs
+			// from old sessions as they may be stale
+			logging.Debug(logCtx, "prepare-commit-msg: no sessions match current HEAD",
+				slog.String("strategy", "manual-commit"),
+				slog.String("source", source),
+				slog.String("current_head", currentHeadHash[:7]),
+				slog.Int("total_sessions", len(sessions)),
+			)
+			return nil
 		}
 
 		stagedFiles := getStagedFiles(repo)
@@ -381,11 +390,26 @@ func (s *ManualCommitStrategy) PostCommit() error {
 	// Filter to sessions with new content
 	sessionsWithContent := s.filterSessionsWithNewContent(repo, sessions)
 	if len(sessionsWithContent) == 0 {
-		logging.Warn(logCtx, "post-commit: no new content to condense",
+		logging.Debug(logCtx, "post-commit: no new content to condense",
 			slog.String("strategy", "manual-commit"),
 			slog.String("checkpoint_id", checkpointID),
 			slog.Int("sessions_found", len(sessions)),
 		)
+		// Still update BaseCommit for all sessions in this worktree
+		// This prevents stale BaseCommit when commits happen without condensation
+		// (e.g., when reusing a previous checkpoint ID for split commits)
+		newHead := head.Hash().String()
+		for _, state := range sessions {
+			if state.BaseCommit != newHead {
+				state.BaseCommit = newHead
+				if err := s.saveSessionState(state); err != nil {
+					logging.Warn(logCtx, "post-commit: failed to update session BaseCommit",
+						slog.String("session_id", state.SessionID),
+						slog.String("error", err.Error()),
+					)
+				}
+			}
+		}
 		return nil
 	}
 
