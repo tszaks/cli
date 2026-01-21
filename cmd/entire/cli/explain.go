@@ -239,7 +239,7 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 		sb.WriteString("\n")
 		sb.WriteString("Transcript:\n")
 		if len(result.Transcript) > 0 {
-			sb.WriteString(string(result.Transcript))
+			sb.Write(result.Transcript)
 			sb.WriteString("\n")
 		} else {
 			sb.WriteString("  (none)\n")
