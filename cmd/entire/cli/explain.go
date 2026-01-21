@@ -263,8 +263,14 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 	fmt.Fprintf(&sb, "Intent: %s\n", intent)
 	sb.WriteString("Outcome: (not generated)\n")
 
-	// Verbose: add files and prompts
+	// Verbose: add commit message, files, and prompts
 	if verbose || full {
+		// Commit message section (only if available)
+		if commitMessage != "" {
+			sb.WriteString("\n")
+			fmt.Fprintf(&sb, "Commit: %s\n", commitMessage)
+		}
+
 		sb.WriteString("\n")
 
 		// Files section
@@ -286,12 +292,6 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 			sb.WriteString("\n")
 		} else {
 			sb.WriteString("  (none)\n")
-		}
-
-		// Commit message section (only if available)
-		if commitMessage != "" {
-			sb.WriteString("\n")
-			fmt.Fprintf(&sb, "Commit: %s\n", commitMessage)
 		}
 	}
 
