@@ -55,8 +55,8 @@ type hookInputData struct {
 
 // parseAndLogHookInput parses the hook input and sets up logging context.
 func parseAndLogHookInput() (*hookInputData, error) {
-	// Get the agent for session ID transformation
-	ag, err := GetAgent()
+	// Get the agent from the hook command context (e.g., "entire hooks claude-code ...")
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -340,7 +340,7 @@ func commitWithMetadata() error {
 	}
 
 	// Get the agent for hook input parsing and session ID transformation
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -624,7 +624,7 @@ func handlePostTodo() error {
 	}
 
 	// Get agent for logging context
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -755,7 +755,7 @@ func handlePreTask() error {
 	}
 
 	// Get agent for logging context
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -866,7 +866,7 @@ func handlePostTask() error {
 	subagentType, taskDescription := ParseSubagentTypeAndDescription(input.ToolInput)
 
 	// Get agent for logging context
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -996,7 +996,7 @@ func handlePostTask() error {
 // It reads session info from stdin and sets it as the current session.
 func handleSessionStart() error {
 	// Get the agent for session ID transformation
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}

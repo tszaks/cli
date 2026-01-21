@@ -170,7 +170,7 @@ func checkConcurrentSessionsGemini(entireSessionID string) {
 // It reads session info from stdin and sets it as the current session.
 func handleGeminiSessionStart() error {
 	// Get the agent for session ID transformation
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -232,7 +232,7 @@ type geminiSessionContext struct {
 
 // parseGeminiSessionEnd parses the session-end hook input and validates transcript.
 func parseGeminiSessionEnd() (*geminiSessionContext, error) {
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -515,7 +515,7 @@ func createContextFileForGemini(contextFile, commitMessage, sessionID string, pr
 // This is similar to Claude Code's PreToolUse hook but applies to all tools.
 func handleGeminiBeforeTool() error {
 	// Get the agent for hook input parsing
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -543,7 +543,7 @@ func handleGeminiBeforeTool() error {
 // This is similar to Claude Code's PostToolUse hook but applies to all tools.
 func handleGeminiAfterTool() error {
 	// Get the agent for hook input parsing
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -709,7 +709,7 @@ func handleGeminiAfterAgent() error {
 // Useful for logging/monitoring LLM requests.
 func handleGeminiBeforeModel() error {
 	// Get the agent for hook input parsing
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -737,7 +737,7 @@ func handleGeminiBeforeModel() error {
 // Useful for logging/monitoring LLM responses.
 func handleGeminiAfterModel() error {
 	// Get the agent for hook input parsing
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -764,7 +764,7 @@ func handleGeminiAfterModel() error {
 // This fires before the planner runs to select which tools to use.
 func handleGeminiBeforeToolSelection() error {
 	// Get the agent for hook input parsing
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -791,7 +791,7 @@ func handleGeminiBeforeToolSelection() error {
 // This fires before chat history compression - useful for backing up transcript.
 func handleGeminiPreCompress() error {
 	// Get the agent for hook input parsing
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -820,7 +820,7 @@ func handleGeminiPreCompress() error {
 // This fires on notification events (errors, warnings, info).
 func handleGeminiNotification() error {
 	// Get the agent for hook input parsing
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
