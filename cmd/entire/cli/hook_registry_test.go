@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 
@@ -249,5 +250,54 @@ func TestClaudeCodeHooksCmd_HasLoggingHooks(t *testing.T) {
 	// Verify PersistentPostRunE is set
 	if claudeCodeCmd.PersistentPostRunE == nil {
 		t.Error("expected PersistentPostRunE to be set for logging cleanup")
+	}
+}
+
+func TestHookCommand_SetsCurrentHookAgentName(t *testing.T) {
+	// Verify that newAgentHookVerbCmdWithLogging sets currentHookAgentName
+	// correctly for the handler, and clears it after
+
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Initialize git repo (required for paths.RepoRoot to work)
+	gitInit := exec.CommandContext(context.Background(), "git", "init")
+	if err := gitInit.Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	tests := []struct {
+		name      string
+		agentName string
+	}{
+		{"claude-code hook sets claude-code", agent.AgentNameClaudeCode},
+		{"gemini hook sets gemini", agent.AgentNameGemini},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var agentNameInsideHandler string
+
+			hookName := "test-hook-" + tt.agentName
+			RegisterHookHandler(tt.agentName, hookName, func() error {
+				agentNameInsideHandler = currentHookAgentName
+				return nil
+			})
+
+			cmd := newAgentHookVerbCmdWithLogging(tt.agentName, hookName)
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("command execution failed: %v", err)
+			}
+
+			// Inside handler, currentHookAgentName should match the agent
+			if agentNameInsideHandler != tt.agentName {
+				t.Errorf("inside handler: currentHookAgentName = %q, want %q", agentNameInsideHandler, tt.agentName)
+			}
+
+			// After handler completes, currentHookAgentName should be cleared
+			if currentHookAgentName != "" {
+				t.Errorf("after handler: currentHookAgentName = %q, want empty", currentHookAgentName)
+			}
+		})
 	}
 }
