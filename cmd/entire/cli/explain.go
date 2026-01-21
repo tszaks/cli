@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
 
@@ -123,14 +124,58 @@ func runExplain(w io.Writer, sessionID, commitRef, checkpointID string, noPager,
 }
 
 // runExplainCheckpoint explains a specific checkpoint.
-func runExplainCheckpoint(w io.Writer, checkpointID string, noPager, verbose, full bool) error {
-	// Suppress unused parameter warnings until implementation
-	_ = w
-	_ = checkpointID
-	_ = noPager
+func runExplainCheckpoint(w io.Writer, checkpointIDPrefix string, noPager, verbose, full bool) error {
+	repo, err := openRepository()
+	if err != nil {
+		return fmt.Errorf("not a git repository: %w", err)
+	}
+
+	store := checkpoint.NewGitStore(repo)
+
+	// Find checkpoint by prefix
+	committed, err := store.ListCommitted(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to list checkpoints: %w", err)
+	}
+
+	var fullCheckpointID string
+	for _, info := range committed {
+		if strings.HasPrefix(info.CheckpointID, checkpointIDPrefix) {
+			fullCheckpointID = info.CheckpointID
+			break
+		}
+	}
+
+	if fullCheckpointID == "" {
+		return fmt.Errorf("checkpoint not found: %s", checkpointIDPrefix)
+	}
+
+	// Load checkpoint data
+	result, err := store.ReadCommitted(context.Background(), fullCheckpointID)
+	if err != nil {
+		return fmt.Errorf("failed to read checkpoint: %w", err)
+	}
+
+	// Format and output
+	output := formatCheckpointOutput(result, fullCheckpointID, verbose, full)
+
+	if noPager {
+		fmt.Fprint(w, output)
+	} else {
+		outputWithPager(w, output)
+	}
+
+	return nil
+}
+
+// formatCheckpointOutput formats checkpoint data based on verbosity level.
+// Stub for now - will be implemented in Task 8.
+func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID string, verbose, full bool) string {
+	// Suppress unused parameter warnings until full implementation
+	_ = result
 	_ = verbose
 	_ = full
-	return errors.New("not implemented")
+	return fmt.Sprintf("Checkpoint: %s\n", checkpointID)
 }
 
 // runExplainDefault explains the current session.
