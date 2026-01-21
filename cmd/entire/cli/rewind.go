@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
@@ -293,7 +294,7 @@ func runRewindInteractive() error {
 			if err := restoreTaskCheckpointTranscript(start, *selectedPoint, sessionID, checkpoint.CheckpointUUID); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to restore truncated session transcript: %v\n", err)
 			} else {
-				fmt.Printf("Rewound to task checkpoint. %s\n", formatResumeCommand(sessionID))
+				fmt.Printf("Rewound to task checkpoint. %s\n", formatResumeCommand(sessionID, selectedPoint.Agent))
 			}
 			return nil
 		}
@@ -309,9 +310,9 @@ func runRewindInteractive() error {
 	if lookupID == "" {
 		lookupID = selectedPoint.ID
 	}
-	if returnedSessionID, err := restoreSessionTranscriptFromStrategy(start, lookupID, sessionID); err != nil {
+	if returnedSessionID, err := restoreSessionTranscriptFromStrategy(start, lookupID, sessionID, selectedPoint.Agent); err != nil {
 		// Fall back to local file
-		if err := restoreSessionTranscript(transcriptFile, sessionID); err != nil {
+		if err := restoreSessionTranscript(transcriptFile, sessionID, selectedPoint.Agent); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to restore session transcript: %v\n", err)
 			fmt.Fprintf(os.Stderr, "  Source: %s\n", transcriptFile)
 			fmt.Fprintf(os.Stderr, "  Session ID: %s\n", sessionID)
@@ -321,7 +322,7 @@ func runRewindInteractive() error {
 		sessionID = returnedSessionID
 	}
 
-	fmt.Printf("Rewound to %s. %s\n", shortID, formatResumeCommand(sessionID))
+	fmt.Printf("Rewound to %s. %s\n", shortID, formatResumeCommand(sessionID, selectedPoint.Agent))
 	return nil
 }
 
@@ -467,7 +468,7 @@ func runRewindToInternal(commitID string, logsOnly bool, reset bool) error {
 			if err := restoreTaskCheckpointTranscript(start, *selectedPoint, sessionID, checkpoint.CheckpointUUID); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to restore truncated session transcript: %v\n", err)
 			} else {
-				fmt.Printf("Rewound to task checkpoint. %s\n", formatResumeCommand(sessionID))
+				fmt.Printf("Rewound to task checkpoint. %s\n", formatResumeCommand(sessionID, selectedPoint.Agent))
 			}
 			return nil
 		}
@@ -482,9 +483,9 @@ func runRewindToInternal(commitID string, logsOnly bool, reset bool) error {
 	if lookupID == "" {
 		lookupID = selectedPoint.ID
 	}
-	if returnedSessionID, err := restoreSessionTranscriptFromStrategy(start, lookupID, sessionID); err != nil {
+	if returnedSessionID, err := restoreSessionTranscriptFromStrategy(start, lookupID, sessionID, selectedPoint.Agent); err != nil {
 		// Fall back to local file
-		if err := restoreSessionTranscript(transcriptFile, sessionID); err != nil {
+		if err := restoreSessionTranscript(transcriptFile, sessionID, selectedPoint.Agent); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to restore session transcript: %v\n", err)
 		}
 	} else {
@@ -492,7 +493,7 @@ func runRewindToInternal(commitID string, logsOnly bool, reset bool) error {
 		sessionID = returnedSessionID
 	}
 
-	fmt.Printf("Rewound to %s. %s\n", selectedPoint.ID[:7], formatResumeCommand(sessionID))
+	fmt.Printf("Rewound to %s. %s\n", selectedPoint.ID[:7], formatResumeCommand(sessionID, selectedPoint.Agent))
 	return nil
 }
 
@@ -574,11 +575,11 @@ func extractSessionIDFromMetadata(metadataDir string) string {
 	return base
 }
 
-func restoreSessionTranscript(transcriptFile, sessionID string) error {
+func restoreSessionTranscript(transcriptFile, sessionID, agentType string) error {
 	// Get the agent for session directory and ID transformation
-	ag, err := GetAgent()
+	ag, err := agent.GetByAgentType(agentType)
 	if err != nil {
-		return fmt.Errorf("failed to get agent: %w", err)
+		return fmt.Errorf("failed to get agent for type %q: %w", agentType, err)
 	}
 
 	// Get repo root for agent's session directory lookup
@@ -614,11 +615,11 @@ func restoreSessionTranscript(transcriptFile, sessionID string) error {
 // restoreSessionTranscriptFromStrategy restores a session transcript using GetSessionLog.
 // This is used for strategies that store transcripts in git branches rather than local files.
 // Returns the session ID that was actually used (may differ from input if strategy provides one).
-func restoreSessionTranscriptFromStrategy(strat strategy.Strategy, checkpointID, sessionID string) (string, error) {
+func restoreSessionTranscriptFromStrategy(strat strategy.Strategy, checkpointID, sessionID, agentType string) (string, error) {
 	// Get the agent for session directory and ID transformation
-	ag, err := GetAgent()
+	ag, err := agent.GetByAgentType(agentType)
 	if err != nil {
-		return "", fmt.Errorf("failed to get agent: %w", err)
+		return "", fmt.Errorf("failed to get agent for type %q: %w", agentType, err)
 	}
 
 	// Get repo root for agent's session directory lookup
@@ -667,9 +668,9 @@ func restoreSessionTranscriptFromStrategy(strat strategy.Strategy, checkpointID,
 // Uses GetTaskCheckpointTranscript to fetch the transcript from the strategy.
 func restoreTaskCheckpointTranscript(strat strategy.Strategy, point strategy.RewindPoint, sessionID, checkpointUUID string) error {
 	// Get the agent for session directory and ID transformation
-	ag, err := GetAgent()
+	ag, err := agent.GetByAgentType(point.Agent)
 	if err != nil {
-		return fmt.Errorf("failed to get agent: %w", err)
+		return fmt.Errorf("failed to get agent for type %q: %w", point.Agent, err)
 	}
 
 	// Get transcript content from strategy
@@ -1105,9 +1106,10 @@ func sanitizeForTerminal(s string) string {
 }
 
 // formatResumeCommand returns the agent-appropriate command to resume a session.
+// agentType is the human-readable agent name (e.g., "Claude Code", "Gemini CLI").
 // Falls back to a generic format if the agent cannot be loaded.
-func formatResumeCommand(entireSessionID string) string {
-	ag, err := GetAgent()
+func formatResumeCommand(entireSessionID, agentType string) string {
+	ag, err := agent.GetByAgentType(agentType)
 	if err != nil {
 		// Fallback to generic format
 		return "Resume session: " + entireSessionID
@@ -1126,7 +1128,7 @@ func printMultiSessionResumeCommands(point strategy.RewindPoint) {
 
 		// Print each session with prompt as comment
 		for i, sessionID := range point.SessionIDs {
-			cmd := formatResumeCommand(sessionID)
+			cmd := formatResumeCommand(sessionID, point.Agent)
 
 			// Get prompt for this session (if available)
 			var prompt string
@@ -1156,7 +1158,7 @@ func printMultiSessionResumeCommands(point strategy.RewindPoint) {
 			sessionID = point.SessionIDs[len(point.SessionIDs)-1]
 		}
 		if sessionID != "" {
-			cmd := formatResumeCommand(sessionID)
+			cmd := formatResumeCommand(sessionID, point.Agent)
 			if point.SessionPrompt != "" {
 				fmt.Printf("%s  # %s\n", cmd, point.SessionPrompt)
 			} else {
