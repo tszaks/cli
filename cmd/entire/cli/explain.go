@@ -55,7 +55,10 @@ type checkpointDetail struct {
 func newExplainCmd() *cobra.Command {
 	var sessionFlag string
 	var commitFlag string
+	var checkpointFlag string
 	var noPagerFlag bool
+	var verboseFlag bool
+	var fullFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "explain",
@@ -79,7 +82,10 @@ session or commit.`,
 
 	cmd.Flags().StringVar(&sessionFlag, "session", "", "Explain a specific session (ID or prefix)")
 	cmd.Flags().StringVar(&commitFlag, "commit", "", "Explain a specific commit (SHA or ref)")
+	cmd.Flags().StringVar(&checkpointFlag, "checkpoint", "", "Explain a specific checkpoint (ID or prefix)")
 	cmd.Flags().BoolVar(&noPagerFlag, "no-pager", false, "Disable pager output")
+	cmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "Show prompts, files, and session IDs")
+	cmd.Flags().BoolVar(&fullFlag, "full", false, "Show complete transcript")
 
 	return cmd
 }
