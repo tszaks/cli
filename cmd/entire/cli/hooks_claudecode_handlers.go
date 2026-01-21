@@ -271,7 +271,7 @@ func handleSessionInitErrors(ag agent.Agent, initErr error) error {
 		if resumeCmd == "" {
 			resumeCmd = ag.FormatResumeCommand(ag.ExtractAgentSessionID(sessionConflictErr.ExistingSession))
 		}
-		fmt.Fprintf(os.Stderr, "\n"+
+		message := fmt.Sprintf(
 			"Warning: Session ID conflict detected!\n\n"+
 				"Shadow branch: %s\n"+
 				"Existing session: %s\n"+
