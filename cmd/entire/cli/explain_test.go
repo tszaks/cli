@@ -744,3 +744,17 @@ func TestExplainCmd_HasFullFlag(t *testing.T) {
 		t.Error("expected --full flag to exist")
 	}
 }
+
+func TestRunExplain_MutualExclusivityError(t *testing.T) {
+	var buf bytes.Buffer
+
+	// Providing both --session and --checkpoint should error
+	err := runExplain(&buf, "session-id", "", "checkpoint-id", false, false, false)
+
+	if err == nil {
+		t.Error("expected error when multiple flags provided")
+	}
+	if !strings.Contains(err.Error(), "cannot specify multiple") {
+		t.Errorf("expected 'cannot specify multiple' error, got: %v", err)
+	}
+}
