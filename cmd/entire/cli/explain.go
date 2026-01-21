@@ -76,7 +76,7 @@ session or commit.`,
 				return nil
 			}
 
-			return runExplain(cmd.OutOrStdout(), sessionFlag, commitFlag, noPagerFlag)
+			return runExplain(cmd.OutOrStdout(), sessionFlag, commitFlag, checkpointFlag, noPagerFlag, verboseFlag, fullFlag)
 		},
 	}
 
@@ -91,10 +91,20 @@ session or commit.`,
 }
 
 // runExplain routes to the appropriate explain function based on flags.
-func runExplain(w io.Writer, sessionID, commitRef string, noPager bool) error {
-	// Error if both flags are provided
-	if sessionID != "" && commitRef != "" {
-		return errors.New("cannot specify both --session and --commit")
+func runExplain(w io.Writer, sessionID, commitRef, checkpointID string, noPager, verbose, full bool) error {
+	// Count mutually exclusive flags
+	flagCount := 0
+	if sessionID != "" {
+		flagCount++
+	}
+	if commitRef != "" {
+		flagCount++
+	}
+	if checkpointID != "" {
+		flagCount++
+	}
+	if flagCount > 1 {
+		return errors.New("cannot specify multiple of --session, --commit, --checkpoint")
 	}
 
 	// Route to appropriate handler
@@ -104,9 +114,23 @@ func runExplain(w io.Writer, sessionID, commitRef string, noPager bool) error {
 	if commitRef != "" {
 		return runExplainCommit(w, commitRef)
 	}
+	if checkpointID != "" {
+		return runExplainCheckpoint(w, checkpointID, noPager, verbose, full)
+	}
 
 	// Default: explain current session
 	return runExplainDefault(w, noPager)
+}
+
+// runExplainCheckpoint explains a specific checkpoint.
+func runExplainCheckpoint(w io.Writer, checkpointID string, noPager, verbose, full bool) error {
+	// Suppress unused parameter warnings until implementation
+	_ = w
+	_ = checkpointID
+	_ = noPager
+	_ = verbose
+	_ = full
+	return errors.New("not implemented")
 }
 
 // runExplainDefault explains the current session.

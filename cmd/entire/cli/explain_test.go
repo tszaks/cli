@@ -231,15 +231,15 @@ func TestExplainDefault_NoCurrentSession(t *testing.T) {
 func TestExplainBothFlagsError(t *testing.T) {
 	// Test that providing both --session and --commit returns an error
 	var stdout bytes.Buffer
-	err := runExplain(&stdout, "session-id", "commit-sha", false)
+	err := runExplain(&stdout, "session-id", "commit-sha", "", false, false, false)
 
 	if err == nil {
 		t.Error("expected error when both flags provided, got nil")
 	}
-	// Case-insensitive check for "cannot specify both"
+	// Case-insensitive check for "cannot specify multiple"
 	errLower := strings.ToLower(err.Error())
-	if !strings.Contains(errLower, "cannot specify both") {
-		t.Errorf("expected 'cannot specify both' in error, got: %v", err)
+	if !strings.Contains(errLower, "cannot specify multiple") {
+		t.Errorf("expected 'cannot specify multiple' in error, got: %v", err)
 	}
 }
 
