@@ -40,11 +40,12 @@ type TestEnv struct {
 	T                *testing.T
 	RepoDir          string
 	ClaudeProjectDir string
+	GeminiProjectDir string
 	SessionCounter   int
 }
 
 // NewTestEnv creates a new isolated test environment.
-// It creates temp directories for the git repo and Claude project files.
+// It creates temp directories for the git repo and agent project files.
 // Note: Does NOT change working directory to allow parallel test execution.
 // Note: Does NOT use t.Setenv to allow parallel test execution - CLI commands
 // receive the env var via cmd.Env instead.
@@ -61,15 +62,20 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	if resolved, err := filepath.EvalSymlinks(claudeProjectDir); err == nil {
 		claudeProjectDir = resolved
 	}
+	geminiProjectDir := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(geminiProjectDir); err == nil {
+		geminiProjectDir = resolved
+	}
 
 	env := &TestEnv{
 		T:                t,
 		RepoDir:          repoDir,
 		ClaudeProjectDir: claudeProjectDir,
+		GeminiProjectDir: geminiProjectDir,
 	}
 
 	// Note: Don't use t.Setenv here - it's incompatible with t.Parallel()
-	// CLI commands receive ENTIRE_TEST_CLAUDE_PROJECT_DIR via cmd.Env instead
+	// CLI commands receive ENTIRE_TEST_CLAUDE_PROJECT_DIR or ENTIRE_TEST_GEMINI_PROJECT_DIR via cmd.Env instead
 
 	return env
 }
@@ -215,6 +221,25 @@ func (env *TestEnv) InitEntire(strategyName string) {
 // InitEntireWithOptions initializes the .entire directory with the specified strategy and options.
 func (env *TestEnv) InitEntireWithOptions(strategyName string, strategyOptions map[string]any) {
 	env.T.Helper()
+	env.initEntireInternal(strategyName, "", strategyOptions)
+}
+
+// InitEntireWithAgent initializes an Entire test environment with a specific agent.
+// If agentName is empty, defaults to claude-code.
+func (env *TestEnv) InitEntireWithAgent(strategyName, agentName string) {
+	env.T.Helper()
+	env.initEntireInternal(strategyName, agentName, nil)
+}
+
+// InitEntireWithAgentAndOptions initializes Entire with the specified strategy, agent, and options.
+func (env *TestEnv) InitEntireWithAgentAndOptions(strategyName, agentName string, strategyOptions map[string]any) {
+	env.T.Helper()
+	env.initEntireInternal(strategyName, agentName, strategyOptions)
+}
+
+// initEntireInternal is the common implementation for InitEntire variants.
+func (env *TestEnv) initEntireInternal(strategyName, agentName string, strategyOptions map[string]any) {
+	env.T.Helper()
 
 	// Create .entire directory structure
 	entireDir := filepath.Join(env.RepoDir, ".entire")
@@ -232,6 +257,10 @@ func (env *TestEnv) InitEntireWithOptions(strategyName string, strategyOptions m
 	settings := map[string]any{
 		"strategy":  strategyName,
 		"local_dev": true, // Use go run for hooks in tests
+	}
+	// Only add agent if specified (otherwise defaults to claude-code)
+	if agentName != "" {
+		settings["agent"] = agentName
 	}
 	if strategyOptions != nil {
 		settings["strategy_options"] = strategyOptions
