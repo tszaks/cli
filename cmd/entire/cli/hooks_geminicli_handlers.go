@@ -181,7 +181,7 @@ func handleGeminiSessionStart() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "gemini-session-start",
 		slog.String("hook", "session-start"),
 		slog.String("hook_type", "agent"),
@@ -242,7 +242,7 @@ func parseGeminiSessionEnd() (*geminiSessionContext, error) {
 		return nil, fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "stop",
 		slog.String("hook", "stop"),
 		slog.String("hook_type", "agent"),
@@ -526,7 +526,7 @@ func handleGeminiBeforeTool() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Debug(logCtx, "gemini-before-tool",
 		slog.String("hook", "before-tool"),
 		slog.String("hook_type", "tool"),
@@ -554,7 +554,7 @@ func handleGeminiAfterTool() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Debug(logCtx, "gemini-after-tool",
 		slog.String("hook", "after-tool"),
 		slog.String("hook_type", "tool"),
@@ -585,7 +585,7 @@ func handleGeminiBeforeAgent() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 
 	// Log with prompt if available (Gemini provides the user's prompt in BeforeAgent)
 	logArgs := []any{
@@ -666,7 +666,7 @@ func handleGeminiAfterAgent() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "gemini-after-agent",
 		slog.String("hook", "after-agent"),
 		slog.String("hook_type", "agent"),
@@ -720,7 +720,7 @@ func handleGeminiBeforeModel() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Debug(logCtx, "gemini-before-model",
 		slog.String("hook", "before-model"),
 		slog.String("hook_type", "model"),
@@ -748,7 +748,7 @@ func handleGeminiAfterModel() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Debug(logCtx, "gemini-after-model",
 		slog.String("hook", "after-model"),
 		slog.String("hook_type", "model"),
@@ -775,7 +775,7 @@ func handleGeminiBeforeToolSelection() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Debug(logCtx, "gemini-before-tool-selection",
 		slog.String("hook", "before-tool-selection"),
 		slog.String("hook_type", "model"),
@@ -802,7 +802,7 @@ func handleGeminiPreCompress() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "gemini-pre-compress",
 		slog.String("hook", "pre-compress"),
 		slog.String("hook_type", "session"),
@@ -831,7 +831,7 @@ func handleGeminiNotification() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Debug(logCtx, "gemini-notification",
 		slog.String("hook", "notification"),
 		slog.String("hook_type", "notification"),

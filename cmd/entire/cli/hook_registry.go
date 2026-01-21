@@ -242,8 +242,8 @@ func newAgentHookVerbCmdWithLogging(agentName, hookName string) *cobra.Command {
 
 			start := time.Now()
 
-			// Initialize logging context
-			ctx := logging.WithComponent(context.Background(), "hooks")
+			// Initialize logging context with agent name
+			ctx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), agentName)
 
 			// Get strategy name for logging
 			strategyName := unknownStrategyName
@@ -254,7 +254,6 @@ func newAgentHookVerbCmdWithLogging(agentName, hookName string) *cobra.Command {
 			logging.Debug(ctx, "hook invoked",
 				slog.String("hook", hookName),
 				slog.String("hook_type", hookType),
-				slog.String("agent", agentName),
 				slog.String("strategy", strategyName),
 			)
 
@@ -263,7 +262,6 @@ func newAgentHookVerbCmdWithLogging(agentName, hookName string) *cobra.Command {
 				logging.Error(ctx, "no handler registered",
 					slog.String("hook", hookName),
 					slog.String("hook_type", hookType),
-					slog.String("agent", agentName),
 				)
 				return fmt.Errorf("no handler registered for %s/%s", agentName, hookName)
 			}
@@ -273,7 +271,6 @@ func newAgentHookVerbCmdWithLogging(agentName, hookName string) *cobra.Command {
 			logging.LogDuration(ctx, slog.LevelDebug, "hook completed", start,
 				slog.String("hook", hookName),
 				slog.String("hook_type", hookType),
-				slog.String("agent", agentName),
 				slog.String("strategy", strategyName),
 				slog.Bool("success", hookErr == nil),
 			)

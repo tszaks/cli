@@ -67,7 +67,7 @@ func parseAndLogHookInput() (*hookInputData, error) {
 		return nil, fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "user-prompt-submit",
 		slog.String("hook", "user-prompt-submit"),
 		slog.String("hook_type", "agent"),
@@ -351,7 +351,7 @@ func commitWithMetadata() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "stop",
 		slog.String("hook", "stop"),
 		slog.String("hook_type", "agent"),
@@ -623,7 +623,13 @@ func handlePostTodo() error {
 		return fmt.Errorf("failed to parse PostToolUse[TodoWrite] input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	// Get agent for logging context
+	ag, err := GetAgent()
+	if err != nil {
+		return fmt.Errorf("failed to get agent: %w", err)
+	}
+
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "post-todo",
 		slog.String("hook", "post-todo"),
 		slog.String("hook_type", "subagent"),
@@ -748,7 +754,13 @@ func handlePreTask() error {
 		return fmt.Errorf("failed to parse PreToolUse[Task] input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	// Get agent for logging context
+	ag, err := GetAgent()
+	if err != nil {
+		return fmt.Errorf("failed to get agent: %w", err)
+	}
+
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "pre-task",
 		slog.String("hook", "pre-task"),
 		slog.String("hook_type", "subagent"),
@@ -853,8 +865,14 @@ func handlePostTask() error {
 	// Extract subagent type from tool_input for logging
 	subagentType, taskDescription := ParseSubagentTypeAndDescription(input.ToolInput)
 
+	// Get agent for logging context
+	ag, err := GetAgent()
+	if err != nil {
+		return fmt.Errorf("failed to get agent: %w", err)
+	}
+
 	// Log parsed input context
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "post-task",
 		slog.String("hook", "post-task"),
 		slog.String("hook_type", "subagent"),
@@ -989,7 +1007,7 @@ func handleSessionStart() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "session-start",
 		slog.String("hook", "session-start"),
 		slog.String("hook_type", "agent"),
