@@ -482,8 +482,24 @@ func (r *GeminiHookRunner) SimulateGeminiBeforeAgentWithOutput(sessionID string)
 	return r.runGeminiHookWithOutput("before-agent", inputJSON)
 }
 
+// SimulateGeminiAfterAgent simulates the AfterAgent hook for Gemini CLI.
+// This is the primary checkpoint creation hook, equivalent to Claude Code's Stop hook.
+func (r *GeminiHookRunner) SimulateGeminiAfterAgent(sessionID, transcriptPath string) error {
+	r.T.Helper()
+
+	input := map[string]string{
+		"session_id":      sessionID,
+		"transcript_path": transcriptPath,
+		"cwd":             r.RepoDir,
+		"hook_event_name": "AfterAgent",
+		"timestamp":       "2025-01-01T00:00:00Z",
+	}
+
+	return r.runGeminiHookWithInput("after-agent", input)
+}
+
 // SimulateGeminiSessionEnd simulates the SessionEnd hook for Gemini CLI.
-// This is equivalent to Claude Code's Stop hook.
+// This is a cleanup/fallback hook that fires on explicit exit.
 func (r *GeminiHookRunner) SimulateGeminiSessionEnd(sessionID, transcriptPath string) error {
 	r.T.Helper()
 
@@ -592,6 +608,13 @@ func (env *TestEnv) SimulateGeminiBeforeAgentWithOutput(sessionID string) HookOu
 	env.T.Helper()
 	runner := NewGeminiHookRunner(env.RepoDir, env.GeminiProjectDir, env.T)
 	return runner.SimulateGeminiBeforeAgentWithOutput(sessionID)
+}
+
+// SimulateGeminiAfterAgent is a convenience method on TestEnv.
+func (env *TestEnv) SimulateGeminiAfterAgent(sessionID, transcriptPath string) error {
+	env.T.Helper()
+	runner := NewGeminiHookRunner(env.RepoDir, env.GeminiProjectDir, env.T)
+	return runner.SimulateGeminiAfterAgent(sessionID, transcriptPath)
 }
 
 // SimulateGeminiSessionEnd is a convenience method on TestEnv.

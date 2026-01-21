@@ -230,6 +230,12 @@ func (env *TestEnv) InitEntireWithAgent(strategyName, agentName string) {
 	env.initEntireInternal(strategyName, agentName, nil)
 }
 
+// InitEntireWithAgentAndOptions initializes Entire with the specified strategy, agent, and options.
+func (env *TestEnv) InitEntireWithAgentAndOptions(strategyName, agentName string, strategyOptions map[string]any) {
+	env.T.Helper()
+	env.initEntireInternal(strategyName, agentName, strategyOptions)
+}
+
 // initEntireInternal is the common implementation for InitEntire variants.
 func (env *TestEnv) initEntireInternal(strategyName, agentName string, strategyOptions map[string]any) {
 	env.T.Helper()

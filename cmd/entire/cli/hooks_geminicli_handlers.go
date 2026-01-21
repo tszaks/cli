@@ -49,13 +49,13 @@ func outputGeminiBlockingResponse(reason string) {
 }
 
 // checkConcurrentSessionsGemini checks for concurrent session conflicts for Gemini CLI.
-// If a conflict is found, it outputs a Gemini-format blocking response and exits (via os.Exit).
-// Returns true if the hook should be skipped (warning already shown), false to proceed normally.
-// Note: This function may call os.Exit(0) and not return if a blocking response is needed.
-func checkConcurrentSessionsGemini(entireSessionID string) bool {
+// If a conflict is found (first time), it outputs a Gemini-format blocking response and exits (via os.Exit).
+// If the warning was already shown, subsequent calls proceed normally (both sessions create interleaved checkpoints).
+// Note: This function may call os.Exit(0) and not return if a blocking response is needed on first conflict.
+func checkConcurrentSessionsGemini(entireSessionID string) {
 	// Check if warnings are disabled via settings
 	if IsMultiSessionWarningDisabled() {
-		return false
+		return
 	}
 
 	// Always use the Gemini agent for resume commands in Gemini hooks
@@ -69,7 +69,7 @@ func checkConcurrentSessionsGemini(entireSessionID string) bool {
 
 	concurrentChecker, ok := strat.(strategy.ConcurrentSessionChecker)
 	if !ok {
-		return false // Strategy doesn't support concurrent checks
+		return // Strategy doesn't support concurrent checks
 	}
 
 	// Check if this session already acknowledged the warning
@@ -81,19 +81,18 @@ func checkConcurrentSessionsGemini(entireSessionID string) bool {
 	hasConflict := checkErr == nil && otherSession != nil
 
 	if warningAlreadyShown {
-		if hasConflict {
-			// Warning was shown and conflict still exists - skip hooks
-			return true
-		}
-		// Warning was shown but conflict is resolved (e.g., user committed)
-		// Clear the flag and proceed normally
-		if existingState != nil {
-			existingState.ConcurrentWarningShown = false
-			if saveErr := strategy.SaveSessionState(existingState); saveErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to clear concurrent warning flag: %v\n", saveErr)
+		// Warning was already shown to user - don't show it again, just proceed normally
+		// Both sessions will create interleaved checkpoints as promised in the warning message
+		if !hasConflict {
+			// Conflict resolved (e.g., user committed) - clear the flag
+			if existingState != nil {
+				existingState.ConcurrentWarningShown = false
+				if saveErr := strategy.SaveSessionState(existingState); saveErr != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to clear concurrent warning flag: %v\n", saveErr)
+				}
 			}
 		}
-		return false
+		return // Proceed normally
 	}
 
 	if hasConflict {
@@ -103,15 +102,13 @@ func checkConcurrentSessionsGemini(entireSessionID string) bool {
 		if err != nil {
 			// Output user-friendly error message via blocking response
 			outputGeminiBlockingResponse(fmt.Sprintf("Failed to open git repository: %v\n\nPlease ensure you're in a git repository and try again.", err))
-			// outputGeminiBlockingResponse calls os.Exit(0), so this line is never reached
-			return true
+			// outputGeminiBlockingResponse calls os.Exit(0), never returns
 		}
 		head, err := repo.Head()
 		if err != nil {
 			// Output user-friendly error message via blocking response
 			outputGeminiBlockingResponse(fmt.Sprintf("Failed to get git HEAD: %v\n\nPlease ensure the repository has at least one commit.", err))
-			// outputGeminiBlockingResponse calls os.Exit(0), so this line is never reached
-			return true
+			// outputGeminiBlockingResponse calls os.Exit(0), never returns
 		}
 		worktreePath, err := strategy.GetWorktreePath()
 		if err != nil {
@@ -165,11 +162,8 @@ func checkConcurrentSessionsGemini(entireSessionID string) bool {
 
 		// Output blocking JSON response and exit
 		outputGeminiBlockingResponse(message)
-		// outputGeminiBlockingResponse calls os.Exit(0), so this line is never reached
-		return true
+		// outputGeminiBlockingResponse calls os.Exit(0), never returns
 	}
-
-	return false
 }
 
 // handleGeminiSessionStart handles the SessionStart hook for Gemini CLI.
@@ -262,14 +256,6 @@ func parseGeminiSessionEnd() (*geminiSessionContext, error) {
 	}
 
 	entireSessionID := currentSessionIDWithFallback(modelSessionID)
-
-	// Check if this session was already warned about concurrent sessions
-	// (checkConcurrentSessionsGemini handles this in BeforeAgent, but we also check here
-	// in case the session was warned and user continued anyway)
-	state, stateErr := strategy.LoadSessionState(entireSessionID)
-	if stateErr == nil && state != nil && state.ConcurrentWarningShown {
-		return nil, ErrSessionSkipped
-	}
 
 	transcriptPath := input.SessionRef
 	if transcriptPath == "" || !fileExists(transcriptPath) {
@@ -626,10 +612,9 @@ func handleGeminiBeforeAgent() error {
 	entireSessionID := paths.EntireSessionID(input.SessionID)
 
 	// Check for concurrent sessions before proceeding
-	// This will output a blocking response and exit if there's a conflict
-	if checkConcurrentSessionsGemini(entireSessionID) {
-		return nil
-	}
+	// This will output a blocking response and exit if there's a conflict (first time only)
+	// On subsequent prompts, it proceeds normally (both sessions create interleaved checkpoints)
+	checkConcurrentSessionsGemini(entireSessionID)
 
 	// Capture pre-prompt state with transcript position (Gemini-specific)
 	// This captures both untracked files and the current transcript message count
@@ -695,12 +680,6 @@ func handleGeminiAfterAgent() error {
 	}
 
 	entireSessionID := currentSessionIDWithFallback(modelSessionID)
-
-	// Skip if this session was warned about concurrent sessions
-	state, stateErr := strategy.LoadSessionState(entireSessionID)
-	if stateErr == nil && state != nil && state.ConcurrentWarningShown {
-		return nil
-	}
 
 	transcriptPath := input.SessionRef
 	if transcriptPath == "" || !fileExists(transcriptPath) {

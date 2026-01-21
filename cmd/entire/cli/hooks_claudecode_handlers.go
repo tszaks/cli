@@ -242,10 +242,18 @@ func handleSessionInitErrors(ag agent.Agent, initErr error) error {
 		if IsMultiSessionWarningDisabled() {
 			return nil
 		}
+		// Check if EITHER session has the concurrent warning shown
+		// If so, the user was already warned and chose to continue - allow concurrent sessions
+		existingState, loadErr := strategy.LoadSessionState(sessionConflictErr.ExistingSession)
+		newState, newLoadErr := strategy.LoadSessionState(sessionConflictErr.NewSession)
+		if (loadErr == nil && existingState != nil && existingState.ConcurrentWarningShown) ||
+			(newLoadErr == nil && newState != nil && newState.ConcurrentWarningShown) {
+			// At least one session was warned - allow concurrent operation
+			return nil
+		}
 		// Try to get the conflicting session's agent type from its state file
 		// If it's a different agent type, use that agent's resume command format
 		var resumeCmd string
-		existingState, loadErr := strategy.LoadSessionState(sessionConflictErr.ExistingSession)
 		if loadErr == nil && existingState != nil && existingState.AgentType != "" {
 			if conflictingAgent, agentErr := agent.GetByAgentType(existingState.AgentType); agentErr == nil {
 				resumeCmd = conflictingAgent.FormatResumeCommand(conflictingAgent.ExtractAgentSessionID(sessionConflictErr.ExistingSession))
