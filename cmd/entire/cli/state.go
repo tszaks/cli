@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
 
@@ -20,16 +21,23 @@ type PrePromptState struct {
 	SessionID      string   `json:"session_id"`
 	Timestamp      string   `json:"timestamp"`
 	UntrackedFiles []string `json:"untracked_files"`
+
 	// StartMessageIndex is the message count in the transcript when this state
 	// was captured. Used for calculating token usage since the prompt started.
 	// Only set for Gemini sessions. Zero means not set or session just started.
-	StartMessageIndex int `json:"start_message_index"`
+	StartMessageIndex int `json:"start_message_index,omitempty"`
+
+	// Transcript position at prompt start - tracks what was added during this checkpoint
+	// Used for Claude Code sessions.
+	LastTranscriptUUID      string `json:"last_transcript_uuid,omitempty"`       // Last UUID when prompt started
+	LastTranscriptLineCount int    `json:"last_transcript_line_count,omitempty"` // Line count when prompt started
 }
 
-// CapturePrePromptState captures current untracked files before a prompt
+// CapturePrePromptState captures current untracked files and transcript position before a prompt
 // and saves them to a state file.
 // Works correctly from any subdirectory within the repository.
-func CapturePrePromptState(sessionID string) error {
+// The transcriptPath parameter is optional - if empty, transcript position won't be captured.
+func CapturePrePromptState(sessionID, transcriptPath string) error {
 	if sessionID == "" {
 		sessionID = unknownSessionID
 	}
@@ -51,15 +59,27 @@ func CapturePrePromptState(sessionID string) error {
 		return fmt.Errorf("failed to get untracked files: %w", err)
 	}
 
+	// Get transcript position (last UUID and line count)
+	var transcriptPos TranscriptPosition
+	if transcriptPath != "" {
+		transcriptPos, err = GetTranscriptPosition(transcriptPath)
+		if err != nil {
+			// Log warning but don't fail - transcript position is optional
+			fmt.Fprintf(os.Stderr, "Warning: failed to get transcript position: %v\n", err)
+		}
+	}
+
 	// Create state file
 	stateFile := prePromptStateFile(sessionID)
 	state := PrePromptState{
-		SessionID:      sessionID,
-		Timestamp:      time.Now().UTC().Format(time.RFC3339),
-		UntrackedFiles: untrackedFiles,
+		SessionID:               sessionID,
+		Timestamp:               time.Now().UTC().Format(time.RFC3339),
+		UntrackedFiles:          untrackedFiles,
+		LastTranscriptUUID:      transcriptPos.LastUUID,
+		LastTranscriptLineCount: transcriptPos.LineCount,
 	}
 
-	data, err := json.MarshalIndent(state, "", "  ")
+	data, err := jsonutil.MarshalIndentWithNewline(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
@@ -68,7 +88,8 @@ func CapturePrePromptState(sessionID string) error {
 		return fmt.Errorf("failed to write state file: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Captured state before prompt: %d untracked files\n", len(untrackedFiles))
+	fmt.Fprintf(os.Stderr, "Captured state before prompt: %d untracked files, transcript at line %d (uuid: %s)\n",
+		len(untrackedFiles), transcriptPos.LineCount, transcriptPos.LastUUID)
 	return nil
 }
 
@@ -312,7 +333,7 @@ func CapturePreTaskState(toolUseID string) error {
 		UntrackedFiles: untrackedFiles,
 	}
 
-	data, err := json.MarshalIndent(state, "", "  ")
+	data, err := jsonutil.MarshalIndentWithNewline(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}

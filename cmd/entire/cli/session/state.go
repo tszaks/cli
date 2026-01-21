@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint"
+	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 )
 
@@ -53,6 +55,13 @@ type State struct {
 
 	// AgentType identifies the agent that created this session (e.g., "Claude Code", "Gemini CLI", "Cursor")
 	AgentType string `json:"agent_type,omitempty"`
+
+	// Token usage tracking (accumulated across all checkpoints in this session)
+	TokenUsage *checkpoint.TokenUsage `json:"token_usage,omitempty"`
+
+	// Transcript position when session started (for multi-session checkpoints)
+	TranscriptLinesAtStart int    `json:"transcript_lines_at_start,omitempty"`
+	TranscriptUUIDAtStart  string `json:"transcript_uuid_at_start,omitempty"`
 }
 
 // StateStore provides low-level operations for managing session state files.
@@ -126,7 +135,7 @@ func (s *StateStore) Save(ctx context.Context, state *State) error {
 		return fmt.Errorf("failed to create session state directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(state, "", "  ")
+	data, err := jsonutil.MarshalIndentWithNewline(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal session state: %w", err)
 	}

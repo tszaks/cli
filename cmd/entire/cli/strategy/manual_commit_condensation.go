@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"entire.io/cli/cmd/entire/cli/agent/claudecode"
 	cpkg "entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/textutil"
@@ -120,20 +121,27 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 	// Get author info
 	authorName, authorEmail := GetGitAuthorFromRepo(repo)
 
+	// Get current branch name
+	branchName := GetCurrentBranchName(repo)
+
 	// Write checkpoint metadata using the checkpoint store
 	if err := store.WriteCommitted(context.Background(), cpkg.WriteCommittedOptions{
-		CheckpointID:     checkpointID,
-		SessionID:        state.SessionID,
-		Strategy:         StrategyNameManualCommit,
-		Transcript:       sessionData.Transcript,
-		Prompts:          sessionData.Prompts,
-		Context:          sessionData.Context,
-		FilesTouched:     sessionData.FilesTouched,
-		CheckpointsCount: state.CheckpointCount,
-		EphemeralBranch:  shadowBranchName,
-		AuthorName:       authorName,
-		AuthorEmail:      authorEmail,
-		Agent:            state.AgentType,
+		CheckpointID:           checkpointID,
+		SessionID:              state.SessionID,
+		Strategy:               StrategyNameManualCommit,
+		Branch:                 branchName,
+		Transcript:             sessionData.Transcript,
+		Prompts:                sessionData.Prompts,
+		Context:                sessionData.Context,
+		FilesTouched:           sessionData.FilesTouched,
+		CheckpointsCount:       state.CheckpointCount,
+		EphemeralBranch:        shadowBranchName,
+		AuthorName:             authorName,
+		AuthorEmail:            authorEmail,
+		Agent:                  state.AgentType,
+		TranscriptUUIDAtStart:  state.TranscriptUUIDAtStart,
+		TranscriptLinesAtStart: state.TranscriptLinesAtStart,
+		TokenUsage:             sessionData.TokenUsage,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to write checkpoint metadata: %w", err)
 	}
@@ -217,6 +225,14 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 
 	// Use tracked files from session state (not all files in tree)
 	data.FilesTouched = filesTouched
+
+	// Calculate token usage from the extracted transcript portion
+	if len(data.Transcript) > 0 {
+		transcriptLines, err := claudecode.ParseTranscript(data.Transcript)
+		if err == nil && len(transcriptLines) > 0 {
+			data.TokenUsage = claudecode.CalculateTokenUsage(transcriptLines)
+		}
+	}
 
 	return data, nil
 }

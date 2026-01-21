@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
 
@@ -264,7 +265,7 @@ func (env *TestEnv) initEntireInternal(strategyName, agentName string, strategyO
 	if strategyOptions != nil {
 		settings["strategy_options"] = strategyOptions
 	}
-	data, err := json.MarshalIndent(settings, "", "  ")
+	data, err := jsonutil.MarshalIndentWithNewline(settings, "", "  ")
 	if err != nil {
 		env.T.Fatalf("failed to marshal settings: %v", err)
 	}

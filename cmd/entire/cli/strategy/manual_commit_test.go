@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -1165,6 +1166,83 @@ func TestSessionState_LastCheckpointID(t *testing.T) {
 
 	if loaded.LastCheckpointID != state.LastCheckpointID {
 		t.Errorf("LastCheckpointID = %q, want %q", loaded.LastCheckpointID, state.LastCheckpointID)
+	}
+}
+
+// TestSessionState_TokenUsagePersistence verifies that token usage fields are persisted correctly
+// across session state save/load cycles. This is critical for tracking token usage in the
+// manual-commit strategy where session state is persisted to disk between checkpoints.
+func TestSessionState_TokenUsagePersistence(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+
+	// Create session state with token usage fields
+	state := &SessionState{
+		SessionID:              "test-session-token-usage",
+		BaseCommit:             "abc123def456",
+		StartedAt:              time.Now(),
+		CheckpointCount:        5,
+		TranscriptLinesAtStart: 42,
+		TranscriptUUIDAtStart:  "test-uuid-abc123",
+		TokenUsage: &checkpoint.TokenUsage{
+			InputTokens:         1000,
+			CacheCreationTokens: 200,
+			CacheReadTokens:     300,
+			OutputTokens:        500,
+			APICallCount:        5,
+		},
+	}
+
+	// Save state
+	err = s.saveSessionState(state)
+	if err != nil {
+		t.Fatalf("saveSessionState() error = %v", err)
+	}
+
+	// Load state and verify token usage fields are persisted
+	loaded, err := s.loadSessionState("test-session-token-usage")
+	if err != nil {
+		t.Fatalf("loadSessionState() error = %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("loadSessionState() returned nil")
+	}
+
+	// Verify TranscriptLinesAtStart
+	if loaded.TranscriptLinesAtStart != state.TranscriptLinesAtStart {
+		t.Errorf("TranscriptLinesAtStart = %d, want %d", loaded.TranscriptLinesAtStart, state.TranscriptLinesAtStart)
+	}
+
+	// Verify TranscriptUUIDAtStart
+	if loaded.TranscriptUUIDAtStart != state.TranscriptUUIDAtStart {
+		t.Errorf("TranscriptUUIDAtStart = %q, want %q", loaded.TranscriptUUIDAtStart, state.TranscriptUUIDAtStart)
+	}
+
+	// Verify TokenUsage
+	if loaded.TokenUsage == nil {
+		t.Fatal("TokenUsage should be persisted, got nil")
+	}
+	if loaded.TokenUsage.InputTokens != state.TokenUsage.InputTokens {
+		t.Errorf("TokenUsage.InputTokens = %d, want %d", loaded.TokenUsage.InputTokens, state.TokenUsage.InputTokens)
+	}
+	if loaded.TokenUsage.CacheCreationTokens != state.TokenUsage.CacheCreationTokens {
+		t.Errorf("TokenUsage.CacheCreationTokens = %d, want %d", loaded.TokenUsage.CacheCreationTokens, state.TokenUsage.CacheCreationTokens)
+	}
+	if loaded.TokenUsage.CacheReadTokens != state.TokenUsage.CacheReadTokens {
+		t.Errorf("TokenUsage.CacheReadTokens = %d, want %d", loaded.TokenUsage.CacheReadTokens, state.TokenUsage.CacheReadTokens)
+	}
+	if loaded.TokenUsage.OutputTokens != state.TokenUsage.OutputTokens {
+		t.Errorf("TokenUsage.OutputTokens = %d, want %d", loaded.TokenUsage.OutputTokens, state.TokenUsage.OutputTokens)
+	}
+	if loaded.TokenUsage.APICallCount != state.TokenUsage.APICallCount {
+		t.Errorf("TokenUsage.APICallCount = %d, want %d", loaded.TokenUsage.APICallCount, state.TokenUsage.APICallCount)
 	}
 }
 

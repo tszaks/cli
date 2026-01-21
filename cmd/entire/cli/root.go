@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"runtime"
 
-	"entire.io/cli/cmd/entire/cli/commands"
 	"entire.io/cli/cmd/entire/cli/telemetry"
 	"github.com/spf13/cobra"
 )
@@ -43,7 +42,17 @@ func NewRootCmd() *cobra.Command {
 			HiddenDefaultCmd: true,
 		},
 		PersistentPostRun: func(cmd *cobra.Command, _ []string) {
-			telemetry.GetClient(cmd.Context()).TrackCommand(cmd)
+			// Load telemetry preference from settings (ignore errors - nil defaults to disabled)
+			var telemetryEnabled *bool
+			settings, err := LoadEntireSettings()
+			if err == nil {
+				telemetryEnabled = settings.Telemetry
+			}
+
+			// Initialize telemetry client and add to context
+			telemetryClient := telemetry.NewClient(Version, telemetryEnabled)
+			defer telemetryClient.Close()
+			telemetryClient.TrackCommand(cmd, settings.Strategy, settings.Agent, settings.Enabled)
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
@@ -60,9 +69,10 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newHooksCmd())
 	cmd.AddCommand(newVersionCmd())
 	cmd.AddCommand(newExplainCmd())
+	cmd.AddCommand(newDebugCmd())
 
 	// Replace default help command with custom one that supports -t flag
-	cmd.SetHelpCommand(commands.NewHelpCmd(cmd))
+	cmd.SetHelpCommand(NewHelpCmd(cmd))
 
 	return cmd
 }

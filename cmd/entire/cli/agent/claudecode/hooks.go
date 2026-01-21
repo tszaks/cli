@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"entire.io/cli/cmd/entire/cli/agent"
+	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 )
 
@@ -197,7 +198,7 @@ func (c *ClaudeCodeAgent) InstallHooks(localDev bool, force bool) (int, error) {
 		return 0, fmt.Errorf("failed to create .claude directory: %w", err)
 	}
 
-	output, err := json.MarshalIndent(rawSettings, "", "  ")
+	output, err := jsonutil.MarshalIndentWithNewline(rawSettings, "", "  ")
 	if err != nil {
 		return 0, fmt.Errorf("failed to marshal settings: %w", err)
 	}

@@ -72,6 +72,9 @@ func sessionStateToStrategy(state *session.State) *SessionState {
 		ConcurrentWarningShown:   state.ConcurrentWarningShown,
 		LastCheckpointID:         state.LastCheckpointID,
 		AgentType:                state.AgentType,
+		TokenUsage:               state.TokenUsage,
+		TranscriptLinesAtStart:   state.TranscriptLinesAtStart,
+		TranscriptUUIDAtStart:    state.TranscriptUUIDAtStart,
 	}
 }
 
@@ -92,6 +95,9 @@ func sessionStateFromStrategy(state *SessionState) *session.State {
 		ConcurrentWarningShown:   state.ConcurrentWarningShown,
 		LastCheckpointID:         state.LastCheckpointID,
 		AgentType:                state.AgentType,
+		TokenUsage:               state.TokenUsage,
+		TranscriptLinesAtStart:   state.TranscriptLinesAtStart,
+		TranscriptUUIDAtStart:    state.TranscriptUUIDAtStart,
 	}
 }
 

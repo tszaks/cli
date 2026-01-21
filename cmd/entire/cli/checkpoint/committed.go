@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 
 	"github.com/go-git/go-git/v5"
@@ -138,7 +139,7 @@ func (s *GitStore) writeIncrementalTaskCheckpoint(opts WriteCommittedOptions, ta
 		Timestamp: time.Now().UTC(),
 		Data:      opts.IncrementalData,
 	}
-	cpData, err := json.MarshalIndent(checkpoint, "", "  ")
+	cpData, err := jsonutil.MarshalIndentWithNewline(checkpoint, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal incremental checkpoint: %w", err)
 	}
@@ -165,7 +166,7 @@ func (s *GitStore) writeFinalTaskCheckpoint(opts WriteCommittedOptions, taskPath
 		CheckpointUUID: opts.CheckpointUUID,
 		AgentID:        opts.AgentID,
 	}
-	checkpointData, err := json.MarshalIndent(checkpoint, "", "  ")
+	checkpointData, err := jsonutil.MarshalIndentWithNewline(checkpoint, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal task checkpoint: %w", err)
 	}
@@ -303,17 +304,21 @@ func (s *GitStore) writeTranscript(opts WriteCommittedOptions, basePath string, 
 // If existingMetadata is provided, merges session info from the previous session(s).
 func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string, entries map[string]object.TreeEntry, existingMetadata *CommittedMetadata) error {
 	metadata := CommittedMetadata{
-		CheckpointID:     opts.CheckpointID,
-		SessionID:        opts.SessionID,
-		Strategy:         opts.Strategy,
-		CreatedAt:        time.Now(),
-		CheckpointsCount: opts.CheckpointsCount,
-		FilesTouched:     opts.FilesTouched,
-		Agent:            opts.Agent,
-		IsTask:           opts.IsTask,
-		ToolUseID:        opts.ToolUseID,
-		SessionCount:     1,
-		SessionIDs:       []string{opts.SessionID},
+		CheckpointID:           opts.CheckpointID,
+		SessionID:              opts.SessionID,
+		Strategy:               opts.Strategy,
+		CreatedAt:              time.Now(),
+		Branch:                 opts.Branch,
+		CheckpointsCount:       opts.CheckpointsCount,
+		FilesTouched:           opts.FilesTouched,
+		Agent:                  opts.Agent,
+		IsTask:                 opts.IsTask,
+		ToolUseID:              opts.ToolUseID,
+		SessionCount:           1,
+		SessionIDs:             []string{opts.SessionID},
+		TranscriptUUIDAtStart:  opts.TranscriptUUIDAtStart,
+		TranscriptLinesAtStart: opts.TranscriptLinesAtStart,
+		TokenUsage:             opts.TokenUsage,
 	}
 
 	// Merge with existing metadata if present (multi-session checkpoint)
@@ -341,7 +346,7 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 		metadata.CheckpointsCount = existingMetadata.CheckpointsCount + opts.CheckpointsCount
 	}
 
-	metadataJSON, err := json.MarshalIndent(metadata, "", "  ")
+	metadataJSON, err := jsonutil.MarshalIndentWithNewline(metadata, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
@@ -495,14 +500,18 @@ func (s *GitStore) readArchivedSessions(checkpointTree *object.Tree, sessionCoun
 }
 
 // buildCommitMessage constructs the commit message with proper trailers.
+// The commit subject is always "Checkpoint: <id>" for consistency.
+// If CommitSubject is provided (e.g., for task checkpoints), it's included in the body.
 func (s *GitStore) buildCommitMessage(opts WriteCommittedOptions, taskMetadataPath string) string {
 	var commitMsg strings.Builder
 
-	// Use custom subject if provided
+	// Subject line is always the checkpoint ID for consistent formatting
+	commitMsg.WriteString(fmt.Sprintf("Checkpoint: %s\n\n", opts.CheckpointID))
+
+	// Include custom description in body if provided (e.g., task checkpoint details)
 	if opts.CommitSubject != "" {
 		commitMsg.WriteString(opts.CommitSubject + "\n\n")
 	}
-	commitMsg.WriteString(fmt.Sprintf("Checkpoint: %s\n\n", opts.CheckpointID))
 	commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.SessionTrailerKey, opts.SessionID))
 	commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.StrategyTrailerKey, opts.Strategy))
 	if opts.Agent != "" {
