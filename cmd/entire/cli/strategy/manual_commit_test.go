@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -1168,6 +1169,83 @@ func TestSessionState_LastCheckpointID(t *testing.T) {
 	}
 }
 
+// TestSessionState_TokenUsagePersistence verifies that token usage fields are persisted correctly
+// across session state save/load cycles. This is critical for tracking token usage in the
+// manual-commit strategy where session state is persisted to disk between checkpoints.
+func TestSessionState_TokenUsagePersistence(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+
+	// Create session state with token usage fields
+	state := &SessionState{
+		SessionID:              "test-session-token-usage",
+		BaseCommit:             "abc123def456",
+		StartedAt:              time.Now(),
+		CheckpointCount:        5,
+		TranscriptLinesAtStart: 42,
+		TranscriptUUIDAtStart:  "test-uuid-abc123",
+		TokenUsage: &checkpoint.TokenUsage{
+			InputTokens:         1000,
+			CacheCreationTokens: 200,
+			CacheReadTokens:     300,
+			OutputTokens:        500,
+			APICallCount:        5,
+		},
+	}
+
+	// Save state
+	err = s.saveSessionState(state)
+	if err != nil {
+		t.Fatalf("saveSessionState() error = %v", err)
+	}
+
+	// Load state and verify token usage fields are persisted
+	loaded, err := s.loadSessionState("test-session-token-usage")
+	if err != nil {
+		t.Fatalf("loadSessionState() error = %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("loadSessionState() returned nil")
+	}
+
+	// Verify TranscriptLinesAtStart
+	if loaded.TranscriptLinesAtStart != state.TranscriptLinesAtStart {
+		t.Errorf("TranscriptLinesAtStart = %d, want %d", loaded.TranscriptLinesAtStart, state.TranscriptLinesAtStart)
+	}
+
+	// Verify TranscriptUUIDAtStart
+	if loaded.TranscriptUUIDAtStart != state.TranscriptUUIDAtStart {
+		t.Errorf("TranscriptUUIDAtStart = %q, want %q", loaded.TranscriptUUIDAtStart, state.TranscriptUUIDAtStart)
+	}
+
+	// Verify TokenUsage
+	if loaded.TokenUsage == nil {
+		t.Fatal("TokenUsage should be persisted, got nil")
+	}
+	if loaded.TokenUsage.InputTokens != state.TokenUsage.InputTokens {
+		t.Errorf("TokenUsage.InputTokens = %d, want %d", loaded.TokenUsage.InputTokens, state.TokenUsage.InputTokens)
+	}
+	if loaded.TokenUsage.CacheCreationTokens != state.TokenUsage.CacheCreationTokens {
+		t.Errorf("TokenUsage.CacheCreationTokens = %d, want %d", loaded.TokenUsage.CacheCreationTokens, state.TokenUsage.CacheCreationTokens)
+	}
+	if loaded.TokenUsage.CacheReadTokens != state.TokenUsage.CacheReadTokens {
+		t.Errorf("TokenUsage.CacheReadTokens = %d, want %d", loaded.TokenUsage.CacheReadTokens, state.TokenUsage.CacheReadTokens)
+	}
+	if loaded.TokenUsage.OutputTokens != state.TokenUsage.OutputTokens {
+		t.Errorf("TokenUsage.OutputTokens = %d, want %d", loaded.TokenUsage.OutputTokens, state.TokenUsage.OutputTokens)
+	}
+	if loaded.TokenUsage.APICallCount != state.TokenUsage.APICallCount {
+		t.Errorf("TokenUsage.APICallCount = %d, want %d", loaded.TokenUsage.APICallCount, state.TokenUsage.APICallCount)
+	}
+}
+
 // TestShadowStrategy_PrepareCommitMsg_ReusesLastCheckpointID verifies that PrepareCommitMsg
 // reuses the LastCheckpointID when there's no new content to condense.
 func TestShadowStrategy_PrepareCommitMsg_ReusesLastCheckpointID(t *testing.T) {
@@ -1410,5 +1488,219 @@ func TestSaveChanges_EmptyBaseCommit_Recovery(t *testing.T) {
 	}
 	if loaded.CheckpointCount != 1 {
 		t.Errorf("CheckpointCount = %d, want 1", loaded.CheckpointCount)
+	}
+}
+
+// TestIsGeminiJSONTranscript tests detection of Gemini JSON transcript format.
+func TestIsGeminiJSONTranscript(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		expected bool
+	}{
+		{
+			name: "valid Gemini JSON",
+			content: `{
+				"messages": [
+					{"type": "user", "content": "Hello"},
+					{"type": "gemini", "content": "Hi there!"}
+				]
+			}`,
+			expected: true,
+		},
+		{
+			name:     "empty messages array",
+			content:  `{"messages": []}`,
+			expected: false,
+		},
+		{
+			name: "JSONL format (Claude Code)",
+			content: `{"type":"human","message":{"content":"Hello"}}
+{"type":"assistant","message":{"content":"Hi"}}`,
+			expected: false,
+		},
+		{
+			name:     "not JSON",
+			content:  "plain text",
+			expected: false,
+		},
+		{
+			name:     "JSON without messages field",
+			content:  `{"foo": "bar"}`,
+			expected: false,
+		},
+		{
+			name:     "empty string",
+			content:  "",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isGeminiJSONTranscript(tt.content)
+			if result != tt.expected {
+				t.Errorf("isGeminiJSONTranscript() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestExtractUserPromptsFromGeminiJSON tests extraction of user prompts from Gemini JSON format.
+func TestExtractUserPromptsFromGeminiJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		expected []string
+	}{
+		{
+			name: "single user prompt",
+			content: `{
+				"messages": [
+					{"type": "user", "content": "Create a file called test.txt"}
+				]
+			}`,
+			expected: []string{"Create a file called test.txt"},
+		},
+		{
+			name: "multiple user prompts",
+			content: `{
+				"messages": [
+					{"type": "user", "content": "First prompt"},
+					{"type": "gemini", "content": "Response 1"},
+					{"type": "user", "content": "Second prompt"},
+					{"type": "gemini", "content": "Response 2"}
+				]
+			}`,
+			expected: []string{"First prompt", "Second prompt"},
+		},
+		{
+			name: "no user messages",
+			content: `{
+				"messages": [
+					{"type": "gemini", "content": "Hello!"}
+				]
+			}`,
+			expected: nil,
+		},
+		{
+			name:     "empty messages",
+			content:  `{"messages": []}`,
+			expected: nil,
+		},
+		{
+			name: "user message with empty content",
+			content: `{
+				"messages": [
+					{"type": "user", "content": ""},
+					{"type": "user", "content": "Valid prompt"}
+				]
+			}`,
+			expected: []string{"Valid prompt"},
+		},
+		{
+			name:     "invalid JSON",
+			content:  "not json",
+			expected: nil,
+		},
+		{
+			name: "mixed message types",
+			content: `{
+				"sessionId": "abc123",
+				"messages": [
+					{"type": "user", "content": "Hello"},
+					{"type": "gemini", "content": "Hi!", "toolCalls": []},
+					{"type": "user", "content": "Goodbye"}
+				]
+			}`,
+			expected: []string{"Hello", "Goodbye"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractUserPromptsFromGeminiJSON(tt.content)
+			if len(result) != len(tt.expected) {
+				t.Errorf("extractUserPromptsFromGeminiJSON() returned %d prompts, want %d", len(result), len(tt.expected))
+				return
+			}
+			for i, prompt := range result {
+				if prompt != tt.expected[i] {
+					t.Errorf("prompt[%d] = %q, want %q", i, prompt, tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+// TestExtractUserPromptsFromLines tests extraction of user prompts from JSONL format.
+func TestExtractUserPromptsFromLines(t *testing.T) {
+	tests := []struct {
+		name     string
+		lines    []string
+		expected []string
+	}{
+		{
+			name: "human type message",
+			lines: []string{
+				`{"type":"human","message":{"content":"Hello world"}}`,
+			},
+			expected: []string{"Hello world"},
+		},
+		{
+			name: "user type message",
+			lines: []string{
+				`{"type":"user","message":{"content":"Test prompt"}}`,
+			},
+			expected: []string{"Test prompt"},
+		},
+		{
+			name: "mixed human and assistant",
+			lines: []string{
+				`{"type":"human","message":{"content":"First"}}`,
+				`{"type":"assistant","message":{"content":"Response"}}`,
+				`{"type":"human","message":{"content":"Second"}}`,
+			},
+			expected: []string{"First", "Second"},
+		},
+		{
+			name: "array content",
+			lines: []string{
+				`{"type":"human","message":{"content":[{"type":"text","text":"Part 1"},{"type":"text","text":"Part 2"}]}}`,
+			},
+			expected: []string{"Part 1\n\nPart 2"},
+		},
+		{
+			name: "empty lines ignored",
+			lines: []string{
+				`{"type":"human","message":{"content":"Valid"}}`,
+				"",
+				"  ",
+			},
+			expected: []string{"Valid"},
+		},
+		{
+			name: "invalid JSON ignored",
+			lines: []string{
+				`{"type":"human","message":{"content":"Valid"}}`,
+				"not json",
+			},
+			expected: []string{"Valid"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractUserPromptsFromLines(tt.lines)
+			if len(result) != len(tt.expected) {
+				t.Errorf("extractUserPromptsFromLines() returned %d prompts, want %d", len(result), len(tt.expected))
+				return
+			}
+			for i, prompt := range result {
+				if prompt != tt.expected[i] {
+					t.Errorf("prompt[%d] = %q, want %q", i, prompt, tt.expected[i])
+				}
+			}
+		})
 	}
 }

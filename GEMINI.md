@@ -1,10 +1,10 @@
-# Entire - CLI 
+# Entire - CLI
 
 This repo contains the CLI for Entire.
 
 ## Architecture
 
-- CLI build with github.com/spf13/cobra and github.com/charmbracelet/huh 
+- CLI build with github.com/spf13/cobra and github.com/charmbracelet/huh
 
 ## Key Directories
 
@@ -42,9 +42,9 @@ mise run test:ci
 
 Integration tests use the `//go:build integration` build tag and are located in `cmd/entire/cli/integration_test/`.
 
-### Linting and Formatting
+### Linting
 ```bash
-mise run fmt && mise run lint
+mise run lint
 ```
 
 ## Code Patterns
@@ -83,15 +83,6 @@ return fmt.Errorf("unknown strategy: %s", name)
 - `root.go` - Sets `SilenceErrors: true` on root command
 - `main.go` - Checks for `SilentError` before printing
 
-### Logging vs User Output
-
-- **Internal/debug logging**: Use `logging.Debug/Info/Warn/Error(ctx, msg, attrs...)` from `cmd/entire/cli/logging/`. Writes to `.entire/logs/`.
-- **User-facing output**: Use `fmt.Fprint*(cmd.OutOrStdout(), ...)` or `cmd.ErrOrStderr()`.
-
-Don't use `fmt.Print*` for operational messages (checkpoint saves, hook invocations, strategy decisions) - those should use the `logging` package.
-
-**Privacy**: Don't log user content (prompts, file contents, commit messages). Log only operational metadata (IDs, counts, paths, durations).
-
 ### Git Operations
 
 We use github.com/go-git/go-git for most git operations, but with important exceptions:
@@ -122,7 +113,7 @@ Regression tests in `hard_reset_test.go` verify this behavior - if go-git v6 fix
 
 **Always use repo root (not `os.Getwd()`) when working with git-relative paths.**
 
-Git commands like `git status` and `worktree.Status()` return paths relative to the **repository root**, not the current working directory. When Claude runs from a subdirectory (e.g., `/repo/frontend`), using `os.Getwd()` to construct absolute paths will produce incorrect results for files in sibling directories.
+Git commands like `git status` and `worktree.Status()` return paths relative to the **repository root**, not the current working directory. When Gemini runs from a subdirectory (e.g., `/repo/frontend`), using `os.Getwd()` to construct absolute paths will produce incorrect results for files in sibling directories.
 
 ```go
 // WRONG - breaks when running from subdirectory
@@ -177,14 +168,11 @@ Legacy names `shadow` and `dual` are only recognized when reading settings or ch
 
 **Manual-Commit Strategy** (`manual_commit*.go`) - Default
 - **Does not modify** the active branch - no commits created on the working branch
-- Creates shadow branch `entire/<HEAD-commit-hash[:7]>` per base commit for checkpoints
-- **Supports multiple concurrent sessions** - checkpoints from different sessions interleave on the same shadow branch
+- Creates shadow branch `entire/<HEAD-commit-hash>` per base commit for checkpoints
 - Session logs are condensed to permanent `entire/sessions` branch on user commits
 - Builds git trees in-memory using go-git plumbing APIs
 - Rewind restores files from shadow branch commit tree (does not use `git reset`)
 - Tracks session state in `.git/entire-sessions/` (shared across worktrees)
-- **Shadow branch migration** - if user does stash/pull/rebase (HEAD changes without commit), shadow branch is automatically moved to new base commit
-- **Orphaned branch cleanup** - if a shadow branch exists without a corresponding session state file, it is automatically reset when a new session starts
 - PrePush hook can push `entire/sessions` branch alongside user pushes
 - `AllowsMainBranch() = true` - safe to use on main/master since it never modifies commit history
 
@@ -196,7 +184,7 @@ Legacy names `shadow` and `dual` are only recognized when reading settings or ch
 - Full rewind allowed if commit is only on current branch (not in main); otherwise logs-only
 - Rewind via `git reset --hard`
 - PrePush hook can push `entire/sessions` branch alongside user pushes
-- `AllowsMainBranch() = true` - creates commits on active branch, safe to use on main/master
+- `AllowsMainBranch() = false` - creates commits, so not recommended on main branch
 
 #### Key Files
 
@@ -243,157 +231,51 @@ Legacy names `shadow` and `dual` are only recognized when reading settings or ch
 **Both Strategies** - Metadata branch (`entire/sessions`) - sharded checkpoint format:
 ```
 <checkpoint-id[:2]>/<checkpoint-id[2:]>/
-├── metadata.json            # Checkpoint info (see below)
-├── full.jsonl               # Current/latest session transcript
+├── metadata.json            # Checkpoint info (checkpoint_id, session_id, strategy, created_at)
+├── full.jsonl               # Session transcript
 ├── prompt.txt               # User prompts
 ├── context.md               # Generated context
 ├── content_hash.txt         # SHA256 of transcript (shadow only)
-├── tasks/<tool-use-id>/     # Task checkpoints (if applicable)
-│   ├── checkpoint.json      # UUID mapping
-│   └── agent-<id>.jsonl     # Subagent transcript
-└── 1/                       # Archived session (if multiple sessions)
-    ├── metadata.json        # Archived session metadata
-    ├── full.jsonl           # Archived session transcript
-    ├── prompt.txt
-    └── ...
+└── tasks/<tool-use-id>/     # Task checkpoints (if applicable)
+    ├── checkpoint.json      # UUID mapping
+    └── agent-<id>.jsonl     # Subagent transcript
 ```
-
-**Multi-session metadata.json format:**
-```json
-{
-  "checkpoint_id": "abc123def456",
-  "session_id": "2026-01-13-uuid",      // Current/latest session
-  "session_ids": ["2026-01-13-uuid1", "2026-01-13-uuid2"],  // All sessions
-  "session_count": 2,                    // Number of sessions in this checkpoint
-  "strategy": "manual-commit",
-  "created_at": "2026-01-13T12:00:00Z",
-  "files_touched": ["file1.txt", "file2.txt"]  // Merged from all sessions
-}
-```
-
-When multiple sessions are condensed to the same checkpoint (same base commit):
-- Latest session files go at the root level
-- Previous sessions are archived to numbered subfolders (`1/`, `2/`, etc.)
-- `session_ids` array tracks all sessions, `session_count` increments
 
 **Session State** (filesystem, `.git/entire-sessions/`):
 ```
 <session-id>.json            # Active session state (base_commit, checkpoint_count, etc.)
 ```
 
-#### Checkpoint ID Linking
-
-Both strategies use a **12-hex-char random checkpoint ID** (e.g., `a3b2c4d5e6f7`) as the stable identifier linking user commits to metadata.
-
-**How checkpoint IDs work:**
-
-1. **Generated once per checkpoint**: Either when saving (auto-commit) or when condensing (manual-commit)
-
-2. **Added to user commits** via `Entire-Checkpoint` trailer:
-   - **Auto-commit**: Added programmatically when creating the commit
-   - **Manual-commit**: Added via `prepare-commit-msg` hook (user can remove it before committing)
-
-3. **Used for directory sharding** on `entire/sessions` branch:
-   - Path format: `<id[:2]>/<id[2:]>/`
-   - Example: `a3b2c4d5e6f7` → `a3/b2c4d5e6f7/`
-   - Creates 256 shards to avoid directory bloat
-
-4. **Appears in commit subject** on `entire/sessions` commits:
-   - Format: `Checkpoint: a3b2c4d5e6f7`
-   - Makes `git log entire/sessions` readable and searchable
-
-**Bidirectional linking:**
-
-```
-User commit → Metadata (two approaches):
-  Approach 1: Extract "Entire-Checkpoint: a3b2c4d5e6f7" trailer
-              → Look up a3/b2c4d5e6f7/ directory on entire/sessions branch
-
-  Approach 2: Extract "Entire-Checkpoint: a3b2c4d5e6f7" trailer
-              → Search entire/sessions commit history for "Checkpoint: a3b2c4d5e6f7" subject
-
-Metadata → User commits:
-  Given checkpoint ID a3b2c4d5e6f7
-  → Search user branch history for commits with "Entire-Checkpoint: a3b2c4d5e6f7" trailer
-```
-
-**Example:**
-```
-User's commit (on main branch):
-  "Implement login feature
-
-  Entire-Checkpoint: a3b2c4d5e6f7"
-       ↓ ↑
-       Linked via checkpoint ID
-       ↓ ↑
-entire/sessions commit:
-  Subject: "Checkpoint: a3b2c4d5e6f7"
-
-  Tree: a3/b2c4d5e6f7/
-    ├── metadata.json (checkpoint_id: "a3b2c4d5e6f7")
-    ├── full.jsonl (session transcript)
-    ├── prompt.txt
-    └── context.md
-```
-
 #### Commit Trailers
 
-**On user's active branch commits (both strategies):**
+**On active branch commits (auto-commit strategy only):**
 - `Entire-Checkpoint: <checkpoint-id>` - 12-hex-char ID linking to metadata on `entire/sessions`
-  - Auto-commit: Always added when creating commits
-  - Manual-commit: Added by hook; user can remove to skip linking
 
-**On shadow branch commits (`entire/<commit-hash>`) - manual-commit only:**
+**On shadow branch commits (`entire/<commit-hash>`):**
 - `Entire-Session: <session-id>` - Session identifier
 - `Entire-Metadata: <path>` - Path to metadata directory within the tree
-- `Entire-Task-Metadata: <path>` - Path to task metadata directory (for task checkpoints)
+- `Entire-Task-Metadata: <path>` - Path to task metadata directory
 - `Entire-Strategy: manual-commit` - Strategy that created the commit
 
-**On metadata branch commits (`entire/sessions`) - both strategies:**
-
-Commit subject: `Checkpoint: <checkpoint-id>` (or custom subject for task checkpoints)
-
-Trailers:
+**On metadata branch commits (`entire/sessions`):**
 - `Entire-Session: <session-id>` - Session identifier
-- `Entire-Strategy: <strategy>` - Strategy name (manual-commit or auto-commit)
-- `Entire-Agent: <agent-name>` - Agent name (optional, e.g., "Claude Code")
-- `Ephemeral-branch: <branch>` - Shadow branch name (optional, manual-commit only)
-- `Entire-Metadata-Task: <path>` - Task metadata path (optional, for task checkpoints)
+- `Entire-Strategy: <strategy>` - Strategy that created the checkpoint
+- `Commit: <short-sha>` - Code commit this checkpoint relates to (manual-commit strategy)
 
-**Note:** Both strategies keep active branch history **clean** - the only addition to user commits is the single `Entire-Checkpoint` trailer. Manual-commit never creates commits on the active branch (user creates them manually). Auto-commit creates commits but only adds the checkpoint trailer. All detailed session data (transcripts, prompts, context) is stored on the `entire/sessions` orphan branch or shadow branches.
-
-#### Multi-Session Behavior
-
-**Concurrent Sessions:**
-- When a second session starts while another has uncommitted checkpoints, a warning is shown
-- Both sessions can proceed - their checkpoints interleave on the same shadow branch
-- Each session's `RewindPoint` includes `SessionID` and `SessionPrompt` to help identify which checkpoint belongs to which session
-- On commit, all sessions are condensed together with archived sessions in numbered subfolders
-
-**Orphaned Shadow Branches:**
-- A shadow branch is "orphaned" if it exists but has no corresponding session state file
-- This can happen if the state file is manually deleted or lost
-- When a new session starts with an orphaned branch, the branch is automatically reset
-- If the existing session DOES have a state file (e.g., cross-worktree conflict), a `SessionIDConflictError` is returned
-
-**Shadow Branch Migration (Pull/Rebase):**
-- If user does stash → pull → apply (or rebase), HEAD changes but work isn't committed
-- The shadow branch would be orphaned at the old commit
-- Detection: base commit changed AND old shadow branch still exists (would be deleted if user committed)
-- Action: shadow branch is renamed from `entire/<old-hash>` to `entire/<new-hash>`
-- Session continues seamlessly with checkpoints preserved
+**Note:** Both strategies keep active branch history **clean**. Manual-commit strategy never creates commits on the active branch. Auto-commit strategy creates commits with only the `Entire-Checkpoint` trailer. All detailed metadata is stored on the `entire/sessions` orphan branch or shadow branches.
 
 #### When Modifying Strategies
 - All strategies must implement the full `Strategy` interface
 - Register new strategies in `init()` using `Register()`
 - Test with `mise run test` - strategy tests are in `*_test.go` files
-- **Update this CLAUDE.md** when adding or modifying strategies to keep documentation current
+- **Update this GEMINI.md** when adding or modifying strategies to keep documentation current
 
 # Important Notes
 
 - Tests: always run `mise run test` before committing changes
 - Integration tests: run `mise run test:integration` when changing integration test code
-- Formatting and linting: always run `mise run fmt && mise run lint` before committing changes
+- Linting: always run `mise run lint` before committing changes
+- Code formatting: always run `mise run fmt` before committing changes
 - When adding new features, ensure they are well-tested and documented.
 - Always check for code duplication and refactor as needed.
 

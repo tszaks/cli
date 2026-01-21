@@ -587,9 +587,17 @@ func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, for
 	}
 
 	if count == 0 {
-		fmt.Printf("Hooks for %s already installed\n", ag.Description())
+		msg := fmt.Sprintf("Hooks for %s already installed", ag.Description())
+		if agentName == agent.AgentNameGemini {
+			msg += " - This is a work in progress"
+		}
+		fmt.Println(msg)
 	} else {
-		fmt.Printf("Installed %d hooks for %s\n", count, ag.Description())
+		msg := fmt.Sprintf("Installed %d hooks for %s", count, ag.Description())
+		if agentName == agent.AgentNameGemini {
+			msg += " - This is a work in progress"
+		}
+		fmt.Println(msg)
 	}
 
 	// Update settings to store the agent choice and strategy
