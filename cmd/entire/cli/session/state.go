@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 )
@@ -54,6 +55,13 @@ type State struct {
 
 	// AgentType identifies the agent that created this session (e.g., "Claude Code", "Cursor")
 	AgentType string `json:"agent_type,omitempty"`
+
+	// Token usage tracking (accumulated across all checkpoints in this session)
+	TokenUsage *checkpoint.TokenUsage `json:"token_usage,omitempty"`
+
+	// Transcript position when session started (for multi-session checkpoints)
+	TranscriptLinesAtStart int    `json:"transcript_lines_at_start,omitempty"`
+	TranscriptUUIDAtStart  string `json:"transcript_uuid_at_start,omitempty"`
 }
 
 // StateStore provides low-level operations for managing session state files.
