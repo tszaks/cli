@@ -565,18 +565,18 @@ func formatSessionInfo(session *strategy.Session, sourceRef string, checkpoints 
 	var sb strings.Builder
 
 	// Session header
-	sb.WriteString(fmt.Sprintf("Session: %s\n", session.ID))
-	sb.WriteString(fmt.Sprintf("Strategy: %s\n", session.Strategy))
+	fmt.Fprintf(&sb, "Session: %s\n", session.ID)
+	fmt.Fprintf(&sb, "Strategy: %s\n", session.Strategy)
 
 	if !session.StartTime.IsZero() {
-		sb.WriteString(fmt.Sprintf("Started: %s\n", session.StartTime.Format("2006-01-02 15:04:05")))
+		fmt.Fprintf(&sb, "Started: %s\n", session.StartTime.Format("2006-01-02 15:04:05"))
 	}
 
 	if sourceRef != "" {
-		sb.WriteString(fmt.Sprintf("Source Ref: %s\n", sourceRef))
+		fmt.Fprintf(&sb, "Source Ref: %s\n", sourceRef)
 	}
 
-	sb.WriteString(fmt.Sprintf("Checkpoints: %d\n", len(checkpoints)))
+	fmt.Fprintf(&sb, "Checkpoints: %d\n", len(checkpoints))
 
 	// Checkpoint details
 	for _, cp := range checkpoints {
@@ -587,15 +587,15 @@ func formatSessionInfo(session *strategy.Session, sourceRef string, checkpoints 
 		if cp.IsTaskCheckpoint {
 			taskMarker = " [Task]"
 		}
-		sb.WriteString(fmt.Sprintf("─── Checkpoint %d [%s] %s%s ───\n",
-			cp.Index, cp.ShortID, cp.Timestamp.Format("2006-01-02 15:04"), taskMarker))
+		fmt.Fprintf(&sb, "─── Checkpoint %d [%s] %s%s ───\n",
+			cp.Index, cp.ShortID, cp.Timestamp.Format("2006-01-02 15:04"), taskMarker)
 		sb.WriteString("\n")
 
 		// Display all interactions in this checkpoint
 		for i, inter := range cp.Interactions {
 			// For multiple interactions, add a sub-header
 			if len(cp.Interactions) > 1 {
-				sb.WriteString(fmt.Sprintf("### Interaction %d\n\n", i+1))
+				fmt.Fprintf(&sb, "### Interaction %d\n\n", i+1)
 			}
 
 			// Prompt section
@@ -614,9 +614,9 @@ func formatSessionInfo(session *strategy.Session, sourceRef string, checkpoints 
 
 			// Files modified for this interaction
 			if len(inter.Files) > 0 {
-				sb.WriteString(fmt.Sprintf("Files Modified (%d):\n", len(inter.Files)))
+				fmt.Fprintf(&sb, "Files Modified (%d):\n", len(inter.Files))
 				for _, file := range inter.Files {
-					sb.WriteString(fmt.Sprintf("  - %s\n", file))
+					fmt.Fprintf(&sb, "  - %s\n", file)
 				}
 				sb.WriteString("\n")
 			}
@@ -631,9 +631,9 @@ func formatSessionInfo(session *strategy.Session, sourceRef string, checkpoints 
 			}
 			// Show aggregate files if available
 			if len(cp.Files) > 0 {
-				sb.WriteString(fmt.Sprintf("Files Modified (%d):\n", len(cp.Files)))
+				fmt.Fprintf(&sb, "Files Modified (%d):\n", len(cp.Files))
 				for _, file := range cp.Files {
-					sb.WriteString(fmt.Sprintf("  - %s\n", file))
+					fmt.Fprintf(&sb, "  - %s\n", file)
 				}
 			}
 		}
@@ -646,25 +646,25 @@ func formatSessionInfo(session *strategy.Session, sourceRef string, checkpoints 
 func formatCommitInfo(info *commitInfo) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("Commit: %s (%s)\n", info.SHA, info.ShortSHA))
-	sb.WriteString(fmt.Sprintf("Date: %s\n", info.Date.Format("2006-01-02 15:04:05")))
+	fmt.Fprintf(&sb, "Commit: %s (%s)\n", info.SHA, info.ShortSHA)
+	fmt.Fprintf(&sb, "Date: %s\n", info.Date.Format("2006-01-02 15:04:05"))
 
 	if info.HasEntire && info.SessionID != "" {
-		sb.WriteString(fmt.Sprintf("Session: %s\n", info.SessionID))
+		fmt.Fprintf(&sb, "Session: %s\n", info.SessionID)
 	}
 
 	sb.WriteString("\n")
 
 	// Message
 	sb.WriteString("Message:\n")
-	sb.WriteString(fmt.Sprintf("  %s\n", info.Message))
+	fmt.Fprintf(&sb, "  %s\n", info.Message)
 	sb.WriteString("\n")
 
 	// Files modified
 	if len(info.Files) > 0 {
-		sb.WriteString(fmt.Sprintf("Files Modified (%d):\n", len(info.Files)))
+		fmt.Fprintf(&sb, "Files Modified (%d):\n", len(info.Files))
 		for _, file := range info.Files {
-			sb.WriteString(fmt.Sprintf("  - %s\n", file))
+			fmt.Fprintf(&sb, "  - %s\n", file)
 		}
 		sb.WriteString("\n")
 	}
