@@ -210,7 +210,28 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 
 	// Verbose: add files and prompts
 	if verbose || full {
-		// TODO: implement verbose output in Task 10
+		sb.WriteString("\n")
+
+		// Files section
+		if len(meta.FilesTouched) > 0 {
+			fmt.Fprintf(&sb, "Files: (%d)\n", len(meta.FilesTouched))
+			for _, file := range meta.FilesTouched {
+				fmt.Fprintf(&sb, "  - %s\n", file)
+			}
+		} else {
+			sb.WriteString("Files: (none)\n")
+		}
+
+		sb.WriteString("\n")
+
+		// Prompts section
+		sb.WriteString("Prompts:\n")
+		if result.Prompts != "" {
+			sb.WriteString(result.Prompts)
+			sb.WriteString("\n")
+		} else {
+			sb.WriteString("  (none)\n")
+		}
 	}
 
 	// Full: add transcript

@@ -820,3 +820,52 @@ func TestFormatCheckpointOutput_Default(t *testing.T) {
 		t.Error("default output should not show file list (use --verbose)")
 	}
 }
+
+func TestFormatCheckpointOutput_Verbose(t *testing.T) {
+	result := &checkpoint.ReadCommittedResult{
+		Metadata: checkpoint.CommittedMetadata{
+			CheckpointID:     "abc123def456",
+			SessionID:        "2026-01-21-test-session",
+			CreatedAt:        time.Date(2026, 1, 21, 10, 30, 0, 0, time.UTC),
+			FilesTouched:     []string{"main.go", "util.go", "config.yaml"},
+			CheckpointsCount: 3,
+			TokenUsage: &checkpoint.TokenUsage{
+				InputTokens:  10000,
+				OutputTokens: 5000,
+			},
+		},
+		Prompts: "Add a new feature\nFix the bug\nRefactor the code",
+	}
+
+	output := formatCheckpointOutput(result, "abc123def456", true, false)
+
+	// Should show checkpoint ID (like default)
+	if !strings.Contains(output, "abc123def456") {
+		t.Error("expected checkpoint ID in output")
+	}
+	// Should show session ID (like default)
+	if !strings.Contains(output, "2026-01-21-test-session") {
+		t.Error("expected session ID in output")
+	}
+	// Verbose should show files
+	if !strings.Contains(output, "main.go") {
+		t.Error("verbose output should show files")
+	}
+	if !strings.Contains(output, "util.go") {
+		t.Error("verbose output should show all files")
+	}
+	if !strings.Contains(output, "config.yaml") {
+		t.Error("verbose output should show all files")
+	}
+	// Should show "Files:" section header
+	if !strings.Contains(output, "Files:") {
+		t.Error("verbose output should have Files section")
+	}
+	// Verbose should show all prompts (not just first line)
+	if !strings.Contains(output, "Prompts:") {
+		t.Error("verbose output should have Prompts section")
+	}
+	if !strings.Contains(output, "Add a new feature") {
+		t.Error("verbose output should show prompts")
+	}
+}
