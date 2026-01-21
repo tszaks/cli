@@ -793,7 +793,8 @@ func TestFormatCheckpointOutput_Default(t *testing.T) {
 		Prompts: "Add a new feature",
 	}
 
-	output := formatCheckpointOutput(result, "abc123def456", false, false)
+	// Default mode: empty commit message (not shown anyway in default mode)
+	output := formatCheckpointOutput(result, "abc123def456", "", false, false)
 
 	// Should show checkpoint ID
 	if !strings.Contains(output, "abc123def456") {
@@ -837,7 +838,7 @@ func TestFormatCheckpointOutput_Verbose(t *testing.T) {
 		Prompts: "Add a new feature\nFix the bug\nRefactor the code",
 	}
 
-	output := formatCheckpointOutput(result, "abc123def456", true, false)
+	output := formatCheckpointOutput(result, "abc123def456", "feat: implement user authentication", true, false)
 
 	// Should show checkpoint ID (like default)
 	if !strings.Contains(output, "abc123def456") {
@@ -868,6 +869,33 @@ func TestFormatCheckpointOutput_Verbose(t *testing.T) {
 	if !strings.Contains(output, "Add a new feature") {
 		t.Error("verbose output should show prompts")
 	}
+	// Verbose should show commit message
+	if !strings.Contains(output, "Commit:") {
+		t.Error("verbose output should have Commit section")
+	}
+	if !strings.Contains(output, "feat: implement user authentication") {
+		t.Error("verbose output should show commit message")
+	}
+}
+
+func TestFormatCheckpointOutput_Verbose_NoCommitMessage(t *testing.T) {
+	result := &checkpoint.ReadCommittedResult{
+		Metadata: checkpoint.CommittedMetadata{
+			CheckpointID:     "abc123def456",
+			SessionID:        "2026-01-21-test-session",
+			CreatedAt:        time.Date(2026, 1, 21, 10, 30, 0, 0, time.UTC),
+			FilesTouched:     []string{"main.go"},
+			CheckpointsCount: 1,
+		},
+		Prompts: "Add a feature",
+	}
+
+	// When commit message is empty, should not show Commit section
+	output := formatCheckpointOutput(result, "abc123def456", "", true, false)
+
+	if strings.Contains(output, "Commit:") {
+		t.Error("verbose output should not show Commit section when message is empty")
+	}
 }
 
 func TestFormatCheckpointOutput_Full(t *testing.T) {
@@ -887,7 +915,7 @@ func TestFormatCheckpointOutput_Full(t *testing.T) {
 		Transcript: []byte(`{"type":"user","content":"Add a new feature"}` + "\n" + `{"type":"assistant","content":"I'll add that feature for you."}`),
 	}
 
-	output := formatCheckpointOutput(result, "abc123def456", false, true)
+	output := formatCheckpointOutput(result, "abc123def456", "feat: add user login", false, true)
 
 	// Should show checkpoint ID (like default)
 	if !strings.Contains(output, "abc123def456") {
@@ -910,5 +938,12 @@ func TestFormatCheckpointOutput_Full(t *testing.T) {
 	}
 	if !strings.Contains(output, "assistant") {
 		t.Error("full output should show assistant messages in transcript")
+	}
+	// Full should also show commit message (since it includes verbose)
+	if !strings.Contains(output, "Commit:") {
+		t.Error("full output should include commit section")
+	}
+	if !strings.Contains(output, "feat: add user login") {
+		t.Error("full output should show commit message")
 	}
 }

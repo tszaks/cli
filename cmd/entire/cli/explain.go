@@ -14,6 +14,7 @@ import (
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
 
+	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -163,8 +164,11 @@ func runExplainCheckpoint(w io.Writer, checkpointIDPrefix string, noPager, verbo
 		return fmt.Errorf("failed to read checkpoint: %w", err)
 	}
 
+	// Look up the commit message for this checkpoint
+	commitMessage := findCommitMessageForCheckpoint(repo, fullCheckpointID)
+
 	// Format and output
-	output := formatCheckpointOutput(result, fullCheckpointID, verbose, full)
+	output := formatCheckpointOutput(result, fullCheckpointID, commitMessage, verbose, full)
 
 	if noPager {
 		fmt.Fprint(w, output)
@@ -175,11 +179,55 @@ func runExplainCheckpoint(w io.Writer, checkpointIDPrefix string, noPager, verbo
 	return nil
 }
 
+// findCommitMessageForCheckpoint searches git history for a commit with the
+// Entire-Checkpoint trailer matching the given checkpoint ID, and returns
+// the first line of the commit message. Returns empty string if not found.
+func findCommitMessageForCheckpoint(repo *git.Repository, checkpointID string) string {
+	// Get HEAD reference
+	head, err := repo.Head()
+	if err != nil {
+		return ""
+	}
+
+	// Iterate through commit history (limit to recent commits for performance)
+	commitIter, err := repo.Log(&git.LogOptions{
+		From: head.Hash(),
+	})
+	if err != nil {
+		return ""
+	}
+	defer commitIter.Close()
+
+	const maxCommitsToSearch = 500
+	count := 0
+
+	for {
+		commit, iterErr := commitIter.Next()
+		if iterErr != nil {
+			break
+		}
+		count++
+		if count > maxCommitsToSearch {
+			break
+		}
+
+		// Check if this commit has our checkpoint ID
+		foundID, hasTrailer := paths.ParseCheckpointTrailer(commit.Message)
+		if hasTrailer && foundID == checkpointID {
+			// Return first line of commit message (without trailing newline)
+			firstLine := strings.Split(commit.Message, "\n")[0]
+			return strings.TrimSpace(firstLine)
+		}
+	}
+
+	return ""
+}
+
 // formatCheckpointOutput formats checkpoint data based on verbosity level.
 // Default: Summary (ID, session, timestamp, tokens, intent)
-// Verbose: + prompts, files, session IDs
+// Verbose: + prompts, files, commit message
 // Full: + complete transcript
-func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID string, verbose, full bool) string {
+func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID, commitMessage string, verbose, full bool) string {
 	var sb strings.Builder
 	meta := result.Metadata
 
@@ -238,6 +286,12 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 			sb.WriteString("\n")
 		} else {
 			sb.WriteString("  (none)\n")
+		}
+
+		// Commit message section (only if available)
+		if commitMessage != "" {
+			sb.WriteString("\n")
+			fmt.Fprintf(&sb, "Commit: %s\n", commitMessage)
 		}
 	}
 
