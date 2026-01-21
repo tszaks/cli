@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
 	"github.com/go-git/go-git/v5"
@@ -773,5 +774,49 @@ func TestRunExplainCheckpoint_NotFound(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "checkpoint not found") {
 		t.Errorf("expected 'checkpoint not found' error, got: %v", err)
+	}
+}
+
+func TestFormatCheckpointOutput_Default(t *testing.T) {
+	result := &checkpoint.ReadCommittedResult{
+		Metadata: checkpoint.CommittedMetadata{
+			CheckpointID:     "abc123def456",
+			SessionID:        "2026-01-21-test-session",
+			CreatedAt:        time.Date(2026, 1, 21, 10, 30, 0, 0, time.UTC),
+			FilesTouched:     []string{"main.go", "util.go"},
+			CheckpointsCount: 3,
+			TokenUsage: &checkpoint.TokenUsage{
+				InputTokens:  10000,
+				OutputTokens: 5000,
+			},
+		},
+		Prompts: "Add a new feature",
+	}
+
+	output := formatCheckpointOutput(result, "abc123def456", false, false)
+
+	// Should show checkpoint ID
+	if !strings.Contains(output, "abc123def456") {
+		t.Error("expected checkpoint ID in output")
+	}
+	// Should show session ID
+	if !strings.Contains(output, "2026-01-21-test-session") {
+		t.Error("expected session ID in output")
+	}
+	// Should show timestamp
+	if !strings.Contains(output, "2026-01-21") {
+		t.Error("expected timestamp in output")
+	}
+	// Should show token usage (10000 + 5000 = 15000)
+	if !strings.Contains(output, "15000") {
+		t.Error("expected token count in output")
+	}
+	// Should show Intent label
+	if !strings.Contains(output, "Intent:") {
+		t.Error("expected Intent label in output")
+	}
+	// Should NOT show full file list in default mode
+	if strings.Contains(output, "main.go") {
+		t.Error("default output should not show file list (use --verbose)")
 	}
 }
