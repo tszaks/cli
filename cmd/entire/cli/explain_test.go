@@ -758,3 +758,20 @@ func TestRunExplain_MutualExclusivityError(t *testing.T) {
 		t.Errorf("expected 'cannot specify multiple' error, got: %v", err)
 	}
 }
+
+func TestRunExplainCheckpoint_NotFound(t *testing.T) {
+	// Skip if no git repo
+	if _, err := openRepository(); err != nil {
+		t.Skip("Skipping: not in a git repository")
+	}
+
+	var buf bytes.Buffer
+	err := runExplainCheckpoint(&buf, "nonexistent123", false, false, false)
+
+	if err == nil {
+		t.Error("expected error for nonexistent checkpoint")
+	}
+	if !strings.Contains(err.Error(), "checkpoint not found") {
+		t.Errorf("expected 'checkpoint not found' error, got: %v", err)
+	}
+}
