@@ -158,17 +158,6 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 		fmt.Fprintln(w, "✓ Claude Code hooks verified")
 	}
 
-	// Setup Gemini CLI hooks
-	geminiHooksInstalled, err := setupGeminiCLIHook(localDev, forceHooks)
-	if err != nil {
-		return fmt.Errorf("failed to setup Gemini CLI hooks: %w", err)
-	}
-	if geminiHooksInstalled > 0 {
-		fmt.Fprintln(w, "✓ Gemini CLI hooks installed - This is a work in progress")
-	} else {
-		fmt.Fprintln(w, "✓ Gemini CLI hooks verified - This is a work in progress")
-	}
-
 	// Setup .entire directory
 	dirCreated, err := setupEntireDirectory()
 	if err != nil {
@@ -310,17 +299,6 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 		fmt.Fprintln(w, "✓ Claude Code hooks installed")
 	} else {
 		fmt.Fprintln(w, "✓ Claude Code hooks verified")
-	}
-
-	// Setup Gemini CLI hooks
-	geminiHooksInstalled, err := setupGeminiCLIHook(localDev, forceHooks)
-	if err != nil {
-		return fmt.Errorf("failed to setup Gemini CLI hooks: %w", err)
-	}
-	if geminiHooksInstalled > 0 {
-		fmt.Fprintln(w, "✓ Gemini CLI hooks installed - This is a work in progress")
-	} else {
-		fmt.Fprintln(w, "✓ Gemini CLI hooks verified - This is a work in progress")
 	}
 
 	// Setup .entire directory
@@ -587,28 +565,6 @@ func setupClaudeCodeHook(localDev, forceHooks bool) (int, error) {
 	count, err := hookAgent.InstallHooks(localDev, forceHooks)
 	if err != nil {
 		return 0, fmt.Errorf("failed to install claude-code hooks: %w", err)
-	}
-
-	return count, nil
-}
-
-// setupGeminiCLIHook sets up Gemini CLI hooks.
-// This is a convenience wrapper that uses the agent package.
-// Returns the number of hooks installed (0 if already installed).
-func setupGeminiCLIHook(localDev, forceHooks bool) (int, error) {
-	ag, err := agent.Get(agent.AgentNameGemini)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get gemini agent: %w", err)
-	}
-
-	hookAgent, ok := ag.(agent.HookSupport)
-	if !ok {
-		return 0, errors.New("gemini agent does not support hooks")
-	}
-
-	count, err := hookAgent.InstallHooks(localDev, forceHooks)
-	if err != nil {
-		return 0, fmt.Errorf("failed to install gemini hooks: %w", err)
 	}
 
 	return count, nil
