@@ -63,14 +63,21 @@ func newExplainCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "explain",
-		Short: "Explain a session or commit",
-		Long: `Explain provides human-readable context about sessions and commits.
+		Short: "Explain a session, commit, or checkpoint",
+		Long: `Explain provides human-readable context about sessions, commits, and checkpoints.
 
 Use this command to understand what happened during agent-driven development,
 either for self-review or to understand a teammate's work.
 
 By default, explains the current session. Use flags to explain a specific
-session or commit.`,
+session, commit, or checkpoint.
+
+Output verbosity levels (for --checkpoint):
+  Default:   Summary view (ID, session, timestamp, tokens, intent)
+  --verbose: + prompts and files touched
+  --full:    + complete transcript
+
+Only one of --session, --commit, or --checkpoint can be specified at a time.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Check if Entire is disabled
 			if checkDisabledGuard(cmd.OutOrStdout()) {
