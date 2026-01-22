@@ -144,6 +144,60 @@ func TestHooksClaudeCodeSessionStart(t *testing.T) {
 	}
 }
 
+func TestHooksGeminiSessionStart(t *testing.T) {
+	t.Parallel()
+	for _, strat := range AllStrategies() {
+		strat := strat // capture for parallel
+		t.Run(strat, func(t *testing.T) {
+			t.Parallel()
+			env := NewTestEnv(t)
+			env.InitRepo()
+			env.InitEntireWithAgent(strat, "gemini")
+
+			// Create initial commit
+			env.WriteFile("README.md", "# Test")
+			env.GitAdd("README.md")
+			env.GitCommit("Initial commit")
+
+			// Gemini sends a raw session ID
+			geminiSessionID := "gemini-hook-session-uuid-5678"
+
+			// Run hooks gemini session-start with JSON input (simulating Gemini's SessionStart hook)
+			output := env.RunGeminiCLIWithStdin(
+				`{"session_id": "`+geminiSessionID+`", "transcript_path": "/tmp/transcript.json"}`,
+				"hooks", "gemini", "session-start",
+			)
+
+			if !strings.Contains(output, "Current session set to") {
+				t.Errorf("expected confirmation message, got: %s", output)
+			}
+
+			// Verify the output contains the Gemini session ID with a date prefix
+			if !strings.Contains(output, geminiSessionID) {
+				t.Errorf("expected output to contain %s, got: %s", geminiSessionID, output)
+			}
+			// Should have date prefix (not just the raw Gemini session ID)
+			datePattern := regexp.MustCompile(`\d{4}-\d{2}-\d{2}-` + regexp.QuoteMeta(geminiSessionID))
+			if !datePattern.MatchString(output) {
+				t.Errorf("expected output to contain date-prefixed session ID, got: %s", output)
+			}
+
+			// Verify session current shows the session ID
+			currentOutput := env.RunCLI("session", "current")
+			if strings.Contains(currentOutput, "No current session set") {
+				t.Errorf("session current should show a session, got: %s", currentOutput)
+			}
+			if !strings.Contains(currentOutput, geminiSessionID) {
+				t.Errorf("session current should contain %s, got: %s", geminiSessionID, currentOutput)
+			}
+			// Verify the date prefix was added
+			if !datePattern.MatchString(currentOutput) {
+				t.Errorf("session current should show date-prefixed ID, got: %s", currentOutput)
+			}
+		})
+	}
+}
+
 // RunCLI runs the entire CLI with the given arguments and returns stdout.
 func (env *TestEnv) RunCLI(args ...string) string {
 	env.T.Helper()
@@ -178,6 +232,25 @@ func (env *TestEnv) RunCLIWithStdin(stdin string, args ...string) string {
 	cmd.Dir = env.RepoDir
 	cmd.Env = append(os.Environ(),
 		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
+	)
+	cmd.Stdin = strings.NewReader(stdin)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		env.T.Fatalf("CLI command failed: %v\nArgs: %v\nOutput: %s", err, args, output)
+	}
+	return string(output)
+}
+
+// RunGeminiCLIWithStdin runs the CLI with stdin input for Gemini hooks.
+func (env *TestEnv) RunGeminiCLIWithStdin(stdin string, args ...string) string {
+	env.T.Helper()
+
+	// Run CLI with stdin using the shared binary
+	cmd := exec.Command(getTestBinary(), args...)
+	cmd.Dir = env.RepoDir
+	cmd.Env = append(os.Environ(),
+		"ENTIRE_TEST_GEMINI_PROJECT_DIR="+env.GeminiProjectDir,
 	)
 	cmd.Stdin = strings.NewReader(stdin)
 
