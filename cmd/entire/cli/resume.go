@@ -12,6 +12,7 @@ import (
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
+	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/charmbracelet/huh"
 	"github.com/go-git/go-git/v5"
@@ -194,8 +195,8 @@ func findBranchCheckpoint(repo *git.Repository, branchName string) (*branchCheck
 	}
 
 	// First, check if HEAD itself has a checkpoint (most common case)
-	if checkpointID, found := paths.ParseCheckpointTrailer(headCommit.Message); found {
-		result.checkpointID = checkpointID
+	if cpID, found := trailers.ParseCheckpoint(headCommit.Message); found {
+		result.checkpointID = cpID.String()
 		result.commitHash = head.Hash().String()
 		result.commitMessage = headCommit.Message
 		result.newerCommitsExist = false
@@ -263,8 +264,8 @@ func findCheckpointInHistory(start *object.Commit, stopAt *plumbing.Hash) *branc
 		}
 
 		// Check for checkpoint trailer
-		if checkpointID, found := paths.ParseCheckpointTrailer(current.Message); found {
-			result.checkpointID = checkpointID
+		if cpID, found := trailers.ParseCheckpoint(current.Message); found {
+			result.checkpointID = cpID.String()
 			result.commitHash = current.Hash.String()
 			result.commitMessage = current.Message
 			// Only warn about branch work commits, not merge commits

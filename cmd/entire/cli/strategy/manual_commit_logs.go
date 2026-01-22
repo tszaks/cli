@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5/plumbing"
 )
@@ -40,8 +41,9 @@ func (s *ManualCommitStrategy) GetSessionLog(commitHash string) ([]byte, string,
 		commit, err := repo.CommitObject(*hash)
 		if err == nil {
 			// Check for Entire-Checkpoint trailer
-			checkpointID, hasTrailer := paths.ParseCheckpointTrailer(commit.Message)
-			if hasTrailer && checkpointID != "" {
+			cpID, hasTrailer := trailers.ParseCheckpoint(commit.Message)
+			if hasTrailer && !cpID.IsEmpty() {
+				checkpointID := cpID.String()
 				log, logErr := s.getCheckpointLog(checkpointID)
 				if logErr == nil {
 					// Find session ID
@@ -56,7 +58,7 @@ func (s *ManualCommitStrategy) GetSessionLog(commitHash string) ([]byte, string,
 			}
 
 			// Fall back to Entire-Session trailer
-			sessionID, found := paths.ParseSessionTrailer(commit.Message)
+			sessionID, found := trailers.ParseSession(commit.Message)
 			if found {
 				log, err := s.getSessionLogBySessionID(sessionID)
 				if err == nil {
@@ -65,7 +67,7 @@ func (s *ManualCommitStrategy) GetSessionLog(commitHash string) ([]byte, string,
 			}
 
 			// Try metadata trailer (shadow branch commit)
-			metadataDir, found := paths.ParseMetadataTrailer(commit.Message)
+			metadataDir, found := trailers.ParseMetadata(commit.Message)
 			if found {
 				sessionID := filepath.Base(metadataDir)
 				tree, treeErr := commit.Tree()
@@ -251,7 +253,7 @@ func (s *ManualCommitStrategy) GetSessionMetadataRef(_ string) string {
 
 	// The tip of entire/sessions contains all condensed sessions
 	// Return a reference to it (sessionID is not used as all sessions are on the same branch)
-	return paths.FormatSourceRefTrailer(paths.MetadataBranchName, ref.Hash().String())
+	return trailers.FormatSourceRef(paths.MetadataBranchName, ref.Hash().String())
 }
 
 // GetSessionContext returns the context.md content for a session.

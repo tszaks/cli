@@ -12,8 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -31,7 +33,7 @@ func (s *GitStore) WriteCommitted(ctx context.Context, opts WriteCommittedOption
 	_ = ctx // Reserved for future use
 
 	// Validate identifiers to prevent path traversal and malformed data
-	if err := paths.ValidateCheckpointID(opts.CheckpointID); err != nil {
+	if err := id.Validate(opts.CheckpointID); err != nil {
 		return fmt.Errorf("invalid checkpoint options: %w", err)
 	}
 	if err := paths.ValidateSessionID(opts.SessionID); err != nil {
@@ -512,16 +514,16 @@ func (s *GitStore) buildCommitMessage(opts WriteCommittedOptions, taskMetadataPa
 	if opts.CommitSubject != "" {
 		commitMsg.WriteString(opts.CommitSubject + "\n\n")
 	}
-	commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.SessionTrailerKey, opts.SessionID))
-	commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.StrategyTrailerKey, opts.Strategy))
+	commitMsg.WriteString(fmt.Sprintf("%s: %s\n", trailers.SessionTrailerKey, opts.SessionID))
+	commitMsg.WriteString(fmt.Sprintf("%s: %s\n", trailers.StrategyTrailerKey, opts.Strategy))
 	if opts.Agent != "" {
-		commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.AgentTrailerKey, opts.Agent))
+		commitMsg.WriteString(fmt.Sprintf("%s: %s\n", trailers.AgentTrailerKey, opts.Agent))
 	}
 	if opts.EphemeralBranch != "" {
-		commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.EphemeralBranchTrailerKey, opts.EphemeralBranch))
+		commitMsg.WriteString(fmt.Sprintf("%s: %s\n", trailers.EphemeralBranchTrailerKey, opts.EphemeralBranch))
 	}
 	if taskMetadataPath != "" {
-		commitMsg.WriteString(fmt.Sprintf("%s: %s\n", paths.MetadataTaskTrailerKey, taskMetadataPath))
+		commitMsg.WriteString(fmt.Sprintf("%s: %s\n", trailers.MetadataTaskTrailerKey, taskMetadataPath))
 	}
 
 	return commitMsg.String()
@@ -570,7 +572,7 @@ func (s *GitStore) ReadCommitted(ctx context.Context, checkpointID string) (*Rea
 		if content, contentErr := metadataFile.Contents(); contentErr == nil {
 			//nolint:errcheck,gosec // Best-effort parsing, defaults are fine
 			json.Unmarshal([]byte(content), &result.Metadata)
-			result.Metadata.Strategy = paths.NormalizeStrategyName(result.Metadata.Strategy)
+			result.Metadata.Strategy = trailers.NormalizeStrategyName(result.Metadata.Strategy)
 		}
 	}
 

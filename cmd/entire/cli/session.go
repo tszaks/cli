@@ -12,6 +12,7 @@ import (
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
+	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/charmbracelet/huh"
 	"github.com/go-git/go-git/v5"
@@ -112,8 +113,8 @@ func runSessionRaw(commitRef string) error {
 
 // parseSessionTrailers extracts Entire-Session and Entire-Source-Ref from commit message
 func parseSessionTrailers(message string) (sessionID, sourceRef string) {
-	sessionRe := regexp.MustCompile(paths.SessionTrailerKey + `:\s*(.+)`)
-	sourceRe := regexp.MustCompile(paths.SourceRefTrailerKey + `:\s*(.+)`)
+	sessionRe := regexp.MustCompile(trailers.SessionTrailerKey + `:\s*(.+)`)
+	sourceRe := regexp.MustCompile(trailers.SourceRefTrailerKey + `:\s*(.+)`)
 
 	if matches := sessionRe.FindStringSubmatch(message); len(matches) > 1 {
 		sessionID = strings.TrimSpace(matches[1])
@@ -480,8 +481,8 @@ func filterSessionsForCurrentBranch(sessions []strategy.Session) []strategy.Sess
 			return nil
 		}
 
-		if checkpointID, found := paths.ParseCheckpointTrailer(c.Message); found {
-			if sessionID, ok := checkpointToSession[checkpointID]; ok {
+		if cpID, found := trailers.ParseCheckpoint(c.Message); found {
+			if sessionID, ok := checkpointToSession[cpID.String()]; ok {
 				matchingSessionIDs[sessionID] = true
 			}
 		}

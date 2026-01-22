@@ -9,6 +9,7 @@ import (
 
 	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -439,7 +440,7 @@ func createTestMultiSessionCheckpoint(t *testing.T, repo *git.Repository, checkp
 		TreeHash:  treeHash,
 		Author:    sig,
 		Committer: sig,
-		Message:   "Multi-session checkpoint\n\n" + paths.SessionTrailerKey + ": " + primarySessionID,
+		Message:   "Multi-session checkpoint\n\n" + trailers.SessionTrailerKey + ": " + primarySessionID,
 	}
 
 	commitObj := repo.Storer.NewEncodedObject()
@@ -523,7 +524,7 @@ func createTestMetadataBranchWithPrompt(t *testing.T, repo *git.Repository, sess
 		TreeHash:  treeHash,
 		Author:    sig,
 		Committer: sig,
-		Message:   "Test checkpoint\n\n" + paths.SessionTrailerKey + ": " + sessionID,
+		Message:   "Test checkpoint\n\n" + trailers.SessionTrailerKey + ": " + sessionID,
 	}
 
 	commitObj := repo.Storer.NewEncodedObject()

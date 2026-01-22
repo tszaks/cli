@@ -13,6 +13,7 @@ import (
 
 	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -99,7 +100,7 @@ func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOption
 	}
 
 	// Create checkpoint commit with trailers
-	commitMsg := paths.FormatShadowCommitMessage(opts.CommitMessage, opts.MetadataDir, opts.SessionID)
+	commitMsg := trailers.FormatShadowCommit(opts.CommitMessage, opts.MetadataDir, opts.SessionID)
 
 	commitHash, err := s.createCommit(treeHash, parentHash, commitMsg, opts.AuthorName, opts.AuthorEmail)
 	if err != nil {
@@ -138,8 +139,8 @@ func (s *GitStore) ReadTemporary(ctx context.Context, baseCommit string) (*ReadT
 	}
 
 	// Extract session ID and metadata dir from commit trailers
-	sessionID, _ := paths.ParseSessionTrailer(commit.Message)
-	metadataDir, _ := paths.ParseMetadataTrailer(commit.Message)
+	sessionID, _ := trailers.ParseSession(commit.Message)
+	metadataDir, _ := trailers.ParseMetadata(commit.Message)
 
 	return &ReadTemporaryResult{
 		CommitHash:  ref.Hash(),
@@ -177,7 +178,7 @@ func (s *GitStore) ListTemporary(ctx context.Context) ([]TemporaryInfo, error) {
 			return nil
 		}
 
-		sessionID, _ := paths.ParseSessionTrailer(commit.Message)
+		sessionID, _ := trailers.ParseSession(commit.Message)
 
 		// Extract base commit from branch name
 		baseCommit := strings.TrimPrefix(branchName, ShadowBranchPrefix)
@@ -396,7 +397,7 @@ func (s *GitStore) ListTemporaryCheckpoints(ctx context.Context, baseCommit stri
 		count++
 
 		// Verify commit belongs to target session via Entire-Session trailer
-		commitSessionID, hasTrailer := paths.ParseSessionTrailer(c.Message)
+		commitSessionID, hasTrailer := trailers.ParseSession(c.Message)
 		if !hasTrailer {
 			return nil // Skip commits without session trailer
 		}
@@ -418,13 +419,13 @@ func (s *GitStore) ListTemporaryCheckpoints(ctx context.Context, baseCommit stri
 		}
 
 		// Check for task checkpoint first
-		taskMetadataDir, foundTask := paths.ParseTaskMetadataTrailer(c.Message)
+		taskMetadataDir, foundTask := trailers.ParseTaskMetadata(c.Message)
 		if foundTask {
 			info.IsTaskCheckpoint = true
 			info.MetadataDir = taskMetadataDir
 			info.ToolUseID = extractToolUseIDFromPath(taskMetadataDir)
 		} else {
-			metadataDir, found := paths.ParseMetadataTrailer(c.Message)
+			metadataDir, found := trailers.ParseMetadata(c.Message)
 			if found {
 				info.MetadataDir = metadataDir
 			}

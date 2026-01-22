@@ -9,9 +9,11 @@ import (
 	"strings"
 
 	"entire.io/cli/cmd/entire/cli/agent"
+	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/stringutil"
+	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -79,11 +81,12 @@ func (s *ManualCommitStrategy) CommitMsg(commitMsgFile string) error {
 	message := string(content)
 
 	// Check if our trailer is present
-	checkpointID, found := paths.ParseCheckpointTrailer(message)
-	if !found || checkpointID == "" {
+	cpID, found := trailers.ParseCheckpoint(message)
+	if !found || cpID.IsEmpty() {
 		// No trailer, nothing to do
 		return nil
 	}
+	_ = cpID // Used only to verify trailer presence
 
 	// Check if there's any user content (non-comment, non-trailer lines)
 	if !hasUserContent(message) {
@@ -99,7 +102,7 @@ func (s *ManualCommitStrategy) CommitMsg(commitMsgFile string) error {
 
 // hasUserContent checks if the message has any content besides comments and our trailer.
 func hasUserContent(message string) bool {
-	trailerPrefix := paths.CheckpointTrailerKey + ":"
+	trailerPrefix := trailers.CheckpointTrailerKey + ":"
 	for _, line := range strings.Split(message, "\n") {
 		trimmed := strings.TrimSpace(line)
 		// Skip empty lines
@@ -122,7 +125,7 @@ func hasUserContent(message string) bool {
 
 // stripCheckpointTrailer removes the Entire-Checkpoint trailer line from the message.
 func stripCheckpointTrailer(message string) string {
-	trailerPrefix := paths.CheckpointTrailerKey + ":"
+	trailerPrefix := trailers.CheckpointTrailerKey + ":"
 	var result []string
 	for _, line := range strings.Split(message, "\n") {
 		if !strings.HasPrefix(strings.TrimSpace(line), trailerPrefix) {
@@ -261,20 +264,20 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 	message := string(content)
 
 	// Get or generate checkpoint ID
-	existingID, found := paths.ParseCheckpointTrailer(message)
-	if found && existingID != "" {
+	existingCpID, found := trailers.ParseCheckpoint(message)
+	if found && !existingCpID.IsEmpty() {
 		// Trailer already exists (e.g., amend) - keep it
 		logging.Debug(logCtx, "prepare-commit-msg: trailer already exists",
 			slog.String("strategy", "manual-commit"),
 			slog.String("source", source),
-			slog.String("existing_checkpoint_id", existingID),
+			slog.String("existing_checkpoint_id", existingCpID.String()),
 		)
 		return nil
 	}
 
 	if hasNewContent {
 		// New content: generate new checkpoint ID
-		checkpointID = paths.GenerateCheckpointID()
+		checkpointID = id.Generate().String()
 	}
 	// Otherwise checkpointID is already set to LastCheckpointID from above
 
@@ -365,14 +368,15 @@ func (s *ManualCommitStrategy) PostCommit() error {
 	}
 
 	// Check if commit has checkpoint trailer
-	checkpointID, found := paths.ParseCheckpointTrailer(commit.Message)
-	if !found || checkpointID == "" {
+	cpID, found := trailers.ParseCheckpoint(commit.Message)
+	if !found || cpID.IsEmpty() {
 		// No trailer - user removed it, treat as manual commit
 		logging.Debug(logCtx, "post-commit: no checkpoint trailer",
 			slog.String("strategy", "manual-commit"),
 		)
 		return nil
 	}
+	checkpointID := cpID.String()
 
 	worktreePath, err := GetWorktreePath()
 	if err != nil {
@@ -630,7 +634,7 @@ func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(repo *git.
 // addCheckpointTrailer adds the Entire-Checkpoint trailer to a commit message.
 // Handles proper trailer formatting (blank line before trailers if needed).
 func addCheckpointTrailer(message, checkpointID string) string {
-	trailer := paths.CheckpointTrailerKey + ": " + checkpointID
+	trailer := trailers.CheckpointTrailerKey + ": " + checkpointID
 
 	// If message already ends with trailers (lines starting with key:), just append
 	// Otherwise, add a blank line first
@@ -670,7 +674,7 @@ func addCheckpointTrailer(message, checkpointID string) string {
 // with a comment explaining that the user can remove it if they don't want to link the commit
 // to the agent session. If prompt is non-empty, it's shown as context.
 func addCheckpointTrailerWithComment(message, checkpointID, agentName, prompt string) string {
-	trailer := paths.CheckpointTrailerKey + ": " + checkpointID
+	trailer := trailers.CheckpointTrailerKey + ": " + checkpointID
 	commentLines := []string{
 		"# Remove the Entire-Checkpoint trailer above if you don't want to link this commit to " + agentName + " session context.",
 	}
@@ -753,7 +757,7 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType str
 			// Shadow branch exists - check if it has commits from a different session
 			tipCommit, commitErr := repo.CommitObject(ref.Hash())
 			if commitErr == nil {
-				existingSessionID, found := paths.ParseSessionTrailer(tipCommit.Message)
+				existingSessionID, found := trailers.ParseSession(tipCommit.Message)
 				if found && existingSessionID != sessionID {
 					// Check if the existing session has a state file
 					// existingSessionID is the full Entire session ID (YYYY-MM-DD-uuid) from the trailer

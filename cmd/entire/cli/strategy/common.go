@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -1050,12 +1051,12 @@ func collectUntrackedFiles() ([]string, error) {
 // Returns empty string if no session ID is found.
 func ExtractSessionIDFromCommit(commit *object.Commit) string {
 	// Try Entire-Session trailer first
-	if sessionID, found := paths.ParseSessionTrailer(commit.Message); found {
+	if sessionID, found := trailers.ParseSession(commit.Message); found {
 		return sessionID
 	}
 
 	// Try extracting from metadata directory (last path component)
-	if metadataDir, found := paths.ParseMetadataTrailer(commit.Message); found {
+	if metadataDir, found := trailers.ParseMetadata(commit.Message); found {
 		return filepath.Base(metadataDir)
 	}
 

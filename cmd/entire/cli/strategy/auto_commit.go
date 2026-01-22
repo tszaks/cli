@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"entire.io/cli/cmd/entire/cli/checkpoint"
+	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -138,7 +140,7 @@ func (s *AutoCommitStrategy) SaveChanges(ctx SaveContext) error {
 	}
 
 	// Generate checkpoint ID for this commit
-	checkpointID := paths.GenerateCheckpointID()
+	checkpointID := id.Generate().String()
 
 	// Step 1: Commit code changes to active branch with checkpoint ID trailer
 	// We do code first to avoid orphaned metadata if this step fails.
@@ -219,7 +221,7 @@ func (s *AutoCommitStrategy) commitCodeToActive(repo *git.Repository, ctx SaveCo
 	StageFiles(worktree, ctx.ModifiedFiles, ctx.NewFiles, ctx.DeletedFiles, StageForSession)
 
 	// Add checkpoint ID trailer to commit message
-	commitMsg := ctx.CommitMessage + "\n\n" + paths.CheckpointTrailerKey + ": " + checkpointID
+	commitMsg := ctx.CommitMessage + "\n\n" + trailers.CheckpointTrailerKey + ": " + checkpointID
 
 	author := &object.Signature{
 		Name:  ctx.AuthorName,
@@ -320,10 +322,11 @@ func (s *AutoCommitStrategy) GetRewindPoints(limit int) ([]RewindPoint, error) {
 		count++
 
 		// Check for Entire-Checkpoint trailer
-		checkpointID, found := paths.ParseCheckpointTrailer(c.Message)
+		cpID, found := trailers.ParseCheckpoint(c.Message)
 		if !found {
 			return nil
 		}
+		checkpointID := cpID.String()
 
 		// Look up metadata from sharded path
 		checkpointPath := paths.CheckpointPath(checkpointID)
@@ -438,7 +441,7 @@ func (s *AutoCommitStrategy) findTaskMetadataPathForCommit(repo *git.Repository,
 		if strings.Contains(commit.Message, "Commit: "+shortSHA) &&
 			strings.Contains(commit.Message, toolUseID) {
 			// Parse task metadata trailer
-			if taskPath, found := paths.ParseTaskMetadataTrailer(commit.Message); found {
+			if taskPath, found := trailers.ParseTaskMetadata(commit.Message); found {
 				foundTaskPath = taskPath
 				return errStop // Found it
 			}
@@ -607,7 +610,7 @@ func (s *AutoCommitStrategy) SaveTaskCheckpoint(ctx TaskCheckpointContext) error
 	}
 
 	// Generate checkpoint ID for this task checkpoint
-	checkpointID := paths.GenerateCheckpointID()
+	checkpointID := id.Generate().String()
 
 	// Step 1: Commit code changes to active branch with checkpoint ID trailer
 	// We do code first to avoid orphaned metadata if this step fails.
@@ -695,7 +698,7 @@ func (s *AutoCommitStrategy) commitTaskCodeToActive(repo *git.Repository, ctx Ta
 	}
 
 	// Add checkpoint ID trailer to commit message
-	commitMsg := subject + "\n\n" + paths.CheckpointTrailerKey + ": " + checkpointID
+	commitMsg := subject + "\n\n" + trailers.CheckpointTrailerKey + ": " + checkpointID
 
 	author := &object.Signature{
 		Name:  ctx.AuthorName,
@@ -1139,8 +1142,8 @@ func (s *AutoCommitStrategy) findReferencedCheckpoints(repo *git.Repository) map
 			}
 			visited[c.Hash] = true
 
-			if checkpointID, found := paths.ParseCheckpointTrailer(c.Message); found {
-				referenced[checkpointID] = true
+			if cpID, found := trailers.ParseCheckpoint(c.Message); found {
+				referenced[cpID.String()] = true
 			}
 			return nil
 		})

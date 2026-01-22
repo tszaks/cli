@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -177,9 +178,9 @@ func TestWriteCommitted_AgentField(t *testing.T) {
 	}
 
 	// Verify commit message contains Entire-Agent trailer
-	if !strings.Contains(commit.Message, paths.AgentTrailerKey+": "+agentName) {
+	if !strings.Contains(commit.Message, trailers.AgentTrailerKey+": "+agentName) {
 		t.Errorf("commit message should contain %s trailer with value %q, got:\n%s",
-			paths.AgentTrailerKey, agentName, commit.Message)
+			trailers.AgentTrailerKey, agentName, commit.Message)
 	}
 }
 

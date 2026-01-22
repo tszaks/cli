@@ -17,6 +17,7 @@ import (
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
+	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/charmbracelet/huh"
 	"github.com/go-git/go-git/v5"
@@ -1237,7 +1238,7 @@ func extractSessionIDFromLogsOnlyPoint(start strategy.Strategy, point strategy.R
 	}
 
 	// Parse Entire-Session trailer
-	sessionID, found := paths.ParseSessionTrailer(commit.Message)
+	sessionID, found := trailers.ParseSession(commit.Message)
 	if found {
 		return sessionID
 	}
