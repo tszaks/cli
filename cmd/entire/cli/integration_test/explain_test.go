@@ -10,16 +10,20 @@ import (
 func TestExplain_NoCurrentSession(t *testing.T) {
 	t.Parallel()
 	RunForAllStrategies(t, func(t *testing.T, env *TestEnv, strategyName string) {
-		// Try to explain without a current session
+		// Without any flags, explain shows the branch view (not an error)
 		output, err := env.RunCLIWithError("explain")
 
-		if err == nil {
-			t.Errorf("expected error when no current session, got output: %s", output)
+		if err != nil {
+			t.Errorf("expected success for branch view, got error: %v, output: %s", err, output)
 			return
 		}
 
-		if !strings.Contains(output, "no active session") {
-			t.Errorf("expected 'no active session' error, got: %s", output)
+		// Should show branch information and checkpoint count
+		if !strings.Contains(output, "Branch:") {
+			t.Errorf("expected 'Branch:' header in output, got: %s", output)
+		}
+		if !strings.Contains(output, "Checkpoints:") {
+			t.Errorf("expected 'Checkpoints:' in output, got: %s", output)
 		}
 	})
 }

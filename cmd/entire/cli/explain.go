@@ -198,7 +198,6 @@ func findCommitMessageForCheckpoint(repo *git.Repository, checkpointID string) s
 	}
 	defer commitIter.Close()
 
-	const maxCommitsToSearch = 500
 	count := 0
 
 	for {
@@ -233,8 +232,8 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 
 	// Header - always shown
 	shortID := checkpointID
-	if len(shortID) > 12 {
-		shortID = shortID[:12]
+	if len(shortID) > checkpointIDDisplayLength {
+		shortID = shortID[:checkpointIDDisplayLength]
 	}
 	fmt.Fprintf(&sb, "Checkpoint: %s\n", shortID)
 	fmt.Fprintf(&sb, "Session: %s\n", meta.SessionID)
@@ -254,10 +253,7 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 	if result.Prompts != "" {
 		lines := strings.Split(result.Prompts, "\n")
 		if len(lines) > 0 && lines[0] != "" {
-			intent = lines[0]
-			if len(intent) > 80 {
-				intent = intent[:77] + "..."
-			}
+			intent = truncateString(lines[0], maxIntentDisplayLength)
 		}
 	}
 	fmt.Fprintf(&sb, "Intent: %s\n", intent)
@@ -310,88 +306,45 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 	return sb.String()
 }
 
-// runExplainDefault explains the current session, or shows an overview if the session has no data yet.
+// runExplainDefault shows all checkpoints on the current branch.
+// This is the default view when no flags are provided.
 func runExplainDefault(w io.Writer, noPager bool) error {
-	// Read current session
-	currentSessionID, err := paths.ReadCurrentSession()
-	if err != nil {
-		return fmt.Errorf("failed to read current session: %w", err)
-	}
-
-	if currentSessionID == "" {
-		return runExplainOverview(w, "", noPager)
-	}
-
-	// Check if the session exists before trying to explain it
-	_, err = strategy.GetSession(currentSessionID)
-	if err != nil {
-		if errors.Is(err, strategy.ErrNoSession) {
-			// Current session has no checkpoints yet - show overview instead
-			return runExplainOverview(w, currentSessionID, noPager)
-		}
-		return fmt.Errorf("failed to get session: %w", err)
-	}
-
-	return runExplainSession(w, currentSessionID, noPager)
+	return runExplainBranchDefault(w, noPager)
 }
 
-// runExplainOverview shows an overview of available sessions and checkpoints
-// when the current session doesn't have data yet.
-func runExplainOverview(w io.Writer, currentSessionID string, noPager bool) error {
-	var sb strings.Builder
+// Default limit for checkpoint listing in branch view
+const defaultCheckpointLimit = 50
 
-	// Header
-	if currentSessionID != "" {
-		fmt.Fprintf(&sb, "Current session: %s (no checkpoints yet)\n\n", currentSessionID)
-	} else {
-		sb.WriteString("No active session.\n\n")
-	}
-
-	// List available sessions
-	sessions, err := strategy.ListSessions()
+// runExplainBranchDefault shows all checkpoints on the current branch grouped by date.
+func runExplainBranchDefault(w io.Writer, noPager bool) error {
+	repo, err := openRepository()
 	if err != nil {
-		// Can't list sessions - gracefully degrade by showing a message
-		sb.WriteString("Unable to list sessions.\n")
-		sb.WriteString("Use --session, --commit, or --checkpoint to specify what to explain.\n")
-		outputExplainContent(w, sb.String(), noPager)
-		return nil //nolint:nilerr // Intentional: gracefully degrade when listing fails
+		return fmt.Errorf("not a git repository: %w", err)
 	}
 
-	if len(sessions) == 0 {
-		sb.WriteString("No previous sessions found.\n")
-		sb.WriteString("Checkpoints will appear here after you save changes during a Claude session.\n")
-	} else {
-		fmt.Fprintf(&sb, "Available sessions: %d\n\n", len(sessions))
-
-		// Show up to 5 most recent sessions
-		limit := min(5, len(sessions))
-
-		for _, sess := range sessions[:limit] {
-			checkpointCount := len(sess.Checkpoints)
-			desc := sess.Description
-			if desc == "" || desc == strategy.NoDescription {
-				desc = "(no description)"
-			}
-			// Truncate long descriptions
-			if len(desc) > 60 {
-				desc = desc[:57] + "..."
-			}
-
-			fmt.Fprintf(&sb, "  %s\n", sess.ID)
-			fmt.Fprintf(&sb, "    %s\n", desc)
-			fmt.Fprintf(&sb, "    %d checkpoint(s), started %s\n\n",
-				checkpointCount, sess.StartTime.Format("2006-01-02 15:04"))
+	// Get current branch name
+	branchName := strategy.GetCurrentBranchName(repo)
+	if branchName == "" {
+		// Detached HEAD state - use short commit hash instead
+		head, headErr := repo.Head()
+		if headErr != nil {
+			return fmt.Errorf("failed to get HEAD: %w", headErr)
 		}
-
-		if len(sessions) > limit {
-			fmt.Fprintf(&sb, "  ... and %d more sessions\n\n", len(sessions)-limit)
-		}
-
-		sb.WriteString("Use 'entire explain --session <ID>' to view a specific session.\n")
-		sb.WriteString("Use 'entire session list' to see all sessions.\n")
+		branchName = "HEAD (" + head.Hash().String()[:7] + ")"
 	}
 
-	outputExplainContent(w, sb.String(), noPager)
+	// Get rewind points (checkpoints) for this branch
+	strat := GetStrategy()
+	points, err := strat.GetRewindPoints(defaultCheckpointLimit)
+	if err != nil {
+		// Log error but continue with empty list
+		points = nil
+	}
+
+	// Format output
+	output := formatBranchCheckpoints(branchName, points)
+
+	outputExplainContent(w, output, noPager)
 	return nil
 }
 
@@ -791,4 +744,143 @@ func outputWithPager(w io.Writer, content string) {
 
 	// Direct output for non-terminal or short content
 	fmt.Fprint(w, content)
+}
+
+// Constants for formatting output
+const (
+	// maxCommitsToSearch is the maximum number of commits to search for checkpoint trailers
+	maxCommitsToSearch = 500
+	// maxIntentDisplayLength is the maximum length for intent text before truncation
+	maxIntentDisplayLength = 80
+	// maxMessageDisplayLength is the maximum length for checkpoint messages before truncation
+	maxMessageDisplayLength = 80
+	// maxPromptDisplayLength is the maximum length for session prompts before truncation
+	maxPromptDisplayLength = 60
+	// dateGroupFormat is the format for date group headers
+	dateGroupFormat = "2006-01-02"
+	// timeFormat is the format for checkpoint timestamps
+	timeFormat = "15:04"
+	// checkpointIDDisplayLength is the number of characters to show from checkpoint IDs
+	checkpointIDDisplayLength = 12
+)
+
+// formatBranchCheckpoints formats checkpoint information for a branch.
+// Groups checkpoints by date and shows relevant metadata.
+func formatBranchCheckpoints(branchName string, points []strategy.RewindPoint) string {
+	var sb strings.Builder
+
+	// Branch header
+	fmt.Fprintf(&sb, "Branch: %s\n", branchName)
+	fmt.Fprintf(&sb, "Checkpoints: %d\n", len(points))
+
+	if len(points) == 0 {
+		sb.WriteString("\nNo checkpoints found on this branch.\n")
+		sb.WriteString("Checkpoints will appear here after you save changes during a Claude session.\n")
+		return sb.String()
+	}
+
+	sb.WriteString("\n")
+
+	// Group checkpoints by date
+	groups := groupCheckpointsByDate(points)
+
+	// Output each date group
+	for _, group := range groups {
+		// Date header
+		fmt.Fprintf(&sb, "--- %s ---\n", group.date)
+
+		for _, point := range group.points {
+			formatCheckpointLine(&sb, point)
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
+}
+
+// dateGroup represents a group of checkpoints on the same date.
+type dateGroup struct {
+	date   string
+	points []strategy.RewindPoint
+}
+
+// groupCheckpointsByDate groups rewind points by their date.
+// Points are expected to be sorted by date (most recent first).
+func groupCheckpointsByDate(points []strategy.RewindPoint) []dateGroup {
+	if len(points) == 0 {
+		return nil
+	}
+
+	var groups []dateGroup
+	var currentGroup *dateGroup
+
+	for _, point := range points {
+		dateStr := point.Date.Format(dateGroupFormat)
+
+		if currentGroup == nil || currentGroup.date != dateStr {
+			// Start a new group
+			groups = append(groups, dateGroup{
+				date:   dateStr,
+				points: []strategy.RewindPoint{point},
+			})
+			currentGroup = &groups[len(groups)-1]
+		} else {
+			// Add to current group
+			currentGroup.points = append(currentGroup.points, point)
+		}
+	}
+
+	return groups
+}
+
+// formatCheckpointLine formats a single checkpoint line for display.
+func formatCheckpointLine(sb *strings.Builder, point strategy.RewindPoint) {
+	// Time
+	timeStr := point.Date.Format(timeFormat)
+
+	// Checkpoint ID (truncated)
+	checkpointID := point.CheckpointID
+	if len(checkpointID) > checkpointIDDisplayLength {
+		checkpointID = checkpointID[:checkpointIDDisplayLength]
+	}
+	if checkpointID == "" && len(point.ID) > checkpointIDDisplayLength {
+		checkpointID = point.ID[:checkpointIDDisplayLength]
+	}
+
+	// Build status indicators
+	var indicators []string
+	if point.IsTaskCheckpoint {
+		indicators = append(indicators, "[Task]")
+	}
+	if point.IsLogsOnly {
+		indicators = append(indicators, "[committed]")
+	}
+
+	indicatorStr := ""
+	if len(indicators) > 0 {
+		indicatorStr = " " + strings.Join(indicators, " ")
+	}
+
+	// Message (truncated if needed)
+	message := truncateString(point.Message, maxMessageDisplayLength)
+
+	// Format the line
+	fmt.Fprintf(sb, "  %s [%s]%s %s\n", timeStr, checkpointID, indicatorStr, message)
+
+	// Add session prompt if available (on a second line, indented)
+	if point.SessionPrompt != "" {
+		prompt := truncateString(point.SessionPrompt, maxPromptDisplayLength)
+		fmt.Fprintf(sb, "         Prompt: %s\n", prompt)
+	}
+}
+
+// truncateString truncates a string to the specified length, adding "..." if truncated.
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
 }

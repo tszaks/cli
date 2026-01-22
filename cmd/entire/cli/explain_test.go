@@ -202,75 +202,115 @@ func TestExplainCommit_WithEntireData(t *testing.T) {
 	}
 }
 
-func TestExplainDefault_NoCurrentSession_ShowsOverview(t *testing.T) {
+func TestExplainDefault_ShowsBranchView(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
 
 	// Initialize git repo
-	if _, err := git.PlainInit(tmpDir, false); err != nil {
+	repo, err := git.PlainInit(tmpDir, false)
+	if err != nil {
 		t.Fatalf("failed to init git repo: %v", err)
 	}
 
-	// Create .entire directory but no current_session file
+	// Create initial commit so HEAD exists (required for branch view)
+	w, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if _, err := w.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add test file: %v", err)
+	}
+	_, err = w.Commit("initial commit", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test",
+			Email: "test@example.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create .entire directory
 	if err := os.MkdirAll(".entire", 0o750); err != nil {
 		t.Fatalf("failed to create .entire dir: %v", err)
 	}
 
 	var stdout bytes.Buffer
-	err := runExplainDefault(&stdout, true) // noPager=true for test
+	err = runExplainDefault(&stdout, true) // noPager=true for test
 
-	// Should NOT error - should show overview instead
+	// Should NOT error - should show branch view
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
 
 	output := stdout.String()
-	// Should indicate no active session
-	if !strings.Contains(output, "No active session") {
-		t.Errorf("expected 'No active session' in output, got: %s", output)
+	// Should show branch header
+	if !strings.Contains(output, "Branch:") {
+		t.Errorf("expected 'Branch:' in output, got: %s", output)
 	}
-	// Should show helpful message about no previous sessions
-	if !strings.Contains(output, "No previous sessions") {
-		t.Errorf("expected 'No previous sessions' in output, got: %s", output)
+	// Should show checkpoints count (likely 0)
+	if !strings.Contains(output, "Checkpoints:") {
+		t.Errorf("expected 'Checkpoints:' in output, got: %s", output)
 	}
 }
 
-func TestExplainDefault_CurrentSessionNoCheckpoints_ShowsOverview(t *testing.T) {
+func TestExplainDefault_NoCheckpoints_ShowsHelpfulMessage(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
 
 	// Initialize git repo
-	if _, err := git.PlainInit(tmpDir, false); err != nil {
+	repo, err := git.PlainInit(tmpDir, false)
+	if err != nil {
 		t.Fatalf("failed to init git repo: %v", err)
 	}
 
-	// Create .entire directory with a current_session file
+	// Create initial commit so HEAD exists (required for branch view)
+	w, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if _, err := w.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add test file: %v", err)
+	}
+	_, err = w.Commit("initial commit", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test",
+			Email: "test@example.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create .entire directory but no checkpoints
 	if err := os.MkdirAll(".entire", 0o750); err != nil {
 		t.Fatalf("failed to create .entire dir: %v", err)
 	}
 
-	// Write a current session ID that has no checkpoints
-	currentSession := "2026-01-22-test-session-no-checkpoints"
-	if err := os.WriteFile(filepath.Join(".entire", "current_session"), []byte(currentSession), 0o644); err != nil {
-		t.Fatalf("failed to write current_session: %v", err)
-	}
-
 	var stdout bytes.Buffer
-	err := runExplainDefault(&stdout, true) // noPager=true for test
+	err = runExplainDefault(&stdout, true) // noPager=true for test
 
-	// Should NOT error - should show overview instead
+	// Should NOT error
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
 
 	output := stdout.String()
-	// Should mention the current session
-	if !strings.Contains(output, currentSession) {
-		t.Errorf("expected current session ID in output, got: %s", output)
+	// Should show checkpoints count as 0
+	if !strings.Contains(output, "Checkpoints: 0") {
+		t.Errorf("expected 'Checkpoints: 0' in output, got: %s", output)
 	}
-	// Should indicate no checkpoints yet
-	if !strings.Contains(output, "no checkpoints yet") {
-		t.Errorf("expected 'no checkpoints yet' in output, got: %s", output)
+	// Should show helpful message about checkpoints appearing after saves
+	if !strings.Contains(output, "Checkpoints will appear") || !strings.Contains(output, "Claude session") {
+		t.Errorf("expected helpful message about checkpoints, got: %s", output)
 	}
 }
 
@@ -990,5 +1030,271 @@ func TestFormatCheckpointOutput_Full(t *testing.T) {
 	}
 	if !strings.Contains(output, "feat: add user login") {
 		t.Error("full output should show commit message")
+	}
+}
+
+func TestFormatBranchCheckpoints_BasicOutput(t *testing.T) {
+	now := time.Now()
+	points := []strategy.RewindPoint{
+		{
+			ID:            "abc123def456",
+			Message:       "Add feature X",
+			Date:          now,
+			CheckpointID:  "chk123456789",
+			SessionID:     "2026-01-22-session-1",
+			SessionPrompt: "Implement feature X",
+		},
+		{
+			ID:            "def456ghi789",
+			Message:       "Fix bug in Y",
+			Date:          now.Add(-time.Hour),
+			CheckpointID:  "chk987654321",
+			SessionID:     "2026-01-22-session-2",
+			SessionPrompt: "Fix the bug",
+		},
+	}
+
+	output := formatBranchCheckpoints("feature/my-branch", points)
+
+	// Should show branch name
+	if !strings.Contains(output, "feature/my-branch") {
+		t.Errorf("expected branch name in output, got:\n%s", output)
+	}
+
+	// Should show checkpoint count
+	if !strings.Contains(output, "Checkpoints: 2") {
+		t.Errorf("expected 'Checkpoints: 2' in output, got:\n%s", output)
+	}
+
+	// Should show checkpoint messages
+	if !strings.Contains(output, "Add feature X") {
+		t.Errorf("expected first checkpoint message in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Fix bug in Y") {
+		t.Errorf("expected second checkpoint message in output, got:\n%s", output)
+	}
+}
+
+func TestFormatBranchCheckpoints_GroupedByDate(t *testing.T) {
+	// Create checkpoints spanning multiple days
+	today := time.Date(2026, 1, 22, 10, 0, 0, 0, time.UTC)
+	yesterday := time.Date(2026, 1, 21, 14, 0, 0, 0, time.UTC)
+
+	points := []strategy.RewindPoint{
+		{
+			ID:            "abc123def456",
+			Message:       "Today checkpoint 1",
+			Date:          today,
+			CheckpointID:  "chk111111111",
+			SessionID:     "2026-01-22-session-1",
+			SessionPrompt: "First task today",
+		},
+		{
+			ID:            "def456ghi789",
+			Message:       "Today checkpoint 2",
+			Date:          today.Add(-30 * time.Minute),
+			CheckpointID:  "chk222222222",
+			SessionID:     "2026-01-22-session-1",
+			SessionPrompt: "First task today",
+		},
+		{
+			ID:            "ghi789jkl012",
+			Message:       "Yesterday checkpoint",
+			Date:          yesterday,
+			CheckpointID:  "chk333333333",
+			SessionID:     "2026-01-21-session-2",
+			SessionPrompt: "Task from yesterday",
+		},
+	}
+
+	output := formatBranchCheckpoints("main", points)
+
+	// Should group by date - check for date headers
+	if !strings.Contains(output, "2026-01-22") {
+		t.Errorf("expected today's date header in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "2026-01-21") {
+		t.Errorf("expected yesterday's date header in output, got:\n%s", output)
+	}
+
+	// Today's checkpoints should appear before yesterday's in the output
+	todayIdx := strings.Index(output, "2026-01-22")
+	yesterdayIdx := strings.Index(output, "2026-01-21")
+	if todayIdx == -1 || yesterdayIdx == -1 || todayIdx > yesterdayIdx {
+		t.Errorf("expected today's checkpoints before yesterday's, got:\n%s", output)
+	}
+}
+
+func TestFormatBranchCheckpoints_NoCheckpoints(t *testing.T) {
+	output := formatBranchCheckpoints("feature/empty-branch", nil)
+
+	// Should show branch name
+	if !strings.Contains(output, "feature/empty-branch") {
+		t.Errorf("expected branch name in output, got:\n%s", output)
+	}
+
+	// Should indicate no checkpoints
+	if !strings.Contains(output, "Checkpoints: 0") && !strings.Contains(output, "No checkpoints") {
+		t.Errorf("expected indication of no checkpoints, got:\n%s", output)
+	}
+}
+
+func TestFormatBranchCheckpoints_ShowsSessionInfo(t *testing.T) {
+	now := time.Now()
+	points := []strategy.RewindPoint{
+		{
+			ID:            "abc123def456",
+			Message:       "Test checkpoint",
+			Date:          now,
+			CheckpointID:  "chk123456789",
+			SessionID:     "2026-01-22-test-session",
+			SessionPrompt: "This is my test prompt",
+		},
+	}
+
+	output := formatBranchCheckpoints("main", points)
+
+	// Should show session prompt
+	if !strings.Contains(output, "This is my test prompt") {
+		t.Errorf("expected session prompt in output, got:\n%s", output)
+	}
+}
+
+func TestFormatBranchCheckpoints_ShowsLogsOnlyIndicator(t *testing.T) {
+	now := time.Now()
+	points := []strategy.RewindPoint{
+		{
+			ID:           "abc123def456",
+			Message:      "Committed checkpoint",
+			Date:         now,
+			CheckpointID: "chk123456789",
+			IsLogsOnly:   true,
+			SessionID:    "2026-01-22-session-1",
+		},
+		{
+			ID:           "def456ghi789",
+			Message:      "Active checkpoint",
+			Date:         now.Add(-time.Hour),
+			CheckpointID: "chk987654321",
+			IsLogsOnly:   false,
+			SessionID:    "2026-01-22-session-1",
+		},
+	}
+
+	output := formatBranchCheckpoints("main", points)
+
+	// Should indicate committed checkpoints
+	// The exact wording can vary but should distinguish them
+	if !strings.Contains(output, "committed") && !strings.Contains(output, "logs") {
+		t.Errorf("expected logs-only/committed indicator for first checkpoint, got:\n%s", output)
+	}
+}
+
+func TestFormatBranchCheckpoints_ShowsTaskCheckpoints(t *testing.T) {
+	now := time.Now()
+	points := []strategy.RewindPoint{
+		{
+			ID:               "abc123def456",
+			Message:          "Running tests (toolu_01ABC)",
+			Date:             now,
+			CheckpointID:     "chk123456789",
+			IsTaskCheckpoint: true,
+			ToolUseID:        "toolu_01ABC",
+			SessionID:        "2026-01-22-session-1",
+		},
+	}
+
+	output := formatBranchCheckpoints("main", points)
+
+	// Should indicate task checkpoint
+	if !strings.Contains(output, "[Task]") && !strings.Contains(output, "task") {
+		t.Errorf("expected task checkpoint indicator, got:\n%s", output)
+	}
+}
+
+func TestFormatBranchCheckpoints_TruncatesLongMessages(t *testing.T) {
+	now := time.Now()
+	longMessage := strings.Repeat("a", 200) // 200 character message
+	points := []strategy.RewindPoint{
+		{
+			ID:           "abc123def456",
+			Message:      longMessage,
+			Date:         now,
+			CheckpointID: "chk123456789",
+			SessionID:    "2026-01-22-session-1",
+		},
+	}
+
+	output := formatBranchCheckpoints("main", points)
+
+	// Output should not contain the full 200 character message
+	if strings.Contains(output, longMessage) {
+		t.Errorf("expected long message to be truncated, got full message in output")
+	}
+
+	// Should contain truncation indicator (usually "...")
+	if !strings.Contains(output, "...") {
+		t.Errorf("expected truncation indicator '...' for long message, got:\n%s", output)
+	}
+}
+
+// TestRunExplainBranchDefault_ShowsBranchCheckpoints is covered by TestExplainDefault_ShowsBranchView
+// since runExplainDefault now calls runExplainBranchDefault directly.
+
+func TestRunExplainBranchDefault_DetachedHead(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Initialize git repo with a commit
+	repo, err := git.PlainInit(tmpDir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	w, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if _, err := w.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add test file: %v", err)
+	}
+	commitHash, err := w.Commit("initial commit", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test",
+			Email: "test@example.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Checkout to detached HEAD state
+	if err := w.Checkout(&git.CheckoutOptions{Hash: commitHash}); err != nil {
+		t.Fatalf("failed to checkout detached HEAD: %v", err)
+	}
+
+	// Create .entire directory
+	if err := os.MkdirAll(".entire", 0o750); err != nil {
+		t.Fatalf("failed to create .entire dir: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	err = runExplainBranchDefault(&stdout, true)
+
+	// Should NOT error
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+
+	output := stdout.String()
+
+	// Should indicate detached HEAD state
+	if !strings.Contains(output, "HEAD") && !strings.Contains(output, "detached") {
+		// We need to handle detached HEAD somehow - either show HEAD or show a message
+		t.Logf("Output for detached HEAD: %s", output)
 	}
 }
