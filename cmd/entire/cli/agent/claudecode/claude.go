@@ -334,6 +334,7 @@ func SanitizePathForClaude(path string) string {
 // GetTranscriptPosition returns the current line count of a Claude Code transcript.
 // Claude Code uses JSONL format, so position is the number of lines.
 // This is a lightweight operation that only counts lines without parsing JSON.
+// Uses bufio.Reader to handle arbitrarily long lines (no size limit).
 // Returns 0 if the file doesn't exist or is empty.
 func (c *ClaudeCodeAgent) GetTranscriptPosition(path string) (int, error) {
 	if path == "" {
@@ -349,16 +350,18 @@ func (c *ClaudeCodeAgent) GetTranscriptPosition(path string) (int, error) {
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, scannerBufferSize), scannerBufferSize)
-
+	reader := bufio.NewReader(file)
 	lineCount := 0
-	for scanner.Scan() {
-		lineCount++
-	}
 
-	if err := scanner.Err(); err != nil {
-		return 0, fmt.Errorf("failed to scan transcript: %w", err)
+	for {
+		_, err := reader.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, fmt.Errorf("failed to read transcript: %w", err)
+		}
+		lineCount++
 	}
 
 	return lineCount, nil
@@ -366,6 +369,7 @@ func (c *ClaudeCodeAgent) GetTranscriptPosition(path string) (int, error) {
 
 // ExtractModifiedFilesFromOffset extracts files modified since a given line number.
 // For Claude Code (JSONL format), offset is the starting line number.
+// Uses bufio.Reader to handle arbitrarily long lines (no size limit).
 // Returns:
 //   - files: list of file paths modified by Claude (from Write/Edit tools)
 //   - currentPosition: total number of lines in the file
@@ -381,26 +385,30 @@ func (c *ClaudeCodeAgent) ExtractModifiedFilesFromOffset(path string, startOffse
 	}
 	defer file.Close()
 
+	reader := bufio.NewReader(file)
 	var lines []TranscriptLine
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, scannerBufferSize), scannerBufferSize)
-
 	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		if lineNum <= startOffset {
-			continue
+
+	for {
+		lineData, readErr := reader.ReadBytes('\n')
+		if readErr != nil && readErr != io.EOF {
+			return nil, 0, fmt.Errorf("failed to read transcript: %w", readErr)
 		}
 
-		var line TranscriptLine
-		if parseErr := json.Unmarshal(scanner.Bytes(), &line); parseErr != nil {
-			continue // Skip malformed lines
+		if len(lineData) > 0 {
+			lineNum++
+			if lineNum > startOffset {
+				var line TranscriptLine
+				if parseErr := json.Unmarshal(lineData, &line); parseErr == nil {
+					lines = append(lines, line)
+				}
+				// Skip malformed lines silently
+			}
 		}
-		lines = append(lines, line)
-	}
 
-	if scanErr := scanner.Err(); scanErr != nil {
-		return nil, 0, fmt.Errorf("failed to scan transcript: %w", scanErr)
+		if readErr == io.EOF {
+			break
+		}
 	}
 
 	return ExtractModifiedFiles(lines), lineNum, nil
