@@ -98,8 +98,14 @@ func TestCheckpointID_Path(t *testing.T) {
 		input string
 		want  string
 	}{
+		// Standard 12-char IDs
 		{"a1b2c3d4e5f6", "a1/b2c3d4e5f6"},
 		{"abcdef123456", "ab/cdef123456"},
+		// Edge cases: short strings (shouldn't happen in practice, but test the fallback)
+		{"", ""},
+		{"a", "a"},
+		{"ab", "ab"},
+		{"abc", "ab/c"},
 	}
 
 	for _, tt := range tests {

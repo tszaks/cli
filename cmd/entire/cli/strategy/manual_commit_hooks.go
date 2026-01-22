@@ -80,13 +80,11 @@ func (s *ManualCommitStrategy) CommitMsg(commitMsgFile string) error {
 
 	message := string(content)
 
-	// Check if our trailer is present
-	cpID, found := trailers.ParseCheckpoint(message)
-	if !found || cpID.IsEmpty() {
+	// Check if our trailer is present (ParseCheckpoint validates format, so found==true means valid)
+	if _, found := trailers.ParseCheckpoint(message); !found {
 		// No trailer, nothing to do
 		return nil
 	}
-	_ = cpID // Used only to verify trailer presence
 
 	// Check if there's any user content (non-comment, non-trailer lines)
 	if !hasUserContent(message) {
@@ -263,9 +261,8 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 
 	message := string(content)
 
-	// Get or generate checkpoint ID
-	existingCpID, found := trailers.ParseCheckpoint(message)
-	if found && !existingCpID.IsEmpty() {
+	// Get or generate checkpoint ID (ParseCheckpoint validates format, so found==true means valid)
+	if existingCpID, found := trailers.ParseCheckpoint(message); found {
 		// Trailer already exists (e.g., amend) - keep it
 		logging.Debug(logCtx, "prepare-commit-msg: trailer already exists",
 			slog.String("strategy", "manual-commit"),
@@ -367,9 +364,9 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		return nil //nolint:nilerr // Hook must be silent on failure
 	}
 
-	// Check if commit has checkpoint trailer
+	// Check if commit has checkpoint trailer (ParseCheckpoint validates format)
 	cpID, found := trailers.ParseCheckpoint(commit.Message)
-	if !found || cpID.IsEmpty() {
+	if !found {
 		// No trailer - user removed it, treat as manual commit
 		logging.Debug(logCtx, "post-commit: no checkpoint trailer",
 			slog.String("strategy", "manual-commit"),

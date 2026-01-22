@@ -326,10 +326,9 @@ func (s *AutoCommitStrategy) GetRewindPoints(limit int) ([]RewindPoint, error) {
 		if !found {
 			return nil
 		}
-		checkpointID := cpID.String()
 
 		// Look up metadata from sharded path
-		checkpointPath := paths.CheckpointPath(checkpointID)
+		checkpointPath := cpID.Path()
 		metadata, err := ReadCheckpointMetadata(metadataTree, checkpointPath)
 		if err != nil {
 			// Checkpoint exists in commit but no metadata found - skip this commit
@@ -362,7 +361,7 @@ func (s *AutoCommitStrategy) GetRewindPoints(limit int) ([]RewindPoint, error) {
 			MetadataDir:      metadataDir,
 			Date:             c.Author.When,
 			IsLogsOnly:       isLogsOnly,
-			CheckpointID:     checkpointID,
+			CheckpointID:     cpID.String(),
 			IsTaskCheckpoint: metadata.IsTask,
 			ToolUseID:        metadata.ToolUseID,
 			Agent:            metadata.Agent,
