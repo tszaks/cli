@@ -169,7 +169,7 @@ func (s *AutoCommitStrategy) SaveChanges(ctx SaveContext) error {
 
 	// Step 2: Commit metadata to entire/sessions branch using sharded path
 	// Path is <checkpointID[:2]>/<checkpointID[2:]>/ for direct lookup
-	_, err = s.commitMetadataToMetadataBranch(repo, ctx, checkpointID)
+	_, err = s.commitMetadataToMetadataBranch(repo, ctx, cpID)
 	if err != nil {
 		return fmt.Errorf("failed to commit metadata to entire/sessions branch: %w", err)
 	}
@@ -249,7 +249,7 @@ func (s *AutoCommitStrategy) commitCodeToActive(repo *git.Repository, ctx SaveCo
 // Metadata is stored at sharded path: <checkpointID[:2]>/<checkpointID[2:]>/
 // This allows direct lookup from the checkpoint ID trailer on the code commit.
 // Uses checkpoint.WriteCommitted for git operations.
-func (s *AutoCommitStrategy) commitMetadataToMetadataBranch(repo *git.Repository, ctx SaveContext, checkpointID string) (plumbing.Hash, error) {
+func (s *AutoCommitStrategy) commitMetadataToMetadataBranch(repo *git.Repository, ctx SaveContext, checkpointID id.CheckpointID) (plumbing.Hash, error) {
 	store, err := s.getCheckpointStore()
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("failed to get checkpoint store: %w", err)
@@ -548,7 +548,7 @@ func (s *AutoCommitStrategy) SaveTaskCheckpoint(ctx TaskCheckpointContext) error
 	}
 
 	// Step 2: Commit task metadata to entire/sessions branch at sharded path
-	_, err = s.commitTaskMetadataToMetadataBranch(repo, ctx, checkpointID)
+	_, err = s.commitTaskMetadataToMetadataBranch(repo, ctx, cpID)
 	if err != nil {
 		return fmt.Errorf("failed to commit task metadata to entire/sessions branch: %w", err)
 	}
@@ -664,7 +664,7 @@ func (s *AutoCommitStrategy) commitTaskCodeToActive(repo *git.Repository, ctx Ta
 // Returns the metadata commit hash.
 // When IsIncremental is true, only writes the incremental checkpoint file, skipping transcripts.
 // Uses checkpoint.WriteCommitted for git operations.
-func (s *AutoCommitStrategy) commitTaskMetadataToMetadataBranch(repo *git.Repository, ctx TaskCheckpointContext, checkpointID string) (plumbing.Hash, error) {
+func (s *AutoCommitStrategy) commitTaskMetadataToMetadataBranch(repo *git.Repository, ctx TaskCheckpointContext, checkpointID id.CheckpointID) (plumbing.Hash, error) {
 	store, err := s.getCheckpointStore()
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("failed to get checkpoint store: %w", err)
@@ -893,7 +893,7 @@ func (s *AutoCommitStrategy) GetSessionContext(sessionID string) string {
 		return ""
 	}
 
-	result, err := store.ReadCommitted(context.Background(), cp.CheckpointID.String())
+	result, err := store.ReadCommitted(context.Background(), cp.CheckpointID)
 	if err != nil || result == nil {
 		return ""
 	}
@@ -913,7 +913,7 @@ func (s *AutoCommitStrategy) GetCheckpointLog(cp Checkpoint) ([]byte, error) {
 		return nil, fmt.Errorf("failed to get checkpoint store: %w", err)
 	}
 
-	result, err := store.ReadCommitted(context.Background(), cp.CheckpointID.String())
+	result, err := store.ReadCommitted(context.Background(), cp.CheckpointID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read checkpoint: %w", err)
 	}
@@ -1007,7 +1007,7 @@ func (s *AutoCommitStrategy) ListOrphanedItems() ([]CleanupItem, error) {
 		}
 		// Only consider checkpoints created by this strategy
 		if result.Metadata.Strategy == StrategyNameAutoCommit || result.Metadata.Strategy == StrategyNameDual {
-			autoCommitCheckpoints[cp.CheckpointID] = true
+			autoCommitCheckpoints[cp.CheckpointID.String()] = true
 		}
 	}
 

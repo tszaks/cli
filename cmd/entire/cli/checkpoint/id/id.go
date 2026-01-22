@@ -5,12 +5,15 @@ package id
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"regexp"
 )
 
 // CheckpointID is a 12-character hex identifier for checkpoints.
 // It's used to link code commits to metadata on the entire/sessions branch.
+//
+//nolint:recvcheck // UnmarshalJSON requires pointer receiver, others use value receiver - standard pattern
 type CheckpointID string
 
 // EmptyCheckpointID represents an unset or invalid checkpoint ID.
@@ -78,4 +81,33 @@ func (id CheckpointID) Path() string {
 		return string(id)
 	}
 	return string(id[:2]) + "/" + string(id[2:])
+}
+
+// MarshalJSON implements json.Marshaler.
+func (id CheckpointID) MarshalJSON() ([]byte, error) {
+	data, err := json.Marshal(string(id))
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal checkpoint ID: %w", err)
+	}
+	return data, nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler with validation.
+// Returns an error if the JSON string is not a valid 12-character hex ID.
+// Empty strings are allowed and result in EmptyCheckpointID.
+func (id *CheckpointID) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("failed to unmarshal checkpoint ID: %w", err)
+	}
+	// Allow empty strings (represents unset checkpoint ID)
+	if s == "" {
+		*id = EmptyCheckpointID
+		return nil
+	}
+	if err := Validate(s); err != nil {
+		return err
+	}
+	*id = CheckpointID(s)
+	return nil
 }

@@ -149,13 +149,12 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(limit int) ([]RewindPoint
 
 	// Build map of checkpoint ID -> checkpoint info
 	// Checkpoint ID is the stable link from Entire-Checkpoint trailer
-	checkpointInfoMap := make(map[string]CheckpointInfo)
+	checkpointInfoMap := make(map[id.CheckpointID]CheckpointInfo)
 	for _, cp := range checkpoints {
-		if cp.CheckpointID != "" {
+		if !cp.CheckpointID.IsEmpty() {
 			checkpointInfoMap[cp.CheckpointID] = cp
 		}
 	}
-	// Note: CheckpointInfo.CheckpointID is string (JSON serialization), not id.CheckpointID
 
 	// Get metadata branch tree for reading session prompts (best-effort, ignore errors)
 	metadataTree, _ := GetMetadataBranchTree(repo) //nolint:errcheck // Best-effort for session prompts
@@ -188,10 +187,8 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(limit int) ([]RewindPoint
 		if !found {
 			return nil
 		}
-		checkpointID := cpID.String()
-
 		// Check if this checkpoint ID has metadata on entire/sessions
-		cpInfo, found := checkpointInfoMap[checkpointID]
+		cpInfo, found := checkpointInfoMap[cpID]
 		if !found {
 			return nil
 		}
@@ -224,7 +221,7 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(limit int) ([]RewindPoint
 			Message:        message,
 			Date:           c.Author.When,
 			IsLogsOnly:     true,
-			CheckpointID:   id.CheckpointID(cpInfo.CheckpointID), // Convert from JSON string
+			CheckpointID:   cpInfo.CheckpointID,
 			Agent:          cpInfo.Agent,
 			SessionID:      cpInfo.SessionID,
 			SessionPrompt:  sessionPrompt,
@@ -638,7 +635,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 	}
 
 	// Read full checkpoint data including archived sessions
-	result, err := store.ReadCommitted(context.Background(), point.CheckpointID.String())
+	result, err := store.ReadCommitted(context.Background(), point.CheckpointID)
 	if err != nil {
 		return fmt.Errorf("failed to read checkpoint: %w", err)
 	}

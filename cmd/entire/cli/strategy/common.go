@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/trailers"
 
@@ -84,7 +85,12 @@ func ListCheckpoints() ([]CheckpointInfo, error) {
 			}
 
 			// Reconstruct checkpoint ID: <bucket><remaining>
-			checkpointID := bucketEntry.Name + checkpointEntry.Name
+			checkpointIDStr := bucketEntry.Name + checkpointEntry.Name
+			checkpointID, cpErr := id.NewCheckpointID(checkpointIDStr)
+			if cpErr != nil {
+				// Skip invalid checkpoint IDs
+				continue
+			}
 
 			info := CheckpointInfo{
 				CheckpointID: checkpointID,

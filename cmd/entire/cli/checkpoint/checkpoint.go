@@ -11,6 +11,7 @@ import (
 	"errors"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -82,7 +83,7 @@ type Store interface {
 
 	// ReadCommitted reads a committed checkpoint by ID.
 	// Returns nil, nil if the checkpoint does not exist.
-	ReadCommitted(ctx context.Context, checkpointID string) (*ReadCommittedResult, error)
+	ReadCommitted(ctx context.Context, checkpointID id.CheckpointID) (*ReadCommittedResult, error)
 
 	// ListCommitted lists all committed checkpoints.
 	ListCommitted(ctx context.Context) ([]CommittedInfo, error)
@@ -174,7 +175,7 @@ type TemporaryInfo struct {
 // WriteCommittedOptions contains options for writing a committed checkpoint.
 type WriteCommittedOptions struct {
 	// CheckpointID is the stable 12-hex-char identifier
-	CheckpointID string
+	CheckpointID id.CheckpointID
 
 	// SessionID is the session identifier
 	SessionID string
@@ -283,7 +284,7 @@ type ArchivedSession struct {
 // CommittedInfo contains summary information about a committed checkpoint.
 type CommittedInfo struct {
 	// CheckpointID is the stable 12-hex-char identifier
-	CheckpointID string
+	CheckpointID id.CheckpointID
 
 	// SessionID is the session identifier (most recent session for multi-session checkpoints)
 	SessionID string
@@ -313,13 +314,13 @@ type CommittedInfo struct {
 
 // CommittedMetadata contains the metadata stored in metadata.json for each checkpoint.
 type CommittedMetadata struct {
-	CheckpointID     string    `json:"checkpoint_id"`
-	SessionID        string    `json:"session_id"`
-	Strategy         string    `json:"strategy"`
-	CreatedAt        time.Time `json:"created_at"`
-	Branch           string    `json:"branch,omitempty"` // Branch where checkpoint was created (empty if detached HEAD)
-	CheckpointsCount int       `json:"checkpoints_count"`
-	FilesTouched     []string  `json:"files_touched"`
+	CheckpointID     id.CheckpointID `json:"checkpoint_id"`
+	SessionID        string          `json:"session_id"`
+	Strategy         string          `json:"strategy"`
+	CreatedAt        time.Time       `json:"created_at"`
+	Branch           string          `json:"branch,omitempty"` // Branch where checkpoint was created (empty if detached HEAD)
+	CheckpointsCount int             `json:"checkpoints_count"`
+	FilesTouched     []string        `json:"files_touched"`
 
 	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor")
 	Agent string `json:"agent,omitempty"`

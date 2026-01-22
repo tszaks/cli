@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,8 +34,8 @@ func (s *GitStore) WriteCommitted(ctx context.Context, opts WriteCommittedOption
 	_ = ctx // Reserved for future use
 
 	// Validate identifiers to prevent path traversal and malformed data
-	if err := id.Validate(opts.CheckpointID); err != nil {
-		return fmt.Errorf("invalid checkpoint options: %w", err)
+	if opts.CheckpointID.IsEmpty() {
+		return errors.New("invalid checkpoint options: checkpoint ID is required")
 	}
 	if err := paths.ValidateSessionID(opts.SessionID); err != nil {
 		return fmt.Errorf("invalid checkpoint options: %w", err)
@@ -58,7 +59,7 @@ func (s *GitStore) WriteCommitted(ctx context.Context, opts WriteCommittedOption
 	}
 
 	// Use sharded path: <id[:2]>/<id[2:]>/
-	basePath := paths.CheckpointPath(opts.CheckpointID) + "/"
+	basePath := opts.CheckpointID.Path() + "/"
 
 	// Track task metadata path for commit trailer
 	var taskMetadataPath string
@@ -551,7 +552,7 @@ type taskCheckpointData struct {
 // Returns nil, nil if the checkpoint doesn't exist.
 //
 
-func (s *GitStore) ReadCommitted(ctx context.Context, checkpointID string) (*ReadCommittedResult, error) {
+func (s *GitStore) ReadCommitted(ctx context.Context, checkpointID id.CheckpointID) (*ReadCommittedResult, error) {
 	_ = ctx // Reserved for future use
 
 	tree, err := s.getSessionsBranchTree()
@@ -559,7 +560,7 @@ func (s *GitStore) ReadCommitted(ctx context.Context, checkpointID string) (*Rea
 		return nil, nil //nolint:nilnil,nilerr // No sessions branch means no checkpoint exists
 	}
 
-	checkpointPath := paths.CheckpointPath(checkpointID)
+	checkpointPath := checkpointID.Path()
 	checkpointTree, err := tree.Tree(checkpointPath)
 	if err != nil {
 		return nil, nil //nolint:nilnil,nilerr // Checkpoint directory not found
@@ -650,7 +651,12 @@ func (s *GitStore) ListCommitted(ctx context.Context) ([]CommittedInfo, error) {
 			}
 
 			// Reconstruct checkpoint ID: <bucket><remaining>
-			checkpointID := bucketEntry.Name + checkpointEntry.Name
+			checkpointIDStr := bucketEntry.Name + checkpointEntry.Name
+			checkpointID, cpIDErr := id.NewCheckpointID(checkpointIDStr)
+			if cpIDErr != nil {
+				// Skip invalid checkpoint IDs (shouldn't happen with our own data)
+				continue
+			}
 
 			info := CommittedInfo{
 				CheckpointID: checkpointID,
@@ -687,7 +693,7 @@ func (s *GitStore) ListCommitted(ctx context.Context) ([]CommittedInfo, error) {
 }
 
 // GetTranscript retrieves the transcript for a specific checkpoint ID.
-func (s *GitStore) GetTranscript(ctx context.Context, checkpointID string) ([]byte, error) {
+func (s *GitStore) GetTranscript(ctx context.Context, checkpointID id.CheckpointID) ([]byte, error) {
 	result, err := s.ReadCommitted(ctx, checkpointID)
 	if err != nil {
 		return nil, err
@@ -706,7 +712,7 @@ func (s *GitStore) GetTranscript(ctx context.Context, checkpointID string) ([]by
 // Returns ErrCheckpointNotFound if the checkpoint doesn't exist.
 // Returns ErrNoTranscript if the checkpoint exists but has no transcript.
 func (s *GitStore) GetSessionLog(cpID id.CheckpointID) ([]byte, string, error) {
-	result, err := s.ReadCommitted(context.Background(), cpID.String())
+	result, err := s.ReadCommitted(context.Background(), cpID)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to read checkpoint: %w", err)
 	}

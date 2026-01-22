@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"entire.io/cli/cmd/entire/cli/checkpoint"
+	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/trailers"
 	"github.com/go-git/go-git/v5"
@@ -1029,7 +1030,7 @@ func TestShadowStrategy_FilesTouched_OnlyModifiedFiles(t *testing.T) {
 	}
 
 	// Now condense the session
-	checkpointID := "a1b2c3d4e5f6"
+	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
 	result, err := s.CondenseSession(repo, checkpointID, state)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
@@ -1381,7 +1382,7 @@ func TestShadowStrategy_CondenseSession_EphemeralBranchTrailer(t *testing.T) {
 	}
 
 	// Condense the session
-	checkpointID := "a1b2c3d4e5f6"
+	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
 	_, err = s.CondenseSession(repo, checkpointID, state)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)

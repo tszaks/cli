@@ -149,7 +149,7 @@ func (s *ManualCommitStrategy) GetCheckpointLog(checkpoint Checkpoint) ([]byte, 
 	if checkpoint.CheckpointID.IsEmpty() {
 		return nil, ErrNoMetadata
 	}
-	return s.getCheckpointLog(checkpoint.CheckpointID.String())
+	return s.getCheckpointLog(checkpoint.CheckpointID)
 }
 
 // GetAdditionalSessions implements SessionSource interface.

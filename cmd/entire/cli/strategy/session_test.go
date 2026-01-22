@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"entire.io/cli/cmd/entire/cli/checkpoint"
+	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/trailers"
 
@@ -17,23 +18,22 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-const (
-	testSessionID    = "2025-01-15-test-session"
-	testCheckpointID = "abc123def456"
-)
+const testSessionID = "2025-01-15-test-session"
+
+var testCheckpointID = id.MustCheckpointID("abc123def456")
 
 func TestSessionStruct(t *testing.T) {
 	now := time.Now()
 	checkpoints := []Checkpoint{
 		{
-			CheckpointID:     "abc123def456",
+			CheckpointID:     id.MustCheckpointID("abc123def456"),
 			Message:          "First checkpoint",
 			Timestamp:        now.Add(-time.Hour),
 			IsTaskCheckpoint: false,
 			ToolUseID:        "",
 		},
 		{
-			CheckpointID:     "def456abc789",
+			CheckpointID:     id.MustCheckpointID("def456abc789"),
 			Message:          "Task checkpoint",
 			Timestamp:        now,
 			IsTaskCheckpoint: true,
@@ -356,7 +356,7 @@ func TestListSessionsMultiSessionCheckpoint(t *testing.T) {
 	// - session-B: latest at root level
 	sessionA := "2025-01-14-session-A"
 	sessionB := "2025-01-15-session-B"
-	checkpointID := "multi12345678"
+	checkpointID := id.MustCheckpointID("ab12cd34ef56")
 
 	createTestMultiSessionCheckpoint(t, repo, checkpointID, sessionB, []string{sessionA, sessionB})
 
@@ -388,18 +388,18 @@ func TestListSessionsMultiSessionCheckpoint(t *testing.T) {
 		if len(sess.Checkpoints) != 1 {
 			t.Errorf("Session %q has %d checkpoints, want 1", sess.ID, len(sess.Checkpoints))
 		}
-		if len(sess.Checkpoints) > 0 && sess.Checkpoints[0].CheckpointID.String() != checkpointID {
+		if len(sess.Checkpoints) > 0 && sess.Checkpoints[0].CheckpointID != checkpointID {
 			t.Errorf("Session %q checkpoint ID = %q, want %q", sess.ID, sess.Checkpoints[0].CheckpointID, checkpointID)
 		}
 	}
 }
 
 // Helper function to create a test metadata branch with a multi-session checkpoint
-func createTestMultiSessionCheckpoint(t *testing.T, repo *git.Repository, checkpointID, primarySessionID string, allSessionIDs []string) {
+func createTestMultiSessionCheckpoint(t *testing.T, repo *git.Repository, checkpointID id.CheckpointID, primarySessionID string, allSessionIDs []string) {
 	t.Helper()
 
 	entries := make(map[string]object.TreeEntry)
-	checkpointPath := paths.CheckpointPath(checkpointID)
+	checkpointPath := checkpointID.Path()
 
 	// Create metadata.json with SessionIDs array
 	metadata := CheckpointInfo{
@@ -467,14 +467,14 @@ func createTestMetadataBranch(t *testing.T, repo *git.Repository, sessionID stri
 }
 
 // Helper function to create a test metadata branch with a checkpoint and optional prompt
-func createTestMetadataBranchWithPrompt(t *testing.T, repo *git.Repository, sessionID, checkpointID, prompt string) {
+func createTestMetadataBranchWithPrompt(t *testing.T, repo *git.Repository, sessionID string, checkpointID id.CheckpointID, prompt string) {
 	t.Helper()
 
 	// Create empty tree for orphan commit
 	entries := make(map[string]object.TreeEntry)
 
 	// Add metadata.json
-	checkpointPath := paths.CheckpointPath(checkpointID)
+	checkpointPath := checkpointID.Path()
 	metadata := CheckpointInfo{
 		CheckpointID: checkpointID,
 		SessionID:    sessionID,

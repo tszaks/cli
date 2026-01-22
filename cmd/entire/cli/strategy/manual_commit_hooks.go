@@ -186,7 +186,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 	sessionsWithContent := s.filterSessionsWithNewContent(repo, sessions)
 
 	// Determine which checkpoint ID to use
-	var checkpointID string
+	var checkpointID id.CheckpointID
 	var hasNewContent bool
 	var reusedSession *SessionState
 
@@ -234,14 +234,14 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 
 		stagedFiles := getStagedFiles(repo)
 		for _, session := range currentSessions {
-			if session.LastCheckpointID != "" &&
+			if !session.LastCheckpointID.IsEmpty() &&
 				(len(session.FilesTouched) == 0 || hasOverlappingFiles(stagedFiles, session.FilesTouched)) {
 				checkpointID = session.LastCheckpointID
 				reusedSession = session
 				break
 			}
 		}
-		if checkpointID == "" {
+		if checkpointID.IsEmpty() {
 			// No new content and no previous checkpoint to reference (or staged files are unrelated)
 			logging.Debug(logCtx, "prepare-commit-msg: no content to link",
 				slog.String("strategy", "manual-commit"),
@@ -278,7 +278,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 		if err != nil {
 			return fmt.Errorf("failed to generate checkpoint ID: %w", err)
 		}
-		checkpointID = cpID.String()
+		checkpointID = cpID
 	}
 	// Otherwise checkpointID is already set to LastCheckpointID from above
 
@@ -321,16 +321,16 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 			)
 			return nil
 		}
-		message = addCheckpointTrailer(message, checkpointID)
+		message = addCheckpointTrailer(message, checkpointID.String())
 	} else {
 		// Normal editor flow: add trailer with explanatory comment (will be stripped by git)
-		message = addCheckpointTrailerWithComment(message, checkpointID, agentName, displayPrompt)
+		message = addCheckpointTrailerWithComment(message, checkpointID.String(), agentName, displayPrompt)
 	}
 
 	logging.Info(logCtx, "prepare-commit-msg: trailer added",
 		slog.String("strategy", "manual-commit"),
 		slog.String("source", source),
-		slog.String("checkpoint_id", checkpointID),
+		slog.String("checkpoint_id", checkpointID.String()),
 		slog.Bool("has_new_content", hasNewContent),
 	)
 
@@ -369,7 +369,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 	}
 
 	// Check if commit has checkpoint trailer (ParseCheckpoint validates format)
-	cpID, found := trailers.ParseCheckpoint(commit.Message)
+	checkpointID, found := trailers.ParseCheckpoint(commit.Message)
 	if !found {
 		// No trailer - user removed it, treat as manual commit
 		logging.Debug(logCtx, "post-commit: no checkpoint trailer",
@@ -377,7 +377,6 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		)
 		return nil
 	}
-	checkpointID := cpID.String()
 
 	worktreePath, err := GetWorktreePath()
 	if err != nil {
@@ -389,7 +388,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 	if err != nil || len(sessions) == 0 {
 		logging.Warn(logCtx, "post-commit: no active sessions despite trailer",
 			slog.String("strategy", "manual-commit"),
-			slog.String("checkpoint_id", checkpointID),
+			slog.String("checkpoint_id", checkpointID.String()),
 		)
 		return nil //nolint:nilerr // Intentional: hooks must be silent on failure
 	}
@@ -399,7 +398,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 	if len(sessionsWithContent) == 0 {
 		logging.Debug(logCtx, "post-commit: no new content to condense",
 			slog.String("strategy", "manual-commit"),
-			slog.String("checkpoint_id", checkpointID),
+			slog.String("checkpoint_id", checkpointID.String()),
 			slog.Int("sessions_found", len(sessions)),
 		)
 		// Still update BaseCommit for all sessions in this worktree
@@ -467,7 +466,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		logCtx := logging.WithComponent(context.Background(), "checkpoint")
 		logging.Info(logCtx, "session condensed",
 			slog.String("strategy", "manual-commit"),
-			slog.String("checkpoint_id", result.CheckpointID),
+			slog.String("checkpoint_id", result.CheckpointID.String()),
 			slog.Int("checkpoints_condensed", result.CheckpointsCount),
 			slog.Int("transcript_lines", result.TotalTranscriptLines),
 		)

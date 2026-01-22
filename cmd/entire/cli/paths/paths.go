@@ -42,8 +42,10 @@ const MetadataBranchName = "entire/sessions"
 // CheckpointPath returns the sharded storage path for a checkpoint ID.
 // Uses first 2 characters as shard (256 buckets), remaining as folder name.
 // Example: "a3b2c4d5e6f7" -> "a3/b2c4d5e6f7"
-func CheckpointPath(checkpointID string) string {
-	return id.CheckpointID(checkpointID).Path()
+//
+// Deprecated: Use checkpointID.Path() directly instead.
+func CheckpointPath(checkpointID id.CheckpointID) string {
+	return checkpointID.Path()
 }
 
 // repoRootCache caches the repository root to avoid repeated git commands.
