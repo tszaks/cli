@@ -208,9 +208,10 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 
 		// Filter to sessions where BaseCommit matches current HEAD
 		// This prevents reusing checkpoint IDs from old sessions
-		// Note: With the fix to PostCommit (always updating BaseCommit), sessions
-		// should always have current BaseCommit. If none match, we don't add a trailer
-		// rather than falling back to old sessions which could have stale checkpoint IDs.
+		// Note: BaseCommit is kept current both when new content is condensed (in the
+		// condensation process) and when no new content is found (via PostCommit when
+		// reusing checkpoint IDs). If none match, we don't add a trailer rather than
+		// falling back to old sessions which could have stale checkpoint IDs.
 		var currentSessions []*SessionState
 		for _, session := range sessions {
 			if session.BaseCommit == currentHeadHash {
