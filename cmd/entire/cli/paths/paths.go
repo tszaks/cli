@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -77,6 +78,7 @@ const AgentTrailerKey = "Entire-Agent"
 // repoRootCache caches the repository root to avoid repeated git commands.
 // The cache is keyed by the current working directory to handle directory changes.
 var (
+	repoRootMu       sync.RWMutex
 	repoRootCache    string
 	repoRootCacheDir string
 )
@@ -92,11 +94,16 @@ func RepoRoot() (string, error) {
 		cwd = ""
 	}
 
-	// Return cached value if we're in the same directory
+	// Check cache with read lock first
+	repoRootMu.RLock()
 	if repoRootCache != "" && repoRootCacheDir == cwd {
-		return repoRootCache, nil
+		cached := repoRootCache
+		repoRootMu.RUnlock()
+		return cached, nil
 	}
+	repoRootMu.RUnlock()
 
+	// Cache miss - get repo root and update cache with write lock
 	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 	output, err := cmd.Output()
@@ -104,16 +111,23 @@ func RepoRoot() (string, error) {
 		return "", fmt.Errorf("failed to get git repository root: %w", err)
 	}
 
-	repoRootCache = strings.TrimSpace(string(output))
+	root := strings.TrimSpace(string(output))
+
+	repoRootMu.Lock()
+	repoRootCache = root
 	repoRootCacheDir = cwd
-	return repoRootCache, nil
+	repoRootMu.Unlock()
+
+	return root, nil
 }
 
 // ClearRepoRootCache clears the cached repository root.
 // This is primarily useful for testing when changing directories.
 func ClearRepoRootCache() {
+	repoRootMu.Lock()
 	repoRootCache = ""
 	repoRootCacheDir = ""
+	repoRootMu.Unlock()
 }
 
 // RepoRootOr returns the git repository root directory, or the current directory
