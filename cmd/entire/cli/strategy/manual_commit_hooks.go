@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/stringutil"
@@ -207,6 +208,10 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 
 		// Filter to sessions where BaseCommit matches current HEAD
 		// This prevents reusing checkpoint IDs from old sessions
+		// Note: BaseCommit is kept current both when new content is condensed (in the
+		// condensation process) and when no new content is found (via PostCommit when
+		// reusing checkpoint IDs). If none match, we don't add a trailer rather than
+		// falling back to old sessions which could have stale checkpoint IDs.
 		var currentSessions []*SessionState
 		for _, session := range sessions {
 			if session.BaseCommit == currentHeadHash {
@@ -214,10 +219,16 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 			}
 		}
 
-		// If no sessions match current HEAD, fall back to all sessions
-		// (for backward compatibility with sessions created before BaseCommit tracking)
 		if len(currentSessions) == 0 {
-			currentSessions = sessions
+			// No sessions match current HEAD - don't try to reuse checkpoint IDs
+			// from old sessions as they may be stale
+			logging.Debug(logCtx, "prepare-commit-msg: no sessions match current HEAD",
+				slog.String("strategy", "manual-commit"),
+				slog.String("source", source),
+				slog.String("current_head", currentHeadHash[:7]),
+				slog.Int("total_sessions", len(sessions)),
+			)
+			return nil
 		}
 
 		stagedFiles := getStagedFiles(repo)
@@ -381,11 +392,26 @@ func (s *ManualCommitStrategy) PostCommit() error {
 	// Filter to sessions with new content
 	sessionsWithContent := s.filterSessionsWithNewContent(repo, sessions)
 	if len(sessionsWithContent) == 0 {
-		logging.Warn(logCtx, "post-commit: no new content to condense",
+		logging.Debug(logCtx, "post-commit: no new content to condense",
 			slog.String("strategy", "manual-commit"),
 			slog.String("checkpoint_id", checkpointID),
 			slog.Int("sessions_found", len(sessions)),
 		)
+		// Still update BaseCommit for all sessions in this worktree
+		// This prevents stale BaseCommit when commits happen without condensation
+		// (e.g., when reusing a previous checkpoint ID for split commits)
+		newHead := head.Hash().String()
+		for _, state := range sessions {
+			if state.BaseCommit != newHead {
+				state.BaseCommit = newHead
+				if err := s.saveSessionState(state); err != nil {
+					logging.Warn(logCtx, "post-commit: failed to update session BaseCommit",
+						slog.String("session_id", state.SessionID),
+						slog.String("error", err.Error()),
+					)
+				}
+			}
+		}
 		return nil
 	}
 
@@ -491,10 +517,10 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	ref, err := repo.Reference(refName, true)
 	if err != nil {
-		// No shadow branch means no new checkpoints have been created since
-		// the last condensation. This is expected after condensation when
-		// BaseCommit was updated to the new HEAD.
-		return false, nil //nolint:nilerr // Expected: no shadow branch = no new content
+		// No shadow branch means no Stop has happened since the last condensation.
+		// However, the agent may have done work (including commits) without a Stop.
+		// Check the live transcript to detect this scenario.
+		return s.sessionHasNewContentFromLiveTranscript(repo, state)
 	}
 
 	commit, err := repo.CommitObject(ref.Hash())
@@ -535,6 +561,70 @@ func countTranscriptLines(content string) int {
 		lines = lines[:len(lines)-1]
 	}
 	return len(lines)
+}
+
+// sessionHasNewContentFromLiveTranscript checks if a session has new content
+// by examining the live transcript file. This is used when no shadow branch exists
+// (i.e., no Stop has happened yet) but the agent may have done work.
+//
+// Returns true if:
+//  1. The transcript has grown since the last condensation, AND
+//  2. The new transcript portion contains file modifications, AND
+//  3. At least one modified file overlaps with the currently staged files
+//
+// The overlap check ensures we don't add checkpoint trailers to commits that are
+// unrelated to the agent's recent changes.
+//
+// This handles the scenario where the agent commits mid-session before Stop.
+func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(repo *git.Repository, state *SessionState) (bool, error) {
+	// Need both transcript path and agent type to analyze
+	if state.TranscriptPath == "" || state.AgentType == "" {
+		return false, nil
+	}
+
+	// Get the agent for transcript analysis
+	ag, err := agent.GetByAgentType(state.AgentType)
+	if err != nil {
+		return false, nil //nolint:nilerr // Unknown agent type, fail gracefully
+	}
+
+	// Cast to TranscriptAnalyzer
+	analyzer, ok := ag.(agent.TranscriptAnalyzer)
+	if !ok {
+		return false, nil // Agent doesn't support transcript analysis
+	}
+
+	// Get current transcript position
+	currentPos, err := analyzer.GetTranscriptPosition(state.TranscriptPath)
+	if err != nil {
+		return false, nil //nolint:nilerr // Error reading transcript, fail gracefully
+	}
+
+	// Check if transcript has grown since last condensation
+	if currentPos <= state.CondensedTranscriptLines {
+		return false, nil // No new content
+	}
+
+	// Transcript has grown - check if there are file modifications in the new portion
+	modifiedFiles, _, err := analyzer.ExtractModifiedFilesFromOffset(state.TranscriptPath, state.CondensedTranscriptLines)
+	if err != nil {
+		return false, nil //nolint:nilerr // Error parsing transcript, fail gracefully
+	}
+
+	// No file modifications means no new content to checkpoint
+	if len(modifiedFiles) == 0 {
+		return false, nil
+	}
+
+	// Check if any modified files overlap with currently staged files
+	// This ensures we only add checkpoint trailers to commits that include
+	// files the agent actually modified
+	stagedFiles := getStagedFiles(repo)
+	if !hasOverlappingFiles(stagedFiles, modifiedFiles) {
+		return false, nil // No overlap - staged files are unrelated to agent's work
+	}
+
+	return true, nil
 }
 
 // addCheckpointTrailer adds the Entire-Checkpoint trailer to a commit message.
@@ -631,7 +721,8 @@ func addCheckpointTrailerWithComment(message, checkpointID, agentName, prompt st
 // returns a ShadowBranchConflictError to allow the caller to inform the user.
 //
 // agentType is the human-readable name of the agent (e.g., "Claude Code").
-func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType string) error {
+// transcriptPath is the path to the live transcript file (for mid-session commit detection).
+func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType string, transcriptPath string) error {
 	repo, err := OpenRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
@@ -697,6 +788,12 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType str
 		// Backfill AgentType if empty (for sessions created before the agent_type field was added)
 		if state.AgentType == "" && agentType != "" {
 			state.AgentType = agentType
+			needSave = true
+		}
+
+		// Update transcript path if provided (may change on session resume)
+		if transcriptPath != "" && state.TranscriptPath != transcriptPath {
+			state.TranscriptPath = transcriptPath
 			needSave = true
 		}
 
@@ -784,7 +881,7 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType str
 	}
 
 	// Initialize new session
-	_, err = s.initializeSession(repo, sessionID, agentType)
+	_, err = s.initializeSession(repo, sessionID, agentType, transcriptPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize session: %w", err)
 	}

@@ -107,3 +107,25 @@ type FileWatcher interface {
 	// OnFileChange handles a detected file change and returns session info
 	OnFileChange(path string) (*SessionChange, error)
 }
+
+// TranscriptAnalyzer is implemented by agents that support transcript analysis.
+// This allows agent-agnostic detection of work done between checkpoints.
+type TranscriptAnalyzer interface {
+	Agent
+
+	// GetTranscriptPosition returns the current position (length) of a transcript.
+	// For JSONL formats (Claude Code), this is the line count.
+	// For JSON formats (Gemini CLI), this is the message count.
+	// Returns 0 if the file doesn't exist or is empty.
+	// Use this to efficiently check if the transcript has grown since last checkpoint.
+	GetTranscriptPosition(path string) (int, error)
+
+	// ExtractModifiedFilesFromOffset extracts files modified since a given offset.
+	// For JSONL formats (Claude Code), offset is the starting line number.
+	// For JSON formats (Gemini CLI), offset is the starting message index.
+	// Returns:
+	//   - files: list of file paths modified by the agent (from Write/Edit tools)
+	//   - currentPosition: the current position (line count or message count)
+	//   - error: any error encountered during reading
+	ExtractModifiedFilesFromOffset(path string, startOffset int) (files []string, currentPosition int, err error)
+}
