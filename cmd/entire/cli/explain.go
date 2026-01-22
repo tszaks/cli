@@ -310,7 +310,7 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 	return sb.String()
 }
 
-// runExplainDefault explains the current session.
+// runExplainDefault explains the current session, or shows an overview if the session has no data yet.
 func runExplainDefault(w io.Writer, noPager bool) error {
 	// Read current session
 	currentSessionID, err := paths.ReadCurrentSession()
@@ -319,10 +319,89 @@ func runExplainDefault(w io.Writer, noPager bool) error {
 	}
 
 	if currentSessionID == "" {
-		return errors.New("no active session. Use --session or --commit to specify what to explain")
+		return runExplainOverview(w, "", noPager)
+	}
+
+	// Check if the session exists before trying to explain it
+	_, err = strategy.GetSession(currentSessionID)
+	if err != nil {
+		if errors.Is(err, strategy.ErrNoSession) {
+			// Current session has no checkpoints yet - show overview instead
+			return runExplainOverview(w, currentSessionID, noPager)
+		}
+		return fmt.Errorf("failed to get session: %w", err)
 	}
 
 	return runExplainSession(w, currentSessionID, noPager)
+}
+
+// runExplainOverview shows an overview of available sessions and checkpoints
+// when the current session doesn't have data yet.
+func runExplainOverview(w io.Writer, currentSessionID string, noPager bool) error {
+	var sb strings.Builder
+
+	// Header
+	if currentSessionID != "" {
+		fmt.Fprintf(&sb, "Current session: %s (no checkpoints yet)\n\n", currentSessionID)
+	} else {
+		sb.WriteString("No active session.\n\n")
+	}
+
+	// List available sessions
+	sessions, err := strategy.ListSessions()
+	if err != nil {
+		// Can't list sessions - gracefully degrade by showing a message
+		sb.WriteString("Unable to list sessions.\n")
+		sb.WriteString("Use --session, --commit, or --checkpoint to specify what to explain.\n")
+		outputExplainContent(w, sb.String(), noPager)
+		return nil //nolint:nilerr // Intentional: gracefully degrade when listing fails
+	}
+
+	if len(sessions) == 0 {
+		sb.WriteString("No previous sessions found.\n")
+		sb.WriteString("Checkpoints will appear here after you save changes during a Claude session.\n")
+	} else {
+		fmt.Fprintf(&sb, "Available sessions: %d\n\n", len(sessions))
+
+		// Show up to 5 most recent sessions
+		limit := min(5, len(sessions))
+
+		for _, sess := range sessions[:limit] {
+			checkpointCount := len(sess.Checkpoints)
+			desc := sess.Description
+			if desc == "" || desc == strategy.NoDescription {
+				desc = "(no description)"
+			}
+			// Truncate long descriptions
+			if len(desc) > 60 {
+				desc = desc[:57] + "..."
+			}
+
+			fmt.Fprintf(&sb, "  %s\n", sess.ID)
+			fmt.Fprintf(&sb, "    %s\n", desc)
+			fmt.Fprintf(&sb, "    %d checkpoint(s), started %s\n\n",
+				checkpointCount, sess.StartTime.Format("2006-01-02 15:04"))
+		}
+
+		if len(sessions) > limit {
+			fmt.Fprintf(&sb, "  ... and %d more sessions\n\n", len(sessions)-limit)
+		}
+
+		sb.WriteString("Use 'entire explain --session <ID>' to view a specific session.\n")
+		sb.WriteString("Use 'entire session list' to see all sessions.\n")
+	}
+
+	outputExplainContent(w, sb.String(), noPager)
+	return nil
+}
+
+// outputExplainContent outputs content with optional pager support.
+func outputExplainContent(w io.Writer, content string, noPager bool) {
+	if noPager {
+		fmt.Fprint(w, content)
+	} else {
+		outputWithPager(w, content)
+	}
 }
 
 // runExplainSession explains a specific session.

@@ -202,7 +202,7 @@ func TestExplainCommit_WithEntireData(t *testing.T) {
 	}
 }
 
-func TestExplainDefault_NoCurrentSession(t *testing.T) {
+func TestExplainDefault_NoCurrentSession_ShowsOverview(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
 
@@ -217,15 +217,60 @@ func TestExplainDefault_NoCurrentSession(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	err := runExplainDefault(&stdout, false)
+	err := runExplainDefault(&stdout, true) // noPager=true for test
 
-	if err == nil {
-		t.Error("expected error when no current session, got nil")
+	// Should NOT error - should show overview instead
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
 	}
-	// Case-insensitive check for "no active session"
-	errLower := strings.ToLower(err.Error())
-	if !strings.Contains(errLower, "no active session") {
-		t.Errorf("expected 'no active session' in error, got: %v", err)
+
+	output := stdout.String()
+	// Should indicate no active session
+	if !strings.Contains(output, "No active session") {
+		t.Errorf("expected 'No active session' in output, got: %s", output)
+	}
+	// Should show helpful message about no previous sessions
+	if !strings.Contains(output, "No previous sessions") {
+		t.Errorf("expected 'No previous sessions' in output, got: %s", output)
+	}
+}
+
+func TestExplainDefault_CurrentSessionNoCheckpoints_ShowsOverview(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Initialize git repo
+	if _, err := git.PlainInit(tmpDir, false); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Create .entire directory with a current_session file
+	if err := os.MkdirAll(".entire", 0o750); err != nil {
+		t.Fatalf("failed to create .entire dir: %v", err)
+	}
+
+	// Write a current session ID that has no checkpoints
+	currentSession := "2026-01-22-test-session-no-checkpoints"
+	if err := os.WriteFile(filepath.Join(".entire", "current_session"), []byte(currentSession), 0o644); err != nil {
+		t.Fatalf("failed to write current_session: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	err := runExplainDefault(&stdout, true) // noPager=true for test
+
+	// Should NOT error - should show overview instead
+	if err != nil {
+		t.Errorf("expected no error, got: %v", err)
+	}
+
+	output := stdout.String()
+	// Should mention the current session
+	if !strings.Contains(output, currentSession) {
+		t.Errorf("expected current session ID in output, got: %s", output)
+	}
+	// Should indicate no checkpoints yet
+	if !strings.Contains(output, "no checkpoints yet") {
+		t.Errorf("expected 'no checkpoints yet' in output, got: %s", output)
 	}
 }
 
