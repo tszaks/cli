@@ -105,10 +105,10 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		return nil, fmt.Errorf("shadow branch not found: %w", err)
 	}
 
-	// Extract session data, starting from where we left off last condensation
+	// Extract session data from the shadow branch
 	// Use tracked files from session state instead of collecting all files from tree
 	// Pass agent type to handle different transcript formats (JSONL for Claude, JSON for Gemini)
-	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, state.CondensedTranscriptLines, state.FilesTouched, state.AgentType)
+	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, state.FilesTouched, state.AgentType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract session data: %w", err)
 	}
@@ -157,10 +157,9 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 }
 
 // extractSessionData extracts session data from the shadow branch.
-// startLine specifies the first line to include (0 = all lines, for incremental condensation).
 // filesTouched is the list of files tracked during the session (from SessionState.FilesTouched).
 // agentType identifies the agent (e.g., "Gemini CLI", "Claude Code") to determine transcript format.
-func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRef plumbing.Hash, sessionID string, startLine int, filesTouched []string, agentType string) (*ExtractedSessionData, error) {
+func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRef plumbing.Hash, sessionID string, filesTouched []string, agentType string) (*ExtractedSessionData, error) {
 	commit, err := repo.CommitObject(shadowRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit object: %w", err)
@@ -210,17 +209,15 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 
 			data.FullTranscriptLines = len(allLines)
 
-			// Get only lines from startLine onwards for this condensation
-			if startLine < len(allLines) {
-				newLines := allLines[startLine:]
-				data.Transcript = []byte(strings.Join(newLines, "\n"))
+			// Always store the full transcript for complete session history
+			// (startLine is only used for detecting new content, not for truncation)
+			data.Transcript = []byte(strings.Join(allLines, "\n"))
 
-				// Extract prompts from the new portion only
-				data.Prompts = extractUserPromptsFromLines(newLines)
+			// Extract prompts from the full transcript
+			data.Prompts = extractUserPromptsFromLines(allLines)
 
-				// Generate context from prompts
-				data.Context = generateContextFromPrompts(data.Prompts)
-			}
+			// Generate context from prompts
+			data.Context = generateContextFromPrompts(data.Prompts)
 		}
 	}
 

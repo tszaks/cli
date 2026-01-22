@@ -926,9 +926,9 @@ func (s *ManualCommitStrategy) getLastPrompt(repo *git.Repository, state *Sessio
 		return ""
 	}
 
-	// Extract session data (using 0 as startLine to get all prompts)
+	// Extract session data to get prompts for commit message generation
 	// Pass agent type to handle different transcript formats (JSONL for Claude, JSON for Gemini)
-	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, 0, nil, state.AgentType)
+	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, nil, state.AgentType)
 	if err != nil || len(sessionData.Prompts) == 0 {
 		return ""
 	}
