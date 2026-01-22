@@ -84,7 +84,10 @@ func TestNewCheckpointID(t *testing.T) {
 }
 
 func TestGenerate(t *testing.T) {
-	id := Generate()
+	id, err := Generate()
+	if err != nil {
+		t.Fatalf("Generate() returned error: %v", err)
+	}
 	if id.IsEmpty() {
 		t.Error("Generate() returned empty ID")
 	}

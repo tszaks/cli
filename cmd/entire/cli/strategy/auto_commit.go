@@ -140,7 +140,11 @@ func (s *AutoCommitStrategy) SaveChanges(ctx SaveContext) error {
 	}
 
 	// Generate checkpoint ID for this commit
-	checkpointID := id.Generate().String()
+	cpID, err := id.Generate()
+	if err != nil {
+		return fmt.Errorf("failed to generate checkpoint ID: %w", err)
+	}
+	checkpointID := cpID.String()
 
 	// Step 1: Commit code changes to active branch with checkpoint ID trailer
 	// We do code first to avoid orphaned metadata if this step fails.
@@ -530,7 +534,11 @@ func (s *AutoCommitStrategy) SaveTaskCheckpoint(ctx TaskCheckpointContext) error
 	}
 
 	// Generate checkpoint ID for this task checkpoint
-	checkpointID := id.Generate().String()
+	cpID, err := id.Generate()
+	if err != nil {
+		return fmt.Errorf("failed to generate checkpoint ID: %w", err)
+	}
+	checkpointID := cpID.String()
 
 	// Step 1: Commit code changes to active branch with checkpoint ID trailer
 	// We do code first to avoid orphaned metadata if this step fails.

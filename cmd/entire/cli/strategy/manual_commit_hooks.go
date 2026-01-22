@@ -274,7 +274,11 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 
 	if hasNewContent {
 		// New content: generate new checkpoint ID
-		checkpointID = id.Generate().String()
+		cpID, err := id.Generate()
+		if err != nil {
+			return fmt.Errorf("failed to generate checkpoint ID: %w", err)
+		}
+		checkpointID = cpID.String()
 	}
 	// Otherwise checkpointID is already set to LastCheckpointID from above
 

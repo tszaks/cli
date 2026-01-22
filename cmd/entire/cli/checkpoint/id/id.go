@@ -43,12 +43,12 @@ func MustCheckpointID(s string) CheckpointID {
 }
 
 // Generate creates a new random 12-character hex checkpoint ID.
-func Generate() CheckpointID {
+func Generate() (CheckpointID, error) {
 	bytes := make([]byte, 6) // 6 bytes = 12 hex chars
 	if _, err := rand.Read(bytes); err != nil {
-		panic(fmt.Sprintf("failed to generate random checkpoint ID: %v", err))
+		return EmptyCheckpointID, fmt.Errorf("failed to generate random checkpoint ID: %w", err)
 	}
-	return CheckpointID(hex.EncodeToString(bytes))
+	return CheckpointID(hex.EncodeToString(bytes)), nil
 }
 
 // Validate checks if a string is a valid checkpoint ID format.
