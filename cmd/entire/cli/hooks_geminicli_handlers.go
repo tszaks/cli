@@ -15,7 +15,6 @@ import (
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/agent/geminicli"
-	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/session"
@@ -360,19 +359,13 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 	}
 
 	// Calculate token usage for this prompt/response cycle (Gemini-specific)
-	var tokenUsage *checkpoint.TokenUsage
+	var tokenUsage *agent.TokenUsage
 	if ctx.transcriptPath != "" {
 		usage, tokenErr := geminicli.CalculateTokenUsageFromFile(ctx.transcriptPath, startMessageIndex)
 		if tokenErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to calculate token usage: %v\n", tokenErr)
 		} else if usage != nil && usage.APICallCount > 0 {
-			// Convert from geminicli.TokenUsage to checkpoint.TokenUsage
-			tokenUsage = &checkpoint.TokenUsage{
-				InputTokens:     usage.InputTokens,
-				OutputTokens:    usage.OutputTokens,
-				CacheReadTokens: usage.CacheReadTokens,
-				APICallCount:    usage.APICallCount,
-			}
+			tokenUsage = usage
 			fmt.Fprintf(os.Stderr, "Token usage for this checkpoint: input=%d, output=%d, cache_read=%d, api_calls=%d\n",
 				tokenUsage.InputTokens, tokenUsage.OutputTokens, tokenUsage.CacheReadTokens, tokenUsage.APICallCount)
 		}
@@ -426,10 +419,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 	if agentErr != nil {
 		return fmt.Errorf("failed to get agent: %w", agentErr)
 	}
-	agentType := hookAgent.Description()
-	if idx := strings.Index(agentType, " - "); idx > 0 {
-		agentType = agentType[:idx]
-	}
+agentType := hookAgent.Type()
 
 	// Get transcript UUID at start from pre-prompt state
 	var transcriptUUIDAtStart string

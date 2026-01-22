@@ -539,10 +539,10 @@ func commitWithMetadata() error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to ensure strategy setup: %v\n", err)
 	}
 
-	// Get agent type from session state (set during InitializeSession)
+	// Get agent type from the currently executing hook agent (authoritative source)
 	var agentType agent.AgentType
-	if sessionState != nil {
-		agentType = sessionState.AgentType
+	if hookAgent, agentErr := GetCurrentHookAgent(); agentErr == nil {
+		agentType = hookAgent.Type()
 	}
 
 	// Get transcript position from pre-prompt state (captured at checkpoint start)
@@ -712,10 +712,10 @@ func handlePostTodo() error {
 		// will fall back to "Checkpoint #N" format
 	}
 
-	// Get agent type from session state
+	// Get agent type from the currently executing hook agent (authoritative source)
 	var agentType agent.AgentType
-	if sessionState, loadErr := strategy.LoadSessionState(entireSessionID); loadErr == nil && sessionState != nil {
-		agentType = sessionState.AgentType
+	if hookAgent, agentErr := GetCurrentHookAgent(); agentErr == nil {
+		agentType = hookAgent.Type()
 	}
 
 	// Build incremental checkpoint context
@@ -903,10 +903,10 @@ func handlePostTask() error {
 
 	entireSessionID := currentSessionIDWithFallback(input.SessionID)
 
-	// Get agent type from session state
+	// Get agent type from the currently executing hook agent (authoritative source)
 	var agentType agent.AgentType
-	if sessionState, loadErr := strategy.LoadSessionState(entireSessionID); loadErr == nil && sessionState != nil {
-		agentType = sessionState.AgentType
+	if hookAgent, agentErr := GetCurrentHookAgent(); agentErr == nil {
+		agentType = hookAgent.Type()
 	}
 
 	// Build task checkpoint context - strategy handles metadata creation
