@@ -173,7 +173,11 @@ func TestShadowStrategy_MidSessionCommit_NoTrailerForUnrelatedFile(t *testing.T)
 	commitHash := env.GetHeadHash()
 	checkpointID := env.GetCheckpointIDFromCommitMessage(commitHash)
 
-	// The commit is for an unrelated file, so no checkpoint trailer should be added
-	// Note: This depends on the implementation checking file overlap
-	t.Logf("Unrelated file commit checkpoint ID (may or may not have trailer): %s", checkpointID)
+	// CRITICAL: No checkpoint trailer should be added for unrelated files
+	// The overlap check in sessionHasNewContentFromLiveTranscript ensures this
+	if checkpointID != "" {
+		t.Errorf("Unrelated file commit should NOT have checkpoint trailer, but got: %s", checkpointID)
+	} else {
+		t.Log("Correctly omitted checkpoint trailer for unrelated file commit")
+	}
 }

@@ -519,7 +519,7 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 		// No shadow branch means no Stop has happened since the last condensation.
 		// However, the agent may have done work (including commits) without a Stop.
 		// Check the live transcript to detect this scenario.
-		return s.sessionHasNewContentFromLiveTranscript(state)
+		return s.sessionHasNewContentFromLiveTranscript(repo, state)
 	}
 
 	commit, err := repo.CommitObject(ref.Hash())
@@ -568,10 +568,14 @@ func countTranscriptLines(content string) int {
 //
 // Returns true if:
 //  1. The transcript has grown since the last condensation, AND
-//  2. The new transcript portion contains file modifications
+//  2. The new transcript portion contains file modifications, AND
+//  3. At least one modified file overlaps with the currently staged files
+//
+// The overlap check ensures we don't add checkpoint trailers to commits that are
+// unrelated to the agent's recent changes.
 //
 // This handles the scenario where the agent commits mid-session before Stop.
-func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(state *SessionState) (bool, error) {
+func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(repo *git.Repository, state *SessionState) (bool, error) {
 	// Need both transcript path and agent type to analyze
 	if state.TranscriptPath == "" || state.AgentType == "" {
 		return false, nil
@@ -601,13 +605,25 @@ func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(state *Ses
 	}
 
 	// Transcript has grown - check if there are file modifications in the new portion
-	files, _, err := analyzer.ExtractModifiedFilesFromOffset(state.TranscriptPath, state.CondensedTranscriptLines)
+	modifiedFiles, _, err := analyzer.ExtractModifiedFilesFromOffset(state.TranscriptPath, state.CondensedTranscriptLines)
 	if err != nil {
 		return false, nil //nolint:nilerr // Error parsing transcript, fail gracefully
 	}
 
-	// Has new content if there are file modifications
-	return len(files) > 0, nil
+	// No file modifications means no new content to checkpoint
+	if len(modifiedFiles) == 0 {
+		return false, nil
+	}
+
+	// Check if any modified files overlap with currently staged files
+	// This ensures we only add checkpoint trailers to commits that include
+	// files the agent actually modified
+	stagedFiles := getStagedFiles(repo)
+	if !hasOverlappingFiles(stagedFiles, modifiedFiles) {
+		return false, nil // No overlap - staged files are unrelated to agent's work
+	}
+
+	return true, nil
 }
 
 // addCheckpointTrailer adds the Entire-Checkpoint trailer to a commit message.
