@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint/id"
+	checkpointID "entire.io/cli/cmd/entire/cli/checkpoint/id"
 )
 
 // Trailer key constants used in commit messages.
@@ -59,7 +59,7 @@ var (
 	baseCommitTrailerRegex   = regexp.MustCompile(BaseCommitTrailerKey + `:\s*([a-f0-9]{40})`)
 	condensationTrailerRegex = regexp.MustCompile(CondensationTrailerKey + `:\s*(.+)`)
 	sessionTrailerRegex      = regexp.MustCompile(SessionTrailerKey + `:\s*(.+)`)
-	checkpointTrailerRegex   = regexp.MustCompile(CheckpointTrailerKey + `:\s*([a-f0-9]+)`)
+	checkpointTrailerRegex   = regexp.MustCompile(CheckpointTrailerKey + `:\s*(` + checkpointID.Pattern + `)(?:\s|$)`)
 )
 
 // ParseStrategy extracts strategy from commit message.
@@ -126,16 +126,16 @@ func ParseSession(commitMessage string) (string, bool) {
 
 // ParseCheckpoint extracts the checkpoint ID from a commit message.
 // Returns the CheckpointID and true if found, empty ID and false otherwise.
-func ParseCheckpoint(commitMessage string) (id.CheckpointID, bool) {
+func ParseCheckpoint(commitMessage string) (checkpointID.CheckpointID, bool) {
 	matches := checkpointTrailerRegex.FindStringSubmatch(commitMessage)
 	if len(matches) > 1 {
 		idStr := strings.TrimSpace(matches[1])
 		// Validate it's a proper checkpoint ID
-		if cpID, err := id.NewCheckpointID(idStr); err == nil {
+		if cpID, err := checkpointID.NewCheckpointID(idStr); err == nil {
 			return cpID, true
 		}
 	}
-	return id.EmptyCheckpointID, false
+	return checkpointID.EmptyCheckpointID, false
 }
 
 // ParseAllSessions extracts all session IDs from a commit message.

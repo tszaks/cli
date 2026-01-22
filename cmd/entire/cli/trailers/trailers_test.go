@@ -280,6 +280,30 @@ func TestParseCheckpoint(t *testing.T) {
 			wantID:    "a1b2c3d4e5f6",
 			wantFound: true,
 		},
+		{
+			name:      "too short checkpoint ID",
+			message:   "Message\n\nEntire-Checkpoint: abc123\n",
+			wantID:    "",
+			wantFound: false,
+		},
+		{
+			name:      "too long checkpoint ID",
+			message:   "Message\n\nEntire-Checkpoint: a1b2c3d4e5f6789\n",
+			wantID:    "",
+			wantFound: false,
+		},
+		{
+			name:      "invalid characters in checkpoint ID",
+			message:   "Message\n\nEntire-Checkpoint: a1b2c3d4e5gg\n",
+			wantID:    "",
+			wantFound: false,
+		},
+		{
+			name:      "uppercase hex rejected",
+			message:   "Message\n\nEntire-Checkpoint: A1B2C3D4E5F6\n",
+			wantID:    "",
+			wantFound: false,
+		},
 	}
 
 	for _, tt := range tests {

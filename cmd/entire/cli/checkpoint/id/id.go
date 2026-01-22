@@ -16,8 +16,12 @@ type CheckpointID string
 // EmptyCheckpointID represents an unset or invalid checkpoint ID.
 const EmptyCheckpointID CheckpointID = ""
 
+// Pattern is the regex pattern for a valid checkpoint ID: exactly 12 lowercase hex characters.
+// Exported for use in other packages (e.g., trailers) to avoid pattern duplication.
+const Pattern = `[0-9a-f]{12}`
+
 // checkpointIDRegex validates the format: exactly 12 lowercase hex characters.
-var checkpointIDRegex = regexp.MustCompile(`^[0-9a-f]{12}$`)
+var checkpointIDRegex = regexp.MustCompile(`^` + Pattern + `$`)
 
 // NewCheckpointID creates a CheckpointID from a string, validating its format.
 // Returns an error if the string is not a valid 12-character hex ID.
