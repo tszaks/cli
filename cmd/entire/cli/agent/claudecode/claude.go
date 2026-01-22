@@ -327,3 +327,17 @@ var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9]`)
 func SanitizePathForClaude(path string) string {
 	return nonAlphanumericRegex.ReplaceAllString(path, "-")
 }
+
+// TranscriptAnalyzer interface implementation
+
+// GetTranscriptPosition returns the current line count of a Claude Code transcript.
+// Claude Code uses JSONL format, so position is the number of lines.
+func (c *ClaudeCodeAgent) GetTranscriptPosition(path string) (int, error) {
+	return GetTranscriptLineCount(path)
+}
+
+// ExtractModifiedFilesFromOffset extracts files modified since a given line number.
+// For Claude Code (JSONL format), offset is the starting line number.
+func (c *ClaudeCodeAgent) ExtractModifiedFilesFromOffset(path string, startOffset int) (files []string, currentPosition int, err error) {
+	return ExtractModifiedFilesFromFile(path, startOffset)
+}

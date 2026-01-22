@@ -173,6 +173,34 @@ type TranscriptPosition struct {
 	MessageCount int // Total number of messages
 }
 
+// GetTranscriptMessageCount returns the total number of messages in a Gemini transcript.
+// This is the position marker for Gemini (equivalent to line count for Claude Code).
+// Returns 0 if the file doesn't exist or is empty.
+func GetTranscriptMessageCount(path string) (int, error) {
+	if path == "" {
+		return 0, nil
+	}
+
+	data, err := os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to read transcript: %w", err)
+	}
+
+	if len(data) == 0 {
+		return 0, nil
+	}
+
+	transcript, err := ParseTranscript(data)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse transcript: %w", err)
+	}
+
+	return len(transcript.Messages), nil
+}
+
 // GetTranscriptPosition reads a Gemini transcript file and returns the message count.
 // Returns empty position if file doesn't exist or is empty.
 // For Gemini, position is based on message count (not lines like Claude Code's JSONL).
@@ -270,4 +298,78 @@ func CalculateTokenUsageFromFile(path string, startMessageIndex int) (*TokenUsag
 	}
 
 	return CalculateTokenUsage(data, startMessageIndex), nil
+}
+
+// ExtractModifiedFilesFromFile reads a Gemini transcript file and extracts modified files.
+// If startMessageIndex > 0, only considers messages from that index onwards.
+// Returns:
+//   - files: list of file paths modified by Gemini (from Write/Edit tools)
+//   - totalMessages: total number of messages in the transcript
+//   - error: any error encountered during reading
+func ExtractModifiedFilesFromFile(path string, startMessageIndex int) (files []string, totalMessages int, err error) {
+	if path == "" {
+		return nil, 0, nil
+	}
+
+	data, readErr := os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return nil, 0, nil
+		}
+		return nil, 0, fmt.Errorf("failed to read transcript: %w", readErr)
+	}
+
+	if len(data) == 0 {
+		return nil, 0, nil
+	}
+
+	transcript, parseErr := ParseTranscript(data)
+	if parseErr != nil {
+		return nil, 0, parseErr
+	}
+
+	totalMessages = len(transcript.Messages)
+
+	// Extract files from messages starting at startMessageIndex
+	fileSet := make(map[string]bool)
+	for i := startMessageIndex; i < len(transcript.Messages); i++ {
+		msg := transcript.Messages[i]
+		// Only process gemini messages (assistant messages)
+		if msg.Type != MessageTypeGemini {
+			continue
+		}
+
+		// Process tool calls in this message
+		for _, toolCall := range msg.ToolCalls {
+			// Check if it's a file modification tool
+			isModifyTool := false
+			for _, name := range FileModificationTools {
+				if toolCall.Name == name {
+					isModifyTool = true
+					break
+				}
+			}
+
+			if !isModifyTool {
+				continue
+			}
+
+			// Extract file path from args map
+			var file string
+			if fp, ok := toolCall.Args["file_path"].(string); ok && fp != "" {
+				file = fp
+			} else if p, ok := toolCall.Args["path"].(string); ok && p != "" {
+				file = p
+			} else if fn, ok := toolCall.Args["filename"].(string); ok && fn != "" {
+				file = fn
+			}
+
+			if file != "" && !fileSet[file] {
+				fileSet[file] = true
+				files = append(files, file)
+			}
+		}
+	}
+
+	return files, totalMessages, nil
 }

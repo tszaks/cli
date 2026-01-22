@@ -447,3 +447,77 @@ func CalculateTotalTokenUsage(transcriptPath string, startLine int, subagentsDir
 
 	return mainUsage, nil
 }
+
+// GetTranscriptLineCount returns the total number of lines in a transcript file.
+// This is a lightweight operation that only counts lines without parsing JSON.
+// Returns 0 if the file doesn't exist or is empty.
+func GetTranscriptLineCount(path string) (int, error) {
+	if path == "" {
+		return 0, nil
+	}
+
+	file, err := os.Open(path) //nolint:gosec // Path comes from Claude Code transcript location
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to open transcript file: %w", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, scannerBufferSize), scannerBufferSize)
+
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return 0, fmt.Errorf("failed to scan transcript: %w", err)
+	}
+
+	return lineCount, nil
+}
+
+// ExtractModifiedFilesFromFile reads a transcript file and extracts modified files.
+// If startLine > 0, only considers lines from startLine onwards.
+// Returns:
+//   - files: list of file paths modified by Claude (from Write/Edit tools)
+//   - totalLines: total number of lines in the file
+//   - error: any error encountered during reading
+func ExtractModifiedFilesFromFile(path string, startLine int) (files []string, totalLines int, err error) {
+	if path == "" {
+		return nil, 0, nil
+	}
+
+	file, openErr := os.Open(path) //nolint:gosec // Path comes from Claude Code transcript location
+	if openErr != nil {
+		return nil, 0, fmt.Errorf("failed to open transcript file: %w", openErr)
+	}
+	defer file.Close()
+
+	var lines []TranscriptLine
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, scannerBufferSize), scannerBufferSize)
+
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		if lineNum <= startLine {
+			continue
+		}
+
+		var line TranscriptLine
+		if parseErr := json.Unmarshal(scanner.Bytes(), &line); parseErr != nil {
+			continue // Skip malformed lines
+		}
+		lines = append(lines, line)
+	}
+
+	if scanErr := scanner.Err(); scanErr != nil {
+		return nil, 0, fmt.Errorf("failed to scan transcript: %w", scanErr)
+	}
+
+	return ExtractModifiedFiles(lines), lineNum, nil
+}

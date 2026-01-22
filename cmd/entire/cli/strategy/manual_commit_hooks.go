@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/stringutil"
@@ -515,10 +516,10 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	ref, err := repo.Reference(refName, true)
 	if err != nil {
-		// No shadow branch means no new checkpoints have been created since
-		// the last condensation. This is expected after condensation when
-		// BaseCommit was updated to the new HEAD.
-		return false, nil //nolint:nilerr // Expected: no shadow branch = no new content
+		// No shadow branch means no Stop has happened since the last condensation.
+		// However, the agent may have done work (including commits) without a Stop.
+		// Check the live transcript to detect this scenario.
+		return s.sessionHasNewContentFromLiveTranscript(state)
 	}
 
 	commit, err := repo.CommitObject(ref.Hash())
@@ -559,6 +560,54 @@ func countTranscriptLines(content string) int {
 		lines = lines[:len(lines)-1]
 	}
 	return len(lines)
+}
+
+// sessionHasNewContentFromLiveTranscript checks if a session has new content
+// by examining the live transcript file. This is used when no shadow branch exists
+// (i.e., no Stop has happened yet) but the agent may have done work.
+//
+// Returns true if:
+//  1. The transcript has grown since the last condensation, AND
+//  2. The new transcript portion contains file modifications
+//
+// This handles the scenario where the agent commits mid-session before Stop.
+func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(state *SessionState) (bool, error) {
+	// Need both transcript path and agent type to analyze
+	if state.TranscriptPath == "" || state.AgentType == "" {
+		return false, nil
+	}
+
+	// Get the agent for transcript analysis
+	ag, err := agent.GetByAgentType(state.AgentType)
+	if err != nil {
+		return false, nil //nolint:nilerr // Unknown agent type, fail gracefully
+	}
+
+	// Cast to TranscriptAnalyzer
+	analyzer, ok := ag.(agent.TranscriptAnalyzer)
+	if !ok {
+		return false, nil // Agent doesn't support transcript analysis
+	}
+
+	// Get current transcript position
+	currentPos, err := analyzer.GetTranscriptPosition(state.TranscriptPath)
+	if err != nil {
+		return false, nil //nolint:nilerr // Error reading transcript, fail gracefully
+	}
+
+	// Check if transcript has grown since last condensation
+	if currentPos <= state.CondensedTranscriptLines {
+		return false, nil // No new content
+	}
+
+	// Transcript has grown - check if there are file modifications in the new portion
+	files, _, err := analyzer.ExtractModifiedFilesFromOffset(state.TranscriptPath, state.CondensedTranscriptLines)
+	if err != nil {
+		return false, nil //nolint:nilerr // Error parsing transcript, fail gracefully
+	}
+
+	// Has new content if there are file modifications
+	return len(files) > 0, nil
 }
 
 // addCheckpointTrailer adds the Entire-Checkpoint trailer to a commit message.
@@ -655,7 +704,8 @@ func addCheckpointTrailerWithComment(message, checkpointID, agentName, prompt st
 // returns a ShadowBranchConflictError to allow the caller to inform the user.
 //
 // agentType is the human-readable name of the agent (e.g., "Claude Code").
-func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType string) error {
+// transcriptPath is the path to the live transcript file (for mid-session commit detection).
+func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType string, transcriptPath string) error {
 	repo, err := OpenRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
@@ -721,6 +771,12 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType str
 		// Backfill AgentType if empty (for sessions created before the agent_type field was added)
 		if state.AgentType == "" && agentType != "" {
 			state.AgentType = agentType
+			needSave = true
+		}
+
+		// Update transcript path if provided (may change on session resume)
+		if transcriptPath != "" && state.TranscriptPath != transcriptPath {
+			state.TranscriptPath = transcriptPath
 			needSave = true
 		}
 
@@ -808,7 +864,7 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType str
 	}
 
 	// Initialize new session
-	_, err = s.initializeSession(repo, sessionID, agentType)
+	_, err = s.initializeSession(repo, sessionID, agentType, transcriptPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize session: %w", err)
 	}

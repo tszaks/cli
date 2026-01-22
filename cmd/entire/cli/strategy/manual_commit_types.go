@@ -27,6 +27,7 @@ type SessionState struct {
 	ConcurrentWarningShown   bool      `json:"concurrent_warning_shown,omitempty"`   // True if user was warned about concurrent sessions
 	LastCheckpointID         string    `json:"last_checkpoint_id,omitempty"`         // Checkpoint ID from last condensation, reused for subsequent commits without new content
 	AgentType                string    `json:"agent_type,omitempty"`                 // Agent type identifier (e.g., "Claude Code", "Cursor")
+	TranscriptPath           string    `json:"transcript_path,omitempty"`            // Path to the live transcript file (for mid-session commit detection)
 
 	// Token usage tracking (accumulated across all checkpoints in this session)
 	TokenUsage *checkpoint.TokenUsage `json:"token_usage,omitempty"`

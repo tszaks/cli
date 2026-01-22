@@ -252,3 +252,17 @@ var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9]`)
 func SanitizePathForGemini(path string) string {
 	return nonAlphanumericRegex.ReplaceAllString(path, "-")
 }
+
+// TranscriptAnalyzer interface implementation
+
+// GetTranscriptPosition returns the current message count of a Gemini transcript.
+// Gemini uses JSON format with a messages array, so position is the message count.
+func (g *GeminiCLIAgent) GetTranscriptPosition(path string) (int, error) {
+	return GetTranscriptMessageCount(path)
+}
+
+// ExtractModifiedFilesFromOffset extracts files modified since a given message index.
+// For Gemini (JSON format), offset is the starting message index.
+func (g *GeminiCLIAgent) ExtractModifiedFilesFromOffset(path string, startOffset int) (files []string, currentPosition int, err error) {
+	return ExtractModifiedFilesFromFile(path, startOffset)
+}

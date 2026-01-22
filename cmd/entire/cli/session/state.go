@@ -62,6 +62,9 @@ type State struct {
 	// Transcript position when session started (for multi-session checkpoints)
 	TranscriptLinesAtStart int    `json:"transcript_lines_at_start,omitempty"`
 	TranscriptUUIDAtStart  string `json:"transcript_uuid_at_start,omitempty"`
+
+	// TranscriptPath is the path to the live transcript file (for mid-session commit detection)
+	TranscriptPath string `json:"transcript_path,omitempty"`
 }
 
 // StateStore provides low-level operations for managing session state files.
