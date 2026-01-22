@@ -55,8 +55,8 @@ type hookInputData struct {
 
 // parseAndLogHookInput parses the hook input and sets up logging context.
 func parseAndLogHookInput() (*hookInputData, error) {
-	// Get the agent for session ID transformation
-	ag, err := GetAgent()
+	// Get the agent from the hook command context (e.g., "entire hooks claude-code ...")
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -67,7 +67,7 @@ func parseAndLogHookInput() (*hookInputData, error) {
 		return nil, fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "user-prompt-submit",
 		slog.String("hook", "user-prompt-submit"),
 		slog.String("hook_type", "agent"),
@@ -171,8 +171,20 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 			fmt.Fprintf(os.Stderr, "Warning: failed to save session state: %v\n", saveErr)
 		}
 
-		// Get resume command for the other session
-		resumeCmd := ag.FormatResumeCommand(ag.ExtractAgentSessionID(otherSession.SessionID))
+		// Get resume command for the other session using the CONFLICTING session's agent type.
+		// If the conflicting session is from a different agent (e.g., Gemini when we're Claude),
+		// use that agent's resume command format. Otherwise, use our own format (backward compatible).
+		var resumeCmd string
+		if otherSession.AgentType != "" && otherSession.AgentType != agentType {
+			// Different agent type - look up the conflicting agent
+			if conflictingAgent, agentErr := agent.GetByAgentType(otherSession.AgentType); agentErr == nil {
+				resumeCmd = conflictingAgent.FormatResumeCommand(conflictingAgent.ExtractAgentSessionID(otherSession.SessionID))
+			}
+		}
+		// Fall back to current agent if same type or couldn't get the conflicting agent
+		if resumeCmd == "" {
+			resumeCmd = ag.FormatResumeCommand(ag.ExtractAgentSessionID(otherSession.SessionID))
+		}
 
 		// Try to read the other session's initial prompt
 		otherPrompt := strategy.ReadSessionPromptFromShadow(repo, otherSession.BaseCommit, otherSession.SessionID)
@@ -232,8 +244,27 @@ func handleSessionInitErrors(ag agent.Agent, initErr error) error {
 		if IsMultiSessionWarningDisabled() {
 			return nil
 		}
-		// Get agent's resume command format
-		resumeCmd := ag.FormatResumeCommand(ag.ExtractAgentSessionID(sessionConflictErr.ExistingSession))
+		// Check if EITHER session has the concurrent warning shown
+		// If so, the user was already warned and chose to continue - allow concurrent sessions
+		existingState, loadErr := strategy.LoadSessionState(sessionConflictErr.ExistingSession)
+		newState, newLoadErr := strategy.LoadSessionState(sessionConflictErr.NewSession)
+		if (loadErr == nil && existingState != nil && existingState.ConcurrentWarningShown) ||
+			(newLoadErr == nil && newState != nil && newState.ConcurrentWarningShown) {
+			// At least one session was warned - allow concurrent operation
+			return nil
+		}
+		// Try to get the conflicting session's agent type from its state file
+		// If it's a different agent type, use that agent's resume command format
+		var resumeCmd string
+		if loadErr == nil && existingState != nil && existingState.AgentType != "" {
+			if conflictingAgent, agentErr := agent.GetByAgentType(existingState.AgentType); agentErr == nil {
+				resumeCmd = conflictingAgent.FormatResumeCommand(conflictingAgent.ExtractAgentSessionID(sessionConflictErr.ExistingSession))
+			}
+		}
+		// Fall back to current agent if we couldn't get the conflicting agent
+		if resumeCmd == "" {
+			resumeCmd = ag.FormatResumeCommand(ag.ExtractAgentSessionID(sessionConflictErr.ExistingSession))
+		}
 		fmt.Fprintf(os.Stderr, "\n"+
 			"Warning: Session ID conflict detected!\n\n"+
 			"   Shadow branch: %s\n"+
@@ -309,7 +340,7 @@ func commitWithMetadata() error {
 	}
 
 	// Get the agent for hook input parsing and session ID transformation
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -320,7 +351,7 @@ func commitWithMetadata() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "stop",
 		slog.String("hook", "stop"),
 		slog.String("hook_type", "agent"),
@@ -592,7 +623,13 @@ func handlePostTodo() error {
 		return fmt.Errorf("failed to parse PostToolUse[TodoWrite] input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	// Get agent for logging context
+	ag, err := GetCurrentHookAgent()
+	if err != nil {
+		return fmt.Errorf("failed to get agent: %w", err)
+	}
+
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "post-todo",
 		slog.String("hook", "post-todo"),
 		slog.String("hook_type", "subagent"),
@@ -717,7 +754,13 @@ func handlePreTask() error {
 		return fmt.Errorf("failed to parse PreToolUse[Task] input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	// Get agent for logging context
+	ag, err := GetCurrentHookAgent()
+	if err != nil {
+		return fmt.Errorf("failed to get agent: %w", err)
+	}
+
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "pre-task",
 		slog.String("hook", "pre-task"),
 		slog.String("hook_type", "subagent"),
@@ -822,8 +865,14 @@ func handlePostTask() error {
 	// Extract subagent type from tool_input for logging
 	subagentType, taskDescription := ParseSubagentTypeAndDescription(input.ToolInput)
 
+	// Get agent for logging context
+	ag, err := GetCurrentHookAgent()
+	if err != nil {
+		return fmt.Errorf("failed to get agent: %w", err)
+	}
+
 	// Log parsed input context
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "post-task",
 		slog.String("hook", "post-task"),
 		slog.String("hook_type", "subagent"),
@@ -947,7 +996,7 @@ func handlePostTask() error {
 // It reads session info from stdin and sets it as the current session.
 func handleSessionStart() error {
 	// Get the agent for session ID transformation
-	ag, err := GetAgent()
+	ag, err := GetCurrentHookAgent()
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -958,7 +1007,7 @@ func handleSessionStart() error {
 		return fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
-	logCtx := logging.WithComponent(context.Background(), "hooks")
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
 	logging.Info(logCtx, "session-start",
 		slog.String("hook", "session-start"),
 		slog.String("hook_type", "agent"),

@@ -8,6 +8,7 @@ import (
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/agent/claudecode"
+	"entire.io/cli/cmd/entire/cli/agent/geminicli"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 
@@ -91,11 +92,123 @@ func init() {
 		}
 		return handlePostTodo()
 	})
+
+	// Register Gemini CLI handlers
+	RegisterHookHandler(agent.AgentNameGemini, geminicli.HookNameSessionStart, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleGeminiSessionStart()
+	})
+
+	RegisterHookHandler(agent.AgentNameGemini, geminicli.HookNameSessionEnd, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleGeminiSessionEnd()
+	})
+
+	RegisterHookHandler(agent.AgentNameGemini, geminicli.HookNameBeforeTool, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleGeminiBeforeTool()
+	})
+
+	RegisterHookHandler(agent.AgentNameGemini, geminicli.HookNameAfterTool, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleGeminiAfterTool()
+	})
+
+	RegisterHookHandler(agent.AgentNameGemini, geminicli.HookNameBeforeAgent, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleGeminiBeforeAgent()
+	})
+
+	RegisterHookHandler(agent.AgentNameGemini, geminicli.HookNameAfterAgent, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleGeminiAfterAgent()
+	})
+
+	RegisterHookHandler(agent.AgentNameGemini, geminicli.HookNameBeforeModel, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleGeminiBeforeModel()
+	})
+
+	RegisterHookHandler(agent.AgentNameGemini, geminicli.HookNameAfterModel, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleGeminiAfterModel()
+	})
+
+	RegisterHookHandler(agent.AgentNameGemini, geminicli.HookNameBeforeToolSelection, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleGeminiBeforeToolSelection()
+	})
+
+	RegisterHookHandler(agent.AgentNameGemini, geminicli.HookNamePreCompress, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleGeminiPreCompress()
+	})
+
+	RegisterHookHandler(agent.AgentNameGemini, geminicli.HookNameNotification, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleGeminiNotification()
+	})
 }
 
 // agentHookLogCleanup stores the cleanup function for agent hook logging.
 // Set by PersistentPreRunE, called by PersistentPostRunE.
 var agentHookLogCleanup func()
+
+// currentHookAgentName stores the agent name for the currently executing hook.
+// Set by newAgentHookVerbCmdWithLogging before calling the handler.
+// This allows handlers to know which agent invoked the hook without guessing.
+var currentHookAgentName string
+
+// GetCurrentHookAgent returns the agent for the currently executing hook.
+// Returns the agent based on the hook command structure (e.g., "entire hooks claude-code ...")
+// rather than guessing from directory presence.
+// Falls back to GetAgent() if not in a hook context.
+//
+
+func GetCurrentHookAgent() (agent.Agent, error) {
+	if currentHookAgentName != "" {
+		ag, err := agent.Get(currentHookAgentName)
+		if err != nil {
+			return nil, fmt.Errorf("getting hook agent %q: %w", currentHookAgentName, err)
+		}
+		return ag, nil
+	}
+	// Fallback for non-hook contexts
+	return GetAgent()
+}
 
 // newAgentHooksCmd creates a hooks subcommand for an agent that implements HookHandler.
 // It dynamically creates subcommands for each hook the agent supports.
@@ -125,11 +238,14 @@ func newAgentHooksCmd(agentName string, handler agent.HookHandler) *cobra.Comman
 
 // getHookType returns the hook type based on the hook name.
 // Returns "subagent" for task-related hooks (pre-task, post-task, post-todo),
+// "tool" for tool-related hooks (before-tool, after-tool),
 // "agent" for all other agent hooks.
 func getHookType(hookName string) string {
 	switch hookName {
 	case claudecode.HookNamePreTask, claudecode.HookNamePostTask, claudecode.HookNamePostTodo:
 		return "subagent"
+	case geminicli.HookNameBeforeTool, geminicli.HookNameAfterTool:
+		return "tool"
 	default:
 		return "agent"
 	}
@@ -149,8 +265,8 @@ func newAgentHookVerbCmdWithLogging(agentName, hookName string) *cobra.Command {
 
 			start := time.Now()
 
-			// Initialize logging context
-			ctx := logging.WithComponent(context.Background(), "hooks")
+			// Initialize logging context with agent name
+			ctx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), agentName)
 
 			// Get strategy name for logging
 			strategyName := unknownStrategyName
@@ -161,7 +277,6 @@ func newAgentHookVerbCmdWithLogging(agentName, hookName string) *cobra.Command {
 			logging.Debug(ctx, "hook invoked",
 				slog.String("hook", hookName),
 				slog.String("hook_type", hookType),
-				slog.String("agent", agentName),
 				slog.String("strategy", strategyName),
 			)
 
@@ -170,17 +285,20 @@ func newAgentHookVerbCmdWithLogging(agentName, hookName string) *cobra.Command {
 				logging.Error(ctx, "no handler registered",
 					slog.String("hook", hookName),
 					slog.String("hook_type", hookType),
-					slog.String("agent", agentName),
 				)
 				return fmt.Errorf("no handler registered for %s/%s", agentName, hookName)
 			}
+
+			// Set the current hook agent so handlers can retrieve it
+			// without guessing from directory presence
+			currentHookAgentName = agentName
+			defer func() { currentHookAgentName = "" }()
 
 			hookErr := handler()
 
 			logging.LogDuration(ctx, slog.LevelDebug, "hook completed", start,
 				slog.String("hook", hookName),
 				slog.String("hook_type", hookType),
-				slog.String("agent", agentName),
 				slog.String("strategy", strategyName),
 				slog.Bool("success", hookErr == nil),
 			)

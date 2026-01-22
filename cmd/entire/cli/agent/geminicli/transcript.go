@@ -1,0 +1,273 @@
+package geminicli
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+// Transcript parsing types - Gemini CLI uses JSON format for session storage
+// Based on transcript_path format: ~/.gemini/tmp/<hash>/chats/session-<date>-<id>.json
+
+// Message type constants for Gemini transcripts
+const (
+	MessageTypeUser   = "user"
+	MessageTypeGemini = "gemini"
+)
+
+// GeminiTranscript represents the top-level structure of a Gemini session file
+type GeminiTranscript struct {
+	Messages []GeminiMessage `json:"messages"`
+}
+
+// GeminiMessage represents a single message in the transcript
+type GeminiMessage struct {
+	Type      string           `json:"type"` // MessageTypeUser or MessageTypeGemini
+	Content   string           `json:"content,omitempty"`
+	ToolCalls []GeminiToolCall `json:"toolCalls,omitempty"`
+}
+
+// GeminiToolCall represents a tool call in a gemini message
+type GeminiToolCall struct {
+	ID     string                 `json:"id"`
+	Name   string                 `json:"name"`
+	Args   map[string]interface{} `json:"args"`
+	Status string                 `json:"status,omitempty"`
+}
+
+// ParseTranscript parses raw JSON content into a transcript structure
+func ParseTranscript(data []byte) (*GeminiTranscript, error) {
+	var transcript GeminiTranscript
+	if err := json.Unmarshal(data, &transcript); err != nil {
+		return nil, fmt.Errorf("failed to parse transcript: %w", err)
+	}
+	return &transcript, nil
+}
+
+// ExtractModifiedFiles extracts files modified by tool calls from transcript data
+func ExtractModifiedFiles(data []byte) ([]string, error) {
+	transcript, err := ParseTranscript(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return ExtractModifiedFilesFromTranscript(transcript), nil
+}
+
+// ExtractModifiedFilesFromTranscript extracts files from a parsed transcript
+func ExtractModifiedFilesFromTranscript(transcript *GeminiTranscript) []string {
+	fileSet := make(map[string]bool)
+	var files []string
+
+	for _, msg := range transcript.Messages {
+		// Only process gemini messages (assistant messages)
+		if msg.Type != MessageTypeGemini {
+			continue
+		}
+
+		// Process tool calls in this message
+		for _, toolCall := range msg.ToolCalls {
+			// Check if it's a file modification tool
+			isModifyTool := false
+			for _, name := range FileModificationTools {
+				if toolCall.Name == name {
+					isModifyTool = true
+					break
+				}
+			}
+
+			if !isModifyTool {
+				continue
+			}
+
+			// Extract file path from args map
+			var file string
+			if fp, ok := toolCall.Args["file_path"].(string); ok && fp != "" {
+				file = fp
+			} else if p, ok := toolCall.Args["path"].(string); ok && p != "" {
+				file = p
+			} else if fn, ok := toolCall.Args["filename"].(string); ok && fn != "" {
+				file = fn
+			}
+
+			if file != "" && !fileSet[file] {
+				fileSet[file] = true
+				files = append(files, file)
+			}
+		}
+	}
+
+	return files
+}
+
+// ExtractLastUserPrompt extracts the last user message from transcript data
+func ExtractLastUserPrompt(data []byte) (string, error) {
+	transcript, err := ParseTranscript(data)
+	if err != nil {
+		return "", err
+	}
+
+	return ExtractLastUserPromptFromTranscript(transcript), nil
+}
+
+// ExtractLastUserPromptFromTranscript extracts the last user prompt from a parsed transcript
+func ExtractLastUserPromptFromTranscript(transcript *GeminiTranscript) string {
+	for i := len(transcript.Messages) - 1; i >= 0; i-- {
+		msg := transcript.Messages[i]
+		if msg.Type != MessageTypeUser {
+			continue
+		}
+
+		// Content is now a string field
+		if msg.Content != "" {
+			return msg.Content
+		}
+	}
+	return ""
+}
+
+// ExtractAllUserPrompts extracts all user messages from transcript data
+func ExtractAllUserPrompts(data []byte) ([]string, error) {
+	transcript, err := ParseTranscript(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return ExtractAllUserPromptsFromTranscript(transcript), nil
+}
+
+// ExtractAllUserPromptsFromTranscript extracts all user prompts from a parsed transcript
+func ExtractAllUserPromptsFromTranscript(transcript *GeminiTranscript) []string {
+	var prompts []string
+	for _, msg := range transcript.Messages {
+		if msg.Type == MessageTypeUser && msg.Content != "" {
+			prompts = append(prompts, msg.Content)
+		}
+	}
+	return prompts
+}
+
+// ExtractLastAssistantMessage extracts the last gemini response from transcript data
+func ExtractLastAssistantMessage(data []byte) (string, error) {
+	transcript, err := ParseTranscript(data)
+	if err != nil {
+		return "", err
+	}
+
+	return ExtractLastAssistantMessageFromTranscript(transcript), nil
+}
+
+// ExtractLastAssistantMessageFromTranscript extracts the last gemini response from a parsed transcript
+func ExtractLastAssistantMessageFromTranscript(transcript *GeminiTranscript) string {
+	for i := len(transcript.Messages) - 1; i >= 0; i-- {
+		msg := transcript.Messages[i]
+		if msg.Type == MessageTypeGemini && msg.Content != "" {
+			return msg.Content
+		}
+	}
+	return ""
+}
+
+// TranscriptPosition holds the position information for a Gemini transcript
+type TranscriptPosition struct {
+	MessageCount int // Total number of messages
+}
+
+// GetTranscriptPosition reads a Gemini transcript file and returns the message count.
+// Returns empty position if file doesn't exist or is empty.
+// For Gemini, position is based on message count (not lines like Claude Code's JSONL).
+func GetTranscriptPosition(path string) (TranscriptPosition, error) {
+	if path == "" {
+		return TranscriptPosition{}, nil
+	}
+
+	data, err := os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
+	if err != nil {
+		if os.IsNotExist(err) {
+			return TranscriptPosition{}, nil
+		}
+		return TranscriptPosition{}, fmt.Errorf("failed to read transcript: %w", err)
+	}
+
+	if len(data) == 0 {
+		return TranscriptPosition{}, nil
+	}
+
+	transcript, err := ParseTranscript(data)
+	if err != nil {
+		return TranscriptPosition{}, fmt.Errorf("failed to parse transcript: %w", err)
+	}
+
+	return TranscriptPosition{
+		MessageCount: len(transcript.Messages),
+	}, nil
+}
+
+// TokenUsage represents aggregated token usage for a checkpoint
+type TokenUsage struct {
+	// InputTokens is the number of input tokens (fresh, not from cache)
+	InputTokens int `json:"input_tokens"`
+	// OutputTokens is the number of output tokens generated
+	OutputTokens int `json:"output_tokens"`
+	// CacheReadTokens is the number of tokens read from cache
+	CacheReadTokens int `json:"cache_read_tokens"`
+	// APICallCount is the number of API calls made
+	APICallCount int `json:"api_call_count"`
+}
+
+// CalculateTokenUsage calculates token usage from a Gemini transcript.
+// This is specific to Gemini's API format where each message may have a tokens object
+// with input, output, cached, thoughts, tool, and total counts.
+// Only processes messages from startMessageIndex onwards (0-indexed).
+func CalculateTokenUsage(data []byte, startMessageIndex int) *TokenUsage {
+	var transcript struct {
+		Messages []geminiMessageWithTokens `json:"messages"`
+	}
+
+	if err := json.Unmarshal(data, &transcript); err != nil {
+		return &TokenUsage{}
+	}
+
+	usage := &TokenUsage{}
+
+	for i, msg := range transcript.Messages {
+		// Skip messages before startMessageIndex
+		if i < startMessageIndex {
+			continue
+		}
+
+		// Only count tokens from gemini (assistant) messages
+		if msg.Type != MessageTypeGemini {
+			continue
+		}
+
+		if msg.Tokens == nil {
+			continue
+		}
+
+		usage.APICallCount++
+		usage.InputTokens += msg.Tokens.Input
+		usage.OutputTokens += msg.Tokens.Output
+		usage.CacheReadTokens += msg.Tokens.Cached
+	}
+
+	return usage
+}
+
+// CalculateTokenUsageFromFile calculates token usage from a Gemini transcript file.
+// If startMessageIndex > 0, only considers messages from that index onwards.
+func CalculateTokenUsageFromFile(path string, startMessageIndex int) (*TokenUsage, error) {
+	if path == "" {
+		return &TokenUsage{}, nil
+	}
+
+	data, err := os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &TokenUsage{}, nil
+		}
+		return nil, fmt.Errorf("failed to read transcript: %w", err)
+	}
+
+	return CalculateTokenUsage(data, startMessageIndex), nil
+}

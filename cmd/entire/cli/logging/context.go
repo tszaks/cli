@@ -13,6 +13,7 @@ const (
 	parentSessionIDKey
 	toolCallIDKey
 	componentKey
+	agentKey
 )
 
 // WithSession adds a session ID to the context.
@@ -42,6 +43,12 @@ func WithToolCall(ctx context.Context, toolCallID string) context.Context {
 // Component names help identify the subsystem generating logs (e.g., "hooks", "strategy", "session").
 func WithComponent(ctx context.Context, component string) context.Context {
 	return context.WithValue(ctx, componentKey, component)
+}
+
+// WithAgent adds an agent name to the context.
+// Agent names identify the AI agent generating activity (e.g., "claude-code", "cursor", "aider").
+func WithAgent(ctx context.Context, agent string) context.Context {
+	return context.WithValue(ctx, agentKey, agent)
 }
 
 // SessionIDFromContext extracts the session ID from the context.
@@ -81,6 +88,17 @@ func ToolCallIDFromContext(ctx context.Context) string {
 // Returns empty string if not set.
 func ComponentFromContext(ctx context.Context) string {
 	if v := ctx.Value(componentKey); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// AgentFromContext extracts the agent name from the context.
+// Returns empty string if not set.
+func AgentFromContext(ctx context.Context) string {
+	if v := ctx.Value(agentKey); v != nil {
 		if s, ok := v.(string); ok {
 			return s
 		}
