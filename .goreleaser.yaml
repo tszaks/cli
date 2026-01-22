@@ -44,3 +44,19 @@ changelog:
       - "^docs:"
       - "^test:"
       - "^chore:"
+
+homebrew_casks:
+  - name: entire
+    repository:
+      owner: entireio
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: "https://github.com/entireio/cli"
+    description: "CLI for Entire"
+    binaries:
+      - entire
+    completions:
+      bash: bash
+      zsh: zsh
+      fish: fish
