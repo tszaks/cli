@@ -181,9 +181,9 @@ func (s *ManualCommitStrategy) GetLogsOnlyRewindPoints(limit int) ([]RewindPoint
 		}
 		count++
 
-		// Extract checkpoint ID from Entire-Checkpoint trailer
-		cpID, hasTrailer := trailers.ParseCheckpoint(c.Message)
-		if !hasTrailer || cpID.IsEmpty() {
+		// Extract checkpoint ID from Entire-Checkpoint trailer (ParseCheckpoint validates format)
+		cpID, found := trailers.ParseCheckpoint(c.Message)
+		if !found {
 			return nil
 		}
 		checkpointID := cpID.String()

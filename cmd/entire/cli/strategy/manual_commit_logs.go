@@ -40,9 +40,8 @@ func (s *ManualCommitStrategy) GetSessionLog(commitHash string) ([]byte, string,
 	if err == nil {
 		commit, err := repo.CommitObject(*hash)
 		if err == nil {
-			// Check for Entire-Checkpoint trailer
-			cpID, hasTrailer := trailers.ParseCheckpoint(commit.Message)
-			if hasTrailer && !cpID.IsEmpty() {
+			// Check for Entire-Checkpoint trailer (ParseCheckpoint validates format)
+			if cpID, found := trailers.ParseCheckpoint(commit.Message); found {
 				checkpointID := cpID.String()
 				log, logErr := s.getCheckpointLog(checkpointID)
 				if logErr == nil {
