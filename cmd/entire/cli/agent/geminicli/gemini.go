@@ -252,3 +252,107 @@ var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9]`)
 func SanitizePathForGemini(path string) string {
 	return nonAlphanumericRegex.ReplaceAllString(path, "-")
 }
+
+// TranscriptAnalyzer interface implementation
+
+// GetTranscriptPosition returns the current message count of a Gemini transcript.
+// Gemini uses JSON format with a messages array, so position is the message count.
+// Returns 0 if the file doesn't exist or is empty.
+func (g *GeminiCLIAgent) GetTranscriptPosition(path string) (int, error) {
+	if path == "" {
+		return 0, nil
+	}
+
+	data, err := os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to read transcript: %w", err)
+	}
+
+	if len(data) == 0 {
+		return 0, nil
+	}
+
+	transcript, err := ParseTranscript(data)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse transcript: %w", err)
+	}
+
+	return len(transcript.Messages), nil
+}
+
+// ExtractModifiedFilesFromOffset extracts files modified since a given message index.
+// For Gemini (JSON format), offset is the starting message index.
+// Returns:
+//   - files: list of file paths modified by Gemini (from Write/Edit tools)
+//   - currentPosition: total number of messages in the transcript
+//   - error: any error encountered during reading
+func (g *GeminiCLIAgent) ExtractModifiedFilesFromOffset(path string, startOffset int) (files []string, currentPosition int, err error) {
+	if path == "" {
+		return nil, 0, nil
+	}
+
+	data, readErr := os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
+	if readErr != nil {
+		if os.IsNotExist(readErr) {
+			return nil, 0, nil
+		}
+		return nil, 0, fmt.Errorf("failed to read transcript: %w", readErr)
+	}
+
+	if len(data) == 0 {
+		return nil, 0, nil
+	}
+
+	transcript, parseErr := ParseTranscript(data)
+	if parseErr != nil {
+		return nil, 0, parseErr
+	}
+
+	totalMessages := len(transcript.Messages)
+
+	// Extract files from messages starting at startOffset
+	fileSet := make(map[string]bool)
+	for i := startOffset; i < len(transcript.Messages); i++ {
+		msg := transcript.Messages[i]
+		// Only process gemini messages (assistant messages)
+		if msg.Type != MessageTypeGemini {
+			continue
+		}
+
+		// Process tool calls in this message
+		for _, toolCall := range msg.ToolCalls {
+			// Check if it's a file modification tool
+			isModifyTool := false
+			for _, name := range FileModificationTools {
+				if toolCall.Name == name {
+					isModifyTool = true
+					break
+				}
+			}
+
+			if !isModifyTool {
+				continue
+			}
+
+			// Extract file path from args map
+			var file string
+			if fp, ok := toolCall.Args["file_path"].(string); ok && fp != "" {
+				file = fp
+			} else if p, ok := toolCall.Args["path"].(string); ok && p != "" {
+				file = p
+			} else if fn, ok := toolCall.Args["filename"].(string); ok && fn != "" {
+				file = fn
+			}
+
+			if file != "" && !fileSet[file] {
+				fileSet[file] = true
+				files = append(files, file)
+			}
+		}
+	}
+
+	return files, totalMessages, nil
+}

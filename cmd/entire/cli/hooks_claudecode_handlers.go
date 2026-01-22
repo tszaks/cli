@@ -321,7 +321,7 @@ func captureInitialState() error {
 		if idx := strings.Index(agentType, " - "); idx > 0 {
 			agentType = agentType[:idx]
 		}
-		if initErr := initializer.InitializeSession(hookData.entireSessionID, agentType); initErr != nil {
+		if initErr := initializer.InitializeSession(hookData.entireSessionID, agentType, hookData.input.SessionRef); initErr != nil {
 			if err := handleSessionInitErrors(hookData.agent, initErr); err != nil {
 				return err
 			}

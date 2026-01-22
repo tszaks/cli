@@ -434,7 +434,8 @@ type SessionInitializer interface {
 	// InitializeSession creates session state for a new session.
 	// Called during UserPromptSubmit hook before any checkpoints are created.
 	// agentType is the human-readable name of the agent (e.g., "Claude Code").
-	InitializeSession(sessionID string, agentType string) error
+	// transcriptPath is the path to the live transcript file (for mid-session commit detection).
+	InitializeSession(sessionID string, agentType string, transcriptPath string) error
 }
 
 // PrepareCommitMsgHandler is an optional interface for strategies that need to

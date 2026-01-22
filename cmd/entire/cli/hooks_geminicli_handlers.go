@@ -631,7 +631,7 @@ func handleGeminiBeforeAgent() error {
 		if idx := strings.Index(agentType, " - "); idx > 0 {
 			agentType = agentType[:idx]
 		}
-		if initErr := initializer.InitializeSession(entireSessionID, agentType); initErr != nil {
+		if initErr := initializer.InitializeSession(entireSessionID, agentType, input.SessionRef); initErr != nil {
 			if handleErr := handleSessionInitErrors(ag, initErr); handleErr != nil {
 				return handleErr
 			}

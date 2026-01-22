@@ -998,7 +998,8 @@ func (s *AutoCommitStrategy) GetCheckpointLog(cp Checkpoint) ([]byte, error) {
 // For auto-commit strategy, this creates a SessionState file in .git/entire-sessions/
 // to track CondensedTranscriptLines (transcript offset) across checkpoints.
 // agentType is the human-readable name of the agent (e.g., "Claude Code").
-func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType string) error {
+// transcriptPath is the path to the live transcript file (for mid-session commit detection).
+func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType string, transcriptPath string) error {
 	repo, err := OpenRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
@@ -1031,6 +1032,7 @@ func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType strin
 		CondensedTranscriptLines: 0, // Start from beginning of transcript
 		FilesTouched:             []string{},
 		AgentType:                agentType,
+		TranscriptPath:           transcriptPath,
 	}
 
 	if err := SaveSessionState(state); err != nil {

@@ -168,41 +168,6 @@ func ExtractLastAssistantMessageFromTranscript(transcript *GeminiTranscript) str
 	return ""
 }
 
-// TranscriptPosition holds the position information for a Gemini transcript
-type TranscriptPosition struct {
-	MessageCount int // Total number of messages
-}
-
-// GetTranscriptPosition reads a Gemini transcript file and returns the message count.
-// Returns empty position if file doesn't exist or is empty.
-// For Gemini, position is based on message count (not lines like Claude Code's JSONL).
-func GetTranscriptPosition(path string) (TranscriptPosition, error) {
-	if path == "" {
-		return TranscriptPosition{}, nil
-	}
-
-	data, err := os.ReadFile(path) //nolint:gosec // Reading from controlled transcript path
-	if err != nil {
-		if os.IsNotExist(err) {
-			return TranscriptPosition{}, nil
-		}
-		return TranscriptPosition{}, fmt.Errorf("failed to read transcript: %w", err)
-	}
-
-	if len(data) == 0 {
-		return TranscriptPosition{}, nil
-	}
-
-	transcript, err := ParseTranscript(data)
-	if err != nil {
-		return TranscriptPosition{}, fmt.Errorf("failed to parse transcript: %w", err)
-	}
-
-	return TranscriptPosition{
-		MessageCount: len(transcript.Messages),
-	}, nil
-}
-
 // TokenUsage represents aggregated token usage for a checkpoint
 type TokenUsage struct {
 	// InputTokens is the number of input tokens (fresh, not from cache)
