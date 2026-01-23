@@ -575,21 +575,6 @@ func (env *TestEnv) GitCheckoutNewBranch(branchName string) {
 	}
 }
 
-// RunGitCommand runs an arbitrary git command in the repo directory.
-// This is useful for git operations not wrapped by helper methods.
-func (env *TestEnv) RunGitCommand(args ...string) string {
-	env.T.Helper()
-
-	cmd := exec.Command("git", args...)
-	cmd.Dir = env.RepoDir
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		env.T.Fatalf("git command failed: %v\nCommand: git %s\nOutput: %s",
-			err, strings.Join(args, " "), output)
-	}
-	return string(output)
-}
-
 // GetCurrentBranch returns the current branch name.
 func (env *TestEnv) GetCurrentBranch() string {
 	env.T.Helper()
