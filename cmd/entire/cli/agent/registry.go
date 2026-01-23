@@ -94,7 +94,14 @@ const DefaultAgentName AgentName = AgentNameClaudeCode
 
 // GetByAgentType retrieves an agent by its type identifier.
 //
-
+// Note: This uses a linear search that instantiates agents until a match is found.
+// This is acceptable because:
+//   - Agent count is small (~2-20 agents)
+//   - Agent factories are lightweight (empty struct allocation)
+//   - Called infrequently (commit hooks, rewind, debug commands - not hot paths)
+//   - Cost is ~400ns worst case vs milliseconds for I/O operations
+//
+// Only optimize if agent count exceeds 100 or profiling shows this as a bottleneck.
 func GetByAgentType(agentType AgentType) (Agent, error) {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
