@@ -2,7 +2,7 @@ package agent
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"sync"
 )
 
@@ -45,7 +45,7 @@ func List() []AgentName {
 	for name := range registry {
 		names = append(names, name)
 	}
-	sort.Slice(names, func(i, j int) bool { return names[i] < names[j] })
+	slices.Sort(names)
 	return names
 }
 
