@@ -320,6 +320,8 @@ func (s *GitStore) writeTranscript(opts WriteCommittedOptions, basePath string, 
 // writeMetadataJSON writes the metadata.json file for the checkpoint.
 // If existingMetadata is provided, merges session info from the previous session(s).
 func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string, entries map[string]object.TreeEntry, existingMetadata *CommittedMetadata) error {
+	// Note: Agents array is only populated during multi-session merge (below).
+	// For single-session checkpoints, we only set Agent (singular).
 	metadata := CommittedMetadata{
 		CheckpointID:           opts.CheckpointID,
 		SessionID:              opts.SessionID,
@@ -329,6 +331,7 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 		CheckpointsCount:       opts.CheckpointsCount,
 		FilesTouched:           opts.FilesTouched,
 		Agent:                  opts.Agent,
+		Agents:                 nil, // Only set during multi-session merge
 		IsTask:                 opts.IsTask,
 		ToolUseID:              opts.ToolUseID,
 		SessionCount:           1,
@@ -355,6 +358,18 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 		}
 		metadata.SessionIDs = append(metadata.SessionIDs[:0], existingIDs...)
 		metadata.SessionIDs = append(metadata.SessionIDs, opts.SessionID)
+
+		// Merge agents (deduplicated, preserving order)
+		existingAgents := existingMetadata.Agents
+		if len(existingAgents) == 0 && existingMetadata.Agent != "" {
+			// Backwards compat: old metadata only had Agent
+			existingAgents = []agent.AgentType{existingMetadata.Agent}
+		}
+		metadata.Agents = mergeAgents(existingAgents, opts.Agent)
+		// Keep Agent as the first agent for backwards compat
+		if len(metadata.Agents) > 0 {
+			metadata.Agent = metadata.Agents[0]
+		}
 
 		// Merge files touched (deduplicated)
 		metadata.FilesTouched = mergeFilesTouched(existingMetadata.FilesTouched, opts.FilesTouched)
@@ -398,6 +413,30 @@ func mergeFilesTouched(existing, additional []string) []string {
 	}
 
 	sort.Strings(result)
+	return result
+}
+
+// mergeAgents combines existing agents with a new agent, removing duplicates.
+// Preserves order (existing agents first, then new agent if not already present).
+func mergeAgents(existing []agent.AgentType, newAgent agent.AgentType) []agent.AgentType {
+	if newAgent == "" {
+		return existing
+	}
+
+	seen := make(map[agent.AgentType]bool)
+	var result []agent.AgentType
+
+	for _, a := range existing {
+		if !seen[a] {
+			seen[a] = true
+			result = append(result, a)
+		}
+	}
+
+	if !seen[newAgent] {
+		result = append(result, newAgent)
+	}
+
 	return result
 }
 
