@@ -74,6 +74,11 @@ func ReassembleTranscript(chunks [][]byte, agentType string) ([]byte, error) {
 // ChunkJSONL splits JSONL content at line boundaries.
 // This is the default chunking for agents using JSONL format (like Claude Code).
 func ChunkJSONL(content []byte, maxSize int) ([][]byte, error) {
+	// Handle empty content
+	if len(content) == 0 {
+		return [][]byte{}, nil
+	}
+
 	lines := strings.Split(string(content), "\n")
 	var chunks [][]byte
 	var currentChunk strings.Builder

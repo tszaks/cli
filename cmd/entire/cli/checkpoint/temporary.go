@@ -335,12 +335,19 @@ func (s *GitStore) addTaskMetadataToTree(baseTreeHash plumbing.Hash, opts WriteT
 				} else {
 					for i, chunk := range chunks {
 						chunkPath := sessionMetadataDir + "/" + agent.ChunkFileName(paths.TranscriptFileName, i)
-						if blobHash, blobErr := CreateBlobFromContent(s.repo, chunk); blobErr == nil {
-							entries[chunkPath] = object.TreeEntry{
-								Name: chunkPath,
-								Mode: filemode.Regular,
-								Hash: blobHash,
-							}
+						blobHash, blobErr := CreateBlobFromContent(s.repo, chunk)
+						if blobErr != nil {
+							logging.Warn(context.Background(), "failed to create blob for transcript chunk",
+								slog.String("error", blobErr.Error()),
+								slog.String("session_id", opts.SessionID),
+								slog.Int("chunk_index", i),
+							)
+							continue
+						}
+						entries[chunkPath] = object.TreeEntry{
+							Name: chunkPath,
+							Mode: filemode.Regular,
+							Hash: blobHash,
 						}
 					}
 				}

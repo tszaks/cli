@@ -925,7 +925,9 @@ func readTranscriptFromTree(tree *object.Tree, agentType string) ([]byte, error)
 		// Sort chunk files by index
 		chunkFiles = agent.SortChunkFiles(chunkFiles, paths.TranscriptFileName)
 
-		// Check if base file should be included as chunk 0
+		// Check if base file should be included as chunk 0.
+		// NOTE: This assumes the chunking convention where the unsuffixed file
+		// (full.jsonl) is chunk 0, and numbered files (.001, .002) are chunks 1+.
 		if hasBaseFile {
 			chunkFiles = append([]string{paths.TranscriptFileName}, chunkFiles...)
 		}

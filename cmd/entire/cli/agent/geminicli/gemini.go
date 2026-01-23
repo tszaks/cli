@@ -422,6 +422,11 @@ func (g *GeminiCLIAgent) ChunkTranscript(content []byte, maxSize int) ([][]byte,
 		chunks = append(chunks, chunkData)
 	}
 
+	// Ensure we created at least one chunk (could be empty if all messages failed to marshal)
+	if len(chunks) == 0 {
+		return nil, errors.New("failed to create any chunks: all messages failed to marshal")
+	}
+
 	return chunks, nil
 }
 
