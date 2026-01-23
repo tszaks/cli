@@ -324,23 +324,23 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 	// Note: Agents array is only populated during multi-session merge (below).
 	// For single-session checkpoints, we only set Agent (singular).
 	metadata := CommittedMetadata{
-		CheckpointID:           opts.CheckpointID,
-		SessionID:              opts.SessionID,
-		Strategy:               opts.Strategy,
-		CreatedAt:              time.Now().UTC(),
-		Branch:                 opts.Branch,
-		CheckpointsCount:       opts.CheckpointsCount,
-		FilesTouched:           opts.FilesTouched,
-		Agent:                  opts.Agent,
-		Agents:                 nil, // Only set during multi-session merge
-		IsTask:                 opts.IsTask,
-		ToolUseID:              opts.ToolUseID,
-		SessionCount:           1,
-		SessionIDs:             []string{opts.SessionID},
-		TranscriptUUIDAtStart:  opts.TranscriptUUIDAtStart,
-		TranscriptLinesAtStart: opts.TranscriptLinesAtStart,
-		TokenUsage:             opts.TokenUsage,
-		InitialAttribution:     opts.InitialAttribution,
+		CheckpointID:                opts.CheckpointID,
+		SessionID:                   opts.SessionID,
+		Strategy:                    opts.Strategy,
+		CreatedAt:                   time.Now().UTC(),
+		Branch:                      opts.Branch,
+		CheckpointsCount:            opts.CheckpointsCount,
+		FilesTouched:                opts.FilesTouched,
+		Agent:                       opts.Agent,
+		Agents:                      nil, // Only set during multi-session merge
+		IsTask:                      opts.IsTask,
+		ToolUseID:                   opts.ToolUseID,
+		SessionCount:                1,
+		SessionIDs:                  []string{opts.SessionID},
+		TranscriptIdentifierAtStart: opts.TranscriptIdentifierAtStart,
+		TranscriptLinesAtStart:      opts.TranscriptLinesAtStart,
+		TokenUsage:                  opts.TokenUsage,
+		InitialAttribution:          opts.InitialAttribution,
 	}
 
 	// Merge with existing metadata if present (multi-session checkpoint)

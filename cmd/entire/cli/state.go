@@ -29,8 +29,8 @@ type PrePromptState struct {
 
 	// Transcript position at prompt start - tracks what was added during this checkpoint
 	// Used for Claude Code sessions.
-	LastTranscriptUUID      string `json:"last_transcript_uuid,omitempty"`       // Last UUID when prompt started
-	LastTranscriptLineCount int    `json:"last_transcript_line_count,omitempty"` // Line count when prompt started
+	LastTranscriptIdentifier string `json:"last_transcript_identifier,omitempty"` // Last identifier when prompt started (UUID for Claude, message ID for Gemini)
+	LastTranscriptLineCount  int    `json:"last_transcript_line_count,omitempty"` // Line count when prompt started
 }
 
 // CapturePrePromptState captures current untracked files and transcript position before a prompt
@@ -72,11 +72,11 @@ func CapturePrePromptState(sessionID, transcriptPath string) error {
 	// Create state file
 	stateFile := prePromptStateFile(sessionID)
 	state := PrePromptState{
-		SessionID:               sessionID,
-		Timestamp:               time.Now().UTC().Format(time.RFC3339),
-		UntrackedFiles:          untrackedFiles,
-		LastTranscriptUUID:      transcriptPos.LastUUID,
-		LastTranscriptLineCount: transcriptPos.LineCount,
+		SessionID:                sessionID,
+		Timestamp:                time.Now().UTC().Format(time.RFC3339),
+		UntrackedFiles:           untrackedFiles,
+		LastTranscriptIdentifier: transcriptPos.LastUUID,
+		LastTranscriptLineCount:  transcriptPos.LineCount,
 	}
 
 	data, err := jsonutil.MarshalIndentWithNewline(state, "", "  ")
@@ -143,11 +143,11 @@ func CaptureGeminiPrePromptState(sessionID, transcriptPath string) error {
 	// Create state file
 	stateFile := prePromptStateFile(sessionID)
 	state := PrePromptState{
-		SessionID:          sessionID,
-		Timestamp:          time.Now().UTC().Format(time.RFC3339),
-		UntrackedFiles:     untrackedFiles,
-		StartMessageIndex:  startMessageIndex,
-		LastTranscriptUUID: lastMessageID,
+		SessionID:                sessionID,
+		Timestamp:                time.Now().UTC().Format(time.RFC3339),
+		UntrackedFiles:           untrackedFiles,
+		StartMessageIndex:        startMessageIndex,
+		LastTranscriptIdentifier: lastMessageID,
 	}
 
 	data, err := json.MarshalIndent(state, "", "  ")

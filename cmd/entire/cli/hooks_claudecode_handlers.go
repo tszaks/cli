@@ -546,10 +546,10 @@ func commitWithMetadata() error {
 	}
 
 	// Get transcript position from pre-prompt state (captured at checkpoint start)
-	var transcriptUUIDAtStart string
+	var transcriptIdentifierAtStart string
 	var transcriptLinesAtStart int
 	if preState != nil {
-		transcriptUUIDAtStart = preState.LastTranscriptUUID
+		transcriptIdentifierAtStart = preState.LastTranscriptIdentifier
 		transcriptLinesAtStart = preState.LastTranscriptLineCount
 	}
 
@@ -568,20 +568,20 @@ func commitWithMetadata() error {
 
 	// Build fully-populated save context and delegate to strategy
 	ctx := strategy.SaveContext{
-		SessionID:              entireSessionID,
-		ModifiedFiles:          relModifiedFiles,
-		NewFiles:               relNewFiles,
-		DeletedFiles:           relDeletedFiles,
-		MetadataDir:            sessionDir,
-		MetadataDirAbs:         sessionDirAbs,
-		CommitMessage:          commitMessage,
-		TranscriptPath:         transcriptPath,
-		AuthorName:             author.Name,
-		AuthorEmail:            author.Email,
-		AgentType:              agentType,
-		TranscriptUUIDAtStart:  transcriptUUIDAtStart,
-		TranscriptLinesAtStart: transcriptLinesAtStart,
-		TokenUsage:             tokenUsage,
+		SessionID:                   entireSessionID,
+		ModifiedFiles:               relModifiedFiles,
+		NewFiles:                    relNewFiles,
+		DeletedFiles:                relDeletedFiles,
+		MetadataDir:                 sessionDir,
+		MetadataDirAbs:              sessionDirAbs,
+		CommitMessage:               commitMessage,
+		TranscriptPath:              transcriptPath,
+		AuthorName:                  author.Name,
+		AuthorEmail:                 author.Email,
+		AgentType:                   agentType,
+		TranscriptIdentifierAtStart: transcriptIdentifierAtStart,
+		TranscriptLinesAtStart:      transcriptLinesAtStart,
+		TokenUsage:                  tokenUsage,
 	}
 
 	if err := strat.SaveChanges(ctx); err != nil {

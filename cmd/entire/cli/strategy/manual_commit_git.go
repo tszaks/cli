@@ -122,7 +122,7 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 	// On first checkpoint, store the initial transcript position
 	if isFirstCheckpointOfSession {
 		state.TranscriptLinesAtStart = ctx.TranscriptLinesAtStart
-		state.TranscriptUUIDAtStart = ctx.TranscriptUUIDAtStart
+		state.TranscriptIdentifierAtStart = ctx.TranscriptIdentifierAtStart
 	}
 
 	// Accumulate token usage

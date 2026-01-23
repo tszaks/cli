@@ -240,8 +240,8 @@ type WriteCommittedOptions struct {
 	Agent agent.AgentType
 
 	// Transcript position at checkpoint start - tracks what was added during this checkpoint
-	TranscriptUUIDAtStart  string // Last UUID when checkpoint started
-	TranscriptLinesAtStart int    // Line count when checkpoint started
+	TranscriptIdentifierAtStart string // Last identifier when checkpoint started (UUID for Claude, message ID for Gemini)
+	TranscriptLinesAtStart      int    // Line count when checkpoint started
 
 	// TokenUsage contains the token usage for this checkpoint
 	TokenUsage *agent.TokenUsage
@@ -342,8 +342,8 @@ type CommittedMetadata struct {
 	ToolUseID string `json:"tool_use_id,omitempty"`
 
 	// Transcript position at checkpoint start - tracks what was added during this checkpoint
-	TranscriptUUIDAtStart  string `json:"transcript_uuid_at_start,omitempty"`  // Last transcript UUID/ID when checkpoint started (Claude Code & Gemini CLI)
-	TranscriptLinesAtStart int    `json:"transcript_lines_at_start,omitempty"` // Line/message count when checkpoint started
+	TranscriptIdentifierAtStart string `json:"transcript_identifier_at_start,omitempty"` // Last identifier when checkpoint started (UUID for Claude, message ID for Gemini)
+	TranscriptLinesAtStart      int    `json:"transcript_lines_at_start,omitempty"`      // Line/message count when checkpoint started
 
 	// Token usage for this checkpoint
 	TokenUsage *agent.TokenUsage `json:"token_usage,omitempty"`

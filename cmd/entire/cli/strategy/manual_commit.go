@@ -61,21 +61,21 @@ func sessionStateToStrategy(state *session.State) *SessionState {
 		return nil
 	}
 	result := &SessionState{
-		SessionID:                state.SessionID,
-		BaseCommit:               state.BaseCommit,
-		WorktreePath:             state.WorktreePath,
-		StartedAt:                state.StartedAt,
-		CheckpointCount:          state.CheckpointCount,
-		CondensedTranscriptLines: state.CondensedTranscriptLines,
-		UntrackedFilesAtStart:    state.UntrackedFilesAtStart,
-		FilesTouched:             state.FilesTouched,
-		ConcurrentWarningShown:   state.ConcurrentWarningShown,
-		LastCheckpointID:         state.LastCheckpointID,
-		AgentType:                state.AgentType,
-		TokenUsage:               state.TokenUsage,
-		TranscriptLinesAtStart:   state.TranscriptLinesAtStart,
-		TranscriptUUIDAtStart:    state.TranscriptUUIDAtStart,
-		TranscriptPath:           state.TranscriptPath,
+		SessionID:                   state.SessionID,
+		BaseCommit:                  state.BaseCommit,
+		WorktreePath:                state.WorktreePath,
+		StartedAt:                   state.StartedAt,
+		CheckpointCount:             state.CheckpointCount,
+		CondensedTranscriptLines:    state.CondensedTranscriptLines,
+		UntrackedFilesAtStart:       state.UntrackedFilesAtStart,
+		FilesTouched:                state.FilesTouched,
+		ConcurrentWarningShown:      state.ConcurrentWarningShown,
+		LastCheckpointID:            state.LastCheckpointID,
+		AgentType:                   state.AgentType,
+		TokenUsage:                  state.TokenUsage,
+		TranscriptLinesAtStart:      state.TranscriptLinesAtStart,
+		TranscriptIdentifierAtStart: state.TranscriptIdentifierAtStart,
+		TranscriptPath:              state.TranscriptPath,
 	}
 	// Convert PromptAttributions
 	for _, pa := range state.PromptAttributions {
@@ -108,21 +108,21 @@ func sessionStateFromStrategy(state *SessionState) *session.State {
 		return nil
 	}
 	result := &session.State{
-		SessionID:                state.SessionID,
-		BaseCommit:               state.BaseCommit,
-		WorktreePath:             state.WorktreePath,
-		StartedAt:                state.StartedAt,
-		CheckpointCount:          state.CheckpointCount,
-		CondensedTranscriptLines: state.CondensedTranscriptLines,
-		UntrackedFilesAtStart:    state.UntrackedFilesAtStart,
-		FilesTouched:             state.FilesTouched,
-		ConcurrentWarningShown:   state.ConcurrentWarningShown,
-		LastCheckpointID:         state.LastCheckpointID,
-		AgentType:                state.AgentType,
-		TokenUsage:               state.TokenUsage,
-		TranscriptLinesAtStart:   state.TranscriptLinesAtStart,
-		TranscriptUUIDAtStart:    state.TranscriptUUIDAtStart,
-		TranscriptPath:           state.TranscriptPath,
+		SessionID:                   state.SessionID,
+		BaseCommit:                  state.BaseCommit,
+		WorktreePath:                state.WorktreePath,
+		StartedAt:                   state.StartedAt,
+		CheckpointCount:             state.CheckpointCount,
+		CondensedTranscriptLines:    state.CondensedTranscriptLines,
+		UntrackedFilesAtStart:       state.UntrackedFilesAtStart,
+		FilesTouched:                state.FilesTouched,
+		ConcurrentWarningShown:      state.ConcurrentWarningShown,
+		LastCheckpointID:            state.LastCheckpointID,
+		AgentType:                   state.AgentType,
+		TokenUsage:                  state.TokenUsage,
+		TranscriptLinesAtStart:      state.TranscriptLinesAtStart,
+		TranscriptIdentifierAtStart: state.TranscriptIdentifierAtStart,
+		TranscriptPath:              state.TranscriptPath,
 	}
 	// Convert PromptAttributions
 	for _, pa := range state.PromptAttributions {

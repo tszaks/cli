@@ -1187,12 +1187,12 @@ func TestSessionState_TokenUsagePersistence(t *testing.T) {
 
 	// Create session state with token usage fields
 	state := &SessionState{
-		SessionID:              "test-session-token-usage",
-		BaseCommit:             "abc123def456",
-		StartedAt:              time.Now(),
-		CheckpointCount:        5,
-		TranscriptLinesAtStart: 42,
-		TranscriptUUIDAtStart:  "test-uuid-abc123",
+		SessionID:                   "test-session-token-usage",
+		BaseCommit:                  "abc123def456",
+		StartedAt:                   time.Now(),
+		CheckpointCount:             5,
+		TranscriptLinesAtStart:      42,
+		TranscriptIdentifierAtStart: "test-uuid-abc123",
 		TokenUsage: &agent.TokenUsage{
 			InputTokens:         1000,
 			CacheCreationTokens: 200,
@@ -1222,9 +1222,9 @@ func TestSessionState_TokenUsagePersistence(t *testing.T) {
 		t.Errorf("TranscriptLinesAtStart = %d, want %d", loaded.TranscriptLinesAtStart, state.TranscriptLinesAtStart)
 	}
 
-	// Verify TranscriptUUIDAtStart
-	if loaded.TranscriptUUIDAtStart != state.TranscriptUUIDAtStart {
-		t.Errorf("TranscriptUUIDAtStart = %q, want %q", loaded.TranscriptUUIDAtStart, state.TranscriptUUIDAtStart)
+	// Verify TranscriptIdentifierAtStart
+	if loaded.TranscriptIdentifierAtStart != state.TranscriptIdentifierAtStart {
+		t.Errorf("TranscriptIdentifierAtStart = %q, want %q", loaded.TranscriptIdentifierAtStart, state.TranscriptIdentifierAtStart)
 	}
 
 	// Verify TokenUsage

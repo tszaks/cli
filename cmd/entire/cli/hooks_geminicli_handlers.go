@@ -421,27 +421,27 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 	}
 	agentType := hookAgent.Type()
 
-	// Get transcript UUID at start from pre-prompt state
-	var transcriptUUIDAtStart string
+	// Get transcript identifier at start from pre-prompt state
+	var transcriptIdentifierAtStart string
 	if preState != nil {
-		transcriptUUIDAtStart = preState.LastTranscriptUUID
+		transcriptIdentifierAtStart = preState.LastTranscriptIdentifier
 	}
 
 	saveCtx := strategy.SaveContext{
-		SessionID:              ctx.entireSessionID,
-		ModifiedFiles:          relModifiedFiles,
-		NewFiles:               relNewFiles,
-		DeletedFiles:           relDeletedFiles,
-		MetadataDir:            ctx.sessionDir,
-		MetadataDirAbs:         ctx.sessionDirAbs,
-		CommitMessage:          ctx.commitMessage,
-		TranscriptPath:         ctx.transcriptPath,
-		AuthorName:             author.Name,
-		AuthorEmail:            author.Email,
-		AgentType:              agentType,
-		TranscriptLinesAtStart: startMessageIndex,
-		TranscriptUUIDAtStart:  transcriptUUIDAtStart,
-		TokenUsage:             tokenUsage,
+		SessionID:                   ctx.entireSessionID,
+		ModifiedFiles:               relModifiedFiles,
+		NewFiles:                    relNewFiles,
+		DeletedFiles:                relDeletedFiles,
+		MetadataDir:                 ctx.sessionDir,
+		MetadataDirAbs:              ctx.sessionDirAbs,
+		CommitMessage:               ctx.commitMessage,
+		TranscriptPath:              ctx.transcriptPath,
+		AuthorName:                  author.Name,
+		AuthorEmail:                 author.Email,
+		AgentType:                   agentType,
+		TranscriptLinesAtStart:      startMessageIndex,
+		TranscriptIdentifierAtStart: transcriptIdentifierAtStart,
+		TokenUsage:                  tokenUsage,
 	}
 
 	if err := strat.SaveChanges(saveCtx); err != nil {
