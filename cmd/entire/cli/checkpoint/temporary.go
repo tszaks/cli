@@ -487,8 +487,9 @@ var errStop = errors.New("stop iteration")
 // This is used for shadow branch checkpoints where the transcript is stored in the commit tree
 // rather than on the entire/sessions branch.
 // commitHash is the commit to read from, metadataDir is the path within the tree.
+// agentType is used for reassembling chunked transcripts in the correct format.
 // Handles both chunked and non-chunked transcripts.
-func (s *GitStore) GetTranscriptFromCommit(commitHash plumbing.Hash, metadataDir string) ([]byte, error) {
+func (s *GitStore) GetTranscriptFromCommit(commitHash plumbing.Hash, metadataDir, agentType string) ([]byte, error) {
 	commit, err := s.repo.CommitObject(commitHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit: %w", err)
@@ -503,8 +504,7 @@ func (s *GitStore) GetTranscriptFromCommit(commitHash plumbing.Hash, metadataDir
 	subTree, subTreeErr := tree.Tree(metadataDir)
 	if subTreeErr == nil {
 		// Use the helper function that handles chunking
-		// Pass empty agent type - it will be auto-detected from content
-		transcript, err := readTranscriptFromTree(subTree, "")
+		transcript, err := readTranscriptFromTree(subTree, agentType)
 		if err == nil && transcript != nil {
 			return transcript, nil
 		}
