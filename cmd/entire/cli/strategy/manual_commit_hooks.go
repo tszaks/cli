@@ -321,10 +321,10 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 			)
 			return nil
 		}
-		message = addCheckpointTrailer(message, checkpointID.String())
+		message = addCheckpointTrailer(message, checkpointID)
 	} else {
 		// Normal editor flow: add trailer with explanatory comment (will be stripped by git)
-		message = addCheckpointTrailerWithComment(message, checkpointID.String(), agentName, displayPrompt)
+		message = addCheckpointTrailerWithComment(message, checkpointID, agentName, displayPrompt)
 	}
 
 	logging.Info(logCtx, "prepare-commit-msg: trailer added",
@@ -633,8 +633,8 @@ func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(repo *git.
 
 // addCheckpointTrailer adds the Entire-Checkpoint trailer to a commit message.
 // Handles proper trailer formatting (blank line before trailers if needed).
-func addCheckpointTrailer(message, checkpointID string) string {
-	trailer := trailers.CheckpointTrailerKey + ": " + checkpointID
+func addCheckpointTrailer(message string, checkpointID id.CheckpointID) string {
+	trailer := trailers.CheckpointTrailerKey + ": " + checkpointID.String()
 
 	// If message already ends with trailers (lines starting with key:), just append
 	// Otherwise, add a blank line first
@@ -673,8 +673,8 @@ func addCheckpointTrailer(message, checkpointID string) string {
 // The trailer is placed above the git comment block but below the user's message area,
 // with a comment explaining that the user can remove it if they don't want to link the commit
 // to the agent session. If prompt is non-empty, it's shown as context.
-func addCheckpointTrailerWithComment(message, checkpointID, agentName, prompt string) string {
-	trailer := trailers.CheckpointTrailerKey + ": " + checkpointID
+func addCheckpointTrailerWithComment(message string, checkpointID id.CheckpointID, agentName, prompt string) string {
+	trailer := trailers.CheckpointTrailerKey + ": " + checkpointID.String()
 	commentLines := []string{
 		"# Remove the Entire-Checkpoint trailer above if you don't want to link this commit to " + agentName + " session context.",
 	}

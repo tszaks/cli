@@ -18,7 +18,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-const testTrailerCheckpointID = "a1b2c3d4e5f6"
+const testTrailerCheckpointID id.CheckpointID = "a1b2c3d4e5f6"
 
 func TestShadowStrategy_Registration(t *testing.T) {
 	s, err := Get(StrategyNameManualCommit)
@@ -741,7 +741,7 @@ func TestAddCheckpointTrailer_NoComment(t *testing.T) {
 	result := addCheckpointTrailer(message, testTrailerCheckpointID)
 
 	// Should contain the trailer
-	if !strings.Contains(result, trailers.CheckpointTrailerKey+": "+testTrailerCheckpointID) {
+	if !strings.Contains(result, trailers.CheckpointTrailerKey+": "+testTrailerCheckpointID.String()) {
 		t.Errorf("addCheckpointTrailer() missing trailer, got: %q", result)
 	}
 
@@ -758,7 +758,7 @@ func TestAddCheckpointTrailerWithComment_HasComment(t *testing.T) {
 	result := addCheckpointTrailerWithComment(message, testTrailerCheckpointID, "Claude Code", "add password hashing")
 
 	// Should contain the trailer
-	if !strings.Contains(result, trailers.CheckpointTrailerKey+": "+testTrailerCheckpointID) {
+	if !strings.Contains(result, trailers.CheckpointTrailerKey+": "+testTrailerCheckpointID.String()) {
 		t.Errorf("addCheckpointTrailerWithComment() missing trailer, got: %q", result)
 	}
 
@@ -790,7 +790,7 @@ func TestAddCheckpointTrailerWithComment_NoPrompt(t *testing.T) {
 	result := addCheckpointTrailerWithComment(message, testTrailerCheckpointID, "Claude Code", "")
 
 	// Should contain the trailer
-	if !strings.Contains(result, trailers.CheckpointTrailerKey+": "+testTrailerCheckpointID) {
+	if !strings.Contains(result, trailers.CheckpointTrailerKey+": "+testTrailerCheckpointID.String()) {
 		t.Errorf("addCheckpointTrailerWithComment() missing trailer, got: %q", result)
 	}
 
