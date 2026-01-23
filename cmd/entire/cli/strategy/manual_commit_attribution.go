@@ -222,7 +222,7 @@ func CalculateAttributionWithAccumulated(
 	// Calculate user edits AFTER the final checkpoint (shadow → head)
 	// These are edits the user made after the last agent checkpoint
 	var postCheckpointUserAdded, postCheckpointUserRemoved int
-	var totalAgentAdded, totalAgentRemoved int
+	var totalAgentAdded int
 
 	for _, filePath := range filesTouched {
 		baseContent := getFileContent(baseTree, filePath)
@@ -230,9 +230,8 @@ func CalculateAttributionWithAccumulated(
 		headContent := getFileContent(headTree, filePath)
 
 		// Agent contribution: base → shadow
-		_, agentAdded, agentRemoved := diffLines(baseContent, shadowContent)
+		_, agentAdded, _ := diffLines(baseContent, shadowContent)
 		totalAgentAdded += agentAdded
-		totalAgentRemoved += agentRemoved
 
 		// Post-checkpoint user edits: shadow → head
 		_, postUserAdded, postUserRemoved := diffLines(shadowContent, headContent)
