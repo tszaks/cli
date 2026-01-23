@@ -249,28 +249,34 @@ func CalculateAttributionWithAccumulated(
 	pureUserAdded := totalUserAdded - humanModified
 	pureUserRemoved := totalUserRemoved - humanModified
 
-	// Total net additions = agent additions + pure user additions
+	// Total net additions = agent additions + pure user additions - pure user removals
 	// This reconstructs the base → head diff from our tracked changes.
 	// Note: This measures "net new lines added to the codebase" not total file size.
-	// pureUserRemoved lines are already excluded (they were agent lines that user deleted).
-	totalCommitted := totalAgentAdded + pureUserAdded
-	if totalCommitted == 0 {
-		// Fallback for delete-only commits
+	// pureUserRemoved represents agent lines that the user deleted, so we subtract them.
+	totalCommitted := totalAgentAdded + pureUserAdded - pureUserRemoved
+	if totalCommitted <= 0 {
+		// Fallback for delete-only commits or when removals exceed additions
 		// Note: If both are 0 (deletion-only commit where agent added nothing),
 		// totalCommitted will be 0 and percentage will be 0. This is expected -
 		// the attribution percentage is only meaningful for commits that add code.
-		totalCommitted = totalAgentAdded
+		totalCommitted = max(0, totalAgentAdded)
 	}
+
+	// Calculate agent lines actually in the commit (excluding removed and modified)
+	// Agent added lines, but user removed some and modified others.
+	// Modified lines are now attributed to the user, not the agent.
+	// Clamp to 0 to handle cases where user removed/modified more than agent added.
+	agentLinesInCommit := max(0, totalAgentAdded-pureUserRemoved-humanModified)
 
 	// Calculate percentage
 	var agentPercentage float64
 	if totalCommitted > 0 {
-		agentPercentage = float64(totalAgentAdded) / float64(totalCommitted) * 100
+		agentPercentage = float64(agentLinesInCommit) / float64(totalCommitted) * 100
 	}
 
 	return &checkpoint.InitialAttribution{
 		CalculatedAt:    time.Now(),
-		AgentLines:      totalAgentAdded,
+		AgentLines:      agentLinesInCommit,
 		HumanAdded:      pureUserAdded,
 		HumanModified:   humanModified,
 		HumanRemoved:    pureUserRemoved,

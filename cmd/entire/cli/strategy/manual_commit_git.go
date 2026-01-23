@@ -358,4 +358,3 @@ func deleteShadowBranch(repo *git.Repository, branchName string) error {
 
 	return nil
 }
-
