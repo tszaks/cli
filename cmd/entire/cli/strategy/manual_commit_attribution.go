@@ -17,6 +17,9 @@ import (
 // This measures how much of the commit's diff came from the agent vs human edits.
 // Only counts lines that actually changed in the commit, not total file sizes.
 //
+// Note: Binary files (detected by null bytes) are silently excluded from attribution
+// calculations since line-based diffing only applies to text files.
+//
 // Returns nil if filesTouched is empty.
 func CalculateAttribution(
 	baseTree *object.Tree,
@@ -49,10 +52,7 @@ func CalculateAttribution(
 		// Agent's contribution = lines added in commit that came from checkpoint (not human)
 		// If checkpoint == committed, all commit additions came from agent
 		// If human added lines, subtract those from the total
-		agentAdded := commitAdded - humanAdded
-		if agentAdded < 0 {
-			agentAdded = 0
-		}
+		agentAdded := max(0, commitAdded-humanAdded)
 
 		// Estimate modified lines (human changed existing agent lines)
 		humanModified := min(humanAdded, humanRemoved)
@@ -102,7 +102,16 @@ func CalculateAttribution(
 }
 
 // getFileContent retrieves the content of a file from a tree.
-// Returns empty string if the file doesn't exist or can't be read.
+// Returns empty string if the file doesn't exist, can't be read, or is a binary file.
+//
+// Binary files (files containing null bytes) are silently excluded from attribution
+// calculations because line-based diffing doesn't apply to binary content. This means
+// binary files (images, compiled binaries, etc.) won't appear in attribution metrics
+// even if they were added or modified. This is intentional - attribution measures code
+// contributions via line counting, which only makes sense for text files.
+//
+// TODO: Consider tracking binary file counts separately (e.g., BinaryFilesChanged field)
+// to provide visibility into non-text file modifications.
 func getFileContent(tree *object.Tree, path string) string {
 	if tree == nil {
 		return ""
@@ -118,7 +127,9 @@ func getFileContent(tree *object.Tree, path string) string {
 		return ""
 	}
 
-	// Skip binary files (contain null bytes)
+	// Skip binary files (contain null bytes).
+	// Binary files are excluded from line-based attribution calculations.
+	// This is intentional - line counting only applies to text files.
 	if strings.Contains(content, "\x00") {
 		return ""
 	}
@@ -201,6 +212,9 @@ func countLinesInText(text string) int {
 // 2. Add user edits after the final checkpoint (shadow → head diff)
 // 3. Calculate agent lines from base → shadow
 // 4. Compute percentages
+//
+// Note: Binary files (detected by null bytes) are silently excluded from attribution
+// calculations since line-based diffing only applies to text files.
 func CalculateAttributionWithAccumulated(
 	baseTree *object.Tree,
 	shadowTree *object.Tree,
@@ -292,6 +306,9 @@ func CalculateAttributionWithAccumulated(
 // Returns the attribution data to store in session state. For checkpoint 1 (when
 // lastCheckpointTree is nil), AgentLinesAdded/Removed will be 0 since there's no
 // previous checkpoint to measure cumulative agent work against.
+//
+// Note: Binary files (detected by null bytes) in reference trees are silently excluded
+// from attribution calculations since line-based diffing only applies to text files.
 func CalculatePromptAttribution(
 	baseTree *object.Tree,
 	lastCheckpointTree *object.Tree,
