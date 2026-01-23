@@ -275,7 +275,9 @@ func CalculateAttributionWithAccumulated(
 //   - worktreeFiles: map of file path → current worktree content for files that changed
 //   - checkpointNumber: which checkpoint we're about to create (1-indexed)
 //
-// Returns the attribution data to store in session state.
+// Returns the attribution data to store in session state. For checkpoint 1 (when
+// lastCheckpointTree is nil), AgentLinesAdded/Removed will be 0 since there's no
+// previous checkpoint to measure cumulative agent work against.
 func CalculatePromptAttribution(
 	baseTree *object.Tree,
 	lastCheckpointTree *object.Tree,

@@ -89,10 +89,12 @@ type PromptAttribution struct {
 	// UserLinesRemoved is lines removed by user since the last checkpoint
 	UserLinesRemoved int `json:"user_lines_removed"`
 
-	// AgentLinesAdded is total agent lines added so far (base → last checkpoint)
+	// AgentLinesAdded is total agent lines added so far (base → last checkpoint).
+	// Always 0 for checkpoint 1 since there's no previous checkpoint to measure against.
 	AgentLinesAdded int `json:"agent_lines_added"`
 
-	// AgentLinesRemoved is total agent lines removed so far (base → last checkpoint)
+	// AgentLinesRemoved is total agent lines removed so far (base → last checkpoint).
+	// Always 0 for checkpoint 1 since there's no previous checkpoint to measure against.
 	AgentLinesRemoved int `json:"agent_lines_removed"`
 }
 
