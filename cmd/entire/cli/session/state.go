@@ -7,13 +7,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/jsonutil"
-	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/sessionid"
+	"entire.io/cli/cmd/entire/cli/validation"
 )
 
 const (
@@ -105,7 +107,7 @@ func (s *StateStore) Load(ctx context.Context, sessionID string) (*State, error)
 	_ = ctx // Reserved for future use
 
 	// Validate session ID to prevent path traversal
-	if err := paths.ValidateSessionID(sessionID); err != nil {
+	if err := validation.ValidateSessionID(sessionID); err != nil {
 		return nil, fmt.Errorf("invalid session ID: %w", err)
 	}
 
@@ -131,7 +133,7 @@ func (s *StateStore) Save(ctx context.Context, state *State) error {
 	_ = ctx // Reserved for future use
 
 	// Validate session ID to prevent path traversal
-	if err := paths.ValidateSessionID(state.SessionID); err != nil {
+	if err := validation.ValidateSessionID(state.SessionID); err != nil {
 		return fmt.Errorf("invalid session ID: %w", err)
 	}
 
@@ -162,7 +164,7 @@ func (s *StateStore) Clear(ctx context.Context, sessionID string) error {
 	_ = ctx // Reserved for future use
 
 	// Validate session ID to prevent path traversal
-	if err := paths.ValidateSessionID(sessionID); err != nil {
+	if err := validation.ValidateSessionID(sessionID); err != nil {
 		return fmt.Errorf("invalid session ID: %w", err)
 	}
 
@@ -281,4 +283,60 @@ func GetWorktreePath() (string, error) {
 		return "", fmt.Errorf("failed to get worktree path: %w", err)
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+// GetOrCreateEntireSessionID returns a stable session ID for the given agent UUID.
+// If a session state already exists with this UUID, returns that session ID
+// (preserving the original date prefix). Otherwise creates a new ID with today's date.
+//
+// When multiple state files exist for the same UUID (due to the midnight-crossing bug),
+// this function picks the most recent by date and cleans up older duplicates.
+//
+// This function never returns an error - it always falls back to generating a new ID
+// if any issues occur (e.g., corrupt git repo, permission problems).
+func GetOrCreateEntireSessionID(agentSessionUUID string) string {
+	commonDir, err := getGitCommonDir()
+	if err != nil {
+		// Can't get common dir (corrupt git repo?) - fall back to new ID
+		return sessionid.EntireSessionID(agentSessionUUID)
+	}
+
+	stateDir := filepath.Join(commonDir, sessionStateDirName)
+	entries, err := os.ReadDir(stateDir)
+	if err != nil {
+		// State dir doesn't exist or can't read it - fall back to new ID
+		return sessionid.EntireSessionID(agentSessionUUID)
+	}
+
+	// Collect all matching session IDs
+	var matches []string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		existingSessionID := strings.TrimSuffix(entry.Name(), ".json")
+		existingUUID := sessionid.ModelSessionID(existingSessionID)
+
+		if existingUUID == agentSessionUUID {
+			matches = append(matches, existingSessionID)
+		}
+	}
+
+	if len(matches) == 0 {
+		// No existing session found - create new ID with today's date
+		return sessionid.EntireSessionID(agentSessionUUID)
+	}
+
+	// Pick most recent (YYYY-MM-DD sorts correctly lexicographically)
+	sort.Strings(matches)
+	mostRecent := matches[len(matches)-1]
+
+	// Best-effort cleanup of old duplicates (ignore errors)
+	for _, oldID := range matches[:len(matches)-1] {
+		oldFile := filepath.Join(stateDir, oldID+".json")
+		_ = os.Remove(oldFile)
+	}
+
+	return mostRecent
 }

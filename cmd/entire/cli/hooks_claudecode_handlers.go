@@ -17,7 +17,10 @@ import (
 	"entire.io/cli/cmd/entire/cli/agent/claudecode"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/session"
+	"entire.io/cli/cmd/entire/cli/sessionid"
 	"entire.io/cli/cmd/entire/cli/strategy"
+	"entire.io/cli/cmd/entire/cli/validation"
 )
 
 // currentSessionIDWithFallback returns the persisted Entire session ID when available.
@@ -29,10 +32,10 @@ func currentSessionIDWithFallback(modelSessionID string) string {
 	}
 	if entireSessionID != "" {
 		// Validate persisted session ID to fail-fast on corrupted files
-		if err := paths.ValidateSessionID(entireSessionID); err != nil {
+		if err := validation.ValidateSessionID(entireSessionID); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: invalid persisted session ID: %v\n", err)
 			// Fall through to fallback
-		} else if modelSessionID == "" || paths.ModelSessionID(entireSessionID) == modelSessionID {
+		} else if modelSessionID == "" || sessionid.ModelSessionID(entireSessionID) == modelSessionID {
 			return entireSessionID
 		} else {
 			fmt.Fprintf(os.Stderr, "Warning: persisted session ID does not match hook session ID\n")
@@ -41,7 +44,8 @@ func currentSessionIDWithFallback(modelSessionID string) string {
 	if modelSessionID == "" {
 		return ""
 	}
-	return paths.EntireSessionID(modelSessionID)
+	// Get or create stable session ID (reuses existing if session resumed across days)
+	return session.GetOrCreateEntireSessionID(modelSessionID)
 }
 
 // hookInputData contains parsed hook input and session identifiers.
@@ -1021,8 +1025,8 @@ func handleSessionStart() error {
 		return errors.New("no session_id in input")
 	}
 
-	// Generate the full Entire session ID (with date prefix) from the agent's session ID
-	entireSessionID := paths.EntireSessionID(input.SessionID)
+	// Get or create stable session ID (reuses existing if session resumed across days)
+	entireSessionID := session.GetOrCreateEntireSessionID(input.SessionID)
 
 	// Write session ID to current_session file
 	if err := paths.WriteCurrentSession(entireSessionID); err != nil {
