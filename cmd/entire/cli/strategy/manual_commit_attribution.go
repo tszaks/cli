@@ -76,7 +76,11 @@ func CalculateAttribution(
 	// It's the denominator for the percentage calculation.
 	totalInCommit := totalCommitAdded
 	if totalInCommit == 0 {
-		// If only deletions, use agent lines as the metric
+		// If only deletions, use agent lines as the metric (fallback)
+		// Note: If both totalCommitAdded and totalAgentAdded are 0 (deletion-only
+		// commit where agent added nothing), totalInCommit will be 0 and percentage
+		// will be 0. This is expected - the attribution percentage is only meaningful
+		// for commits that add code. Deletion work is captured in HumanRemoved.
 		totalInCommit = totalAgentAdded
 	}
 
@@ -252,7 +256,11 @@ func CalculateAttributionWithAccumulated(
 	// pureUserRemoved lines are already excluded (they were agent lines that user deleted).
 	totalCommitted := totalAgentAdded + pureUserAdded
 	if totalCommitted == 0 {
-		totalCommitted = totalAgentAdded // Fallback for delete-only
+		// Fallback for delete-only commits
+		// Note: If both are 0 (deletion-only commit where agent added nothing),
+		// totalCommitted will be 0 and percentage will be 0. This is expected -
+		// the attribution percentage is only meaningful for commits that add code.
+		totalCommitted = totalAgentAdded
 	}
 
 	// Calculate percentage
