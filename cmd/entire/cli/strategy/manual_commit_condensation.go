@@ -127,10 +127,9 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 	// Get current branch name
 	branchName := GetCurrentBranchName(repo)
 
-	// Calculate initial attribution by comparing:
-	// - baseTree: state before session (parent commit when session started)
-	// - shadowTree: what agent wrote (checkpoint)
-	// - headTree: what was committed (may include human edits)
+	// Calculate initial attribution using accumulated prompt attribution data.
+	// This uses user edits captured at each prompt start (before agent works),
+	// plus any user edits after the final checkpoint (shadow → head).
 	var attribution *cpkg.InitialAttribution
 	if headRef, headErr := repo.Head(); headErr == nil {
 		if headCommit, commitErr := repo.CommitObject(headRef.Hash()); commitErr == nil {
@@ -145,7 +144,13 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 								baseTree = tree
 							}
 						}
-						attribution = CalculateAttribution(baseTree, shadowTree, headTree, sessionData.FilesTouched)
+						attribution = CalculateAttributionWithAccumulated(
+							baseTree,
+							shadowTree,
+							headTree,
+							sessionData.FilesTouched,
+							state.PromptAttributions,
+						)
 					}
 				}
 			}

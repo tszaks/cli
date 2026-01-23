@@ -1887,3 +1887,247 @@ func TestExtractUserPromptsFromLines(t *testing.T) {
 		})
 	}
 }
+
+// TestMultiCheckpoint_UserEditsBetweenCheckpoints tests that user edits made between
+// agent checkpoints are correctly attributed to the user, not the agent.
+//
+// This tests two scenarios:
+// 1. User edits a DIFFERENT file than agent - detected at checkpoint save time
+// 2. User edits the SAME file as agent - detected at commit time (shadow → head diff)
+//
+//nolint:maintidx // Integration test with multiple steps is inherently complex
+func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create initial commit with two files
+	agentFile := filepath.Join(dir, "agent.go")
+	userFile := filepath.Join(dir, "user.go")
+	if err := os.WriteFile(agentFile, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("failed to write agent file: %v", err)
+	}
+	if err := os.WriteFile(userFile, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("failed to write user file: %v", err)
+	}
+	if _, err := worktree.Add("agent.go"); err != nil {
+		t.Fatalf("failed to stage file: %v", err)
+	}
+	if _, err := worktree.Add("user.go"); err != nil {
+		t.Fatalf("failed to stage file: %v", err)
+	}
+	_, err = worktree.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "2025-01-15-multi-checkpoint-test"
+
+	// Create metadata directory
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
+		t.Fatalf("failed to create metadata dir: %v", err)
+	}
+
+	transcript := `{"type":"human","message":{"content":"add function"}}
+{"type":"assistant","message":{"content":"adding function"}}
+`
+	if err := os.WriteFile(filepath.Join(metadataDirAbs, paths.TranscriptFileName), []byte(transcript), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// === CHECKPOINT 1: Agent modifies agent.go (adds 4 lines) ===
+	checkpoint1Content := "package main\n\nfunc agentFunc1() {\n\tprintln(\"agent1\")\n}\n"
+	if err := os.WriteFile(agentFile, []byte(checkpoint1Content), 0o644); err != nil {
+		t.Fatalf("failed to write agent changes 1: %v", err)
+	}
+
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{"agent.go"},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 1",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() checkpoint 1 error = %v", err)
+	}
+
+	// Verify PromptAttribution was recorded for checkpoint 1
+	state1, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("loadSessionState() after checkpoint 1 error = %v", err)
+	}
+	if len(state1.PromptAttributions) != 1 {
+		t.Fatalf("expected 1 PromptAttribution after checkpoint 1, got %d", len(state1.PromptAttributions))
+	}
+	// First checkpoint: no user edits yet (user.go hasn't changed)
+	if state1.PromptAttributions[0].UserLinesAdded != 0 {
+		t.Errorf("checkpoint 1: expected 0 user lines added, got %d", state1.PromptAttributions[0].UserLinesAdded)
+	}
+
+	// === USER EDITS A DIFFERENT FILE (user.go) BETWEEN CHECKPOINTS ===
+	userEditContent := "package main\n\n// User added this function\nfunc userFunc() {\n\tprintln(\"user\")\n}\n"
+	if err := os.WriteFile(userFile, []byte(userEditContent), 0o644); err != nil {
+		t.Fatalf("failed to write user edits: %v", err)
+	}
+
+	// === CHECKPOINT 2: Agent modifies agent.go again (adds 4 more lines) ===
+	checkpoint2Content := "package main\n\nfunc agentFunc1() {\n\tprintln(\"agent1\")\n}\n\nfunc agentFunc2() {\n\tprintln(\"agent2\")\n}\n"
+	if err := os.WriteFile(agentFile, []byte(checkpoint2Content), 0o644); err != nil {
+		t.Fatalf("failed to write agent changes 2: %v", err)
+	}
+
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{"agent.go"},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 2",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() checkpoint 2 error = %v", err)
+	}
+
+	// Verify PromptAttribution was recorded for checkpoint 2
+	state2, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("loadSessionState() after checkpoint 2 error = %v", err)
+	}
+	if len(state2.PromptAttributions) != 2 {
+		t.Fatalf("expected 2 PromptAttributions after checkpoint 2, got %d", len(state2.PromptAttributions))
+	}
+
+	t.Logf("Checkpoint 2 PromptAttribution: user_added=%d, user_removed=%d, agent_added=%d, agent_removed=%d",
+		state2.PromptAttributions[1].UserLinesAdded,
+		state2.PromptAttributions[1].UserLinesRemoved,
+		state2.PromptAttributions[1].AgentLinesAdded,
+		state2.PromptAttributions[1].AgentLinesRemoved)
+
+	// Second checkpoint should detect user's edits to user.go (different file than agent)
+	// User added 5 lines to user.go
+	if state2.PromptAttributions[1].UserLinesAdded == 0 {
+		t.Error("checkpoint 2: expected user lines added > 0 because user edited user.go")
+	}
+
+	// === USER COMMITS ===
+	if _, err := worktree.Add("agent.go"); err != nil {
+		t.Fatalf("failed to stage agent.go: %v", err)
+	}
+	if _, err := worktree.Add("user.go"); err != nil {
+		t.Fatalf("failed to stage user.go: %v", err)
+	}
+	_, err = worktree.Commit("Final commit with agent and user changes", &git.CommitOptions{
+		Author: &object.Signature{Name: "Human", Email: "human@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	// === CONDENSE AND VERIFY ATTRIBUTION ===
+	checkpointID := id.MustCheckpointID("b2c3d4e5f6a7")
+	result, err := s.CondenseSession(repo, checkpointID, state2)
+	if err != nil {
+		t.Fatalf("CondenseSession() error = %v", err)
+	}
+
+	if result.CheckpointID != checkpointID {
+		t.Errorf("CheckpointID = %q, want %q", result.CheckpointID, checkpointID)
+	}
+
+	// Read metadata and verify attribution
+	sessionsRef, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	if err != nil {
+		t.Fatalf("failed to get sessions branch: %v", err)
+	}
+
+	sessionsCommit, err := repo.CommitObject(sessionsRef.Hash())
+	if err != nil {
+		t.Fatalf("failed to get sessions commit: %v", err)
+	}
+
+	tree, err := sessionsCommit.Tree()
+	if err != nil {
+		t.Fatalf("failed to get tree: %v", err)
+	}
+
+	metadataPath := checkpointID.Path() + "/" + paths.MetadataFileName
+	metadataFile, err := tree.File(metadataPath)
+	if err != nil {
+		t.Fatalf("failed to find metadata.json at %s: %v", metadataPath, err)
+	}
+
+	content, err := metadataFile.Contents()
+	if err != nil {
+		t.Fatalf("failed to read metadata.json: %v", err)
+	}
+
+	var metadata struct {
+		InitialAttribution *struct {
+			AgentLines      int     `json:"agent_lines"`
+			HumanAdded      int     `json:"human_added"`
+			HumanModified   int     `json:"human_modified"`
+			HumanRemoved    int     `json:"human_removed"`
+			TotalCommitted  int     `json:"total_committed"`
+			AgentPercentage float64 `json:"agent_percentage"`
+		} `json:"initial_attribution"`
+	}
+	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
+		t.Fatalf("failed to parse metadata.json: %v", err)
+	}
+
+	if metadata.InitialAttribution == nil {
+		t.Fatal("InitialAttribution should be present")
+	}
+
+	t.Logf("Final Attribution: agent=%d, human_added=%d, human_modified=%d, human_removed=%d, total=%d, percentage=%.1f%%",
+		metadata.InitialAttribution.AgentLines,
+		metadata.InitialAttribution.HumanAdded,
+		metadata.InitialAttribution.HumanModified,
+		metadata.InitialAttribution.HumanRemoved,
+		metadata.InitialAttribution.TotalCommitted,
+		metadata.InitialAttribution.AgentPercentage)
+
+	// Verify the attribution makes sense:
+	// - Agent modified agent.go: added ~8 lines total
+	// - User modified user.go: added ~5 lines
+	// - So agent percentage should be around 50-70%
+	if metadata.InitialAttribution.AgentLines == 0 {
+		t.Error("AgentLines should be > 0")
+	}
+	if metadata.InitialAttribution.TotalCommitted == 0 {
+		t.Error("TotalCommitted should be > 0")
+	}
+
+	// The key test: user's lines should be captured in HumanAdded
+	if metadata.InitialAttribution.HumanAdded == 0 {
+		t.Error("HumanAdded should be > 0 because user added lines to user.go")
+	}
+
+	// Agent percentage should not be 100% since user contributed
+	if metadata.InitialAttribution.AgentPercentage >= 100 {
+		t.Errorf("AgentPercentage should be < 100%% since user contributed, got %.1f%%",
+			metadata.InitialAttribution.AgentPercentage)
+	}
+}
