@@ -377,6 +377,11 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 
 		// Sum checkpoint counts
 		metadata.CheckpointsCount = existingMetadata.CheckpointsCount + opts.CheckpointsCount
+
+		// Keep existing attribution - it already reflects the combined shadow branch
+		if existingMetadata.InitialAttribution != nil {
+			metadata.InitialAttribution = existingMetadata.InitialAttribution
+		}
 	}
 
 	metadataJSON, err := jsonutil.MarshalIndentWithNewline(metadata, "", "  ")
