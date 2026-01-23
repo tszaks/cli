@@ -706,13 +706,13 @@ func TestShadow_TranscriptCondensation(t *testing.T) {
 	}
 }
 
-// TestShadow_IncrementalContext verifies that each checkpoint only includes
-// the prompts/context since the last commit, not the entire session history.
+// TestShadow_FullTranscriptContext verifies that each checkpoint includes
+// the full session transcript, preserving complete history across commits.
 //
-// This tests the CondensedTranscriptLines tracking:
+// This tests transcript preservation:
 // - First commit: context.md includes prompts 1-2
-// - Second commit: context.md only includes prompt 3 (NOT prompts 1-2 again)
-func TestShadow_IncrementalContext(t *testing.T) {
+// - Second commit: context.md includes prompts 1-3 (full transcript preserved)
+func TestShadow_FullTranscriptContext(t *testing.T) {
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -842,9 +842,9 @@ func TestShadow_IncrementalContext(t *testing.T) {
 		t.Errorf("Second commit should have different checkpoint ID: %s vs %s", checkpoint1ID, checkpoint2ID)
 	}
 
-	t.Log("Phase 5: Verify incremental context")
+	t.Log("Phase 5: Verify full transcript preserved in second checkpoint")
 
-	// Verify second checkpoint ONLY has the third prompt, NOT the first two (uses sharded path)
+	// Verify second checkpoint has the FULL transcript (all three prompts)
 	shardedPath2 := ShardedCheckpointPath(checkpoint2ID)
 	promptPath2 := shardedPath2 + "/prompt.txt"
 	prompt2Content, found := env.ReadFileFromBranch("entire/sessions", promptPath2)
@@ -853,17 +853,15 @@ func TestShadow_IncrementalContext(t *testing.T) {
 	} else {
 		t.Logf("Second prompt.txt content:\n%s", prompt2Content)
 
-		// Should contain "create function C"
+		// Should contain all prompts (full transcript preserved)
 		if !strings.Contains(prompt2Content, "create function C") {
 			t.Error("Second prompt.txt should contain 'create function C'")
 		}
-
-		// Should NOT contain prompts from first commit
-		if strings.Contains(prompt2Content, "Create function A") {
-			t.Error("Second prompt.txt should NOT contain 'Create function A' - that was in first commit")
+		if !strings.Contains(prompt2Content, "Create function A") {
+			t.Error("Second prompt.txt should contain 'Create function A' (full transcript)")
 		}
-		if strings.Contains(prompt2Content, "create function B") {
-			t.Error("Second prompt.txt should NOT contain 'create function B' - that was in first commit")
+		if !strings.Contains(prompt2Content, "create function B") {
+			t.Error("Second prompt.txt should contain 'create function B' (full transcript)")
 		}
 	}
 
@@ -874,13 +872,13 @@ func TestShadow_IncrementalContext(t *testing.T) {
 	} else {
 		t.Logf("Second context.md content:\n%s", context2Content)
 
-		// Should NOT contain context from first commit
-		if strings.Contains(context2Content, "Create function A") {
-			t.Error("Second context.md should NOT contain 'Create function A' - that was in first commit")
+		// Should contain full transcript context
+		if !strings.Contains(context2Content, "Create function A") {
+			t.Error("Second context.md should contain 'Create function A' (full transcript)")
 		}
 	}
 
-	t.Log("Shadow incremental context test completed successfully!")
+	t.Log("Shadow full transcript context test completed successfully!")
 }
 
 // TestShadow_RewindAndCondensation verifies that after rewinding to an earlier
@@ -1284,14 +1282,14 @@ func TestShadow_IntermediateCommitsWithoutPrompts(t *testing.T) {
 	t.Log("Intermediate commits test completed successfully!")
 }
 
-// TestShadow_IncrementalCondensationWithIntermediateCommits tests that CondensedTranscriptLines
-// correctly prevents re-condensing the same content across multiple commits.
+// TestShadow_FullTranscriptCondensationWithIntermediateCommits tests that full transcripts
+// are preserved across multiple commits.
 //
 // Scenario:
 // 1. Session with prompts A and B, commit 1
 // 2. Continue session with prompt C, commit 2 (without intermediate prompt submit)
-// 3. Verify commit 2's checkpoint only has prompt C, not A and B again
-func TestShadow_IncrementalCondensationWithIntermediateCommits(t *testing.T) {
+// 3. Verify commit 2's checkpoint has full transcript (A, B, and C)
+func TestShadow_FullTranscriptCondensationWithIntermediateCommits(t *testing.T) {
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -1386,7 +1384,7 @@ func TestShadow_IncrementalCondensationWithIntermediateCommits(t *testing.T) {
 		t.Errorf("Commits should have different checkpoint IDs")
 	}
 
-	t.Log("Phase 5: Verify second checkpoint only has prompt C (incremental)")
+	t.Log("Phase 5: Verify second checkpoint has full transcript (A, B, and C)")
 
 	shardedPath2 := ShardedCheckpointPath(checkpoint2ID)
 	prompt2Content, found := env.ReadFileFromBranch("entire/sessions", shardedPath2+"/prompt.txt")
@@ -1396,20 +1394,18 @@ func TestShadow_IncrementalCondensationWithIntermediateCommits(t *testing.T) {
 
 	t.Logf("Second checkpoint prompts:\n%s", prompt2Content)
 
-	// Should contain prompt C
+	// Should contain all prompts (full transcript preserved)
 	if !strings.Contains(prompt2Content, "function C") {
 		t.Error("Second checkpoint should contain 'function C'")
 	}
-
-	// Should NOT contain prompts A and B (already condensed in first commit)
-	if strings.Contains(prompt2Content, "function A") {
-		t.Error("Second checkpoint should NOT contain 'function A' (already in first commit)")
+	if !strings.Contains(prompt2Content, "function A") {
+		t.Error("Second checkpoint should contain 'function A' (full transcript)")
 	}
-	if strings.Contains(prompt2Content, "function B") {
-		t.Error("Second checkpoint should NOT contain 'function B' (already in first commit)")
+	if !strings.Contains(prompt2Content, "function B") {
+		t.Error("Second checkpoint should contain 'function B' (full transcript)")
 	}
 
-	t.Log("Incremental condensation with intermediate commits test completed successfully!")
+	t.Log("Full transcript condensation with intermediate commits test completed successfully!")
 }
 
 // TestShadow_RewindPreservesUntrackedFilesWithExistingShadowBranch tests that untracked files

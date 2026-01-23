@@ -438,7 +438,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		// After condensation, the session continues from the NEW commit (HEAD), so we:
 		// 1. Update BaseCommit to new HEAD - session now tracks from new commit
 		// 2. Reset CheckpointCount to 0 - no checkpoints exist on new shadow branch yet
-		// 3. Update CondensedTranscriptLines - track transcript offset for incremental context
+		// 3. Update CondensedTranscriptLines - track transcript position for detecting new content
 		//
 		// This is critical: if we don't update BaseCommit, listAllSessionStates will try
 		// to find shadow branch for old commit (which gets deleted), and since CheckpointCount > 0,
@@ -926,9 +926,9 @@ func (s *ManualCommitStrategy) getLastPrompt(repo *git.Repository, state *Sessio
 		return ""
 	}
 
-	// Extract session data (using 0 as startLine to get all prompts)
+	// Extract session data to get prompts for commit message generation
 	// Pass agent type to handle different transcript formats (JSONL for Claude, JSON for Gemini)
-	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, 0, nil, state.AgentType)
+	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, nil, state.AgentType)
 	if err != nil || len(sessionData.Prompts) == 0 {
 		return ""
 	}
