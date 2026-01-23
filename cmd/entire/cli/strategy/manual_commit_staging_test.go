@@ -1,0 +1,237 @@
+package strategy
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"entire.io/cli/cmd/entire/cli/paths"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
+)
+
+const testTranscript = `{"type":"human","message":{"content":"add function"}}
+{"type":"assistant","message":{"content":"adding function"}}
+`
+
+// TestPromptAttribution_RespectsStagingArea tests that attribution calculation
+// reads from the git staging area (index) for staged files, not the worktree.
+// This ensures that if a user stages only part of their changes, we don't
+// overcount user contributions.
+func TestPromptAttribution_RespectsStagingArea(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create initial commit with a file
+	testFile := filepath.Join(dir, "test.go")
+	if err := os.WriteFile(testFile, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("failed to write initial file: %v", err)
+	}
+	if _, err := worktree.Add("test.go"); err != nil {
+		t.Fatalf("failed to stage file: %v", err)
+	}
+	_, err = worktree.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "2026-01-23-staging-test"
+
+	// Create metadata directory
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
+		t.Fatalf("failed to create metadata dir: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(metadataDirAbs, paths.TranscriptFileName), []byte(testTranscript), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// === PROMPT 1 START: Initialize session ===
+	if err := s.InitializeSession(sessionID, "Claude Code", ""); err != nil {
+		t.Fatalf("InitializeSession() prompt 1 error = %v", err)
+	}
+
+	// === CHECKPOINT 1: Agent adds 4 lines ===
+	checkpoint1Content := "package main\n\nfunc agentFunc() {\n\tprintln(\"agent\")\n}\n"
+	if err := os.WriteFile(testFile, []byte(checkpoint1Content), 0o644); err != nil {
+		t.Fatalf("failed to write agent changes: %v", err)
+	}
+
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{"test.go"},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 1",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() checkpoint 1 error = %v", err)
+	}
+
+	// === USER PARTIAL STAGING SCENARIO ===
+	// Step 1: User adds 5 lines to the file
+	partialContent := checkpoint1Content + "// User added line 1\n// User added line 2\n// User added line 3\n// User added line 4\n// User added line 5\n"
+	if err := os.WriteFile(testFile, []byte(partialContent), 0o644); err != nil {
+		t.Fatalf("failed to write partial user content: %v", err)
+	}
+
+	// Step 2: User stages these 5 lines
+	if _, err := worktree.Add("test.go"); err != nil {
+		t.Fatalf("failed to stage partial changes: %v", err)
+	}
+
+	// Step 3: User adds 5 MORE lines to worktree (unstaged)
+	// Now: staging area has 5 user lines, worktree has 10 user lines
+	fullContent := partialContent + "// User added line 6\n// User added line 7\n// User added line 8\n// User added line 9\n// User added line 10\n"
+	if err := os.WriteFile(testFile, []byte(fullContent), 0o644); err != nil {
+		t.Fatalf("failed to write full user content: %v", err)
+	}
+
+	// === PROMPT 2 START: Initialize session again ===
+	// This should capture ONLY the 5 staged lines, not all 10 worktree lines
+	if err := s.InitializeSession(sessionID, "Claude Code", ""); err != nil {
+		t.Fatalf("InitializeSession() prompt 2 error = %v", err)
+	}
+
+	// Verify PendingPromptAttribution shows only staged changes (5 lines)
+	state, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("loadSessionState() after prompt 2 error = %v", err)
+	}
+
+	if state.PendingPromptAttribution == nil {
+		t.Fatal("PendingPromptAttribution is nil after prompt 2")
+	}
+
+	// Should count only the 5 staged lines, not the 10 worktree lines
+	if state.PendingPromptAttribution.UserLinesAdded != 5 {
+		t.Errorf("PendingPromptAttribution.UserLinesAdded = %d, want 5 (staged lines only, not worktree)",
+			state.PendingPromptAttribution.UserLinesAdded)
+	}
+
+	if state.PendingPromptAttribution.CheckpointNumber != 2 {
+		t.Errorf("PendingPromptAttribution.CheckpointNumber = %d, want 2",
+			state.PendingPromptAttribution.CheckpointNumber)
+	}
+}
+
+// TestPromptAttribution_UnstagedChanges tests that unstaged changes are
+// still read from the worktree (not the staging area).
+func TestPromptAttribution_UnstagedChanges(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create initial commit
+	testFile := filepath.Join(dir, "test.go")
+	if err := os.WriteFile(testFile, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("failed to write initial file: %v", err)
+	}
+	if _, err := worktree.Add("test.go"); err != nil {
+		t.Fatalf("failed to stage file: %v", err)
+	}
+	_, err = worktree.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "2026-01-23-unstaged-test"
+
+	// Create metadata directory
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
+		t.Fatalf("failed to create metadata dir: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(metadataDirAbs, paths.TranscriptFileName), []byte(testTranscript), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// Initialize and create checkpoint 1
+	if err := s.InitializeSession(sessionID, "Claude Code", ""); err != nil {
+		t.Fatalf("InitializeSession() prompt 1 error = %v", err)
+	}
+
+	checkpoint1Content := "package main\n\nfunc agentFunc() {\n\tprintln(\"agent\")\n}\n"
+	if err := os.WriteFile(testFile, []byte(checkpoint1Content), 0o644); err != nil {
+		t.Fatalf("failed to write agent changes: %v", err)
+	}
+
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{"test.go"},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 1",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() checkpoint 1 error = %v", err)
+	}
+
+	// === USER UNSTAGED CHANGES ===
+	// User adds 3 lines to worktree but does NOT stage them
+	userContent := checkpoint1Content + "// User added line 1\n// User added line 2\n// User added line 3\n"
+	if err := os.WriteFile(testFile, []byte(userContent), 0o644); err != nil {
+		t.Fatalf("failed to write user content: %v", err)
+	}
+
+	// No staging - changes remain in worktree only
+
+	// === PROMPT 2 START ===
+	// Should read from worktree (since nothing is staged)
+	if err := s.InitializeSession(sessionID, "Claude Code", ""); err != nil {
+		t.Fatalf("InitializeSession() prompt 2 error = %v", err)
+	}
+
+	state, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("loadSessionState() error = %v", err)
+	}
+
+	if state.PendingPromptAttribution == nil {
+		t.Fatal("PendingPromptAttribution is nil")
+	}
+
+	// Should read worktree changes (3 lines)
+	if state.PendingPromptAttribution.UserLinesAdded != 3 {
+		t.Errorf("PendingPromptAttribution.UserLinesAdded = %d, want 3 (worktree changes)",
+			state.PendingPromptAttribution.UserLinesAdded)
+	}
+}
