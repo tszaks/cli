@@ -224,8 +224,8 @@ func CalculateAttributionWithAccumulated(
 	// Agent work = (base→shadow for agent files) - (accumulated user edits to agent files only)
 	totalAgentAdded := max(0, totalAgentAndUserWork-accumulatedToAgentFiles)
 
-	// Post-checkpoint edits to non-agent files = total edits - accumulated portion
-	postToNonAgentFiles := allUserEditsToNonAgentFiles - accumulatedToNonAgentFiles
+	// Post-checkpoint edits to non-agent files = total edits - accumulated portion (never negative)
+	postToNonAgentFiles := max(0, allUserEditsToNonAgentFiles-accumulatedToNonAgentFiles)
 
 	// Total user contribution = accumulated (all files) + post-checkpoint (agent files) + post-checkpoint (non-agent files)
 	totalUserAdded := accumulatedUserAdded + postCheckpointUserAdded + postToNonAgentFiles
