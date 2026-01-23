@@ -293,14 +293,10 @@ func (c *ClaudeCodeAgent) UninstallHooks() error {
 	rawSettings["hooks"] = hooksJSON
 
 	// Write back
-	output, err := json.MarshalIndent(rawSettings, "", "  ")
+	output, err := jsonutil.MarshalIndentWithNewline(rawSettings, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal settings: %w", err)
 	}
-
-	// Add trailing newline
-	output = append(output, '\n')
-
 	if err := os.WriteFile(settingsPath, output, 0o600); err != nil {
 		return fmt.Errorf("failed to write settings.json: %w", err)
 	}
