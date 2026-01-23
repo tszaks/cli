@@ -19,7 +19,6 @@ import (
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
-	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/charmbracelet/huh"
 	"github.com/go-git/go-git/v5"
@@ -71,56 +70,7 @@ func newRewindCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&logsOnlyFlag, "logs-only", false, "Only restore logs, don't modify working directory (for logs-only points)")
 	cmd.Flags().BoolVar(&resetFlag, "reset", false, "Reset branch to commit (destructive, for logs-only points)")
 
-	cmd.AddCommand(newRewindResetCmd())
-
 	return cmd
-}
-
-func newRewindResetCmd() *cobra.Command {
-	var forceFlag bool
-
-	cmd := &cobra.Command{
-		Use:   "reset",
-		Short: "Reset the shadow branch for the current HEAD",
-		Long: `Discards the shadow branch and session state for the current HEAD commit.
-
-This is useful when:
-- A previous session wasn't completed cleanly
-- You want to start fresh without existing checkpoints
-- Another worktree has a session on the same base commit
-
-The shadow branch (entire/<commit-hash>) and associated session state files
-will be deleted. This action cannot be undone.`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			// Check if Entire is disabled
-			if checkDisabledGuard(cmd.OutOrStdout()) {
-				return nil
-			}
-
-			return runRewindReset(forceFlag)
-		},
-	}
-
-	cmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Skip confirmation prompt")
-
-	return cmd
-}
-
-func runRewindReset(force bool) error {
-	// Get strategy
-	start := GetStrategy()
-
-	// Check if strategy supports reset
-	resetter, ok := start.(strategy.SessionResetter)
-	if !ok {
-		return fmt.Errorf("strategy '%s' does not support reset", start.Name())
-	}
-
-	// Delegate to strategy
-	if err := resetter.Reset(force); err != nil {
-		return fmt.Errorf("reset failed: %w", err)
-	}
-	return nil
 }
 
 func runRewindInteractive() error {
@@ -1264,40 +1214,6 @@ func performGitResetHard(commitHash string) error {
 		return fmt.Errorf("reset failed: %s: %w", strings.TrimSpace(string(output)), err)
 	}
 	return nil
-}
-
-// extractSessionIDFromLogsOnlyPoint extracts the session ID from a logs-only point.
-func extractSessionIDFromLogsOnlyPoint(start strategy.Strategy, point strategy.RewindPoint) string {
-	// Try to get from condensation metadata via strategy
-	if sv, ok := start.(*strategy.ManualCommitStrategy); ok {
-		// The getSessionIDFromCondensation method is not exported, so we'll
-		// extract from the commit's Entire-Session trailer instead
-		_ = sv // Avoid unused variable error
-	}
-
-	// Extract from commit's Entire-Session trailer
-	repo, err := openRepository()
-	if err != nil {
-		return ""
-	}
-
-	hash, err := repo.ResolveRevision(plumbing.Revision(point.ID))
-	if err != nil {
-		return ""
-	}
-
-	commit, err := repo.CommitObject(*hash)
-	if err != nil {
-		return ""
-	}
-
-	// Parse Entire-Session trailer
-	sessionID, found := trailers.ParseSession(commit.Message)
-	if found {
-		return sessionID
-	}
-
-	return ""
 }
 
 // sanitizeForTerminal removes or replaces characters that cause rendering issues

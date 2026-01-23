@@ -97,6 +97,50 @@ func (env *TestEnv) Cleanup() {
 	// No-op - temp dirs are cleaned up by t.TempDir()
 }
 
+// RunCLI runs the entire CLI with the given arguments and returns stdout.
+func (env *TestEnv) RunCLI(args ...string) string {
+	env.T.Helper()
+	output, err := env.RunCLIWithError(args...)
+	if err != nil {
+		env.T.Fatalf("CLI command failed: %v\nArgs: %v\nOutput: %s", err, args, output)
+	}
+	return output
+}
+
+// RunCLIWithError runs the entire CLI and returns output and error.
+func (env *TestEnv) RunCLIWithError(args ...string) (string, error) {
+	env.T.Helper()
+
+	// Run CLI using the shared binary
+	cmd := exec.Command(getTestBinary(), args...)
+	cmd.Dir = env.RepoDir
+	cmd.Env = append(os.Environ(),
+		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
+	)
+
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// RunCLIWithStdin runs the CLI with stdin input.
+func (env *TestEnv) RunCLIWithStdin(stdin string, args ...string) string {
+	env.T.Helper()
+
+	// Run CLI with stdin using the shared binary
+	cmd := exec.Command(getTestBinary(), args...)
+	cmd.Dir = env.RepoDir
+	cmd.Env = append(os.Environ(),
+		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
+	)
+	cmd.Stdin = strings.NewReader(stdin)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		env.T.Fatalf("CLI command failed: %v\nArgs: %v\nOutput: %s", err, args, output)
+	}
+	return string(output)
+}
+
 // NewRepoEnv creates a TestEnv with an initialized git repo and Entire.
 // This is a convenience factory for tests that need a basic repo setup.
 func NewRepoEnv(t *testing.T, strategy string) *TestEnv {
