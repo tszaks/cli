@@ -439,6 +439,17 @@ func (s *GitStore) archiveExistingSession(basePath string, existingMetadata *Com
 		paths.ContentHashFileName,
 	}
 
+	// Also include transcript chunk files (full.jsonl.001, full.jsonl.002, etc.)
+	chunkPrefix := basePath + paths.TranscriptFileName + "."
+	for srcPath := range entries {
+		if strings.HasPrefix(srcPath, chunkPrefix) {
+			chunkSuffix := strings.TrimPrefix(srcPath, basePath+paths.TranscriptFileName)
+			if idx := agent.ParseChunkIndex(paths.TranscriptFileName+chunkSuffix, paths.TranscriptFileName); idx > 0 {
+				filesToArchive = append(filesToArchive, paths.TranscriptFileName+chunkSuffix)
+			}
+		}
+	}
+
 	// Move each file to archive folder
 	for _, filename := range filesToArchive {
 		srcPath := basePath + filename
