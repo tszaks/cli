@@ -260,6 +260,9 @@ func (s *AutoCommitStrategy) commitMetadataToMetadataBranch(repo *git.Repository
 	// Get current branch name
 	branchName := GetCurrentBranchName(repo)
 
+	// Combine all file changes into FilesTouched (same as manual-commit)
+	filesTouched := mergeFilesTouched(nil, ctx.ModifiedFiles, ctx.NewFiles, ctx.DeletedFiles)
+
 	// Write committed checkpoint using the checkpoint store
 	err = store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
 		CheckpointID:           checkpointID,
@@ -273,6 +276,8 @@ func (s *AutoCommitStrategy) commitMetadataToMetadataBranch(repo *git.Repository
 		TranscriptUUIDAtStart:  ctx.TranscriptUUIDAtStart,
 		TranscriptLinesAtStart: ctx.TranscriptLinesAtStart,
 		TokenUsage:             ctx.TokenUsage,
+		CheckpointsCount:       1,            // Each auto-commit checkpoint = 1
+		FilesTouched:           filesTouched, // Track modified files (same as manual-commit)
 	})
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("failed to write committed checkpoint: %w", err)
