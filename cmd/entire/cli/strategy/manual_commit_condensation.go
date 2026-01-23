@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 // listCheckpoints returns all checkpoints from the sessions branch.
@@ -126,6 +127,31 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 	// Get current branch name
 	branchName := GetCurrentBranchName(repo)
 
+	// Calculate initial attribution by comparing:
+	// - baseTree: state before session (parent commit when session started)
+	// - shadowTree: what agent wrote (checkpoint)
+	// - headTree: what was committed (may include human edits)
+	var attribution *cpkg.InitialAttribution
+	if headRef, headErr := repo.Head(); headErr == nil {
+		if headCommit, commitErr := repo.CommitObject(headRef.Hash()); commitErr == nil {
+			if headTree, treeErr := headCommit.Tree(); treeErr == nil {
+				// Get shadow branch tree (checkpoint tree - what the agent wrote)
+				if shadowCommit, shadowErr := repo.CommitObject(ref.Hash()); shadowErr == nil {
+					if shadowTree, shadowTreeErr := shadowCommit.Tree(); shadowTreeErr == nil {
+						// Get base tree (state before session started)
+						var baseTree *object.Tree
+						if baseCommit, baseErr := repo.CommitObject(plumbing.NewHash(state.BaseCommit)); baseErr == nil {
+							if tree, treeErr := baseCommit.Tree(); treeErr == nil {
+								baseTree = tree
+							}
+						}
+						attribution = CalculateAttribution(baseTree, shadowTree, headTree, sessionData.FilesTouched)
+					}
+				}
+			}
+		}
+	}
+
 	// Write checkpoint metadata using the checkpoint store
 	if err := store.WriteCommitted(context.Background(), cpkg.WriteCommittedOptions{
 		CheckpointID:           checkpointID,
@@ -144,6 +170,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		TranscriptUUIDAtStart:  state.TranscriptUUIDAtStart,
 		TranscriptLinesAtStart: state.TranscriptLinesAtStart,
 		TokenUsage:             sessionData.TokenUsage,
+		InitialAttribution:     attribution,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to write checkpoint metadata: %w", err)
 	}

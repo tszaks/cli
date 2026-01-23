@@ -245,6 +245,10 @@ type WriteCommittedOptions struct {
 
 	// TokenUsage contains the token usage for this checkpoint
 	TokenUsage *agent.TokenUsage
+
+	// InitialAttribution is line-level attribution calculated at commit time
+	// comparing checkpoint tree (agent work) to committed tree (may include human edits)
+	InitialAttribution *InitialAttribution
 }
 
 // ReadCommittedResult contains the result of reading a committed checkpoint.
@@ -343,6 +347,22 @@ type CommittedMetadata struct {
 
 	// Token usage for this checkpoint
 	TokenUsage *agent.TokenUsage `json:"token_usage,omitempty"`
+
+	// InitialAttribution is line-level attribution calculated at commit time
+	InitialAttribution *InitialAttribution `json:"initial_attribution,omitempty"`
+}
+
+// InitialAttribution captures line-level attribution metrics at commit time.
+// This is a point-in-time snapshot comparing the checkpoint tree (agent work)
+// against the committed tree (may include human edits).
+type InitialAttribution struct {
+	CalculatedAt    time.Time `json:"calculated_at"`
+	AgentLines      int       `json:"agent_lines"`      // Lines unchanged from checkpoint
+	HumanAdded      int       `json:"human_added"`      // Lines added by human
+	HumanModified   int       `json:"human_modified"`   // Lines modified by human (estimate)
+	HumanRemoved    int       `json:"human_removed"`    // Lines removed by human
+	TotalCommitted  int       `json:"total_committed"`  // Total lines in committed files
+	AgentPercentage float64   `json:"agent_percentage"` // agent_lines / total_committed * 100
 }
 
 // Info provides summary information for listing checkpoints.

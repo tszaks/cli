@@ -1635,6 +1635,187 @@ func TestExtractUserPromptsFromGeminiJSON(t *testing.T) {
 	}
 }
 
+// TestCondenseSession_IncludesInitialAttribution verifies that when manual-commit
+// condenses a session, it calculates InitialAttribution by comparing the shadow branch
+// (agent work) to HEAD (what was committed).
+func TestCondenseSession_IncludesInitialAttribution(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	// Create initial commit with a file
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create a file with some content
+	testFile := filepath.Join(dir, "test.go")
+	originalContent := "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n"
+	if err := os.WriteFile(testFile, []byte(originalContent), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if _, err := worktree.Add("test.go"); err != nil {
+		t.Fatalf("failed to stage file: %v", err)
+	}
+
+	_, err = worktree.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "2025-01-15-test-attribution"
+
+	// Create metadata directory with transcript
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
+		t.Fatalf("failed to create metadata dir: %v", err)
+	}
+
+	transcript := `{"type":"human","message":{"content":"modify test.go"}}
+{"type":"assistant","message":{"content":"I'll modify test.go"}}
+`
+	if err := os.WriteFile(filepath.Join(metadataDirAbs, paths.TranscriptFileName), []byte(transcript), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// Agent modifies the file (adds a new function)
+	agentContent := "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n\nfunc newFunc() {\n\tprintln(\"agent added this\")\n}\n"
+	if err := os.WriteFile(testFile, []byte(agentContent), 0o644); err != nil {
+		t.Fatalf("failed to write agent changes: %v", err)
+	}
+
+	// First checkpoint - captures agent's work on shadow branch
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{"test.go"},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 1",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() error = %v", err)
+	}
+
+	// Human edits the file (adds a comment)
+	humanEditedContent := "package main\n\n// Human added this comment\nfunc main() {\n\tprintln(\"hello\")\n}\n\nfunc newFunc() {\n\tprintln(\"agent added this\")\n}\n"
+	if err := os.WriteFile(testFile, []byte(humanEditedContent), 0o644); err != nil {
+		t.Fatalf("failed to write human edits: %v", err)
+	}
+
+	// Stage and commit the human-edited file (this is what the user does)
+	if _, err := worktree.Add("test.go"); err != nil {
+		t.Fatalf("failed to stage human edits: %v", err)
+	}
+	_, err = worktree.Commit("Add new function with human comment", &git.CommitOptions{
+		Author: &object.Signature{Name: "Human", Email: "human@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit human edits: %v", err)
+	}
+
+	// Load session state
+	state, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("loadSessionState() error = %v", err)
+	}
+
+	// Condense the session - this should calculate InitialAttribution
+	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
+	result, err := s.CondenseSession(repo, checkpointID, state)
+	if err != nil {
+		t.Fatalf("CondenseSession() error = %v", err)
+	}
+
+	// Verify CondenseResult
+	if result.CheckpointID != checkpointID {
+		t.Errorf("CheckpointID = %q, want %q", result.CheckpointID, checkpointID)
+	}
+
+	// Read metadata from entire/sessions branch and verify InitialAttribution
+	sessionsRef, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	if err != nil {
+		t.Fatalf("failed to get sessions branch: %v", err)
+	}
+
+	sessionsCommit, err := repo.CommitObject(sessionsRef.Hash())
+	if err != nil {
+		t.Fatalf("failed to get sessions commit: %v", err)
+	}
+
+	tree, err := sessionsCommit.Tree()
+	if err != nil {
+		t.Fatalf("failed to get tree: %v", err)
+	}
+
+	// Read metadata.json
+	metadataPath := checkpointID.Path() + "/" + paths.MetadataFileName
+	metadataFile, err := tree.File(metadataPath)
+	if err != nil {
+		t.Fatalf("failed to find metadata.json at %s: %v", metadataPath, err)
+	}
+
+	content, err := metadataFile.Contents()
+	if err != nil {
+		t.Fatalf("failed to read metadata.json: %v", err)
+	}
+
+	// Parse and verify InitialAttribution is present
+	var metadata struct {
+		InitialAttribution *struct {
+			AgentLines      int     `json:"agent_lines"`
+			HumanAdded      int     `json:"human_added"`
+			HumanModified   int     `json:"human_modified"`
+			HumanRemoved    int     `json:"human_removed"`
+			TotalCommitted  int     `json:"total_committed"`
+			AgentPercentage float64 `json:"agent_percentage"`
+		} `json:"initial_attribution"`
+	}
+	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
+		t.Fatalf("failed to parse metadata.json: %v", err)
+	}
+
+	if metadata.InitialAttribution == nil {
+		t.Fatal("InitialAttribution should be present in metadata.json for manual-commit")
+	}
+
+	// Verify the attribution values are reasonable
+	// Agent wrote 9 lines, human added 1 line (the comment)
+	// So we expect ~9 agent lines, ~1 human added, total ~10
+	if metadata.InitialAttribution.TotalCommitted == 0 {
+		t.Error("TotalCommitted should be > 0")
+	}
+	if metadata.InitialAttribution.AgentLines == 0 {
+		t.Error("AgentLines should be > 0 (agent wrote code)")
+	}
+	if metadata.InitialAttribution.HumanAdded == 0 {
+		t.Error("HumanAdded should be > 0 (human added a comment)")
+	}
+	if metadata.InitialAttribution.AgentPercentage <= 0 || metadata.InitialAttribution.AgentPercentage > 100 {
+		t.Errorf("AgentPercentage should be between 0-100, got %f", metadata.InitialAttribution.AgentPercentage)
+	}
+
+	t.Logf("Attribution: agent=%d, human_added=%d, human_modified=%d, human_removed=%d, total=%d, percentage=%.1f%%",
+		metadata.InitialAttribution.AgentLines,
+		metadata.InitialAttribution.HumanAdded,
+		metadata.InitialAttribution.HumanModified,
+		metadata.InitialAttribution.HumanRemoved,
+		metadata.InitialAttribution.TotalCommitted,
+		metadata.InitialAttribution.AgentPercentage)
+}
+
 // TestExtractUserPromptsFromLines tests extraction of user prompts from JSONL format.
 func TestExtractUserPromptsFromLines(t *testing.T) {
 	tests := []struct {
