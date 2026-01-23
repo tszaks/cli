@@ -163,7 +163,7 @@ func TestHooksGeminiSessionStart(t *testing.T) {
 			geminiSessionID := "gemini-hook-session-uuid-5678"
 
 			// Run hooks gemini session-start with JSON input (simulating Gemini's SessionStart hook)
-			output := env.RunGeminiCLIWithStdin(
+			output := env.RunCLIWithStdin(
 				`{"session_id": "`+geminiSessionID+`", "transcript_path": "/tmp/transcript.json"}`,
 				"hooks", "gemini", "session-start",
 			)
@@ -215,9 +215,7 @@ func (env *TestEnv) RunCLIWithError(args ...string) (string, error) {
 	// Run CLI using the shared binary
 	cmd := exec.Command(getTestBinary(), args...)
 	cmd.Dir = env.RepoDir
-	cmd.Env = append(os.Environ(),
-		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
-	)
+	cmd.Env = env.cliEnv()
 
 	output, err := cmd.CombinedOutput()
 	return string(output), err
@@ -230,9 +228,7 @@ func (env *TestEnv) RunCLIWithStdin(stdin string, args ...string) string {
 	// Run CLI with stdin using the shared binary
 	cmd := exec.Command(getTestBinary(), args...)
 	cmd.Dir = env.RepoDir
-	cmd.Env = append(os.Environ(),
-		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
-	)
+	cmd.Env = env.cliEnv()
 	cmd.Stdin = strings.NewReader(stdin)
 
 	output, err := cmd.CombinedOutput()
@@ -242,21 +238,11 @@ func (env *TestEnv) RunCLIWithStdin(stdin string, args ...string) string {
 	return string(output)
 }
 
-// RunGeminiCLIWithStdin runs the CLI with stdin input for Gemini hooks.
-func (env *TestEnv) RunGeminiCLIWithStdin(stdin string, args ...string) string {
-	env.T.Helper()
-
-	// Run CLI with stdin using the shared binary
-	cmd := exec.Command(getTestBinary(), args...)
-	cmd.Dir = env.RepoDir
-	cmd.Env = append(os.Environ(),
+// cliEnv returns the environment variables for CLI execution.
+// Includes both Claude and Gemini project dirs so tests work for any agent.
+func (env *TestEnv) cliEnv() []string {
+	return append(os.Environ(),
+		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 		"ENTIRE_TEST_GEMINI_PROJECT_DIR="+env.GeminiProjectDir,
 	)
-	cmd.Stdin = strings.NewReader(stdin)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		env.T.Fatalf("CLI command failed: %v\nArgs: %v\nOutput: %s", err, args, output)
-	}
-	return string(output)
 }
