@@ -31,7 +31,7 @@ import (
 const unknownSessionID = "unknown"
 
 // getAgentWithFallback returns an agent by type, falling back to detection if type is empty or unknown.
-func getAgentWithFallback(agentType string) (agentpkg.Agent, error) {
+func getAgentWithFallback(agentType agentpkg.AgentType) (agentpkg.Agent, error) {
 	if agentType != "" {
 		if agent, err := agentpkg.GetByAgentType(agentType); err == nil {
 			return agent, nil
@@ -779,7 +779,7 @@ func restoreSessionTranscriptFromShadow(commitHash, metadataDir, sessionID strin
 
 	// Get transcript from shadow branch commit tree
 	store := checkpoint.NewGitStore(repo)
-	content, err := store.GetTranscriptFromCommit(hash, metadataDir, agent.Name())
+	content, err := store.GetTranscriptFromCommit(hash, metadataDir, agent.Type())
 	if err != nil {
 		return "", fmt.Errorf("failed to get transcript from shadow branch: %w", err)
 	}

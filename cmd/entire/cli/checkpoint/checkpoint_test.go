@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/trailers"
@@ -125,13 +126,13 @@ func TestWriteCommitted_AgentField(t *testing.T) {
 	// Write a committed checkpoint with Agent field
 	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
 	sessionID := "test-session-123"
-	agentName := "Claude Code"
+	agentType := agent.AgentTypeClaudeCode
 
 	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
 		CheckpointID: checkpointID,
 		SessionID:    sessionID,
 		Strategy:     "manual-commit",
-		Agent:        agentName,
+		Agent:        agentType,
 		Transcript:   []byte("test transcript content"),
 		AuthorName:   "Test Author",
 		AuthorEmail:  "test@example.com",
@@ -174,14 +175,14 @@ func TestWriteCommitted_AgentField(t *testing.T) {
 		t.Fatalf("failed to parse metadata.json: %v", err)
 	}
 
-	if metadata.Agent != agentName {
-		t.Errorf("metadata.Agent = %q, want %q", metadata.Agent, agentName)
+	if metadata.Agent != agentType {
+		t.Errorf("metadata.Agent = %q, want %q", metadata.Agent, agentType)
 	}
 
 	// Verify commit message contains Entire-Agent trailer
-	if !strings.Contains(commit.Message, trailers.AgentTrailerKey+": "+agentName) {
+	if !strings.Contains(commit.Message, trailers.AgentTrailerKey+": "+string(agentType)) {
 		t.Errorf("commit message should contain %s trailer with value %q, got:\n%s",
-			trailers.AgentTrailerKey, agentName, commit.Message)
+			trailers.AgentTrailerKey, agentType, commit.Message)
 	}
 }
 

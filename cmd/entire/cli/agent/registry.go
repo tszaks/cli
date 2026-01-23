@@ -8,7 +8,7 @@ import (
 
 var (
 	registryMu sync.RWMutex
-	registry   = make(map[string]Factory)
+	registry   = make(map[AgentName]Factory)
 )
 
 // Factory creates a new agent instance
@@ -16,7 +16,7 @@ type Factory func() Agent
 
 // Register adds an agent factory to the registry.
 // Called from init() in each agent implementation.
-func Register(name string, factory Factory) {
+func Register(name AgentName, factory Factory) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	registry[name] = factory
@@ -25,7 +25,7 @@ func Register(name string, factory Factory) {
 // Get retrieves an agent by name.
 //
 //nolint:ireturn // Factory pattern requires returning the interface
-func Get(name string) (Agent, error) {
+func Get(name AgentName) (Agent, error) {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
@@ -37,15 +37,15 @@ func Get(name string) (Agent, error) {
 }
 
 // List returns all registered agent names in sorted order.
-func List() []string {
+func List() []AgentName {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
-	names := make([]string, 0, len(registry))
+	names := make([]AgentName, 0, len(registry))
 	for name := range registry {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	sort.Slice(names, func(i, j int) bool { return names[i] < names[j] })
 	return names
 }
 
@@ -66,31 +66,36 @@ func Detect() (Agent, error) {
 	return nil, fmt.Errorf("no agent detected (available: %v)", List())
 }
 
+// AgentName is the registry key type for agents (e.g., "claude-code", "gemini").
+//
+//nolint:revive // stuttering is intentional - distinguishes from AgentType when both are used
+type AgentName string
+
+// AgentType is the display name type stored in metadata/trailers (e.g., "Claude Code", "Gemini CLI").
+//
+//nolint:revive // stuttering is intentional - distinguishes from AgentName when both are used
+type AgentType string
+
 // Agent name constants (registry keys)
 const (
-	AgentNameClaudeCode = "claude-code"
-	AgentNameGemini     = "gemini"
+	AgentNameClaudeCode AgentName = "claude-code"
+	AgentNameGemini     AgentName = "gemini"
 )
 
 // Agent type constants (type identifiers stored in metadata/trailers)
 const (
-	AgentTypeClaudeCode = "Claude Code"
-	AgentTypeGemini     = "Gemini CLI"
+	AgentTypeClaudeCode AgentType = "Claude Code"
+	AgentTypeGemini     AgentType = "Gemini CLI"
+	AgentTypeUnknown    AgentType = "Agent" // Fallback for backwards compatibility
 )
 
 // DefaultAgentName is the registry key for the default agent.
-const DefaultAgentName = AgentNameClaudeCode
+const DefaultAgentName AgentName = AgentNameClaudeCode
 
-// GetByAgentType retrieves an agent by its type identifier or registry key.
-// Accepts either type identifiers (e.g., "Claude Code", "Gemini CLI") or
-// registry keys (e.g., "claude-code", "gemini").
-func GetByAgentType(agentType string) (Agent, error) {
-	// Try registry key first
-	if ag, err := Get(agentType); err == nil {
-		return ag, nil
-	}
+// GetByAgentType retrieves an agent by its type identifier.
+//
 
-	// Search by Type()
+func GetByAgentType(agentType AgentType) (Agent, error) {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
@@ -101,7 +106,7 @@ func GetByAgentType(agentType string) (Agent, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("unknown agent: %s", agentType)
+	return nil, fmt.Errorf("unknown agent type: %s", agentType)
 }
 
 // Default returns the default agent.

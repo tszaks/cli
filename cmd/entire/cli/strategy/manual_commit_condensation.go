@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/agent/claudecode"
 	cpkg "entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
@@ -159,7 +160,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 // extractSessionData extracts session data from the shadow branch.
 // filesTouched is the list of files tracked during the session (from SessionState.FilesTouched).
 // agentType identifies the agent (e.g., "Gemini CLI", "Claude Code") to determine transcript format.
-func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRef plumbing.Hash, sessionID string, filesTouched []string, agentType string) (*ExtractedSessionData, error) {
+func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRef plumbing.Hash, sessionID string, filesTouched []string, agentType agent.AgentType) (*ExtractedSessionData, error) {
 	commit, err := repo.CommitObject(shadowRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit object: %w", err)
@@ -190,7 +191,7 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 	// Process transcript based on agent type
 	if fullTranscript != "" {
 		// Check if this is a Gemini CLI transcript (JSON format, not JSONL)
-		isGeminiFormat := strings.Contains(agentType, "Gemini") || isGeminiJSONTranscript(fullTranscript)
+		isGeminiFormat := agentType == agent.AgentTypeGemini || isGeminiJSONTranscript(fullTranscript)
 
 		if isGeminiFormat {
 			// Gemini uses JSON format with a "messages" array

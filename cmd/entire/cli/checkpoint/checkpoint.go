@@ -237,7 +237,7 @@ type WriteCommittedOptions struct {
 	CommitSubject string // Subject line for the metadata commit (overrides default)
 
 	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor")
-	Agent string
+	Agent agent.AgentType
 
 	// Transcript position at checkpoint start - tracks what was added during this checkpoint
 	TranscriptUUIDAtStart  string // Last UUID when checkpoint started
@@ -301,7 +301,7 @@ type CommittedInfo struct {
 	FilesTouched []string
 
 	// Agent identifies the agent that created this checkpoint
-	Agent string
+	Agent agent.AgentType
 
 	// IsTask indicates if this is a task checkpoint
 	IsTask bool
@@ -325,7 +325,7 @@ type CommittedMetadata struct {
 	FilesTouched     []string        `json:"files_touched"`
 
 	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor")
-	Agent string `json:"agent,omitempty"`
+	Agent agent.AgentType `json:"agent,omitempty"`
 
 	// Multi-session support: when multiple sessions contribute to the same checkpoint
 	SessionCount int      `json:"session_count,omitempty"` // Number of sessions (1 if omitted for backwards compat)

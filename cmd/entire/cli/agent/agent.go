@@ -12,11 +12,11 @@ import (
 // native format to the normalized types defined in this package.
 type Agent interface {
 	// Name returns the agent registry key (e.g., "claude-code", "gemini")
-	Name() string
+	Name() AgentName
 
 	// Type returns the agent type identifier (e.g., "Claude Code", "Gemini CLI")
 	// This is stored in metadata and trailers.
-	Type() string
+	Type() AgentType
 
 	// Description returns a human-readable description for UI
 	Description() string

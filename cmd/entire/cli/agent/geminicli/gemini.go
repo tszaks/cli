@@ -33,12 +33,12 @@ func NewGeminiCLIAgent() agent.Agent {
 }
 
 // Name returns the agent registry key.
-func (g *GeminiCLIAgent) Name() string {
+func (g *GeminiCLIAgent) Name() agent.AgentName {
 	return agent.AgentNameGemini
 }
 
 // Type returns the agent type identifier.
-func (g *GeminiCLIAgent) Type() string {
+func (g *GeminiCLIAgent) Type() agent.AgentType {
 	return agent.AgentTypeGemini
 }
 

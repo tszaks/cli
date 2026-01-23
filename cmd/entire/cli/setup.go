@@ -69,7 +69,7 @@ func newEnableCmd() *cobra.Command {
 			}
 			// Non-interactive mode if --agent flag is provided
 			if agentName != "" {
-				return setupAgentHooksNonInteractive(agentName, strategyFlag, localDev, forceHooks, skipPushSessions, telemetry, disableMultisessionWarning)
+				return setupAgentHooksNonInteractive(agent.AgentName(agentName), strategyFlag, localDev, forceHooks, skipPushSessions, telemetry, disableMultisessionWarning)
 			}
 			// If strategy is specified via flag, skip interactive selection
 			if strategyFlag != "" {
@@ -568,7 +568,7 @@ func setupClaudeCodeHook(localDev, forceHooks bool) (int, error) {
 
 // setupAgentHooksNonInteractive sets up hooks for a specific agent non-interactively.
 // If strategyName is provided, it sets the strategy; otherwise uses default.
-func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, forceHooks, skipPushSessions, telemetry, disableMultisessionWarning bool) error {
+func setupAgentHooksNonInteractive(agentName agent.AgentName, strategyName string, localDev, forceHooks, skipPushSessions, telemetry, disableMultisessionWarning bool) error {
 	ag, err := agent.Get(agentName)
 	if err != nil {
 		return fmt.Errorf("unknown agent: %s", agentName)
@@ -602,7 +602,7 @@ func setupAgentHooksNonInteractive(agentName, strategyName string, localDev, for
 
 	// Update settings to store the agent choice and strategy
 	settings, _ := LoadEntireSettings() //nolint:errcheck // settings defaults are fine
-	settings.Agent = agentName
+	settings.Agent = string(agentName)
 	settings.Enabled = true
 	if localDev {
 		settings.LocalDev = localDev

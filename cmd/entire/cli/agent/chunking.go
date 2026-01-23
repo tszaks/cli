@@ -19,7 +19,7 @@ const (
 // ChunkTranscript splits a transcript into chunks using the appropriate agent.
 // If agentType is empty or the agent doesn't implement TranscriptChunker,
 // falls back to JSONL (line-based) chunking.
-func ChunkTranscript(content []byte, agentType string) ([][]byte, error) {
+func ChunkTranscript(content []byte, agentType AgentType) ([][]byte, error) {
 	if len(content) <= MaxChunkSize {
 		return [][]byte{content}, nil
 	}
@@ -45,7 +45,7 @@ func ChunkTranscript(content []byte, agentType string) ([][]byte, error) {
 // ReassembleTranscript combines chunks back into a single transcript.
 // If agentType is empty or the agent doesn't implement TranscriptChunker,
 // falls back to JSONL (line-based) reassembly.
-func ReassembleTranscript(chunks [][]byte, agentType string) ([]byte, error) {
+func ReassembleTranscript(chunks [][]byte, agentType AgentType) ([]byte, error) {
 	if len(chunks) == 0 {
 		return nil, nil
 	}
@@ -169,9 +169,9 @@ type geminiTranscriptDetect struct {
 }
 
 // DetectAgentTypeFromContent detects the agent type from transcript content.
-// Returns AgentTypeGemini if it appears to be Gemini JSON format, empty string otherwise.
+// Returns AgentTypeGemini if it appears to be Gemini JSON format, empty AgentType otherwise.
 // This is used when the agent type is unknown but we need to chunk/reassemble correctly.
-func DetectAgentTypeFromContent(content []byte) string {
+func DetectAgentTypeFromContent(content []byte) AgentType {
 	// Quick check: Gemini JSON starts with { and has a messages array
 	trimmed := strings.TrimSpace(string(content))
 	if !strings.HasPrefix(trimmed, "{") {

@@ -32,12 +32,12 @@ func NewClaudeCodeAgent() agent.Agent {
 }
 
 // Name returns the agent registry key.
-func (c *ClaudeCodeAgent) Name() string {
+func (c *ClaudeCodeAgent) Name() agent.AgentName {
 	return agent.AgentNameClaudeCode
 }
 
 // Type returns the agent type identifier.
-func (c *ClaudeCodeAgent) Type() string {
+func (c *ClaudeCodeAgent) Type() agent.AgentType {
 	return agent.AgentTypeClaudeCode
 }
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/trailers"
@@ -124,7 +125,7 @@ const (
 	shadowBranchPrefix = "entire/"
 
 	// DefaultAgentType is the generic fallback agent type name
-	DefaultAgentType = "Agent"
+	DefaultAgentType = agent.AgentTypeUnknown
 )
 
 // ensureMetadataBranch creates the orphan entire/sessions branch if it doesn't exist.

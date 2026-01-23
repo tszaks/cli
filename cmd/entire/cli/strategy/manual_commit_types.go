@@ -27,7 +27,7 @@ type SessionState struct {
 	FilesTouched             []string        `json:"files_touched,omitempty"`              // Files modified/created/deleted during this session
 	ConcurrentWarningShown   bool            `json:"concurrent_warning_shown,omitempty"`   // True if user was warned about concurrent sessions
 	LastCheckpointID         id.CheckpointID `json:"last_checkpoint_id,omitempty"`         // Checkpoint ID from last condensation, reused for subsequent commits without new content
-	AgentType                string          `json:"agent_type,omitempty"`                 // Agent type identifier (e.g., "Claude Code", "Cursor")
+	AgentType                agent.AgentType `json:"agent_type,omitempty"`                 // Agent type identifier (e.g., "Claude Code", "Cursor")
 	TranscriptPath           string          `json:"transcript_path,omitempty"`            // Path to the live transcript file (for mid-session commit detection)
 
 	// Token usage tracking (accumulated across all checkpoints in this session)
@@ -46,7 +46,7 @@ type CheckpointInfo struct {
 	CreatedAt        time.Time       `json:"created_at"`
 	CheckpointsCount int             `json:"checkpoints_count"`
 	FilesTouched     []string        `json:"files_touched"`
-	Agent            string          `json:"agent,omitempty"` // Human-readable agent name (e.g., "Claude Code")
+	Agent            agent.AgentType `json:"agent,omitempty"` // Human-readable agent name (e.g., "Claude Code")
 	IsTask           bool            `json:"is_task,omitempty"`
 	ToolUseID        string          `json:"tool_use_id,omitempty"`
 	SessionCount     int             `json:"session_count,omitempty"` // Number of sessions (1 if omitted)

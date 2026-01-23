@@ -471,7 +471,7 @@ func (s *GitStore) archiveExistingSession(basePath string, existingMetadata *Com
 
 // readArchivedSessions reads transcript data from archived session subfolders (1/, 2/, etc.).
 // Returns sessions ordered by folder index (oldest first).
-func (s *GitStore) readArchivedSessions(checkpointTree *object.Tree, sessionCount int, agentType string) []ArchivedSession {
+func (s *GitStore) readArchivedSessions(checkpointTree *object.Tree, sessionCount int, agentType agent.AgentType) []ArchivedSession {
 	var archived []ArchivedSession
 
 	// Archived sessions are in numbered folders: 1/, 2/, etc.
@@ -902,7 +902,7 @@ func getGitAuthorFromRepo(repo *git.Repository) (name, email string) {
 // readTranscriptFromTree reads a transcript from a git tree, handling both chunked and non-chunked formats.
 // It checks for chunk files first (.001, .002, etc.), then falls back to the base file.
 // The agentType is used for reassembling chunks in the correct format.
-func readTranscriptFromTree(tree *object.Tree, agentType string) ([]byte, error) {
+func readTranscriptFromTree(tree *object.Tree, agentType agent.AgentType) ([]byte, error) {
 	// Collect all transcript-related files
 	var chunkFiles []string
 	var hasBaseFile bool

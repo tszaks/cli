@@ -197,12 +197,12 @@ func TestDetectAgentTypeFromContent(t *testing.T) {
 	tests := []struct {
 		name     string
 		content  []byte
-		expected string
+		expected AgentType
 	}{
 		{
 			name:     "Gemini JSON",
 			content:  []byte(`{"messages":[{"type":"user","content":"hi"}]}`),
-			expected: "Gemini CLI",
+			expected: AgentTypeGemini,
 		},
 		{
 			name:     "JSONL",

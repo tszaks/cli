@@ -55,7 +55,7 @@ type State struct {
 	LastCheckpointID id.CheckpointID `json:"last_checkpoint_id,omitempty"`
 
 	// AgentType identifies the agent that created this session (e.g., "Claude Code", "Gemini CLI", "Cursor")
-	AgentType string `json:"agent_type,omitempty"`
+	AgentType agent.AgentType `json:"agent_type,omitempty"`
 
 	// Token usage tracking (accumulated across all checkpoints in this session)
 	TokenUsage *agent.TokenUsage `json:"token_usage,omitempty"`

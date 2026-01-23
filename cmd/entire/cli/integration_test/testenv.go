@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
@@ -228,19 +229,19 @@ func (env *TestEnv) InitEntireWithOptions(strategyName string, strategyOptions m
 
 // InitEntireWithAgent initializes an Entire test environment with a specific agent.
 // If agentName is empty, defaults to claude-code.
-func (env *TestEnv) InitEntireWithAgent(strategyName, agentName string) {
+func (env *TestEnv) InitEntireWithAgent(strategyName string, agentName agent.AgentName) {
 	env.T.Helper()
 	env.initEntireInternal(strategyName, agentName, nil)
 }
 
 // InitEntireWithAgentAndOptions initializes Entire with the specified strategy, agent, and options.
-func (env *TestEnv) InitEntireWithAgentAndOptions(strategyName, agentName string, strategyOptions map[string]any) {
+func (env *TestEnv) InitEntireWithAgentAndOptions(strategyName string, agentName agent.AgentName, strategyOptions map[string]any) {
 	env.T.Helper()
 	env.initEntireInternal(strategyName, agentName, strategyOptions)
 }
 
 // initEntireInternal is the common implementation for InitEntire variants.
-func (env *TestEnv) initEntireInternal(strategyName, agentName string, strategyOptions map[string]any) {
+func (env *TestEnv) initEntireInternal(strategyName string, agentName agent.AgentName, strategyOptions map[string]any) {
 	env.T.Helper()
 
 	// Create .entire directory structure
@@ -262,7 +263,7 @@ func (env *TestEnv) initEntireInternal(strategyName, agentName string, strategyO
 	}
 	// Only add agent if specified (otherwise defaults to claude-code)
 	if agentName != "" {
-		settings["agent"] = agentName
+		settings["agent"] = string(agentName)
 	}
 	if strategyOptions != nil {
 		settings["strategy_options"] = strategyOptions
