@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"entire.io/cli/cmd/entire/cli/agent"
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 // askConfirmTTY prompts the user for a yes/no confirmation via /dev/tty.
@@ -809,6 +812,17 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 			needSave = true
 		}
 
+		// Calculate attribution at prompt start (BEFORE agent makes any changes)
+		// This captures user edits since the last checkpoint
+		if state.CheckpointCount > 0 {
+			// Only calculate if there's a previous checkpoint to compare against
+			promptAttr := s.calculatePromptAttributionAtStart(repo, state)
+			if promptAttr.UserLinesAdded > 0 || promptAttr.UserLinesRemoved > 0 {
+				state.PendingPromptAttribution = &promptAttr
+				needSave = true
+			}
+		}
+
 		// Check if HEAD has moved (user pulled/rebased or committed)
 		if state.BaseCommit != head.Hash().String() {
 			oldBaseCommit := state.BaseCommit
@@ -892,6 +906,82 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 
 	fmt.Fprintf(os.Stderr, "Initialized shadow session: %s\n", sessionID)
 	return nil
+}
+
+// calculatePromptAttributionAtStart calculates attribution at prompt start (before agent runs).
+// This captures ALL user changes since the last checkpoint - no filtering needed since
+// the agent hasn't made any changes yet.
+func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
+	repo *git.Repository,
+	state *SessionState,
+) PromptAttribution {
+	nextCheckpointNum := state.CheckpointCount + 1
+	result := PromptAttribution{CheckpointNumber: nextCheckpointNum}
+
+	// Get last checkpoint tree from shadow branch
+	shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit)
+	refName := plumbing.NewBranchReferenceName(shadowBranchName)
+	ref, err := repo.Reference(refName, true)
+	if err != nil {
+		return result // No shadow branch yet
+	}
+
+	shadowCommit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		return result
+	}
+
+	lastCheckpointTree, err := shadowCommit.Tree()
+	if err != nil {
+		return result
+	}
+
+	// Get base tree for agent lines calculation
+	var baseTree *object.Tree
+	if baseCommit, err := repo.CommitObject(plumbing.NewHash(state.BaseCommit)); err == nil {
+		if tree, treeErr := baseCommit.Tree(); treeErr == nil {
+			baseTree = tree
+		}
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return result
+	}
+
+	// Get worktree status to find ALL changed files
+	status, err := worktree.Status()
+	if err != nil {
+		return result
+	}
+
+	worktreeRoot := worktree.Filesystem.Root()
+
+	// Build map of changed files with their current worktree content
+	changedFiles := make(map[string]string)
+	for filePath, fileStatus := range status {
+		// Skip unmodified files
+		if fileStatus.Worktree == git.Unmodified && fileStatus.Staging == git.Unmodified {
+			continue
+		}
+		// Skip .entire metadata directory (session data, not user code)
+		if strings.HasPrefix(filePath, paths.EntireMetadataDir+"/") || strings.HasPrefix(filePath, ".entire/") {
+			continue
+		}
+		// Read current worktree content
+		fullPath := filepath.Join(worktreeRoot, filePath)
+		content, err := os.ReadFile(fullPath) //nolint:gosec // filePath is from git worktree status
+		if err != nil {
+			changedFiles[filePath] = "" // File deleted or unreadable
+		} else {
+			changedFiles[filePath] = string(content)
+		}
+	}
+
+	// Use CalculatePromptAttribution from manual_commit_attribution.go
+	result = CalculatePromptAttribution(baseTree, lastCheckpointTree, changedFiles, nextCheckpointNum)
+
+	return result
 }
 
 // getStagedFiles returns a list of files staged for commit.

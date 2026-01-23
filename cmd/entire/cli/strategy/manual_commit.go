@@ -87,6 +87,16 @@ func sessionStateToStrategy(state *session.State) *SessionState {
 			AgentLinesRemoved: pa.AgentLinesRemoved,
 		})
 	}
+	// Convert PendingPromptAttribution
+	if state.PendingPromptAttribution != nil {
+		result.PendingPromptAttribution = &PromptAttribution{
+			CheckpointNumber:  state.PendingPromptAttribution.CheckpointNumber,
+			UserLinesAdded:    state.PendingPromptAttribution.UserLinesAdded,
+			UserLinesRemoved:  state.PendingPromptAttribution.UserLinesRemoved,
+			AgentLinesAdded:   state.PendingPromptAttribution.AgentLinesAdded,
+			AgentLinesRemoved: state.PendingPromptAttribution.AgentLinesRemoved,
+		}
+	}
 	return result
 }
 
@@ -121,6 +131,16 @@ func sessionStateFromStrategy(state *SessionState) *session.State {
 			AgentLinesAdded:   pa.AgentLinesAdded,
 			AgentLinesRemoved: pa.AgentLinesRemoved,
 		})
+	}
+	// Convert PendingPromptAttribution
+	if state.PendingPromptAttribution != nil {
+		result.PendingPromptAttribution = &session.PromptAttribution{
+			CheckpointNumber:  state.PendingPromptAttribution.CheckpointNumber,
+			UserLinesAdded:    state.PendingPromptAttribution.UserLinesAdded,
+			UserLinesRemoved:  state.PendingPromptAttribution.UserLinesRemoved,
+			AgentLinesAdded:   state.PendingPromptAttribution.AgentLinesAdded,
+			AgentLinesRemoved: state.PendingPromptAttribution.AgentLinesRemoved,
+		}
 	}
 	return result
 }

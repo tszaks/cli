@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 // SaveChanges saves a checkpoint to the shadow branch.
@@ -59,9 +57,16 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 	shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit)
 	branchExisted := store.ShadowBranchExists(state.BaseCommit)
 
-	// Calculate prompt attribution BEFORE saving the checkpoint
-	// This captures user edits since the last checkpoint
-	promptAttr := s.calculatePromptAttributionForSave(repo, state, ctx)
+	// Use the pending attribution calculated at prompt start (in InitializeSession)
+	// This was calculated BEFORE the agent made changes, so it accurately captures user edits
+	var promptAttr PromptAttribution
+	if state.PendingPromptAttribution != nil {
+		promptAttr = *state.PendingPromptAttribution
+		state.PendingPromptAttribution = nil // Clear after use
+	} else {
+		// No pending attribution (e.g., first checkpoint or session initialized without it)
+		promptAttr = PromptAttribution{CheckpointNumber: state.CheckpointCount + 1}
+	}
 
 	// Log the prompt attribution for debugging
 	attrLogCtx := logging.WithComponent(context.Background(), "attribution")
@@ -71,7 +76,6 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 		slog.Int("user_removed", promptAttr.UserLinesRemoved),
 		slog.Int("agent_added", promptAttr.AgentLinesAdded),
 		slog.Int("agent_removed", promptAttr.AgentLinesRemoved),
-		slog.Int("agent_files_count", len(ctx.ModifiedFiles)+len(ctx.NewFiles)+len(ctx.DeletedFiles)),
 		slog.String("session_id", sessionID))
 
 	// Use WriteTemporary to create the checkpoint
@@ -355,137 +359,3 @@ func deleteShadowBranch(repo *git.Repository, branchName string) error {
 	return nil
 }
 
-// calculatePromptAttributionForSave calculates attribution at checkpoint save time.
-// This detects user edits since the last checkpoint for files the agent is NOT touching.
-//
-// The key insight: at SaveChanges time, the worktree contains agent's changes mixed with
-// any user edits. We separate them by:
-// 1. Files in ctx.ModifiedFiles/NewFiles/DeletedFiles = agent is touching these
-// 2. Other files that changed since last checkpoint = user edits between prompts
-//
-// For files the agent IS touching, we can't distinguish user edits made before the agent
-// worked (the worktree has both mixed). Those will be detected by the final attribution
-// at commit time (shadow → committed diff).
-func (s *ManualCommitStrategy) calculatePromptAttributionForSave(
-	repo *git.Repository,
-	state *SessionState,
-	ctx SaveContext,
-) PromptAttribution {
-	nextCheckpointNum := state.CheckpointCount + 1
-
-	// Get base tree (the commit when session started)
-	var baseTree *object.Tree
-	if baseCommit, err := repo.CommitObject(plumbing.NewHash(state.BaseCommit)); err == nil {
-		if tree, treeErr := baseCommit.Tree(); treeErr == nil {
-			baseTree = tree
-		}
-	}
-
-	// Get last checkpoint tree (shadow branch, if exists)
-	var lastCheckpointTree *object.Tree
-	if state.CheckpointCount > 0 {
-		shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit)
-		refName := plumbing.NewBranchReferenceName(shadowBranchName)
-		if ref, err := repo.Reference(refName, true); err == nil {
-			if commit, err := repo.CommitObject(ref.Hash()); err == nil {
-				if tree, treeErr := commit.Tree(); treeErr == nil {
-					lastCheckpointTree = tree
-				}
-			}
-		}
-	}
-
-	worktree, err := repo.Worktree()
-	if err != nil {
-		return PromptAttribution{CheckpointNumber: nextCheckpointNum}
-	}
-
-	// Build set of files the agent is touching in this checkpoint
-	agentFiles := make(map[string]bool)
-	for _, f := range ctx.ModifiedFiles {
-		agentFiles[f] = true
-	}
-	for _, f := range ctx.NewFiles {
-		agentFiles[f] = true
-	}
-	for _, f := range ctx.DeletedFiles {
-		agentFiles[f] = true
-	}
-
-	// Get worktree status to find ALL changed files
-	status, err := worktree.Status()
-	if err != nil {
-		return PromptAttribution{CheckpointNumber: nextCheckpointNum}
-	}
-
-	worktreeRoot := worktree.Filesystem.Root()
-
-	// Build map of user-changed files (files that changed but agent is NOT touching)
-	userFiles := make(map[string]string)
-	for filePath, fileStatus := range status {
-		// Skip files the agent is touching
-		if agentFiles[filePath] {
-			continue
-		}
-		// Skip unmodified files
-		if fileStatus.Worktree == git.Unmodified && fileStatus.Staging == git.Unmodified {
-			continue
-		}
-		// Skip .entire metadata directory (session data, not user code)
-		if strings.HasPrefix(filePath, paths.EntireMetadataDir+"/") || strings.HasPrefix(filePath, ".entire/") {
-			continue
-		}
-		// This file changed but agent isn't touching it = user edit
-		fullPath := filepath.Join(worktreeRoot, filePath)
-		content, err := os.ReadFile(fullPath) //nolint:gosec // filePath is from git worktree status
-		if err != nil {
-			userFiles[filePath] = "" // File deleted or unreadable
-		} else {
-			userFiles[filePath] = string(content)
-		}
-	}
-
-	// Also check files in state.FilesTouched that might have been edited by user
-	// These are files the agent touched in previous checkpoints that user might have edited
-	for _, filePath := range state.FilesTouched {
-		if agentFiles[filePath] {
-			continue // Agent touching it this checkpoint
-		}
-		if _, already := userFiles[filePath]; already {
-			continue // Already detected
-		}
-		// Check if this file changed since last checkpoint
-		referenceTree := lastCheckpointTree
-		if referenceTree == nil {
-			referenceTree = baseTree
-		}
-		referenceContent := getFileContentFromTree(referenceTree, filePath)
-		fullPath := filepath.Join(worktreeRoot, filePath)
-		content, err := os.ReadFile(fullPath) //nolint:gosec // filePath is from session state FilesTouched
-		currentContent := ""
-		if err == nil {
-			currentContent = string(content)
-		}
-		if currentContent != referenceContent {
-			userFiles[filePath] = currentContent
-		}
-	}
-
-	return CalculatePromptAttribution(baseTree, lastCheckpointTree, userFiles, nextCheckpointNum)
-}
-
-// getFileContentFromTree retrieves file content from a git tree.
-func getFileContentFromTree(tree *object.Tree, path string) string {
-	if tree == nil {
-		return ""
-	}
-	file, err := tree.File(path)
-	if err != nil {
-		return ""
-	}
-	content, err := file.Contents()
-	if err != nil {
-		return ""
-	}
-	return content
-}

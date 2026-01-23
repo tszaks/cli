@@ -70,6 +70,10 @@ type State struct {
 	// PromptAttributions tracks user and agent line changes at each prompt start.
 	// This enables accurate attribution by capturing user edits between checkpoints.
 	PromptAttributions []PromptAttribution `json:"prompt_attributions,omitempty"`
+
+	// PendingPromptAttribution holds attribution calculated at prompt start (before agent runs).
+	// This is moved to PromptAttributions when SaveChanges is called.
+	PendingPromptAttribution *PromptAttribution `json:"pending_prompt_attribution,omitempty"`
 }
 
 // PromptAttribution captures line-level attribution data at the start of each prompt.

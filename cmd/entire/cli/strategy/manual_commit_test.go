@@ -1949,6 +1949,12 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
+	// === PROMPT 1 START: Initialize session (simulates UserPromptSubmit) ===
+	// This must happen BEFORE agent makes any changes
+	if err := s.InitializeSession(sessionID, "Claude Code", ""); err != nil {
+		t.Fatalf("InitializeSession() prompt 1 error = %v", err)
+	}
+
 	// === CHECKPOINT 1: Agent modifies agent.go (adds 4 lines) ===
 	checkpoint1Content := "package main\n\nfunc agentFunc1() {\n\tprintln(\"agent1\")\n}\n"
 	if err := os.WriteFile(agentFile, []byte(checkpoint1Content), 0o644); err != nil {
@@ -1987,6 +1993,12 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 	userEditContent := "package main\n\n// User added this function\nfunc userFunc() {\n\tprintln(\"user\")\n}\n"
 	if err := os.WriteFile(userFile, []byte(userEditContent), 0o644); err != nil {
 		t.Fatalf("failed to write user edits: %v", err)
+	}
+
+	// === PROMPT 2 START: Initialize session again (simulates UserPromptSubmit) ===
+	// This captures the user's edits to user.go BEFORE the agent runs
+	if err := s.InitializeSession(sessionID, "Claude Code", ""); err != nil {
+		t.Fatalf("InitializeSession() prompt 2 error = %v", err)
 	}
 
 	// === CHECKPOINT 2: Agent modifies agent.go again (adds 4 more lines) ===
