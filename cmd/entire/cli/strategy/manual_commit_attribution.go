@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -8,16 +9,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/sergi/go-diff/diffmatchpatch"
 )
-
-// contains checks if a slice contains a string.
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
 
 // getAllChangedFilesBetweenTrees returns a list of all files that differ between two trees.
 // This includes files that were added, modified, or deleted in either tree.
@@ -204,7 +195,7 @@ func CalculateAttributionWithAccumulated(
 	nonAgentFiles := getAllChangedFilesBetweenTrees(baseTree, headTree)
 	var allUserEditsToNonAgentFiles int
 	for _, filePath := range nonAgentFiles {
-		if contains(filesTouched, filePath) {
+		if slices.Contains(filesTouched, filePath) {
 			continue // Skip agent-touched files
 		}
 
