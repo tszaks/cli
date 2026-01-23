@@ -211,6 +211,7 @@ func GetLastMessageIDFromFile(path string) (string, error) {
 
 	return GetLastMessageID(data)
 }
+
 // CalculateTokenUsage calculates token usage from a Gemini transcript.
 // This is specific to Gemini's API format where each message may have a tokens object
 // with input, output, cached, thoughts, tool, and total counts.

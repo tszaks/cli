@@ -419,7 +419,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 	if agentErr != nil {
 		return fmt.Errorf("failed to get agent: %w", agentErr)
 	}
-agentType := hookAgent.Type()
+	agentType := hookAgent.Type()
 
 	// Get transcript UUID at start from pre-prompt state
 	var transcriptUUIDAtStart string

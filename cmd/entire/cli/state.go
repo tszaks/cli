@@ -134,6 +134,8 @@ func CaptureGeminiPrePromptState(sessionID, transcriptPath string) error {
 				if startMessageIndex > 0 {
 					lastMessageID = transcript.Messages[startMessageIndex-1].ID
 				}
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: failed to parse transcript for message tracking: %v\n", jsonErr)
 			}
 		}
 	}
