@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
@@ -1124,11 +1125,9 @@ func (env *TestEnv) GetLatestCheckpointIDFromHistory() string {
 
 // ShardedCheckpointPath returns the sharded path for a checkpoint ID.
 // Format: <id[:2]>/<id[2:]>
+// Delegates to id.CheckpointID.Path() for consistency.
 func ShardedCheckpointPath(checkpointID string) string {
-	if len(checkpointID) < 3 {
-		return checkpointID
-	}
-	return checkpointID[:2] + "/" + checkpointID[2:]
+	return id.CheckpointID(checkpointID).Path()
 }
 
 func findModuleRoot() string {

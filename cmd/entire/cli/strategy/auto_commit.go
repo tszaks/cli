@@ -144,13 +144,11 @@ func (s *AutoCommitStrategy) SaveChanges(ctx SaveContext) error {
 	if err != nil {
 		return fmt.Errorf("failed to generate checkpoint ID: %w", err)
 	}
-	checkpointID := cpID.String()
-
 	// Step 1: Commit code changes to active branch with checkpoint ID trailer
 	// We do code first to avoid orphaned metadata if this step fails.
 	// If metadata commit fails after this, the code commit exists but GetRewindPoints
 	// already handles missing metadata gracefully (skips commits without metadata).
-	codeResult, err := s.commitCodeToActive(repo, ctx, checkpointID)
+	codeResult, err := s.commitCodeToActive(repo, ctx, cpID)
 	if err != nil {
 		return fmt.Errorf("failed to commit code to active branch: %w", err)
 	}
@@ -179,7 +177,7 @@ func (s *AutoCommitStrategy) SaveChanges(ctx SaveContext) error {
 	logging.Info(logCtx, "checkpoint saved",
 		slog.String("strategy", "auto-commit"),
 		slog.String("checkpoint_type", "session"),
-		slog.String("checkpoint_id", checkpointID),
+		slog.String("checkpoint_id", cpID.String()),
 		slog.Int("modified_files", len(ctx.ModifiedFiles)),
 		slog.Int("new_files", len(ctx.NewFiles)),
 		slog.Int("deleted_files", len(ctx.DeletedFiles)),
@@ -197,7 +195,7 @@ type commitCodeResult struct {
 // commitCodeToActive commits code changes to the active branch.
 // Adds an Entire-Checkpoint trailer for metadata lookup that survives amend/rebase.
 // Returns the result containing commit hash and whether a commit was created.
-func (s *AutoCommitStrategy) commitCodeToActive(repo *git.Repository, ctx SaveContext, checkpointID string) (commitCodeResult, error) {
+func (s *AutoCommitStrategy) commitCodeToActive(repo *git.Repository, ctx SaveContext, checkpointID id.CheckpointID) (commitCodeResult, error) {
 	// Check if there are any code changes to commit
 	if len(ctx.ModifiedFiles) == 0 && len(ctx.NewFiles) == 0 && len(ctx.DeletedFiles) == 0 {
 		fmt.Fprintf(os.Stderr, "No code changes to commit to active branch\n")
@@ -225,7 +223,7 @@ func (s *AutoCommitStrategy) commitCodeToActive(repo *git.Repository, ctx SaveCo
 	StageFiles(worktree, ctx.ModifiedFiles, ctx.NewFiles, ctx.DeletedFiles, StageForSession)
 
 	// Add checkpoint ID trailer to commit message
-	commitMsg := ctx.CommitMessage + "\n\n" + trailers.CheckpointTrailerKey + ": " + checkpointID
+	commitMsg := ctx.CommitMessage + "\n\n" + trailers.CheckpointTrailerKey + ": " + checkpointID.String()
 
 	author := &object.Signature{
 		Name:  ctx.AuthorName,
@@ -538,11 +536,10 @@ func (s *AutoCommitStrategy) SaveTaskCheckpoint(ctx TaskCheckpointContext) error
 	if err != nil {
 		return fmt.Errorf("failed to generate checkpoint ID: %w", err)
 	}
-	checkpointID := cpID.String()
 
 	// Step 1: Commit code changes to active branch with checkpoint ID trailer
 	// We do code first to avoid orphaned metadata if this step fails.
-	_, err = s.commitTaskCodeToActive(repo, ctx, checkpointID)
+	_, err = s.commitTaskCodeToActive(repo, ctx, cpID)
 	if err != nil {
 		return fmt.Errorf("failed to commit task code to active branch: %w", err)
 	}
@@ -558,7 +555,7 @@ func (s *AutoCommitStrategy) SaveTaskCheckpoint(ctx TaskCheckpointContext) error
 	attrs := []any{
 		slog.String("strategy", "auto-commit"),
 		slog.String("checkpoint_type", "task"),
-		slog.String("checkpoint_id", checkpointID),
+		slog.String("checkpoint_id", cpID.String()),
 		slog.String("checkpoint_uuid", ctx.CheckpointUUID),
 		slog.String("tool_use_id", ctx.ToolUseID),
 		slog.String("subagent_type", ctx.SubagentType),
@@ -581,7 +578,7 @@ func (s *AutoCommitStrategy) SaveTaskCheckpoint(ctx TaskCheckpointContext) error
 // commitTaskCodeToActive commits task code changes to the active branch.
 // Adds an Entire-Checkpoint trailer for metadata lookup that survives amend/rebase.
 // For TaskStart checkpoints, creates an empty marker commit even without file changes.
-func (s *AutoCommitStrategy) commitTaskCodeToActive(repo *git.Repository, ctx TaskCheckpointContext, checkpointID string) (plumbing.Hash, error) {
+func (s *AutoCommitStrategy) commitTaskCodeToActive(repo *git.Repository, ctx TaskCheckpointContext, checkpointID id.CheckpointID) (plumbing.Hash, error) {
 	// For TaskStart, we want to create a marker commit even without file changes
 	isTaskStart := ctx.IsIncremental && ctx.IncrementalType == IncrementalTypeTaskStart
 	hasFileChanges := len(ctx.ModifiedFiles) > 0 || len(ctx.NewFiles) > 0 || len(ctx.DeletedFiles) > 0
@@ -626,7 +623,7 @@ func (s *AutoCommitStrategy) commitTaskCodeToActive(repo *git.Repository, ctx Ta
 	}
 
 	// Add checkpoint ID trailer to commit message
-	commitMsg := subject + "\n\n" + trailers.CheckpointTrailerKey + ": " + checkpointID
+	commitMsg := subject + "\n\n" + trailers.CheckpointTrailerKey + ": " + checkpointID.String()
 
 	author := &object.Signature{
 		Name:  ctx.AuthorName,
