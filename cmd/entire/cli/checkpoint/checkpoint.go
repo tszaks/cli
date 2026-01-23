@@ -357,11 +357,11 @@ type CommittedMetadata struct {
 // against the committed tree (may include human edits).
 type InitialAttribution struct {
 	CalculatedAt    time.Time `json:"calculated_at"`
-	AgentLines      int       `json:"agent_lines"`      // Lines unchanged from checkpoint
+	AgentLines      int       `json:"agent_lines"`      // Lines added by agent (base → shadow diff)
 	HumanAdded      int       `json:"human_added"`      // Lines added by human
 	HumanModified   int       `json:"human_modified"`   // Lines modified by human (estimate)
 	HumanRemoved    int       `json:"human_removed"`    // Lines removed by human
-	TotalCommitted  int       `json:"total_committed"`  // Total lines in committed files
+	TotalCommitted  int       `json:"total_committed"`  // Total lines added in commit (agent + human)
 	AgentPercentage float64   `json:"agent_percentage"` // agent_lines / total_committed * 100
 }
 

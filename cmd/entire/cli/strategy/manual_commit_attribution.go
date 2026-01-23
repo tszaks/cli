@@ -41,7 +41,7 @@ func CalculateAttribution(
 		}
 
 		// Lines added in this commit (base → committed)
-		_, commitAdded, commitRemoved := diffLines(baseContent, committedContent)
+		_, commitAdded, _ := diffLines(baseContent, committedContent)
 
 		// Lines human changed from agent's work (checkpoint → committed)
 		_, humanAdded, humanRemoved := diffLines(checkpointContent, committedContent)
@@ -59,25 +59,15 @@ func CalculateAttribution(
 		pureHumanAdded := humanAdded - humanModified
 		pureHumanRemoved := humanRemoved - humanModified
 
-		// For removed lines in commit: if agent removed them (not in checkpoint), don't count as human
-		// Only count as human removed if agent kept them but human removed
-		agentRemovedFromBase := countLinesStr(baseContent) - countLinesStr(checkpointContent)
-		if agentRemovedFromBase < 0 {
-			agentRemovedFromBase = 0
-		}
-		actualHumanRemoved := commitRemoved - agentRemovedFromBase
-		if actualHumanRemoved < 0 {
-			actualHumanRemoved = 0
-		}
-		// But cap it at what we detected from checkpoint→committed diff
-		if actualHumanRemoved > pureHumanRemoved {
-			actualHumanRemoved = pureHumanRemoved
-		}
+		// pureHumanRemoved directly captures lines the agent wrote (in checkpoint)
+		// that the human removed (not in committed). This correctly handles cases
+		// where agent added lines that human then removed, which don't appear in
+		// commitRemoved (base → committed) since they weren't in base.
 
 		totalAgentAdded += agentAdded
 		totalHumanAdded += pureHumanAdded
 		totalHumanModified += humanModified
-		totalHumanRemoved += actualHumanRemoved
+		totalHumanRemoved += pureHumanRemoved
 		totalCommitAdded += commitAdded
 	}
 
