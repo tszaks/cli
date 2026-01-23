@@ -63,6 +63,17 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 	// This captures user edits since the last checkpoint
 	promptAttr := s.calculatePromptAttributionForSave(repo, state, ctx)
 
+	// Log the prompt attribution for debugging
+	attrLogCtx := logging.WithComponent(context.Background(), "attribution")
+	logging.Debug(attrLogCtx, "prompt attribution at checkpoint save",
+		slog.Int("checkpoint_number", promptAttr.CheckpointNumber),
+		slog.Int("user_added", promptAttr.UserLinesAdded),
+		slog.Int("user_removed", promptAttr.UserLinesRemoved),
+		slog.Int("agent_added", promptAttr.AgentLinesAdded),
+		slog.Int("agent_removed", promptAttr.AgentLinesRemoved),
+		slog.Int("agent_files_count", len(ctx.ModifiedFiles)+len(ctx.NewFiles)+len(ctx.DeletedFiles)),
+		slog.String("session_id", sessionID))
+
 	// Use WriteTemporary to create the checkpoint
 	isFirstCheckpointOfSession := state.CheckpointCount == 0
 	result, err := store.WriteTemporary(context.Background(), checkpoint.WriteTemporaryOptions{
