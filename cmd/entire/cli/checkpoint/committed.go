@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/jsonutil"
+	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/trailers"
 
@@ -932,10 +934,18 @@ func readTranscriptFromTree(tree *object.Tree, agentType string) ([]byte, error)
 		for _, chunkFile := range chunkFiles {
 			file, err := tree.File(chunkFile)
 			if err != nil {
+				logging.Warn(context.Background(), "failed to read transcript chunk file from tree",
+					slog.String("chunk_file", chunkFile),
+					slog.String("error", err.Error()),
+				)
 				continue
 			}
 			content, err := file.Contents()
 			if err != nil {
+				logging.Warn(context.Background(), "failed to read transcript chunk contents",
+					slog.String("chunk_file", chunkFile),
+					slog.String("error", err.Error()),
+				)
 				continue
 			}
 			chunks = append(chunks, []byte(content))

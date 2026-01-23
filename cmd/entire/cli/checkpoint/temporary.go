@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,6 +14,7 @@ import (
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/jsonutil"
+	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/trailers"
 
@@ -325,7 +327,12 @@ func (s *GitStore) addTaskMetadataToTree(baseTreeHash plumbing.Hash, opts WriteT
 
 				// Chunk if necessary
 				chunks, chunkErr := agent.ChunkTranscript(transcriptContent, agentType)
-				if chunkErr == nil {
+				if chunkErr != nil {
+					logging.Warn(context.Background(), "failed to chunk transcript, checkpoint will be saved without transcript",
+						slog.String("error", chunkErr.Error()),
+						slog.String("session_id", opts.SessionID),
+					)
+				} else {
 					for i, chunk := range chunks {
 						chunkPath := sessionMetadataDir + "/" + agent.ChunkFileName(paths.TranscriptFileName, i)
 						if blobHash, blobErr := CreateBlobFromContent(s.repo, chunk); blobErr == nil {
