@@ -815,13 +815,13 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 
 		// Calculate attribution at prompt start (BEFORE agent makes any changes)
 		// This captures user edits since the last checkpoint
+		// Always store attribution when there's a previous checkpoint, even if zero,
+		// to maintain a complete history for each checkpoint.
 		if state.CheckpointCount > 0 {
 			// Only calculate if there's a previous checkpoint to compare against
 			promptAttr := s.calculatePromptAttributionAtStart(repo, state)
-			if promptAttr.UserLinesAdded > 0 || promptAttr.UserLinesRemoved > 0 {
-				state.PendingPromptAttribution = &promptAttr
-				needSave = true
-			}
+			state.PendingPromptAttribution = &promptAttr
+			needSave = true
 		}
 
 		// Check if HEAD has moved (user pulled/rebased or committed)
