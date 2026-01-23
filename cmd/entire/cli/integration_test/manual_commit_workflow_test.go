@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
@@ -558,7 +559,7 @@ func TestShadow_ShadowBranchMigrationOnPull(t *testing.T) {
 		t.Errorf("Expected 2 checkpoints after migration, got %d", state.CheckpointCount)
 	}
 	// Verify agent_type is preserved across checkpoints and migration
-	expectedAgentType := "Claude Code"
+	expectedAgentType := agent.AgentTypeClaudeCode
 	if state.AgentType != expectedAgentType {
 		t.Errorf("Session AgentType should be %q, got %q", expectedAgentType, state.AgentType)
 	}
@@ -697,8 +698,8 @@ func TestShadow_TranscriptCondensation(t *testing.T) {
 		t.Fatalf("failed to parse metadata.json: %v", err)
 	}
 
-	// Verify agent field is populated (from ClaudeCodeAgent.Description())
-	expectedAgent := "Claude Code"
+	// Verify agent field is populated (from ClaudeCodeAgent.Type())
+	expectedAgent := agent.AgentTypeClaudeCode
 	if metadata.Agent != expectedAgent {
 		t.Errorf("metadata.json Agent = %q, want %q", metadata.Agent, expectedAgent)
 	} else {

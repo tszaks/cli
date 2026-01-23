@@ -282,19 +282,19 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 	}
 	// Otherwise checkpointID is already set to LastCheckpointID from above
 
-	// Determine agent name and last prompt from session
-	agentName := DefaultAgentType // default for backward compatibility
+	// Determine agent type and last prompt from session
+	agentType := DefaultAgentType // default for backward compatibility
 	var lastPrompt string
 	if hasNewContent && len(sessionsWithContent) > 0 {
 		session := sessionsWithContent[0]
 		if session.AgentType != "" {
-			agentName = session.AgentType
+			agentType = session.AgentType
 		}
 		lastPrompt = s.getLastPrompt(repo, session)
 	} else if reusedSession != nil {
 		// Reusing checkpoint from existing session - get agent type and prompt from that session
 		if reusedSession.AgentType != "" {
-			agentName = reusedSession.AgentType
+			agentType = reusedSession.AgentType
 		}
 		lastPrompt = s.getLastPrompt(repo, reusedSession)
 	}
@@ -310,10 +310,10 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 		// Build context string for interactive prompt
 		var promptContext string
 		if displayPrompt != "" {
-			promptContext = "You have an active " + agentName + " session.\nLast Prompt: " + displayPrompt
+			promptContext = "You have an active " + string(agentType) + " session.\nLast Prompt: " + displayPrompt
 		}
 
-		if !askConfirmTTY("Link this commit to "+agentName+" session context?", promptContext, true) {
+		if !askConfirmTTY("Link this commit to "+string(agentType)+" session context?", promptContext, true) {
 			// User declined - don't add trailer
 			logging.Debug(logCtx, "prepare-commit-msg: user declined trailer",
 				slog.String("strategy", "manual-commit"),
@@ -324,7 +324,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 		message = addCheckpointTrailer(message, checkpointID)
 	} else {
 		// Normal editor flow: add trailer with explanatory comment (will be stripped by git)
-		message = addCheckpointTrailerWithComment(message, checkpointID, agentName, displayPrompt)
+		message = addCheckpointTrailerWithComment(message, checkpointID, string(agentType), displayPrompt)
 	}
 
 	logging.Info(logCtx, "prepare-commit-msg: trailer added",
@@ -726,7 +726,7 @@ func addCheckpointTrailerWithComment(message string, checkpointID id.CheckpointI
 //
 // agentType is the human-readable name of the agent (e.g., "Claude Code").
 // transcriptPath is the path to the live transcript file (for mid-session commit detection).
-func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType string, transcriptPath string) error {
+func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType agent.AgentType, transcriptPath string) error {
 	repo, err := OpenRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)

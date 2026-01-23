@@ -3,7 +3,7 @@ package strategy
 import (
 	"time"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint"
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 )
 
@@ -27,11 +27,11 @@ type SessionState struct {
 	FilesTouched             []string        `json:"files_touched,omitempty"`              // Files modified/created/deleted during this session
 	ConcurrentWarningShown   bool            `json:"concurrent_warning_shown,omitempty"`   // True if user was warned about concurrent sessions
 	LastCheckpointID         id.CheckpointID `json:"last_checkpoint_id,omitempty"`         // Checkpoint ID from last condensation, reused for subsequent commits without new content
-	AgentType                string          `json:"agent_type,omitempty"`                 // Agent type identifier (e.g., "Claude Code", "Cursor")
+	AgentType                agent.AgentType `json:"agent_type,omitempty"`                 // Agent type identifier (e.g., "Claude Code", "Cursor")
 	TranscriptPath           string          `json:"transcript_path,omitempty"`            // Path to the live transcript file (for mid-session commit detection)
 
 	// Token usage tracking (accumulated across all checkpoints in this session)
-	TokenUsage *checkpoint.TokenUsage `json:"token_usage,omitempty"`
+	TokenUsage *agent.TokenUsage `json:"token_usage,omitempty"`
 
 	// Transcript position when session started (for multi-session checkpoints on entire/sessions)
 	TranscriptLinesAtStart int    `json:"transcript_lines_at_start,omitempty"`
@@ -46,7 +46,7 @@ type CheckpointInfo struct {
 	CreatedAt        time.Time       `json:"created_at"`
 	CheckpointsCount int             `json:"checkpoints_count"`
 	FilesTouched     []string        `json:"files_touched"`
-	Agent            string          `json:"agent,omitempty"` // Human-readable agent name (e.g., "Claude Code")
+	Agent            agent.AgentType `json:"agent,omitempty"` // Human-readable agent name (e.g., "Claude Code")
 	IsTask           bool            `json:"is_task,omitempty"`
 	ToolUseID        string          `json:"tool_use_id,omitempty"`
 	SessionCount     int             `json:"session_count,omitempty"` // Number of sessions (1 if omitted)
@@ -69,5 +69,5 @@ type ExtractedSessionData struct {
 	Prompts             []string // All user prompts from this portion
 	Context             []byte   // Generated context.md content
 	FilesTouched        []string
-	TokenUsage          *checkpoint.TokenUsage // Token usage calculated from transcript (since TranscriptLinesAtStart)
+	TokenUsage          *agent.TokenUsage // Token usage calculated from transcript (since TranscriptLinesAtStart)
 }

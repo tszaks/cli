@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/logging"
@@ -927,7 +928,7 @@ func (s *AutoCommitStrategy) GetCheckpointLog(cp Checkpoint) ([]byte, error) {
 // to track CondensedTranscriptLines (transcript offset) across checkpoints.
 // agentType is the human-readable name of the agent (e.g., "Claude Code").
 // transcriptPath is the path to the live transcript file (for mid-session commit detection).
-func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType string, transcriptPath string) error {
+func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType agent.AgentType, transcriptPath string) error {
 	repo, err := OpenRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)

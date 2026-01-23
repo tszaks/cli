@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint"
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
@@ -55,10 +55,10 @@ type State struct {
 	LastCheckpointID id.CheckpointID `json:"last_checkpoint_id,omitempty"`
 
 	// AgentType identifies the agent that created this session (e.g., "Claude Code", "Gemini CLI", "Cursor")
-	AgentType string `json:"agent_type,omitempty"`
+	AgentType agent.AgentType `json:"agent_type,omitempty"`
 
 	// Token usage tracking (accumulated across all checkpoints in this session)
-	TokenUsage *checkpoint.TokenUsage `json:"token_usage,omitempty"`
+	TokenUsage *agent.TokenUsage `json:"token_usage,omitempty"`
 
 	// Transcript position when session started (for multi-session checkpoints)
 	TranscriptLinesAtStart int    `json:"transcript_lines_at_start,omitempty"`

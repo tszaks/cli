@@ -15,7 +15,6 @@ import (
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/agent/claudecode"
-	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
@@ -154,11 +153,7 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 			// Non-fatal: continue without worktree path
 			worktreePath = ""
 		}
-		// Derive agent type from agent description (e.g., "Claude Code" from "Claude Code - ...")
-		agentType := ag.Description()
-		if idx := strings.Index(agentType, " - "); idx > 0 {
-			agentType = agentType[:idx]
-		}
+		agentType := ag.Type()
 		newState := &strategy.SessionState{
 			SessionID:              entireSessionID,
 			BaseCommit:             head.Hash().String(),
@@ -327,11 +322,7 @@ func captureInitialState() error {
 	// If strategy implements SessionInitializer, call it to initialize session state
 	strat := GetStrategy()
 	if initializer, ok := strat.(strategy.SessionInitializer); ok {
-		// Use agent description, but trim to just the name part (before " - ")
-		agentType := hookData.agent.Description()
-		if idx := strings.Index(agentType, " - "); idx > 0 {
-			agentType = agentType[:idx]
-		}
+		agentType := hookData.agent.Type()
 		if initErr := initializer.InitializeSession(hookData.entireSessionID, agentType, hookData.input.SessionRef); initErr != nil {
 			if err := handleSessionInitErrors(hookData.agent, initErr); err != nil {
 				return err
@@ -545,7 +536,7 @@ func commitWithMetadata() error {
 	}
 
 	// Get agent type from session state (set during InitializeSession)
-	var agentType string
+	var agentType agent.AgentType
 	if sessionState != nil {
 		agentType = sessionState.AgentType
 	}
@@ -559,7 +550,7 @@ func commitWithMetadata() error {
 	}
 
 	// Calculate token usage for this checkpoint (Claude Code specific)
-	var tokenUsage *checkpoint.TokenUsage
+	var tokenUsage *agent.TokenUsage
 	if transcriptPath != "" {
 		// Subagents are stored in a subagents/ directory next to the main transcript
 		subagentsDir := filepath.Join(filepath.Dir(transcriptPath), entireSessionID, "subagents")
@@ -718,7 +709,7 @@ func handlePostTodo() error {
 	}
 
 	// Get agent type from session state
-	var agentType string
+	var agentType agent.AgentType
 	if sessionState, loadErr := strategy.LoadSessionState(entireSessionID); loadErr == nil && sessionState != nil {
 		agentType = sessionState.AgentType
 	}
@@ -821,7 +812,7 @@ func createStartingAgentCheckpoint(input *TaskHookInput) error {
 	subagentType, taskDescription := ParseSubagentTypeAndDescription(input.ToolInput)
 
 	// Get agent type from session state
-	var agentType string
+	var agentType agent.AgentType
 	if sessionState, loadErr := strategy.LoadSessionState(entireSessionID); loadErr == nil && sessionState != nil {
 		agentType = sessionState.AgentType
 	}
@@ -967,7 +958,7 @@ func handlePostTask() error {
 	entireSessionID := currentSessionIDWithFallback(input.SessionID)
 
 	// Get agent type from session state
-	var agentType string
+	var agentType agent.AgentType
 	if sessionState, loadErr := strategy.LoadSessionState(entireSessionID); loadErr == nil && sessionState != nil {
 		agentType = sessionState.AgentType
 	}

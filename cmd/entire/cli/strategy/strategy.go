@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint"
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 )
 
@@ -118,7 +118,7 @@ type RewindPoint struct {
 
 	// Agent is the human-readable name of the agent that created this checkpoint
 	// (e.g., "Claude Code", "Cursor")
-	Agent string
+	Agent agent.AgentType
 
 	// SessionID is the session identifier for this checkpoint.
 	// Used to distinguish checkpoints from different concurrent sessions.
@@ -195,14 +195,14 @@ type SaveContext struct {
 	AuthorEmail string
 
 	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
-	AgentType string
+	AgentType agent.AgentType
 
 	// Transcript position at checkpoint start - tracks what was added during this checkpoint
 	TranscriptUUIDAtStart  string // Last UUID when checkpoint started
 	TranscriptLinesAtStart int    // Line count when checkpoint started
 
 	// TokenUsage contains the token usage for this checkpoint
-	TokenUsage *checkpoint.TokenUsage
+	TokenUsage *agent.TokenUsage
 }
 
 // TaskCheckpointContext contains all information needed for saving a task checkpoint.
@@ -280,7 +280,7 @@ type TaskCheckpointContext struct {
 	TodoContent string
 
 	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
-	AgentType string
+	AgentType agent.AgentType
 }
 
 // TaskCheckpoint contains the checkpoint information written to checkpoint.json
@@ -432,7 +432,7 @@ type SessionInitializer interface {
 	// Called during UserPromptSubmit hook before any checkpoints are created.
 	// agentType is the human-readable name of the agent (e.g., "Claude Code").
 	// transcriptPath is the path to the live transcript file (for mid-session commit detection).
-	InitializeSession(sessionID string, agentType string, transcriptPath string) error
+	InitializeSession(sessionID string, agentType agent.AgentType, transcriptPath string) error
 }
 
 // PrepareCommitMsgHandler is an optional interface for strategies that need to
