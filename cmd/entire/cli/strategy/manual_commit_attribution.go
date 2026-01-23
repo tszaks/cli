@@ -159,7 +159,7 @@ func diffLines(checkpointContent, committedContent string) (unchanged, added, re
 	diffs = dmp.DiffCharsToLines(diffs, lineArray)
 
 	for _, d := range diffs {
-		lines := countLinesInText(d.Text)
+		lines := countLinesStr(d.Text)
 		switch d.Type {
 		case diffmatchpatch.DiffEqual:
 			unchanged += lines
@@ -173,8 +173,9 @@ func diffLines(checkpointContent, committedContent string) (unchanged, added, re
 	return unchanged, added, removed
 }
 
-// countLinesStr returns the number of lines in content string.
+// countLinesStr returns the number of lines in a string.
 // An empty string has 0 lines. A string without newlines has 1 line.
+// This is used for both file content and diff text segments.
 func countLinesStr(content string) int {
 	if content == "" {
 		return 0
@@ -182,21 +183,6 @@ func countLinesStr(content string) int {
 	lines := strings.Count(content, "\n")
 	// If content doesn't end with newline, add 1 for the last line
 	if !strings.HasSuffix(content, "\n") {
-		lines++
-	}
-	return lines
-}
-
-// countLinesInText counts lines in a diff text segment.
-// Similar to countLines but handles the diff output format.
-func countLinesInText(text string) int {
-	if text == "" {
-		return 0
-	}
-	// Count newlines as line separators
-	lines := strings.Count(text, "\n")
-	// If text doesn't end with newline and is not empty, count the last line
-	if !strings.HasSuffix(text, "\n") && len(text) > 0 {
 		lines++
 	}
 	return lines
