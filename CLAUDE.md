@@ -47,6 +47,27 @@ Integration tests use the `//go:build integration` build tag and are located in 
 mise run fmt && mise run lint
 ```
 
+### Code Duplication Prevention
+
+Before implementing Go code, use `/go:discover-related` to find existing utilities and patterns that might be reusable.
+
+**Check for duplication:**
+```bash
+mise run dup           # Comprehensive check (threshold 50) with summary
+mise run dup:staged    # Check only staged files
+mise run lint          # Normal lint includes dupl at threshold 75 (new issues only)
+mise run lint:full     # All issues at threshold 75
+```
+
+**Tiered thresholds:**
+- **75 tokens** (lint/CI) - Blocks on serious duplication (~20+ lines)
+- **50 tokens** (dup) - Advisory, catches smaller patterns (~10+ lines)
+
+When duplication is found:
+1. Check if a helper already exists in `common.go` or nearby utility files
+2. If not, consider extracting the duplicated logic to a shared helper
+3. If duplication is intentional (e.g., test setup), add a `//nolint:dupl` comment with explanation
+
 ## Code Patterns
 
 ### Error Handling
