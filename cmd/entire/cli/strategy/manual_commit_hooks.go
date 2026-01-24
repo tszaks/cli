@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -919,13 +918,10 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 // This captures user changes since the last checkpoint - no filtering needed since
 // the agent hasn't made any changes yet.
 //
-// For accurate attribution, this function reads:
-//   - Staged files: from the git index (staging area) - what will be committed
-//   - Unstaged files: from the worktree - what the user is working on
-//
-// This ensures that if a user stages only part of their changes, we don't overcount
-// user contributions. The staged content represents the user's intent for what will
-// be included in the commit.
+// IMPORTANT: This reads from the worktree (not staging area) to match what WriteTemporary
+// captures in checkpoints. If we read staged content but checkpoints capture worktree content,
+// unstaged changes would be in the checkpoint but not counted in PromptAttribution, causing
+// them to be incorrectly attributed to the agent later.
 func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 	repo *git.Repository,
 	state *SessionState,
@@ -992,9 +988,9 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 
 	worktreeRoot := worktree.Filesystem.Root()
 
-	// Build map of changed files with their content (staging area or worktree)
-	// Use staging area for staged files (what will be committed)
-	// Use worktree for unstaged files (what user is working on)
+	// Build map of changed files with their worktree content
+	// IMPORTANT: We read from worktree (not staging area) to match what WriteTemporary
+	// captures in checkpoints. This ensures attribution is consistent.
 	changedFiles := make(map[string]string)
 	for filePath, fileStatus := range status {
 		// Skip unmodified files
@@ -1006,29 +1002,13 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 			continue
 		}
 
+		// Always read from worktree to match checkpoint behavior
+		fullPath := filepath.Join(worktreeRoot, filePath)
 		var content string
-		// If file is staged, read from index (staging area)
-		// Otherwise read from worktree
-		if fileStatus.Staging != git.Unmodified && fileStatus.Staging != git.Untracked {
-			// File is staged - read from index
-			indexContent, err := getIndexContent(repo, filePath)
-			if err == nil {
-				content = indexContent
-			} else {
-				// Fallback to worktree if index read fails
-				fullPath := filepath.Join(worktreeRoot, filePath)
-				if data, readErr := os.ReadFile(fullPath); readErr == nil { //nolint:gosec // filePath is from git worktree status
-					content = string(data)
-				}
-			}
-		} else {
-			// File is not staged - read from worktree
-			fullPath := filepath.Join(worktreeRoot, filePath)
-			if data, err := os.ReadFile(fullPath); err == nil { //nolint:gosec // filePath is from git worktree status
-				content = string(data)
-			}
-			// else: file deleted or unreadable, content remains empty string
+		if data, err := os.ReadFile(fullPath); err == nil { //nolint:gosec // filePath is from git worktree status
+			content = string(data)
 		}
+		// else: file deleted or unreadable, content remains empty string
 
 		changedFiles[filePath] = content
 	}
@@ -1037,45 +1017,6 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 	result = CalculatePromptAttribution(baseTree, lastCheckpointTree, changedFiles, nextCheckpointNum)
 
 	return result
-}
-
-// getIndexContent reads a file's content from the git index (staging area).
-// Returns the staged content, or an error if the file is not in the index.
-func getIndexContent(repo *git.Repository, filePath string) (string, error) {
-	// Read from repository's index (staging area)
-	index, err := repo.Storer.Index()
-	if err != nil {
-		return "", fmt.Errorf("failed to get index: %w", err)
-	}
-
-	entry, err := index.Entry(filePath)
-	if err != nil {
-		return "", fmt.Errorf("file not in index: %w", err)
-	}
-
-	// Read the blob from the object store using the hash from the index
-	obj, err := repo.Storer.EncodedObject(plumbing.BlobObject, entry.Hash)
-	if err != nil {
-		return "", fmt.Errorf("failed to read blob: %w", err)
-	}
-
-	blob, err := object.DecodeBlob(obj)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode blob: %w", err)
-	}
-
-	reader, err := blob.Reader()
-	if err != nil {
-		return "", fmt.Errorf("failed to get blob reader: %w", err)
-	}
-	defer reader.Close()
-
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return "", fmt.Errorf("failed to read blob content: %w", err)
-	}
-
-	return string(data), nil
 }
 
 // getStagedFiles returns a list of files staged for commit.

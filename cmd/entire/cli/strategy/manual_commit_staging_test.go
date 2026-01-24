@@ -18,11 +18,15 @@ const (
 	testCheckpoint1Content = "package main\n\nfunc agentFunc() {\n\tprintln(\"agent\")\n}\n"
 )
 
-// TestPromptAttribution_RespectsStagingArea tests that attribution calculation
-// reads from the git staging area (index) for staged files, not the worktree.
-// This ensures that if a user stages only part of their changes, we don't
-// overcount user contributions.
-func TestPromptAttribution_RespectsStagingArea(t *testing.T) {
+// TestPromptAttribution_UsesWorktreeNotStagingArea tests that attribution calculation
+// reads from the worktree (not staging area) to match what WriteTemporary captures.
+// This ensures that if a user has both staged and unstaged changes, ALL changes are
+// counted in PromptAttribution to match what's in the checkpoint tree.
+//
+// IMPORTANT: If we read from staging area but checkpoints capture worktree, unstaged
+// changes would appear in the checkpoint but not in PromptAttribution, causing them
+// to be incorrectly attributed to the agent later.
+func TestPromptAttribution_UsesWorktreeNotStagingArea(t *testing.T) {
 	dir := t.TempDir()
 	repo, err := git.PlainInit(dir, false)
 	if err != nil {
@@ -110,12 +114,12 @@ func TestPromptAttribution_RespectsStagingArea(t *testing.T) {
 	}
 
 	// === PROMPT 2 START: Initialize session again ===
-	// This should capture ONLY the 5 staged lines, not all 10 worktree lines
+	// This should capture ALL 10 worktree lines to match what WriteTemporary will capture
 	if err := s.InitializeSession(sessionID, "Claude Code", ""); err != nil {
 		t.Fatalf("InitializeSession() prompt 2 error = %v", err)
 	}
 
-	// Verify PendingPromptAttribution shows only staged changes (5 lines)
+	// Verify PendingPromptAttribution shows worktree changes (10 lines), not just staged (5 lines)
 	state, err := s.loadSessionState(sessionID)
 	if err != nil {
 		t.Fatalf("loadSessionState() after prompt 2 error = %v", err)
@@ -125,15 +129,52 @@ func TestPromptAttribution_RespectsStagingArea(t *testing.T) {
 		t.Fatal("PendingPromptAttribution is nil after prompt 2")
 	}
 
-	// Should count only the 5 staged lines, not the 10 worktree lines
-	if state.PendingPromptAttribution.UserLinesAdded != 5 {
-		t.Errorf("PendingPromptAttribution.UserLinesAdded = %d, want 5 (staged lines only, not worktree)",
+	// Should count ALL 10 worktree lines, not just the 5 staged lines
+	// This matches what WriteTemporary will capture in the checkpoint
+	if state.PendingPromptAttribution.UserLinesAdded != 10 {
+		t.Errorf("PendingPromptAttribution.UserLinesAdded = %d, want 10 (worktree lines, not just staged)",
 			state.PendingPromptAttribution.UserLinesAdded)
 	}
 
 	if state.PendingPromptAttribution.CheckpointNumber != 2 {
 		t.Errorf("PendingPromptAttribution.CheckpointNumber = %d, want 2",
 			state.PendingPromptAttribution.CheckpointNumber)
+	}
+
+	// === Verify checkpoint captures the same content ===
+	// This demonstrates why we need to read from worktree: the checkpoint will capture
+	// the full worktree content (10 lines), so PromptAttribution must also count 10 lines
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{"test.go"},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 2",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() checkpoint 2 error = %v", err)
+	}
+
+	// Reload state to see final PromptAttributions
+	state, err = s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("loadSessionState() after checkpoint 2 error = %v", err)
+	}
+
+	// PromptAttributions should now contain the entry with 10 user lines
+	if len(state.PromptAttributions) != 2 {
+		t.Fatalf("expected 2 PromptAttributions, got %d", len(state.PromptAttributions))
+	}
+
+	// Second attribution (from prompt 2) should show 10 user lines
+	attr2 := state.PromptAttributions[1]
+	if attr2.UserLinesAdded != 10 {
+		t.Errorf("PromptAttributions[1].UserLinesAdded = %d, want 10 (worktree content)",
+			attr2.UserLinesAdded)
 	}
 }
 
