@@ -930,6 +930,7 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 	repo *git.Repository,
 	state *SessionState,
 ) PromptAttribution {
+	logCtx := logging.WithComponent(context.Background(), "attribution")
 	nextCheckpointNum := state.CheckpointCount + 1
 	result := PromptAttribution{CheckpointNumber: nextCheckpointNum}
 
@@ -938,16 +939,24 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	ref, err := repo.Reference(refName, true)
 	if err != nil {
+		logging.Debug(logCtx, "prompt attribution skipped: shadow branch not found",
+			slog.String("shadow_branch", shadowBranchName),
+			slog.String("error", err.Error()))
 		return result // No shadow branch yet
 	}
 
 	shadowCommit, err := repo.CommitObject(ref.Hash())
 	if err != nil {
+		logging.Debug(logCtx, "prompt attribution skipped: failed to get shadow commit",
+			slog.String("shadow_ref", ref.Hash().String()),
+			slog.String("error", err.Error()))
 		return result
 	}
 
 	lastCheckpointTree, err := shadowCommit.Tree()
 	if err != nil {
+		logging.Debug(logCtx, "prompt attribution skipped: failed to get shadow tree",
+			slog.String("error", err.Error()))
 		return result
 	}
 
@@ -956,17 +965,28 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 	if baseCommit, err := repo.CommitObject(plumbing.NewHash(state.BaseCommit)); err == nil {
 		if tree, treeErr := baseCommit.Tree(); treeErr == nil {
 			baseTree = tree
+		} else {
+			logging.Debug(logCtx, "prompt attribution: base tree unavailable",
+				slog.String("error", treeErr.Error()))
 		}
+	} else {
+		logging.Debug(logCtx, "prompt attribution: base commit unavailable",
+			slog.String("base_commit", state.BaseCommit),
+			slog.String("error", err.Error()))
 	}
 
 	worktree, err := repo.Worktree()
 	if err != nil {
+		logging.Debug(logCtx, "prompt attribution skipped: failed to get worktree",
+			slog.String("error", err.Error()))
 		return result
 	}
 
 	// Get worktree status to find ALL changed files
 	status, err := worktree.Status()
 	if err != nil {
+		logging.Debug(logCtx, "prompt attribution skipped: failed to get worktree status",
+			slog.String("error", err.Error()))
 		return result
 	}
 
