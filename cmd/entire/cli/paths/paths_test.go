@@ -207,19 +207,3 @@ func TestEntireSessionID_PreservesInput(t *testing.T) {
 		})
 	}
 }
-
-func TestSessionMetadataDir(t *testing.T) {
-	claudeSessionID := "abc123"
-
-	result := SessionMetadataDir(claudeSessionID)
-
-	// Should match format: .entire/metadata/YYYY-MM-DD-<claude-session-id>
-	pattern := `^\.entire/metadata/\d{4}-\d{2}-\d{2}-` + regexp.QuoteMeta(claudeSessionID) + `$`
-	matched, err := regexp.MatchString(pattern, result)
-	if err != nil {
-		t.Fatalf("regex error: %v", err)
-	}
-	if !matched {
-		t.Errorf("SessionMetadataDir() = %q, want format .entire/metadata/YYYY-MM-DD-%s", result, claudeSessionID)
-	}
-}

@@ -378,9 +378,9 @@ func commitWithMetadata() error {
 		return fmt.Errorf("transcript file not found or empty: %s", transcriptPath)
 	}
 
-	// Create session metadata folder (SessionMetadataDir transforms model session ID to entire session ID)
+	// Create session metadata folder using the entire session ID (preserves original date on resume)
 	// Use AbsPath to ensure we create at repo root, not relative to cwd
-	sessionDir := paths.SessionMetadataDir(modelSessionID)
+	sessionDir := paths.SessionMetadataDirFromEntireID(entireSessionID)
 	sessionDirAbs, err := paths.AbsPath(sessionDir)
 	if err != nil {
 		sessionDirAbs = sessionDir // Fallback to relative

@@ -268,7 +268,7 @@ func parseGeminiSessionEnd() (*geminiSessionContext, error) {
 
 // setupGeminiSessionDir creates session directory and copies transcript.
 func setupGeminiSessionDir(ctx *geminiSessionContext) error {
-	ctx.sessionDir = paths.SessionMetadataDir(ctx.modelSessionID)
+	ctx.sessionDir = paths.SessionMetadataDirFromEntireID(ctx.entireSessionID)
 	sessionDirAbs, err := paths.AbsPath(ctx.sessionDir)
 	if err != nil {
 		sessionDirAbs = ctx.sessionDir

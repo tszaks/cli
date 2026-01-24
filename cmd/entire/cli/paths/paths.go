@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
-	"entire.io/cli/cmd/entire/cli/sessionid"
 )
 
 // Directory constants
@@ -201,14 +200,8 @@ func GetClaudeProjectDir(repoPath string) (string, error) {
 	return filepath.Join(homeDir, ".claude", "projects", projectDir), nil
 }
 
-// SessionMetadataDir returns the path to a session's metadata directory.
-// Takes a raw Claude session ID and adds the date prefix automatically.
-func SessionMetadataDir(claudeSessionID string) string {
-	return EntireMetadataDir + "/" + sessionid.EntireSessionID(claudeSessionID)
-}
-
 // SessionMetadataDirFromEntireID returns the path to a session's metadata directory.
-// Takes an Entire session ID (already date-prefixed) without adding another prefix.
+// Takes an Entire session ID (already date-prefixed).
 func SessionMetadataDirFromEntireID(entireSessionID string) string {
 	return EntireMetadataDir + "/" + entireSessionID
 }
