@@ -146,32 +146,6 @@ func ToRelativePath(absPath, cwd string) string {
 	return relPath
 }
 
-// pathSafeRegex matches strings safe for use in file paths (no path separators or traversal)
-var pathSafeRegex = regexp.MustCompile(`^[a-zA-Z0-9_\-]+$`)
-
-// ValidateToolUseID validates that a tool use ID contains only safe characters for paths.
-// Tool use IDs can be UUIDs or prefixed identifiers like "toolu_xxx".
-func ValidateToolUseID(id string) error {
-	if id == "" {
-		return nil // Empty is allowed (optional field)
-	}
-	if !pathSafeRegex.MatchString(id) {
-		return fmt.Errorf("invalid tool use ID %q: must be alphanumeric with underscores/hyphens only", id)
-	}
-	return nil
-}
-
-// ValidateAgentID validates that an agent ID contains only safe characters for paths.
-func ValidateAgentID(id string) error {
-	if id == "" {
-		return nil // Empty is allowed (optional field)
-	}
-	if !pathSafeRegex.MatchString(id) {
-		return fmt.Errorf("invalid agent ID %q: must be alphanumeric with underscores/hyphens only", id)
-	}
-	return nil
-}
-
 // nonAlphanumericRegex matches any non-alphanumeric character
 var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9]`)
 
