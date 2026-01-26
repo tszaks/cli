@@ -14,8 +14,6 @@ import (
 
 // Use the real Gemini types from the geminicli package to avoid schema drift.
 type GeminiSettings = geminicli.GeminiSettings
-type GeminiHookMatcher = geminicli.GeminiHookMatcher
-type GeminiHookEntry = geminicli.GeminiHookEntry
 
 // TestSetupGeminiHooks_AddsAllRequiredHooks is a smoke test verifying that
 // `entire enable --agent gemini` adds all required hooks to the correct file.
@@ -183,10 +181,17 @@ func TestGeminiHooks_SessionStartUpdatesSessionID(t *testing.T) {
 
 	// Prepare session-start hook input (JSON that Gemini CLI sends to the hook)
 	geminiSessionID := "test-gemini-session-abc123"
+
+	// Use json.Marshal to properly escape the path for cross-platform compatibility
+	cwdJSON, err := json.Marshal(env.RepoDir)
+	if err != nil {
+		t.Fatalf("failed to marshal repo dir: %v", err)
+	}
+
 	hookInput := `{
   "session_id": "` + geminiSessionID + `",
   "transcript_path": "/path/to/transcript.json",
-  "cwd": "` + env.RepoDir + `",
+  "cwd": ` + string(cwdJSON) + `,
   "hook_event_name": "SessionStart",
   "timestamp": "2024-01-01T12:00:00Z",
   "source": "startup"
@@ -217,7 +222,7 @@ func TestGeminiHooks_SessionStartUpdatesSessionID(t *testing.T) {
 
 	// Verify the date prefix is present (11 chars: YYYY-MM-DD-)
 	if len(currentSessionID) < 11+len(geminiSessionID) {
-		t.Errorf("current session ID = %q, too short for date prefix", currentSessionID)
+		t.Fatalf("current session ID = %q, too short for date prefix", currentSessionID)
 	}
 
 	// Verify the date prefix format (YYYY-MM-DD-)
