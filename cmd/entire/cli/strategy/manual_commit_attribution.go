@@ -12,38 +12,46 @@ import (
 
 // getAllChangedFilesBetweenTrees returns a list of all files that differ between two trees.
 // This includes files that were added, modified, or deleted in either tree.
+// Uses git blob hashes for efficient comparison without reading file contents.
 func getAllChangedFilesBetweenTrees(tree1, tree2 *object.Tree) []string {
 	if tree1 == nil && tree2 == nil {
 		return nil
 	}
 
-	fileSet := make(map[string]struct{})
+	// Build hash maps for each tree - O(n) iteration, no content reading
+	tree1Hashes := make(map[string]string)
+	tree2Hashes := make(map[string]string)
 
-	// Get all files from tree1
 	if tree1 != nil {
-		//nolint:errcheck // Errors ignored - just collecting file names for diff comparison
+		//nolint:errcheck // Errors ignored - just collecting file hashes for diff comparison
 		_ = tree1.Files().ForEach(func(f *object.File) error {
-			fileSet[f.Name] = struct{}{}
+			tree1Hashes[f.Name] = f.Hash.String()
 			return nil
 		})
 	}
 
-	// Get all files from tree2
 	if tree2 != nil {
-		//nolint:errcheck // Errors ignored - just collecting file names for diff comparison
+		//nolint:errcheck // Errors ignored - just collecting file hashes for diff comparison
 		_ = tree2.Files().ForEach(func(f *object.File) error {
-			fileSet[f.Name] = struct{}{}
+			tree2Hashes[f.Name] = f.Hash.String()
 			return nil
 		})
 	}
 
-	// Convert set to slice and filter to only files that actually changed
+	// Find changed files by comparing hashes (much faster than content comparison)
 	var changed []string
-	for filePath := range fileSet {
-		content1 := getFileContent(tree1, filePath)
-		content2 := getFileContent(tree2, filePath)
-		if content1 != content2 {
-			changed = append(changed, filePath)
+
+	// Check files in tree1 - either modified or deleted in tree2
+	for path, hash1 := range tree1Hashes {
+		if hash2, exists := tree2Hashes[path]; !exists || hash1 != hash2 {
+			changed = append(changed, path)
+		}
+	}
+
+	// Check files only in tree2 (added files)
+	for path := range tree2Hashes {
+		if _, exists := tree1Hashes[path]; !exists {
+			changed = append(changed, path)
 		}
 	}
 

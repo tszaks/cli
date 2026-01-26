@@ -10,6 +10,7 @@ import (
 )
 
 const testThreeLines = "line1\nline2\nline3\n"
+const testFile1 = "file1.go"
 
 func TestDiffLines_NoChanges(t *testing.T) {
 	content := testThreeLines
@@ -758,4 +759,138 @@ func TestCalculateAttributionWithAccumulated_UserEditsNonAgentFile(t *testing.T)
 	if result.AgentPercentage < 42.8 || result.AgentPercentage > 43.0 {
 		t.Errorf("AgentPercentage = %.1f%%, want ~42.9%% (not inflated)", result.AgentPercentage)
 	}
+}
+
+// TestGetAllChangedFilesBetweenTrees tests the hash-based file change detection.
+func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
+	storer := memory.NewStorage()
+
+	// Helper to create a blob and return its hash
+	//nolint:errcheck // Test helper - errors would cause test failures anyway
+	createBlob := func(content string) plumbing.Hash {
+		blob := storer.NewEncodedObject()
+		blob.SetType(plumbing.BlobObject)
+		writer, _ := blob.Writer()
+		_, _ = writer.Write([]byte(content))
+		_ = writer.Close()
+		hash, _ := storer.SetEncodedObject(blob)
+		return hash
+	}
+
+	// Helper to create a tree from file entries
+	//nolint:errcheck // Test helper - errors would cause test failures anyway
+	createTree := func(files map[string]string) *object.Tree {
+		var entries []object.TreeEntry
+		for name, content := range files {
+			entries = append(entries, object.TreeEntry{
+				Name: name,
+				Mode: 0o100644,
+				Hash: createBlob(content),
+			})
+		}
+		// Sort entries by name (git requirement)
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].Name < entries[j].Name
+		})
+
+		tree := &object.Tree{Entries: entries}
+		treeObj := storer.NewEncodedObject()
+		_ = tree.Encode(treeObj)
+		hash, _ := storer.SetEncodedObject(treeObj)
+
+		// Re-decode to get proper Tree object with hash
+		decodedTree, _ := object.GetTree(storer, hash)
+		return decodedTree
+	}
+
+	t.Run("both trees nil", func(t *testing.T) {
+		result := getAllChangedFilesBetweenTrees(nil, nil)
+		if result != nil {
+			t.Errorf("expected nil, got %v", result)
+		}
+	})
+
+	t.Run("tree1 nil (all files added)", func(t *testing.T) {
+		tree2 := createTree(map[string]string{
+			testFile1:  "content1",
+			"file2.go": "content2",
+		})
+
+		result := getAllChangedFilesBetweenTrees(nil, tree2)
+		sort.Strings(result)
+
+		if len(result) != 2 {
+			t.Fatalf("expected 2 changed files, got %d: %v", len(result), result)
+		}
+		if result[0] != testFile1 || result[1] != "file2.go" {
+			t.Errorf("expected [file1.go, file2.go], got %v", result)
+		}
+	})
+
+	t.Run("tree2 nil (all files deleted)", func(t *testing.T) {
+		tree1 := createTree(map[string]string{
+			testFile1: "content1",
+		})
+
+		result := getAllChangedFilesBetweenTrees(tree1, nil)
+
+		if len(result) != 1 || result[0] != testFile1 {
+			t.Errorf("expected [file1.go], got %v", result)
+		}
+	})
+
+	t.Run("identical trees (no changes)", func(t *testing.T) {
+		tree1 := createTree(map[string]string{
+			testFile1:  "same content",
+			"file2.go": "also same",
+		})
+		tree2 := createTree(map[string]string{
+			testFile1:  "same content",
+			"file2.go": "also same",
+		})
+
+		result := getAllChangedFilesBetweenTrees(tree1, tree2)
+
+		if len(result) != 0 {
+			t.Errorf("expected no changes, got %v", result)
+		}
+	})
+
+	t.Run("one file modified", func(t *testing.T) {
+		tree1 := createTree(map[string]string{
+			testFile1:     "original",
+			"unchanged.go": "stays same",
+		})
+		tree2 := createTree(map[string]string{
+			testFile1:     "modified",
+			"unchanged.go": "stays same",
+		})
+
+		result := getAllChangedFilesBetweenTrees(tree1, tree2)
+
+		if len(result) != 1 || result[0] != testFile1 {
+			t.Errorf("expected [file1.go], got %v", result)
+		}
+	})
+
+	t.Run("file added and deleted", func(t *testing.T) {
+		tree1 := createTree(map[string]string{
+			"deleted.go": "will be removed",
+			"stays.go":   "unchanged",
+		})
+		tree2 := createTree(map[string]string{
+			"added.go": "new file",
+			"stays.go": "unchanged",
+		})
+
+		result := getAllChangedFilesBetweenTrees(tree1, tree2)
+		sort.Strings(result)
+
+		if len(result) != 2 {
+			t.Fatalf("expected 2 changed files, got %d: %v", len(result), result)
+		}
+		if result[0] != "added.go" || result[1] != "deleted.go" {
+			t.Errorf("expected [added.go, deleted.go], got %v", result)
+		}
+	})
 }
