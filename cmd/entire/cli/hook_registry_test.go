@@ -271,7 +271,6 @@ func TestGeminiCLIHooksCmd_HasLoggingHooks(t *testing.T) {
 
 	if geminiCmd == nil {
 		t.Fatal("expected to find gemini subcommand under hooks")
-		return // unreachable but satisfies staticcheck
 	}
 
 	// Verify PersistentPreRunE is set

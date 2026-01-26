@@ -420,7 +420,7 @@ func TestCalculateTokenUsage_MissingTokensField(t *testing.T) {
 	}
 }
 
-func TestGetTranscriptPosition(t *testing.T) {
+func TestGeminiCLIAgent_GetTranscriptPosition(t *testing.T) {
 	t.Parallel()
 
 	// Create a temp file with transcript data
@@ -438,45 +438,48 @@ func TestGetTranscriptPosition(t *testing.T) {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	pos, err := GetTranscriptPosition(tmpFile)
+	agent := &GeminiCLIAgent{}
+	messageCount, err := agent.GetTranscriptPosition(tmpFile)
 	if err != nil {
 		t.Fatalf("GetTranscriptPosition() error = %v", err)
 	}
 
-	if pos.MessageCount != 3 {
-		t.Errorf("MessageCount = %d, want 3", pos.MessageCount)
+	if messageCount != 3 {
+		t.Errorf("GetTranscriptPosition() = %d, want 3", messageCount)
 	}
 }
 
-func TestGetTranscriptPosition_EmptyPath(t *testing.T) {
+func TestGeminiCLIAgent_GetTranscriptPosition_EmptyPath(t *testing.T) {
 	t.Parallel()
 
-	pos, err := GetTranscriptPosition("")
+	agent := &GeminiCLIAgent{}
+	messageCount, err := agent.GetTranscriptPosition("")
 	if err != nil {
 		t.Fatalf("GetTranscriptPosition() error = %v", err)
 	}
 
-	if pos.MessageCount != 0 {
-		t.Errorf("MessageCount = %d, want 0", pos.MessageCount)
+	if messageCount != 0 {
+		t.Errorf("GetTranscriptPosition() = %d, want 0", messageCount)
 	}
 }
 
-func TestGetTranscriptPosition_NonexistentFile(t *testing.T) {
+func TestGeminiCLIAgent_GetTranscriptPosition_NonexistentFile(t *testing.T) {
 	t.Parallel()
 
-	pos, err := GetTranscriptPosition("/nonexistent/file.json")
+	agent := &GeminiCLIAgent{}
+	messageCount, err := agent.GetTranscriptPosition("/nonexistent/file.json")
 	if err != nil {
 		t.Fatalf("GetTranscriptPosition() error = %v", err)
 	}
 
-	// Should return empty position for nonexistent file
-	if pos.MessageCount != 0 {
-		t.Errorf("MessageCount = %d, want 0", pos.MessageCount)
+	// Should return 0 for nonexistent file
+	if messageCount != 0 {
+		t.Errorf("GetTranscriptPosition() = %d, want 0", messageCount)
 	}
 }
 
 // writeTestFile is a helper to write test data to a file
 func writeTestFile(t *testing.T, path string, data []byte) error {
 	t.Helper()
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0o644)
 }
