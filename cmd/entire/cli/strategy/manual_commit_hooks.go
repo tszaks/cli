@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -144,14 +143,11 @@ func stripCheckpointTrailer(message string) string {
 //   - cherry-pick: .git/CHERRY_PICK_HEAD file
 //   - revert: .git/REVERT_HEAD file
 func isGitSequenceOperation() bool {
-	// Get git directory (handles worktrees correctly)
-	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-dir")
-	output, err := cmd.Output()
+	// Get git directory (handles worktrees and relative paths correctly)
+	gitDir, err := GetGitDir()
 	if err != nil {
 		return false // Can't determine, assume not in sequence operation
 	}
-	gitDir := strings.TrimSpace(string(output))
 
 	// Check for rebase state directories
 	if _, err := os.Stat(filepath.Join(gitDir, "rebase-merge")); err == nil {
