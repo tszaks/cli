@@ -133,7 +133,7 @@ func TestRunStatus_Enabled(t *testing.T) {
 	}
 }
 
-func TestRunStatus_Enabled_Long(t *testing.T) {
+func TestRunStatus_Enabled_Detailed(t *testing.T) {
 	setupTestRepo(t)
 	writeSettings(t, testSettingsEnabled)
 
