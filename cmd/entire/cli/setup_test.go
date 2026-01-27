@@ -167,7 +167,7 @@ func TestRunStatus_Disabled(t *testing.T) {
 	}
 }
 
-func TestRunStatus_Disabled_Long(t *testing.T) {
+func TestRunStatus_Disabled_Detailed(t *testing.T) {
 	setupTestRepo(t)
 	writeSettings(t, testSettingsDisabled)
 
