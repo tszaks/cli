@@ -526,7 +526,7 @@ func TestRunStatus_BothProjectAndLocal(t *testing.T) {
 	setupTestRepo(t)
 	// Project: enabled=true, strategy=manual-commit
 	// Local: enabled=false, strategy=auto-commit
-	// Long mode shows effective status first, then each file separately
+	// Detailed mode shows effective status first, then each file separately
 	writeSettings(t, `{"strategy": "manual-commit", "enabled": true}`)
 	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": false}`)
 
