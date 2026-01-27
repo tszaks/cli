@@ -81,10 +81,7 @@ func LoadEntireSettings() (*EntireSettings, error) {
 	// Load base settings
 	settings, err := loadSettingsFromFile(settingsFileAbs)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			return nil, fmt.Errorf("reading settings file: %w", err)
-		}
-		// File doesn't exist, continue with defaults
+		return nil, fmt.Errorf("reading settings file: %w", err)
 	}
 
 	// Apply local overrides if they exist
