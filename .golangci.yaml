@@ -73,6 +73,11 @@ linters:
     - whitespace
     - wrapcheck
   settings:
+    dupl:
+      # Token threshold for duplication detection
+      # Lower = more sensitive (catches smaller duplicates)
+      # Default is 150. We use 75 for lint (blocks CI), `mise run dup` uses 50 (advisory)
+      threshold: 75
     errcheck:
       check-type-assertions: true
       check-blank: true

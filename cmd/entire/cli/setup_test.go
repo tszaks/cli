@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/strategy"
 	"github.com/go-git/go-git/v5"
 )
 
@@ -563,5 +564,176 @@ func TestRunStatus_ShowsManualCommitStrategy(t *testing.T) {
 	output := stdout.String()
 	if !strings.Contains(output, "Project, disabled (manual-commit)") {
 		t.Errorf("Expected output to show 'Project, disabled (manual-commit)', got: %s", output)
+	}
+}
+
+// Tests for runUninstall and helper functions
+
+func TestRunUninstall_Force_NothingInstalled(t *testing.T) {
+	setupTestRepo(t)
+
+	var stdout, stderr bytes.Buffer
+	err := runUninstall(&stdout, &stderr, true)
+	if err != nil {
+		t.Fatalf("runUninstall() error = %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "not installed") {
+		t.Errorf("Expected output to indicate nothing installed, got: %s", output)
+	}
+}
+
+func TestRunUninstall_Force_RemovesEntireDirectory(t *testing.T) {
+	setupTestRepo(t)
+
+	// Create .entire directory with settings
+	writeSettings(t, testSettingsEnabled)
+
+	// Verify directory exists
+	entireDir := paths.EntireDir
+	if _, err := os.Stat(entireDir); os.IsNotExist(err) {
+		t.Fatal(".entire directory should exist before uninstall")
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := runUninstall(&stdout, &stderr, true)
+	if err != nil {
+		t.Fatalf("runUninstall() error = %v", err)
+	}
+
+	// Verify directory is removed
+	if _, err := os.Stat(entireDir); !os.IsNotExist(err) {
+		t.Error(".entire directory should be removed after uninstall")
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "uninstalled successfully") {
+		t.Errorf("Expected success message, got: %s", output)
+	}
+}
+
+func TestRunUninstall_Force_RemovesGitHooks(t *testing.T) {
+	setupTestRepo(t)
+
+	// Create .entire directory (required for git hooks)
+	writeSettings(t, testSettingsEnabled)
+
+	// Install git hooks
+	if _, err := strategy.InstallGitHook(true); err != nil {
+		t.Fatalf("InstallGitHook() error = %v", err)
+	}
+
+	// Verify hooks are installed
+	if !strategy.IsGitHookInstalled() {
+		t.Fatal("git hooks should be installed before uninstall")
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := runUninstall(&stdout, &stderr, true)
+	if err != nil {
+		t.Fatalf("runUninstall() error = %v", err)
+	}
+
+	// Verify hooks are removed
+	if strategy.IsGitHookInstalled() {
+		t.Error("git hooks should be removed after uninstall")
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Removed git hooks") {
+		t.Errorf("Expected output to mention removed git hooks, got: %s", output)
+	}
+}
+
+func TestRunUninstall_NotAGitRepo(t *testing.T) {
+	// Create a temp directory without git init
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+	paths.ClearRepoRootCache()
+
+	var stdout, stderr bytes.Buffer
+	err := runUninstall(&stdout, &stderr, true)
+
+	// Should return an error (silent error)
+	if err == nil {
+		t.Fatal("runUninstall() should return error for non-git directory")
+	}
+
+	// Should print message to stderr
+	errOutput := stderr.String()
+	if !strings.Contains(errOutput, "Not a git repository") {
+		t.Errorf("Expected error message about not being a git repo, got: %s", errOutput)
+	}
+}
+
+func TestCheckEntireDirExists(t *testing.T) {
+	setupTestDir(t)
+
+	// Should be false when directory doesn't exist
+	if checkEntireDirExists() {
+		t.Error("checkEntireDirExists() should return false when .entire doesn't exist")
+	}
+
+	// Create the directory
+	if err := os.MkdirAll(paths.EntireDir, 0o755); err != nil {
+		t.Fatalf("Failed to create .entire dir: %v", err)
+	}
+
+	// Should be true now
+	if !checkEntireDirExists() {
+		t.Error("checkEntireDirExists() should return true when .entire exists")
+	}
+}
+
+func TestCountSessionStates(t *testing.T) {
+	setupTestRepo(t)
+
+	// Should be 0 when no session states exist
+	count := countSessionStates()
+	if count != 0 {
+		t.Errorf("countSessionStates() = %d, want 0", count)
+	}
+}
+
+func TestCountShadowBranches(t *testing.T) {
+	setupTestRepo(t)
+
+	// Should be 0 when no shadow branches exist
+	count := countShadowBranches()
+	if count != 0 {
+		t.Errorf("countShadowBranches() = %d, want 0", count)
+	}
+}
+
+func TestRemoveEntireDirectory(t *testing.T) {
+	setupTestDir(t)
+
+	// Create .entire directory with some files
+	entireDir := paths.EntireDir
+	if err := os.MkdirAll(filepath.Join(entireDir, "subdir"), 0o755); err != nil {
+		t.Fatalf("Failed to create .entire/subdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(entireDir, "test.txt"), []byte("test"), 0o644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Remove the directory
+	if err := removeEntireDirectory(); err != nil {
+		t.Fatalf("removeEntireDirectory() error = %v", err)
+	}
+
+	// Verify it's removed
+	if _, err := os.Stat(entireDir); !os.IsNotExist(err) {
+		t.Error(".entire directory should be removed")
+	}
+}
+
+func TestRemoveEntireDirectory_NotExists(t *testing.T) {
+	setupTestDir(t)
+
+	// Should not error when directory doesn't exist
+	if err := removeEntireDirectory(); err != nil {
+		t.Fatalf("removeEntireDirectory() should not error when directory doesn't exist: %v", err)
 	}
 }
