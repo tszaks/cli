@@ -193,6 +193,7 @@ func RemoveGitHook() (int, error) {
 	}
 
 	removed := 0
+	var removeErrors []string
 
 	for _, hook := range gitHookNames {
 		hookPath := filepath.Join(gitDir, "hooks", hook)
@@ -202,10 +203,16 @@ func RemoveGitHook() (int, error) {
 		}
 
 		if strings.Contains(string(data), entireHookMarker) {
-			if err := os.Remove(hookPath); err == nil {
+			if err := os.Remove(hookPath); err != nil {
+				removeErrors = append(removeErrors, fmt.Sprintf("%s: %v", hook, err))
+			} else {
 				removed++
 			}
 		}
+	}
+
+	if len(removeErrors) > 0 {
+		return removed, fmt.Errorf("failed to remove hooks: %s", strings.Join(removeErrors, "; "))
 	}
 	return removed, nil
 }

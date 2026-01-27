@@ -490,3 +490,51 @@ func TestRemoveGitHook_NotAGitRepo(t *testing.T) {
 		t.Fatal("RemoveGitHook() should return error for non-git directory")
 	}
 }
+
+func TestRemoveGitHook_PermissionDenied(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("Test cannot run as root (permission checks are bypassed)")
+	}
+
+	// Create a temp directory and initialize a real git repo
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, "git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Clear cache so paths resolve correctly
+	paths.ClearRepoRootCache()
+
+	// Install hooks first
+	_, err := InstallGitHook(true)
+	if err != nil {
+		t.Fatalf("InstallGitHook() error = %v", err)
+	}
+
+	// Remove write permissions from hooks directory to cause permission error
+	hooksDir := filepath.Join(tmpDir, ".git", "hooks")
+	if err := os.Chmod(hooksDir, 0o555); err != nil {
+		t.Fatalf("failed to change hooks dir permissions: %v", err)
+	}
+	// Restore permissions on cleanup
+	t.Cleanup(func() {
+		_ = os.Chmod(hooksDir, 0o755) //nolint:errcheck // Cleanup, best-effort
+	})
+
+	// Remove hooks should now fail with permission error
+	removed, err := RemoveGitHook()
+	if err == nil {
+		t.Fatal("RemoveGitHook() should return error when hooks cannot be deleted")
+	}
+	if removed != 0 {
+		t.Errorf("RemoveGitHook() removed %d hooks, expected 0 when all fail", removed)
+	}
+	if !strings.Contains(err.Error(), "failed to remove hooks") {
+		t.Errorf("error should mention 'failed to remove hooks', got: %v", err)
+	}
+}
