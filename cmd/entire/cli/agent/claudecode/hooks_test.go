@@ -275,3 +275,170 @@ func getKeys(m map[string]json.RawMessage) []string {
 	}
 	return keys
 }
+
+func TestUninstallHooks(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+
+	agent := &ClaudeCodeAgent{}
+
+	// First install
+	_, err := agent.InstallHooks(false, false)
+	if err != nil {
+		t.Fatalf("InstallHooks() error = %v", err)
+	}
+
+	// Verify hooks are installed
+	if !agent.AreHooksInstalled() {
+		t.Error("hooks should be installed before uninstall")
+	}
+
+	// Uninstall
+	err = agent.UninstallHooks()
+	if err != nil {
+		t.Fatalf("UninstallHooks() error = %v", err)
+	}
+
+	// Verify hooks are removed
+	if agent.AreHooksInstalled() {
+		t.Error("hooks should not be installed after uninstall")
+	}
+}
+
+func TestUninstallHooks_NoSettingsFile(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+
+	agent := &ClaudeCodeAgent{}
+
+	// Should not error when no settings file exists
+	err := agent.UninstallHooks()
+	if err != nil {
+		t.Fatalf("UninstallHooks() should not error when no settings file: %v", err)
+	}
+}
+
+func TestUninstallHooks_PreservesUserHooks(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+
+	// Create settings with both user and entire hooks
+	writeSettingsFile(t, tempDir, `{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [{"type": "command", "command": "echo user hook"}]
+      },
+      {
+        "matcher": "",
+        "hooks": [{"type": "command", "command": "entire hooks claude-code stop"}]
+      }
+    ]
+  }
+}`)
+
+	agent := &ClaudeCodeAgent{}
+	err := agent.UninstallHooks()
+	if err != nil {
+		t.Fatalf("UninstallHooks() error = %v", err)
+	}
+
+	settings := readClaudeSettings(t, tempDir)
+
+	// Verify only user hooks remain
+	if len(settings.Hooks.Stop) != 1 {
+		t.Errorf("Stop hooks = %d after uninstall, want 1 (user only)", len(settings.Hooks.Stop))
+	}
+
+	// Verify it's the user hook
+	if len(settings.Hooks.Stop) > 0 && len(settings.Hooks.Stop[0].Hooks) > 0 {
+		if settings.Hooks.Stop[0].Hooks[0].Command != "echo user hook" {
+			t.Error("user hook was removed during uninstall")
+		}
+	}
+}
+
+func TestUninstallHooks_RemovesDenyRule(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+
+	agent := &ClaudeCodeAgent{}
+
+	// First install (which adds the deny rule)
+	_, err := agent.InstallHooks(false, false)
+	if err != nil {
+		t.Fatalf("InstallHooks() error = %v", err)
+	}
+
+	// Verify deny rule was added
+	perms := readPermissions(t, tempDir)
+	if !containsDenyRule(perms.Deny, metadataDenyRuleTest) {
+		t.Fatal("deny rule should be present after install")
+	}
+
+	// Uninstall
+	err = agent.UninstallHooks()
+	if err != nil {
+		t.Fatalf("UninstallHooks() error = %v", err)
+	}
+
+	// Verify deny rule was removed
+	perms = readPermissions(t, tempDir)
+	if containsDenyRule(perms.Deny, metadataDenyRuleTest) {
+		t.Error("deny rule should be removed after uninstall")
+	}
+}
+
+func TestUninstallHooks_PreservesUserDenyRules(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Chdir(tempDir)
+
+	// Create settings with user deny rule and entire deny rule
+	writeSettingsFile(t, tempDir, `{
+  "permissions": {
+    "deny": ["Bash(rm -rf *)", "Read(./.entire/metadata/**)"]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [{"type": "command", "command": "entire hooks claude-code stop"}]
+      }
+    ]
+  }
+}`)
+
+	agent := &ClaudeCodeAgent{}
+	err := agent.UninstallHooks()
+	if err != nil {
+		t.Fatalf("UninstallHooks() error = %v", err)
+	}
+
+	perms := readPermissions(t, tempDir)
+
+	// Verify user deny rule is preserved
+	if !containsDenyRule(perms.Deny, "Bash(rm -rf *)") {
+		t.Errorf("user deny rule was removed, got: %v", perms.Deny)
+	}
+
+	// Verify entire deny rule is removed
+	if containsDenyRule(perms.Deny, metadataDenyRuleTest) {
+		t.Errorf("entire deny rule should be removed, got: %v", perms.Deny)
+	}
+}
+
+// readClaudeSettings reads and parses the Claude Code settings file
+func readClaudeSettings(t *testing.T, tempDir string) ClaudeSettings {
+	t.Helper()
+	settingsPath := filepath.Join(tempDir, ".claude", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("failed to read settings.json: %v", err)
+	}
+
+	var settings ClaudeSettings
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("failed to parse settings.json: %v", err)
+	}
+	return settings
+}
