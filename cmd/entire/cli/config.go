@@ -68,11 +68,6 @@ type EntireSettings struct {
 // Returns default settings if neither file exists.
 // Works correctly from any subdirectory within the repository.
 func LoadEntireSettings() (*EntireSettings, error) {
-	settings := &EntireSettings{
-		Strategy: strategy.DefaultStrategyName,
-		Enabled:  true, // Default to enabled
-	}
-
 	// Get absolute paths for settings files
 	settingsFileAbs, err := paths.AbsPath(EntireSettingsFile)
 	if err != nil {
@@ -84,16 +79,12 @@ func LoadEntireSettings() (*EntireSettings, error) {
 	}
 
 	// Load base settings
-	data, err := os.ReadFile(settingsFileAbs) //nolint:gosec // path is from AbsPath or constant
+	settings, err := loadSettingsFromFile(settingsFileAbs)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("reading settings file: %w", err)
 		}
 		// File doesn't exist, continue with defaults
-	} else {
-		if err := json.Unmarshal(data, settings); err != nil {
-			return nil, fmt.Errorf("parsing settings file: %w", err)
-		}
 	}
 
 	// Apply local overrides if they exist
@@ -109,11 +100,7 @@ func LoadEntireSettings() (*EntireSettings, error) {
 		}
 	}
 
-	// Apply defaults if not set
-	if settings.Strategy == "" {
-		settings.Strategy = strategy.DefaultStrategyName
-	}
-	settings.Strategy = strategy.NormalizeStrategyName(settings.Strategy)
+	applyDefaultStrategy(settings)
 
 	return settings, nil
 }
@@ -258,8 +245,18 @@ func loadSettingsFromFile(filePath string) (*EntireSettings, error) {
 	if err := json.Unmarshal(data, settings); err != nil {
 		return nil, fmt.Errorf("parsing settings file: %w", err)
 	}
+	applyDefaultStrategy(settings)
 
 	return settings, nil
+}
+
+func applyDefaultStrategy(settings *EntireSettings) {
+	// Apply defaults if not set
+	if settings.Strategy == "" {
+		settings.Strategy = strategy.DefaultStrategyName
+	}
+	settings.Strategy = strategy.NormalizeStrategyName(settings.Strategy)
+
 }
 
 func saveSettingsToFile(settings *EntireSettings, filePath string) error {
