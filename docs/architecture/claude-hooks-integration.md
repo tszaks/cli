@@ -11,7 +11,7 @@ Entire integrates with Claude Code through six hooks that fire at different poin
 | `SessionStart`           | New chat session begins        | Generate and persist Entire session ID         |
 | `UserPromptSubmit`       | User submits a prompt          | Capture pre-prompt state, check for conflicts  |
 | `Stop`                   | Claude finishes responding     | Create checkpoint with code + metadata         |
-| `PreToolUse[Task]`       | Subagent is about to start     | Capture pre-task state, create starting marker |
+| `PreToolUse[Task]`       | Subagent is about to start     | Capture pre-task state for diff computation    |
 | `PostToolUse[Task]`      | Subagent finishes              | Create final checkpoint for subagent work      |
 | `PostToolUse[TodoWrite]` | Subagent updates its todo list | Create incremental checkpoint if files changed |
 
@@ -129,7 +129,7 @@ Fires when Claude finishes responding. Does **not** fire on user interrupt (Ctrl
 - **Command**: `entire hooks claude-code pre-task`
 - **Handler**: `handlePreTask()` in `hooks_claudecode_handlers.go:668`
 
-Fires just before a subagent (Task tool) begins execution. Creates a clear starting point for the subagent's work.
+Fires just before a subagent (Task tool) begins execution. Captures the current state so that file changes can be computed when the task completes.
 
 **What it does:**
 
@@ -145,12 +145,7 @@ Fires just before a subagent (Task tool) begins execution. Creates a clear start
     - Runs `git status` to get current untracked files.
     - Saves to `.entire/tmp/pre-task-<tool-use-id>.json`.
     - This baseline is used by `PostToolUse[Task]` to determine which files the subagent created.
-
-4.  **Create Starting Checkpoint**:
-    - Calls `strategy.SaveTaskCheckpoint()` with `IncrementalSequence: 0` and `IncrementalType: "task_start"`.
-    - Creates a commit with no file changes, just metadata marking "Starting: \<description\>".
-    - This allows rewinding to the exact state before the subagent made any changes.
-    - Includes subagent type and description in commit metadata for better rewind UX.
+    - **Note**: No checkpoint/commit is created at this stage. Commits are only created during task completion (`PostToolUse[Task]` or `PostToolUse[TodoWrite]`) and only if there are actual file changes.
 
 ### `PostToolUse[Task]`
 
@@ -225,8 +220,8 @@ Fires whenever a subagent updates its todo list. Enables fine-grained, increment
 **Example sequence during a subagent Task:**
 
 ```
-PreToolUse[Task]      → Checkpoint #0: "Starting: Implement auth feature"
-PostToolUse[TodoWrite] → Checkpoint #1: "Planning: 5 todos"
+PreToolUse[Task]       → (no checkpoint - only captures pre-task state)
+PostToolUse[TodoWrite] → Checkpoint #1: "Planning: 5 todos" (if files changed)
 PostToolUse[TodoWrite] → Checkpoint #2: "Completed: Create user model"
 PostToolUse[TodoWrite] → Checkpoint #3: "Completed: Add login endpoint"
 PostToolUse[Task]      → Checkpoint #4: Final checkpoint with all changes
