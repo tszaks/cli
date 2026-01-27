@@ -229,12 +229,17 @@ func CalculateAttributionWithAccumulated(
 		allUserEditsToNonAgentFiles += userAdded
 	}
 
-	// Separate accumulated edits by file type
-	// accumulatedUserAdded includes edits to BOTH agent and non-agent files
-	// For agent work calculation, we only need to subtract edits to agent files
-	// Heuristic: assume accumulated edits to non-agent files = min(total edits to non-agent files, total accumulated)
-	accumulatedToNonAgentFiles := min(allUserEditsToNonAgentFiles, accumulatedUserAdded)
-	accumulatedToAgentFiles := accumulatedUserAdded - accumulatedToNonAgentFiles
+	// Separate accumulated edits by file type using per-file tracking data.
+	// This is precise because accumulatedUserAddedPerFile tells us exactly which files
+	// the user edited between checkpoints.
+	var accumulatedToAgentFiles, accumulatedToNonAgentFiles int
+	for filePath, added := range accumulatedUserAddedPerFile {
+		if slices.Contains(filesTouched, filePath) {
+			accumulatedToAgentFiles += added
+		} else {
+			accumulatedToNonAgentFiles += added
+		}
+	}
 
 	// Agent work = (base→shadow for agent files) - (accumulated user edits to agent files only)
 	totalAgentAdded := max(0, totalAgentAndUserWork-accumulatedToAgentFiles)

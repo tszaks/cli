@@ -617,6 +617,7 @@ func TestCalculateAttributionWithAccumulated_WithPromptAttributions(t *testing.T
 			CheckpointNumber: 2,
 			UserLinesAdded:   2, // user_between1, user_between2
 			UserLinesRemoved: 0,
+			UserAddedPerFile: map[string]int{"main.go": 2}, // User edited the agent-touched file
 		},
 	}
 
@@ -713,6 +714,7 @@ func TestCalculateAttributionWithAccumulated_UserEditsNonAgentFile(t *testing.T)
 			CheckpointNumber: 1,
 			UserLinesAdded:   2, // User edit 1, 2 (between checkpoints)
 			UserLinesRemoved: 0,
+			UserAddedPerFile: map[string]int{"file2.go": 2}, // Tracks which file the edits were in
 		},
 	}
 
