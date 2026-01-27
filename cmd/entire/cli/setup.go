@@ -1159,9 +1159,10 @@ func removeAgentHooks(w io.Writer) error {
 	claudeAgent, err := agent.Get(agent.AgentNameClaudeCode)
 	if err == nil {
 		if hookAgent, ok := claudeAgent.(agent.HookSupport); ok {
+			wasInstalled := hookAgent.AreHooksInstalled()
 			if err := hookAgent.UninstallHooks(); err != nil {
 				errs = append(errs, err)
-			} else {
+			} else if wasInstalled {
 				fmt.Fprintln(w, "  Removed Claude Code hooks")
 			}
 		}
@@ -1171,9 +1172,10 @@ func removeAgentHooks(w io.Writer) error {
 	geminiAgent, err := agent.Get(agent.AgentNameGemini)
 	if err == nil {
 		if hookAgent, ok := geminiAgent.(agent.HookSupport); ok {
+			wasInstalled := hookAgent.AreHooksInstalled()
 			if err := hookAgent.UninstallHooks(); err != nil {
 				errs = append(errs, err)
-			} else {
+			} else if wasInstalled {
 				fmt.Fprintln(w, "  Removed Gemini CLI hooks")
 			}
 		}
