@@ -325,7 +325,9 @@ type CommittedMetadata struct {
 	FilesTouched     []string        `json:"files_touched"`
 
 	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor")
-	Agent agent.AgentType `json:"agent,omitempty"`
+	// For multi-session checkpoints, this is the first agent (see Agents for all)
+	Agent  agent.AgentType   `json:"agent,omitempty"`
+	Agents []agent.AgentType `json:"agents,omitempty"` // All agents that contributed (multi-session, deduplicated)
 
 	// Multi-session support: when multiple sessions contribute to the same checkpoint
 	SessionCount int      `json:"session_count,omitempty"` // Number of sessions (1 if omitted for backwards compat)
