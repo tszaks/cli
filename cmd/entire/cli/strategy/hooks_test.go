@@ -359,3 +359,182 @@ func TestInstallGitHook_Idempotent(t *testing.T) {
 		t.Errorf("Second InstallGitHook() returned %d, want 0 (hooks unchanged)", secondCount)
 	}
 }
+
+func TestRemoveGitHook_RemovesInstalledHooks(t *testing.T) {
+	// Create a temp directory and initialize a real git repo
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, "git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Clear cache so paths resolve correctly
+	paths.ClearRepoRootCache()
+
+	// Install hooks first
+	installCount, err := InstallGitHook(true)
+	if err != nil {
+		t.Fatalf("InstallGitHook() error = %v", err)
+	}
+	if installCount == 0 {
+		t.Fatal("InstallGitHook() should install hooks")
+	}
+
+	// Verify hooks are installed
+	if !IsGitHookInstalled() {
+		t.Fatal("hooks should be installed before removal test")
+	}
+
+	// Remove hooks
+	removeCount, err := RemoveGitHook()
+	if err != nil {
+		t.Fatalf("RemoveGitHook() error = %v", err)
+	}
+	if removeCount != installCount {
+		t.Errorf("RemoveGitHook() returned %d, want %d (same as installed)", removeCount, installCount)
+	}
+
+	// Verify hooks are removed
+	if IsGitHookInstalled() {
+		t.Error("hooks should not be installed after removal")
+	}
+
+	// Verify hook files no longer exist
+	hooksDir := filepath.Join(tmpDir, ".git", "hooks")
+	for _, hookName := range gitHookNames {
+		hookPath := filepath.Join(hooksDir, hookName)
+		if _, err := os.Stat(hookPath); !os.IsNotExist(err) {
+			t.Errorf("hook file %s should not exist after removal", hookName)
+		}
+	}
+}
+
+func TestRemoveGitHook_NoHooksInstalled(t *testing.T) {
+	// Create a temp directory and initialize a real git repo
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, "git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Clear cache so paths resolve correctly
+	paths.ClearRepoRootCache()
+
+	// Remove hooks when none are installed - should handle gracefully
+	removeCount, err := RemoveGitHook()
+	if err != nil {
+		t.Fatalf("RemoveGitHook() error = %v", err)
+	}
+	if removeCount != 0 {
+		t.Errorf("RemoveGitHook() returned %d, want 0 (no hooks to remove)", removeCount)
+	}
+}
+
+func TestRemoveGitHook_IgnoresNonEntireHooks(t *testing.T) {
+	// Create a temp directory and initialize a real git repo
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, "git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Clear cache so paths resolve correctly
+	paths.ClearRepoRootCache()
+
+	// Create a non-Entire hook manually
+	hooksDir := filepath.Join(tmpDir, ".git", "hooks")
+	customHookPath := filepath.Join(hooksDir, "pre-commit")
+	customHookContent := "#!/bin/sh\necho 'custom hook'"
+	if err := os.WriteFile(customHookPath, []byte(customHookContent), 0o755); err != nil {
+		t.Fatalf("failed to create custom hook: %v", err)
+	}
+
+	// Remove hooks - should not remove the custom hook
+	removeCount, err := RemoveGitHook()
+	if err != nil {
+		t.Fatalf("RemoveGitHook() error = %v", err)
+	}
+	if removeCount != 0 {
+		t.Errorf("RemoveGitHook() returned %d, want 0 (custom hook should not be removed)", removeCount)
+	}
+
+	// Verify custom hook still exists
+	if _, err := os.Stat(customHookPath); os.IsNotExist(err) {
+		t.Error("custom hook should still exist after RemoveGitHook()")
+	}
+}
+
+func TestRemoveGitHook_NotAGitRepo(t *testing.T) {
+	// Create a temp directory without git init
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Clear cache so paths resolve correctly
+	paths.ClearRepoRootCache()
+
+	// Remove hooks in non-git directory - should return error
+	_, err := RemoveGitHook()
+	if err == nil {
+		t.Fatal("RemoveGitHook() should return error for non-git directory")
+	}
+}
+
+func TestRemoveGitHook_PermissionDenied(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("Test cannot run as root (permission checks are bypassed)")
+	}
+
+	// Create a temp directory and initialize a real git repo
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, "git", "init")
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Clear cache so paths resolve correctly
+	paths.ClearRepoRootCache()
+
+	// Install hooks first
+	_, err := InstallGitHook(true)
+	if err != nil {
+		t.Fatalf("InstallGitHook() error = %v", err)
+	}
+
+	// Remove write permissions from hooks directory to cause permission error
+	hooksDir := filepath.Join(tmpDir, ".git", "hooks")
+	if err := os.Chmod(hooksDir, 0o555); err != nil {
+		t.Fatalf("failed to change hooks dir permissions: %v", err)
+	}
+	// Restore permissions on cleanup
+	t.Cleanup(func() {
+		_ = os.Chmod(hooksDir, 0o755) //nolint:errcheck // Cleanup, best-effort
+	})
+
+	// Remove hooks should now fail with permission error
+	removed, err := RemoveGitHook()
+	if err == nil {
+		t.Fatal("RemoveGitHook() should return error when hooks cannot be deleted")
+	}
+	if removed != 0 {
+		t.Errorf("RemoveGitHook() removed %d hooks, expected 0 when all fail", removed)
+	}
+	if !strings.Contains(err.Error(), "failed to remove hooks") {
+		t.Errorf("error should mention 'failed to remove hooks', got: %v", err)
+	}
+}
