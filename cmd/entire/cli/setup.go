@@ -488,7 +488,6 @@ func runStatus(w io.Writer, detailed bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to load settings: %w", err)
 	}
-	settings.Strategy = strategy.NormalizeStrategyName(settings.Strategy)
 
 	fmt.Fprintln(w, formatSettingsStatusShort(settings))
 	return nil
@@ -501,7 +500,6 @@ func runStatusDetailed(w io.Writer, settingsPath, localSettingsPath string, proj
 	if err != nil {
 		return fmt.Errorf("failed to load settings: %w", err)
 	}
-	settings.Strategy = strategy.NormalizeStrategyName(settings.Strategy)
 	fmt.Fprintln(w, formatSettingsStatusShort(settings))
 	fmt.Fprintln(w) // blank line
 
@@ -511,7 +509,6 @@ func runStatusDetailed(w io.Writer, settingsPath, localSettingsPath string, proj
 		if err != nil {
 			return fmt.Errorf("failed to load project settings: %w", err)
 		}
-		projectSettings.Strategy = strategy.NormalizeStrategyName(projectSettings.Strategy)
 		fmt.Fprintln(w, formatSettingsStatus("Project", projectSettings))
 	}
 
@@ -521,7 +518,6 @@ func runStatusDetailed(w io.Writer, settingsPath, localSettingsPath string, proj
 		if err != nil {
 			return fmt.Errorf("failed to load local settings: %w", err)
 		}
-		localSettings.Strategy = strategy.NormalizeStrategyName(localSettings.Strategy)
 		fmt.Fprintln(w, formatSettingsStatus("Local", localSettings))
 	}
 
