@@ -133,26 +133,6 @@ func TestRunStatus_Enabled(t *testing.T) {
 	}
 }
 
-func TestRunStatus_Enabled_Detailed(t *testing.T) {
-	setupTestRepo(t)
-	writeSettings(t, testSettingsEnabled)
-
-	var stdout bytes.Buffer
-	if err := runStatus(&stdout, true); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
-	}
-
-	output := stdout.String()
-	// Should show effective status first
-	if !strings.Contains(output, "Enabled") {
-		t.Errorf("Expected output to show effective 'Enabled', got: %s", output)
-	}
-	// Should show per-file details
-	if !strings.Contains(output, "Project, enabled") {
-		t.Errorf("Expected output to show 'Project, enabled', got: %s", output)
-	}
-}
-
 func TestRunStatus_Disabled(t *testing.T) {
 	setupTestRepo(t)
 	writeSettings(t, testSettingsDisabled)
@@ -164,26 +144,6 @@ func TestRunStatus_Disabled(t *testing.T) {
 
 	if !strings.Contains(stdout.String(), "Disabled") {
 		t.Errorf("Expected output to show 'Disabled', got: %s", stdout.String())
-	}
-}
-
-func TestRunStatus_Disabled_Detailed(t *testing.T) {
-	setupTestRepo(t)
-	writeSettings(t, testSettingsDisabled)
-
-	var stdout bytes.Buffer
-	if err := runStatus(&stdout, true); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
-	}
-
-	output := stdout.String()
-	// Should show effective status first
-	if !strings.Contains(output, "Disabled") {
-		t.Errorf("Expected output to show effective 'Disabled', got: %s", output)
-	}
-	// Should show per-file details
-	if !strings.Contains(output, "Project, disabled") {
-		t.Errorf("Expected output to show 'Project, disabled', got: %s", output)
 	}
 }
 

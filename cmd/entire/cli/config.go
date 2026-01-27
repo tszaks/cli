@@ -321,7 +321,7 @@ func GetStrategy() strategy.Strategy {
 // 2. Auto-detect if enabled (default)
 // 3. Fall back to default agent
 //
-//nolint:ireturn // Factory pattern requires returning the interface
+
 func GetAgent() (agent.Agent, error) {
 	settings, err := LoadEntireSettings()
 	if err != nil {
