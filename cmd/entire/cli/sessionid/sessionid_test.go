@@ -8,9 +8,9 @@ import (
 
 func TestModelSessionID(t *testing.T) {
 	tests := []struct {
-		name             string
-		entireSessionID  string
-		expectedModelID  string
+		name            string
+		entireSessionID string
+		expectedModelID string
 	}{
 		// Valid format - extracts UUID
 		{
