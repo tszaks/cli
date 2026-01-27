@@ -135,6 +135,7 @@ func runExplain(w io.Writer, sessionID, commitRef, checkpointID string, noPager,
 }
 
 // runExplainCheckpoint explains a specific checkpoint.
+// Supports both committed checkpoints (by checkpoint ID) and temporary checkpoints (by ~sha prefix).
 func runExplainCheckpoint(w io.Writer, checkpointIDPrefix string, noPager, verbose, full bool) error {
 	repo, err := openRepository()
 	if err != nil {
@@ -143,7 +144,18 @@ func runExplainCheckpoint(w io.Writer, checkpointIDPrefix string, noPager, verbo
 
 	store := checkpoint.NewGitStore(repo)
 
-	// Find checkpoint by prefix
+	// Check if this is a temporary checkpoint (starts with ~)
+	if strings.HasPrefix(checkpointIDPrefix, "~") {
+		shaPrefix := strings.TrimPrefix(checkpointIDPrefix, "~")
+		output, found := explainTemporaryCheckpoint(repo, store, shaPrefix, verbose, full)
+		if !found {
+			return fmt.Errorf("temporary checkpoint not found: %s", checkpointIDPrefix)
+		}
+		outputExplainContent(w, output, noPager)
+		return nil
+	}
+
+	// Find in committed checkpoints by checkpoint ID prefix
 	committed, err := store.ListCommitted(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to list checkpoints: %w", err)
@@ -172,14 +184,96 @@ func runExplainCheckpoint(w io.Writer, checkpointIDPrefix string, noPager, verbo
 
 	// Format and output
 	output := formatCheckpointOutput(result, fullCheckpointID, commitMessage, verbose, full)
+	outputExplainContent(w, output, noPager)
+	return nil
+}
 
-	if noPager {
-		fmt.Fprint(w, output)
-	} else {
-		outputWithPager(w, output)
+// explainTemporaryCheckpoint finds and formats a temporary checkpoint by shadow commit hash prefix.
+// Returns the formatted output and whether the checkpoint was found.
+func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore, shaPrefix string, verbose, full bool) (string, bool) {
+	// Get current HEAD to find shadow branch
+	head, err := repo.Head()
+	if err != nil {
+		return "", false
+	}
+	headShort := head.Hash().String()[:7]
+
+	// List temporary checkpoints on current shadow branch
+	tempCheckpoints, err := store.ListTemporaryCheckpoints(context.Background(), headShort, "", branchCheckpointsLimit)
+	if err != nil {
+		return "", false
 	}
 
-	return nil
+	// Find checkpoint matching the SHA prefix
+	for _, tc := range tempCheckpoints {
+		if strings.HasPrefix(tc.CommitHash.String(), shaPrefix) {
+			// Found it - read metadata from shadow branch commit tree
+			shadowCommit, commitErr := repo.CommitObject(tc.CommitHash)
+			if commitErr != nil {
+				return "", false
+			}
+
+			shadowTree, treeErr := shadowCommit.Tree()
+			if treeErr != nil {
+				return "", false
+			}
+
+			// Read prompts from shadow branch
+			sessionPrompt := strategy.ReadSessionPromptFromTree(shadowTree, tc.MetadataDir)
+
+			// Build output similar to formatCheckpointOutput but for temporary
+			var sb strings.Builder
+			shortID := tc.CommitHash.String()
+			if len(shortID) > checkpointIDDisplayLength-1 {
+				shortID = shortID[:checkpointIDDisplayLength-1]
+			}
+			fmt.Fprintf(&sb, "Checkpoint: ~%s [temporary]\n", shortID)
+			fmt.Fprintf(&sb, "Session: %s\n", tc.SessionID)
+			fmt.Fprintf(&sb, "Created: %s\n", tc.Timestamp.Format("2006-01-02 15:04:05"))
+			sb.WriteString("\n")
+
+			// Intent from prompt
+			intent := "(not available)"
+			if sessionPrompt != "" {
+				lines := strings.Split(sessionPrompt, "\n")
+				if len(lines) > 0 && lines[0] != "" {
+					intent = truncateString(lines[0], maxIntentDisplayLength)
+				}
+			}
+			fmt.Fprintf(&sb, "Intent: %s\n", intent)
+			sb.WriteString("Outcome: (not generated)\n")
+
+			// Verbose: show prompts
+			if verbose || full {
+				sb.WriteString("\n")
+				sb.WriteString("Prompts:\n")
+				if sessionPrompt != "" {
+					sb.WriteString(sessionPrompt)
+					sb.WriteString("\n")
+				} else {
+					sb.WriteString("  (none)\n")
+				}
+			}
+
+			// Full: show transcript
+			if full {
+				// Try to read transcript from shadow branch
+				transcriptPath := tc.MetadataDir + "/full.jsonl"
+				if transcriptFile, fileErr := shadowTree.File(transcriptPath); fileErr == nil {
+					if content, readErr := transcriptFile.Contents(); readErr == nil {
+						sb.WriteString("\n")
+						sb.WriteString("Transcript:\n")
+						sb.WriteString(content)
+						sb.WriteString("\n")
+					}
+				}
+			}
+
+			return sb.String(), true
+		}
+	}
+
+	return "", false
 }
 
 // findCommitMessageForCheckpoint searches git history for a commit with the
@@ -1016,11 +1110,13 @@ func groupByCheckpointID(points []strategy.RewindPoint) []checkpointGroup {
 		// Determine the checkpoint ID to use
 		cpID := point.CheckpointID.String()
 		if cpID == "" {
-			// Fallback to git commit hash for temporary checkpoints without checkpoint ID
+			// Temporary checkpoints use git commit hash with ~ prefix
+			// Use 11 chars so total length with ~ is still 12
 			cpID = point.ID
-			if len(cpID) > checkpointIDDisplayLength {
-				cpID = cpID[:checkpointIDDisplayLength]
+			if len(cpID) > checkpointIDDisplayLength-1 {
+				cpID = cpID[:checkpointIDDisplayLength-1]
 			}
+			cpID = "~" + cpID
 		}
 
 		group, exists := groupMap[cpID]
@@ -1125,16 +1221,17 @@ func formatCheckpointGroup(sb *strings.Builder, group checkpointGroup) {
 }
 
 // hasCodeChanges returns true if the commit has changes to non-metadata files.
-// Returns false if:
-//   - The commit has no parent (first commit on shadow branch, just baseline copy)
-//   - The commit only modified .entire/ metadata files
+// Used by getBranchCheckpoints to filter out metadata-only temporary checkpoints.
+// Returns false only if the commit has a parent AND only modified .entire/ metadata files.
 //
-// This is used to filter out temporary checkpoints that don't represent
-// meaningful code changes (e.g., periodic transcript saves).
+// First commits (no parent) are always considered to have code changes since they
+// capture the working copy state at session start - real uncommitted work.
+//
+// This filters out periodic transcript saves that don't change code.
 func hasCodeChanges(commit *object.Commit) bool {
-	// First commit on shadow branch is a baseline copy, not a meaningful change
+	// First commit on shadow branch captures working copy state - always meaningful
 	if commit.NumParents() == 0 {
-		return false
+		return true
 	}
 
 	parent, err := commit.Parent(0)

@@ -1546,9 +1546,9 @@ func TestGetBranchCheckpoints_OnFeatureBranch(t *testing.T) {
 	}
 }
 
-func TestHasCodeChanges_FirstCommitReturnsFalse(t *testing.T) {
-	// First commit on a shadow branch (no parent) should return false
-	// since it's just a baseline copy, not a meaningful code change
+func TestHasCodeChanges_FirstCommitReturnsTrue(t *testing.T) {
+	// First commit on a shadow branch (no parent) should return true
+	// since it captures the working copy state - real uncommitted work
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
 
@@ -1582,9 +1582,9 @@ func TestHasCodeChanges_FirstCommitReturnsFalse(t *testing.T) {
 		t.Fatalf("failed to get commit object: %v", err)
 	}
 
-	// First commit (no parent) should return false
-	if hasCodeChanges(commit) {
-		t.Error("hasCodeChanges() should return false for first commit (baseline copy)")
+	// First commit (no parent) captures working copy state - should return true
+	if !hasCodeChanges(commit) {
+		t.Error("hasCodeChanges() should return true for first commit (captures working copy)")
 	}
 }
 
