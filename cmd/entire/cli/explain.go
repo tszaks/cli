@@ -938,104 +938,151 @@ const (
 	maxMessageDisplayLength = 80
 	// maxPromptDisplayLength is the maximum length for session prompts before truncation
 	maxPromptDisplayLength = 60
-	// dateGroupFormat is the format for date group headers
-	dateGroupFormat = "2006-01-02"
-	// timeFormat is the format for checkpoint timestamps
-	timeFormat = "15:04"
 	// checkpointIDDisplayLength is the number of characters to show from checkpoint IDs
 	checkpointIDDisplayLength = 12
 )
 
 // formatBranchCheckpoints formats checkpoint information for a branch.
-// Groups checkpoints by date and shows relevant metadata.
+// Groups commits by checkpoint ID and shows the prompt for each checkpoint.
 func formatBranchCheckpoints(branchName string, points []strategy.RewindPoint) string {
 	var sb strings.Builder
 
 	// Branch header
 	fmt.Fprintf(&sb, "Branch: %s\n", branchName)
-	fmt.Fprintf(&sb, "Checkpoints: %d\n", len(points))
 
 	if len(points) == 0 {
+		sb.WriteString("Checkpoints: 0\n")
 		sb.WriteString("\nNo checkpoints found on this branch.\n")
 		sb.WriteString("Checkpoints will appear here after you save changes during a Claude session.\n")
 		return sb.String()
 	}
 
+	// Group by checkpoint ID
+	groups := groupByCheckpointID(points)
+
+	fmt.Fprintf(&sb, "Checkpoints: %d\n", len(groups))
 	sb.WriteString("\n")
 
-	// Group checkpoints by date
-	groups := groupCheckpointsByDate(points)
-
-	// Output each date group
+	// Output each checkpoint group
 	for _, group := range groups {
-		// Date header
-		fmt.Fprintf(&sb, "--- %s ---\n", group.date)
-
-		for _, point := range group.points {
-			formatCheckpointLine(&sb, point)
-		}
+		formatCheckpointGroup(&sb, group)
 		sb.WriteString("\n")
 	}
 
 	return sb.String()
 }
 
-// dateGroup represents a group of checkpoints on the same date.
-type dateGroup struct {
-	date   string
-	points []strategy.RewindPoint
+// checkpointGroup represents a group of commits sharing the same checkpoint ID.
+type checkpointGroup struct {
+	checkpointID string
+	prompt       string
+	isTemporary  bool // true if any commit is not logs-only (can be rewound)
+	isTask       bool // true if this is a task checkpoint
+	commits      []commitEntry
 }
 
-// groupCheckpointsByDate groups rewind points by their date.
-// Points are expected to be sorted by date (most recent first).
-func groupCheckpointsByDate(points []strategy.RewindPoint) []dateGroup {
+// commitEntry represents a single git commit within a checkpoint.
+type commitEntry struct {
+	date    time.Time
+	gitSHA  string // short git SHA
+	message string
+}
+
+// groupByCheckpointID groups rewind points by their checkpoint ID.
+// Returns groups sorted by latest commit timestamp (most recent first).
+func groupByCheckpointID(points []strategy.RewindPoint) []checkpointGroup {
 	if len(points) == 0 {
 		return nil
 	}
 
-	var groups []dateGroup
-	var currentGroup *dateGroup
+	// Build map of checkpoint ID -> group
+	groupMap := make(map[string]*checkpointGroup)
+	var order []string // Track insertion order for stable iteration
 
 	for _, point := range points {
-		dateStr := point.Date.Format(dateGroupFormat)
+		// Determine the checkpoint ID to use
+		cpID := point.CheckpointID.String()
+		if cpID == "" {
+			// Fallback to git commit hash for temporary checkpoints without checkpoint ID
+			cpID = point.ID
+			if len(cpID) > checkpointIDDisplayLength {
+				cpID = cpID[:checkpointIDDisplayLength]
+			}
+		}
 
-		if currentGroup == nil || currentGroup.date != dateStr {
-			// Start a new group
-			groups = append(groups, dateGroup{
-				date:   dateStr,
-				points: []strategy.RewindPoint{point},
-			})
-			currentGroup = &groups[len(groups)-1]
-		} else {
-			// Add to current group
-			currentGroup.points = append(currentGroup.points, point)
+		group, exists := groupMap[cpID]
+		if !exists {
+			group = &checkpointGroup{
+				checkpointID: cpID,
+				prompt:       point.SessionPrompt,
+				isTemporary:  !point.IsLogsOnly,
+				isTask:       point.IsTaskCheckpoint,
+			}
+			groupMap[cpID] = group
+			order = append(order, cpID)
+		}
+
+		// Short git SHA (7 chars)
+		gitSHA := point.ID
+		if len(gitSHA) > 7 {
+			gitSHA = gitSHA[:7]
+		}
+
+		group.commits = append(group.commits, commitEntry{
+			date:    point.Date,
+			gitSHA:  gitSHA,
+			message: point.Message,
+		})
+
+		// Update flags - if any commit is temporary, the group is temporary
+		if !point.IsLogsOnly {
+			group.isTemporary = true
 		}
 	}
 
-	return groups
+	// Sort commits within each group by date (most recent first)
+	for _, group := range groupMap {
+		sort.Slice(group.commits, func(i, j int) bool {
+			return group.commits[i].date.After(group.commits[j].date)
+		})
+	}
+
+	// Build result slice in order, then sort by latest commit
+	result := make([]checkpointGroup, 0, len(order))
+	for _, cpID := range order {
+		result = append(result, *groupMap[cpID])
+	}
+
+	// Sort groups by latest commit timestamp (most recent first)
+	sort.Slice(result, func(i, j int) bool {
+		// Each group's commits are already sorted, so first commit is latest
+		if len(result[i].commits) == 0 {
+			return false
+		}
+		if len(result[j].commits) == 0 {
+			return true
+		}
+		return result[i].commits[0].date.After(result[j].commits[0].date)
+	})
+
+	return result
 }
 
-// formatCheckpointLine formats a single checkpoint line for display.
-func formatCheckpointLine(sb *strings.Builder, point strategy.RewindPoint) {
-	// Time
-	timeStr := point.Date.Format(timeFormat)
-
+// formatCheckpointGroup formats a single checkpoint group for display.
+func formatCheckpointGroup(sb *strings.Builder, group checkpointGroup) {
 	// Checkpoint ID (truncated for display)
-	checkpointID := point.CheckpointID.String()
-	if len(checkpointID) > checkpointIDDisplayLength {
-		checkpointID = checkpointID[:checkpointIDDisplayLength]
-	}
-	if checkpointID == "" && len(point.ID) > checkpointIDDisplayLength {
-		checkpointID = point.ID[:checkpointIDDisplayLength]
+	cpID := group.checkpointID
+	if len(cpID) > checkpointIDDisplayLength {
+		cpID = cpID[:checkpointIDDisplayLength]
 	}
 
 	// Build status indicators
 	var indicators []string
-	if point.IsTaskCheckpoint {
-		indicators = append(indicators, "[Task]")
+	if group.isTask {
+		indicators = append(indicators, "[task]")
 	}
-	if point.IsLogsOnly {
-		indicators = append(indicators, "[committed]")
+	if group.isTemporary {
+		indicators = append(indicators, "[temporary]")
 	}
 
 	indicatorStr := ""
@@ -1043,16 +1090,24 @@ func formatCheckpointLine(sb *strings.Builder, point strategy.RewindPoint) {
 		indicatorStr = " " + strings.Join(indicators, " ")
 	}
 
-	// Message (truncated if needed)
-	message := truncateString(point.Message, maxMessageDisplayLength)
+	// Prompt (truncated)
+	var promptStr string
+	if group.prompt == "" {
+		promptStr = "(no prompt)"
+	} else {
+		// Quote actual prompts
+		promptStr = fmt.Sprintf("%q", truncateString(group.prompt, maxPromptDisplayLength))
+	}
 
-	// Format the line
-	fmt.Fprintf(sb, "  %s [%s]%s %s\n", timeStr, checkpointID, indicatorStr, message)
+	// Checkpoint header: [checkpoint_id] [indicators] prompt
+	fmt.Fprintf(sb, "[%s]%s %s\n", cpID, indicatorStr, promptStr)
 
-	// Add session prompt if available (on a second line, indented)
-	if point.SessionPrompt != "" {
-		prompt := truncateString(point.SessionPrompt, maxPromptDisplayLength)
-		fmt.Fprintf(sb, "         Prompt: %s\n", prompt)
+	// List commits under this checkpoint
+	for _, commit := range group.commits {
+		// Format: "  MM-DD HH:MM (git_sha) message"
+		dateTimeStr := commit.date.Format("01-02 15:04")
+		message := truncateString(commit.message, maxMessageDisplayLength)
+		fmt.Fprintf(sb, "  %s (%s) %s\n", dateTimeStr, commit.gitSHA, message)
 	}
 }
 

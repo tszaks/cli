@@ -1079,7 +1079,7 @@ func TestFormatBranchCheckpoints_BasicOutput(t *testing.T) {
 	}
 }
 
-func TestFormatBranchCheckpoints_GroupedByDate(t *testing.T) {
+func TestFormatBranchCheckpoints_GroupedByCheckpointID(t *testing.T) {
 	// Create checkpoints spanning multiple days
 	today := time.Date(2026, 1, 22, 10, 0, 0, 0, time.UTC)
 	yesterday := time.Date(2026, 1, 21, 14, 0, 0, 0, time.UTC)
@@ -1113,17 +1113,25 @@ func TestFormatBranchCheckpoints_GroupedByDate(t *testing.T) {
 
 	output := formatBranchCheckpoints("main", points)
 
-	// Should group by date - check for date headers
-	if !strings.Contains(output, "2026-01-22") {
-		t.Errorf("expected today's date header in output, got:\n%s", output)
+	// Should group by checkpoint ID - check for checkpoint headers
+	if !strings.Contains(output, "[chk111111111]") {
+		t.Errorf("expected checkpoint ID header in output, got:\n%s", output)
 	}
-	if !strings.Contains(output, "2026-01-21") {
-		t.Errorf("expected yesterday's date header in output, got:\n%s", output)
+	if !strings.Contains(output, "[chk333333333]") {
+		t.Errorf("expected checkpoint ID header in output, got:\n%s", output)
 	}
 
-	// Today's checkpoints should appear before yesterday's in the output
-	todayIdx := strings.Index(output, "2026-01-22")
-	yesterdayIdx := strings.Index(output, "2026-01-21")
+	// Dates should appear inline with commits (format MM-DD)
+	if !strings.Contains(output, "01-22") {
+		t.Errorf("expected today's date inline with commits, got:\n%s", output)
+	}
+	if !strings.Contains(output, "01-21") {
+		t.Errorf("expected yesterday's date inline with commits, got:\n%s", output)
+	}
+
+	// Today's checkpoints should appear before yesterday's (sorted by latest timestamp)
+	todayIdx := strings.Index(output, "chk111111111")
+	yesterdayIdx := strings.Index(output, "chk333333333")
 	if todayIdx == -1 || yesterdayIdx == -1 || todayIdx > yesterdayIdx {
 		t.Errorf("expected today's checkpoints before yesterday's, got:\n%s", output)
 	}
@@ -1164,7 +1172,7 @@ func TestFormatBranchCheckpoints_ShowsSessionInfo(t *testing.T) {
 	}
 }
 
-func TestFormatBranchCheckpoints_ShowsLogsOnlyIndicator(t *testing.T) {
+func TestFormatBranchCheckpoints_ShowsTemporaryIndicator(t *testing.T) {
 	now := time.Now()
 	points := []strategy.RewindPoint{
 		{
@@ -1172,7 +1180,7 @@ func TestFormatBranchCheckpoints_ShowsLogsOnlyIndicator(t *testing.T) {
 			Message:      "Committed checkpoint",
 			Date:         now,
 			CheckpointID: "chk123456789",
-			IsLogsOnly:   true,
+			IsLogsOnly:   true, // Committed = logs only, no indicator shown
 			SessionID:    "2026-01-22-session-1",
 		},
 		{
@@ -1180,17 +1188,25 @@ func TestFormatBranchCheckpoints_ShowsLogsOnlyIndicator(t *testing.T) {
 			Message:      "Active checkpoint",
 			Date:         now.Add(-time.Hour),
 			CheckpointID: "chk987654321",
-			IsLogsOnly:   false,
+			IsLogsOnly:   false, // Temporary = can be rewound, shows [temporary]
 			SessionID:    "2026-01-22-session-1",
 		},
 	}
 
 	output := formatBranchCheckpoints("main", points)
 
-	// Should indicate committed checkpoints
-	// The exact wording can vary but should distinguish them
-	if !strings.Contains(output, "committed") && !strings.Contains(output, "logs") {
-		t.Errorf("expected logs-only/committed indicator for first checkpoint, got:\n%s", output)
+	// Should indicate temporary (non-committed) checkpoints with [temporary]
+	if !strings.Contains(output, "[temporary]") {
+		t.Errorf("expected [temporary] indicator for non-committed checkpoint, got:\n%s", output)
+	}
+
+	// Committed checkpoints should NOT have [temporary] indicator
+	// Find the line with the committed checkpoint and verify it doesn't have [temporary]
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "chk123456789") && strings.Contains(line, "[temporary]") {
+			t.Errorf("committed checkpoint should not have [temporary] indicator, got:\n%s", output)
+		}
 	}
 }
 
