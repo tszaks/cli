@@ -120,18 +120,18 @@ func newDisableCmd() *cobra.Command {
 }
 
 func newStatusCmd() *cobra.Command {
-	var long bool
+	var detailed bool
 
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show Entire status",
 		Long:  "Show whether Entire is currently enabled or disabled",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runStatus(cmd.OutOrStdout(), long)
+			return runStatus(cmd.OutOrStdout(), detailed)
 		},
 	}
 
-	cmd.Flags().BoolVar(&long, "long", false, "Show detailed status for each settings file")
+	cmd.Flags().BoolVar(&detailed, "detailed", false, "Show detailed status for each settings file")
 
 	return cmd
 }
@@ -445,7 +445,7 @@ func runDisable(w io.Writer, useProjectSettings bool) error {
 	return nil
 }
 
-func runStatus(w io.Writer, long bool) error {
+func runStatus(w io.Writer, detailed bool) error {
 	// Check if we're in a git repository
 	if _, repoErr := paths.RepoRoot(); repoErr != nil {
 		fmt.Fprintln(w, "✕ not a git repository")
@@ -479,8 +479,8 @@ func runStatus(w io.Writer, long bool) error {
 		return nil
 	}
 
-	if long {
-		return runStatusLong(w, settingsPath, localSettingsPath, projectExists, localExists)
+	if detailed {
+		return runStatusDetailed(w, settingsPath, localSettingsPath, projectExists, localExists)
 	}
 
 	// Short output: just show the effective/merged state
@@ -495,7 +495,7 @@ func runStatus(w io.Writer, long bool) error {
 }
 
 // runStatusLong shows the effective status plus detailed status for each settings file.
-func runStatusLong(w io.Writer, settingsPath, localSettingsPath string, projectExists, localExists bool) error {
+func runStatusDetailed(w io.Writer, settingsPath, localSettingsPath string, projectExists, localExists bool) error {
 	// First show the effective/merged status
 	settings, err := LoadEntireSettings()
 	if err != nil {
