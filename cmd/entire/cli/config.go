@@ -236,7 +236,7 @@ func loadSettingsFromFile(filePath string) (*EntireSettings, error) {
 		if os.IsNotExist(err) {
 			return settings, nil
 		}
-		return nil, fmt.Errorf("reading settings file: %w", err)
+		return nil, fmt.Errorf("%w", err)
 	}
 
 	if err := json.Unmarshal(data, settings); err != nil {
