@@ -94,7 +94,7 @@ Only one of --session, --commit, or --checkpoint can be specified at a time.`,
 
 	cmd.Flags().StringVar(&sessionFlag, "session", "", "Explain a specific session (ID or prefix)")
 	cmd.Flags().StringVar(&commitFlag, "commit", "", "Explain a specific commit (SHA or ref)")
-	cmd.Flags().StringVar(&checkpointFlag, "checkpoint", "", "Explain a specific checkpoint (ID or prefix)")
+	cmd.Flags().StringVarP(&checkpointFlag, "checkpoint", "c", "", "Explain a specific checkpoint (ID or prefix)")
 	cmd.Flags().BoolVar(&noPagerFlag, "no-pager", false, "Disable pager output")
 	cmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "Show prompts, files, and session IDs")
 	cmd.Flags().BoolVar(&fullFlag, "full", false, "Show complete transcript")
