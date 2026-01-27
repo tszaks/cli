@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -313,10 +315,190 @@ func runExplainDefault(w io.Writer, noPager bool) error {
 	return runExplainBranchDefault(w, noPager)
 }
 
-// Default limit for checkpoint listing in branch view
-const defaultCheckpointLimit = 50
+// branchCheckpointsLimit is the max checkpoints to show in branch view
+const branchCheckpointsLimit = 100
+
+// commitScanLimit is how far back to scan git history for checkpoints
+const commitScanLimit = 500
+
+// consecutiveMainLimit stops scanning after this many consecutive commits on main
+// (indicates we've likely exhausted feature branch commits)
+const consecutiveMainLimit = 100
+
+// errStopIteration is used to stop commit iteration early
+var errStopIteration = errors.New("stop iteration")
+
+// getBranchCheckpoints returns checkpoints relevant to the current branch.
+// This is strategy-agnostic - it queries checkpoints directly from the checkpoint store.
+//
+// Behavior:
+//   - On feature branches: only show checkpoints unique to this branch (not in main)
+//   - On default branch (main/master): show all checkpoints in history (up to limit)
+//   - Includes both committed checkpoints (entire/sessions) and temporary checkpoints (shadow branches)
+func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoint, error) {
+	store := checkpoint.NewGitStore(repo)
+
+	// Get all committed checkpoints for lookup
+	committedInfos, err := store.ListCommitted(context.Background())
+	if err != nil {
+		committedInfos = nil // Continue without committed checkpoints
+	}
+
+	// Build map of checkpoint ID -> committed info
+	committedByID := make(map[id.CheckpointID]checkpoint.CommittedInfo)
+	for _, info := range committedInfos {
+		if !info.CheckpointID.IsEmpty() {
+			committedByID[info.CheckpointID] = info
+		}
+	}
+
+	head, err := repo.Head()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HEAD: %w", err)
+	}
+
+	// Check if we're on the default branch
+	isOnDefault, _, _ := IsOnDefaultBranch() //nolint:errcheck // Best-effort, defaults to false
+	var mainBranchHash plumbing.Hash
+	if !isOnDefault {
+		mainBranchHash = strategy.GetMainBranchHash(repo)
+	}
+
+	// Walk git history and collect checkpoints
+	iter, err := repo.Log(&git.LogOptions{
+		From:  head.Hash(),
+		Order: git.LogOrderCommitterTime,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get commit log: %w", err)
+	}
+
+	var points []strategy.RewindPoint
+	count := 0
+	consecutiveMainCount := 0
+
+	err = iter.ForEach(func(c *object.Commit) error {
+		if count >= commitScanLimit {
+			return errStopIteration
+		}
+		count++
+
+		// On feature branches, skip commits that are reachable from main
+		// (but continue scanning - there may be more feature branch commits)
+		if mainBranchHash != plumbing.ZeroHash {
+			if isAncestorOf(repo, c.Hash, mainBranchHash) {
+				consecutiveMainCount++
+				if consecutiveMainCount >= consecutiveMainLimit {
+					return errStopIteration // Likely exhausted feature branch commits
+				}
+				return nil // Skip this commit, continue scanning
+			}
+			consecutiveMainCount = 0 // Reset on feature branch commit
+		}
+
+		// Extract checkpoint ID from Entire-Checkpoint trailer
+		cpID, found := trailers.ParseCheckpoint(c.Message)
+		if !found {
+			return nil // No checkpoint trailer, continue
+		}
+
+		// Look up checkpoint info
+		cpInfo, found := committedByID[cpID]
+		if !found {
+			return nil // Checkpoint not in store, continue
+		}
+
+		// Create rewind point from committed info
+		message := strings.Split(c.Message, "\n")[0]
+		point := strategy.RewindPoint{
+			ID:           c.Hash.String(),
+			Message:      message,
+			Date:         c.Author.When,
+			IsLogsOnly:   true, // Committed checkpoints are logs-only
+			CheckpointID: cpID,
+			SessionID:    cpInfo.SessionID,
+		}
+
+		// Read session prompt from metadata branch (best-effort)
+		if metadataTree, treeErr := strategy.GetMetadataBranchTree(repo); treeErr == nil && metadataTree != nil {
+			point.SessionPrompt = strategy.ReadSessionPromptFromTree(metadataTree, cpID.Path())
+		}
+
+		points = append(points, point)
+		return nil
+	})
+
+	if err != nil && !errors.Is(err, errStopIteration) {
+		return nil, fmt.Errorf("error iterating commits: %w", err)
+	}
+
+	// Also get temporary checkpoints from shadow branch for current HEAD
+	headShort := head.Hash().String()[:7]
+	tempCheckpoints, _ := store.ListTemporaryCheckpoints(context.Background(), headShort, "", limit) //nolint:errcheck // Best-effort, continue without temp checkpoints
+	for _, tc := range tempCheckpoints {
+		// Read session prompt
+		var sessionPrompt string
+		if metadataTree, treeErr := strategy.GetMetadataBranchTree(repo); treeErr == nil && metadataTree != nil {
+			sessionPrompt = strategy.ReadSessionPromptFromTree(metadataTree, tc.MetadataDir)
+		}
+
+		points = append(points, strategy.RewindPoint{
+			ID:               tc.CommitHash.String(),
+			Message:          tc.Message,
+			MetadataDir:      tc.MetadataDir,
+			Date:             tc.Timestamp,
+			IsTaskCheckpoint: tc.IsTaskCheckpoint,
+			ToolUseID:        tc.ToolUseID,
+			SessionID:        tc.SessionID,
+			SessionPrompt:    sessionPrompt,
+			IsLogsOnly:       false, // Temporary checkpoints can be fully rewound
+		})
+	}
+
+	// Sort by date, most recent first
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].Date.After(points[j].Date)
+	})
+
+	// Apply limit
+	if len(points) > limit {
+		points = points[:limit]
+	}
+
+	return points, nil
+}
+
+// isAncestorOf checks if commit is an ancestor of (or equal to) target.
+// Returns true if target can reach commit by following parent links.
+func isAncestorOf(repo *git.Repository, commit, target plumbing.Hash) bool {
+	if commit == target {
+		return true
+	}
+
+	iter, err := repo.Log(&git.LogOptions{From: target})
+	if err != nil {
+		return false
+	}
+
+	found := false
+	count := 0
+	_ = iter.ForEach(func(c *object.Commit) error { //nolint:errcheck // Best-effort search, errors are non-fatal
+		count++
+		if count > 1000 {
+			return errStopIteration
+		}
+		if c.Hash == commit {
+			found = true
+			return errStopIteration
+		}
+		return nil
+	})
+
+	return found
+}
 
 // runExplainBranchDefault shows all checkpoints on the current branch grouped by date.
+// This is strategy-agnostic - it queries checkpoints directly.
 func runExplainBranchDefault(w io.Writer, noPager bool) error {
 	repo, err := openRepository()
 	if err != nil {
@@ -334,9 +516,8 @@ func runExplainBranchDefault(w io.Writer, noPager bool) error {
 		branchName = "HEAD (" + head.Hash().String()[:7] + ")"
 	}
 
-	// Get rewind points (checkpoints) for this branch
-	strat := GetStrategy()
-	points, err := strat.GetRewindPoints(defaultCheckpointLimit)
+	// Get checkpoints for this branch (strategy-agnostic)
+	points, err := getBranchCheckpoints(repo, branchCheckpointsLimit)
 	if err != nil {
 		// Log error but continue with empty list
 		points = nil

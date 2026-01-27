@@ -15,6 +15,7 @@ import (
 	"entire.io/cli/cmd/entire/cli/strategy"
 	"entire.io/cli/cmd/entire/cli/trailers"
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -1300,4 +1301,189 @@ func TestRunExplainBranchDefault_DetachedHead(t *testing.T) {
 		// We need to handle detached HEAD somehow - either show HEAD or show a message
 		t.Logf("Output for detached HEAD: %s", output)
 	}
+}
+
+func TestIsAncestorOf(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Initialize git repo
+	repo, err := git.PlainInit(tmpDir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	w, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create first commit
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("v1"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if _, err := w.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add test file: %v", err)
+	}
+	commit1, err := w.Commit("first commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("failed to create first commit: %v", err)
+	}
+
+	// Create second commit
+	if err := os.WriteFile(testFile, []byte("v2"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if _, err := w.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add test file: %v", err)
+	}
+	commit2, err := w.Commit("second commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("failed to create second commit: %v", err)
+	}
+
+	t.Run("commit is ancestor of later commit", func(t *testing.T) {
+		// commit1 should be an ancestor of commit2
+		if !isAncestorOf(repo, commit1, commit2) {
+			t.Error("expected commit1 to be ancestor of commit2")
+		}
+	})
+
+	t.Run("commit is not ancestor of earlier commit", func(t *testing.T) {
+		// commit2 should NOT be an ancestor of commit1
+		if isAncestorOf(repo, commit2, commit1) {
+			t.Error("expected commit2 to NOT be ancestor of commit1")
+		}
+	})
+
+	t.Run("commit is ancestor of itself", func(t *testing.T) {
+		// A commit should be considered an ancestor of itself
+		if !isAncestorOf(repo, commit1, commit1) {
+			t.Error("expected commit to be ancestor of itself")
+		}
+	})
+}
+
+func TestGetBranchCheckpoints_OnFeatureBranch(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Initialize git repo
+	repo, err := git.PlainInit(tmpDir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	w, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create initial commit on main
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("initial"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if _, err := w.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add test file: %v", err)
+	}
+	_, err = w.Commit("initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create .entire directory
+	if err := os.MkdirAll(".entire", 0o750); err != nil {
+		t.Fatalf("failed to create .entire dir: %v", err)
+	}
+
+	// Get checkpoints (should be empty, but shouldn't error)
+	points, err := getBranchCheckpoints(repo, 20)
+	if err != nil {
+		t.Fatalf("getBranchCheckpoints() error = %v", err)
+	}
+
+	// Should return empty list (no checkpoints yet)
+	if len(points) != 0 {
+		t.Errorf("expected 0 checkpoints, got %d", len(points))
+	}
+}
+
+func TestGetBranchCheckpoints_FiltersMainCommits(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Initialize git repo
+	repo, err := git.PlainInit(tmpDir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	w, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create initial commit on master (go-git default)
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("initial"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if _, err := w.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add test file: %v", err)
+	}
+	mainCommit, err := w.Commit("main commit with Entire-Checkpoint: abc123def456", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("failed to create main commit: %v", err)
+	}
+
+	// Create feature branch
+	featureBranch := "feature/test"
+	if err := w.Checkout(&git.CheckoutOptions{
+		Hash:   mainCommit,
+		Branch: plumbing.NewBranchReferenceName(featureBranch),
+		Create: true,
+	}); err != nil {
+		t.Fatalf("failed to create feature branch: %v", err)
+	}
+
+	// Create commit on feature branch
+	if err := os.WriteFile(testFile, []byte("feature work"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if _, err := w.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add test file: %v", err)
+	}
+	_, err = w.Commit("feature commit with Entire-Checkpoint: def456ghi789", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("failed to create feature commit: %v", err)
+	}
+
+	// Create .entire directory
+	if err := os.MkdirAll(".entire", 0o750); err != nil {
+		t.Fatalf("failed to create .entire dir: %v", err)
+	}
+
+	// Get checkpoints - should only include feature branch commits, not main
+	// Note: Without actual checkpoint data in entire/sessions, this returns empty
+	// but the important thing is it doesn't error and the filtering logic runs
+	points, err := getBranchCheckpoints(repo, 20)
+	if err != nil {
+		t.Fatalf("getBranchCheckpoints() error = %v", err)
+	}
+
+	// The filtering should have run without error
+	// (we can't fully test without setting up entire/sessions branch with checkpoint data)
+	t.Logf("Got %d checkpoints (expected 0 without checkpoint data)", len(points))
 }

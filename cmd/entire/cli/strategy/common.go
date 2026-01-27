@@ -1257,3 +1257,59 @@ func GetMainBranchHash(repo *git.Repository) plumbing.Hash {
 	}
 	return plumbing.ZeroHash
 }
+
+// GetDefaultBranchName returns the name of the default branch.
+// First checks origin/HEAD, then falls back to checking if main/master exists.
+// Returns empty string if unable to determine.
+// NOTE: Duplicated from cli/git_operations.go - see ENT-129 for consolidation.
+//
+
+func GetDefaultBranchName(repo *git.Repository) string {
+	// Try to get the symbolic reference for origin/HEAD
+	ref, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", "HEAD"), true)
+	if err == nil && ref != nil {
+		target := ref.Target().String()
+		if branchName, found := strings.CutPrefix(target, "refs/remotes/origin/"); found {
+			return branchName
+		}
+	}
+
+	// Fallback: check if origin/main or origin/master exists
+	if _, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", "main"), true); err == nil {
+		return "main"
+	}
+	if _, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", "master"), true); err == nil {
+		return "master"
+	}
+
+	// Final fallback: check local branches
+	if _, err := repo.Reference(plumbing.NewBranchReferenceName("main"), true); err == nil {
+		return "main"
+	}
+	if _, err := repo.Reference(plumbing.NewBranchReferenceName("master"), true); err == nil {
+		return "master"
+	}
+
+	return ""
+}
+
+// IsOnDefaultBranch checks if the repository HEAD is on the default branch.
+// Returns (isOnDefault, currentBranchName).
+// NOTE: Duplicated from cli/git_operations.go - see ENT-129 for consolidation.
+func IsOnDefaultBranch(repo *git.Repository) (bool, string) {
+	currentBranch := GetCurrentBranchName(repo)
+	if currentBranch == "" {
+		return false, ""
+	}
+
+	defaultBranch := GetDefaultBranchName(repo)
+	if defaultBranch == "" {
+		// Can't determine default, check common names
+		if currentBranch == "main" || currentBranch == "master" {
+			return true, currentBranch
+		}
+		return false, currentBranch
+	}
+
+	return currentBranch == defaultBranch, currentBranch
+}
