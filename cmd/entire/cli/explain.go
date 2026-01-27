@@ -62,7 +62,7 @@ func newExplainCmd() *cobra.Command {
 	var commitFlag string
 	var checkpointFlag string
 	var noPagerFlag bool
-	var verboseFlag bool
+	var shortFlag bool
 	var fullFlag bool
 
 	cmd := &cobra.Command{
@@ -77,8 +77,8 @@ By default, explains the current session. Use flags to explain a specific
 session, commit, or checkpoint.
 
 Output verbosity levels (for --checkpoint):
-  Default:   Summary view (ID, session, timestamp, tokens, intent)
-  --verbose: + prompts and files touched
+  Default:   Detailed view (ID, session, timestamp, tokens, intent, prompts, files)
+  --short:   Summary only (ID, session, timestamp, tokens, intent)
   --full:    + complete transcript
 
 Only one of --session, --commit, or --checkpoint can be specified at a time.`,
@@ -88,7 +88,9 @@ Only one of --session, --commit, or --checkpoint can be specified at a time.`,
 				return nil
 			}
 
-			return runExplain(cmd.OutOrStdout(), sessionFlag, commitFlag, checkpointFlag, noPagerFlag, verboseFlag, fullFlag)
+			// Convert short flag to verbose (verbose = !short)
+			verbose := !shortFlag
+			return runExplain(cmd.OutOrStdout(), sessionFlag, commitFlag, checkpointFlag, noPagerFlag, verbose, fullFlag)
 		},
 	}
 
@@ -96,7 +98,7 @@ Only one of --session, --commit, or --checkpoint can be specified at a time.`,
 	cmd.Flags().StringVar(&commitFlag, "commit", "", "Explain a specific commit (SHA or ref)")
 	cmd.Flags().StringVarP(&checkpointFlag, "checkpoint", "c", "", "Explain a specific checkpoint (ID or prefix)")
 	cmd.Flags().BoolVar(&noPagerFlag, "no-pager", false, "Disable pager output")
-	cmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "Show prompts, files, and session IDs")
+	cmd.Flags().BoolVarP(&shortFlag, "short", "s", false, "Show summary only (omit prompts and files)")
 	cmd.Flags().BoolVar(&fullFlag, "full", false, "Show complete transcript")
 
 	return cmd

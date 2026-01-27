@@ -813,17 +813,17 @@ func TestExplainCmd_HasCheckpointFlag(t *testing.T) {
 	}
 }
 
-func TestExplainCmd_HasVerboseFlag(t *testing.T) {
+func TestExplainCmd_HasShortFlag(t *testing.T) {
 	cmd := newExplainCmd()
 
-	flag := cmd.Flags().Lookup("verbose")
+	flag := cmd.Flags().Lookup("short")
 	if flag == nil {
-		t.Fatal("expected --verbose flag to exist")
+		t.Fatal("expected --short flag to exist")
 	}
 
-	// Should have -v shorthand
-	if flag.Shorthand != "v" {
-		t.Errorf("expected -v shorthand, got %q", flag.Shorthand)
+	// Should have -s shorthand
+	if flag.Shorthand != "s" {
+		t.Errorf("expected -s shorthand, got %q", flag.Shorthand)
 	}
 }
 
