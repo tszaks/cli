@@ -875,6 +875,14 @@ func handlePostTask() error {
 	relModifiedFiles := FilterAndNormalizePaths(modifiedFiles, repoRoot)
 	relNewFiles := FilterAndNormalizePaths(newFiles, repoRoot)
 
+	// If no file changes, skip creating a checkpoint
+	if len(relModifiedFiles) == 0 && len(relNewFiles) == 0 {
+		fmt.Fprintf(os.Stderr, "[entire] No file changes detected, skipping task checkpoint\n")
+		// Cleanup pre-task state (ignore error - cleanup is best-effort)
+		_ = CleanupPreTaskState(input.ToolUseID) //nolint:errcheck // best-effort cleanup
+		return nil
+	}
+
 	// Find checkpoint UUID from main transcript (best-effort, ignore errors)
 	transcript, _ := parseTranscript(input.TranscriptPath) //nolint:errcheck // best-effort extraction
 	checkpointUUID, _ := FindCheckpointUUID(transcript, input.ToolUseID)
