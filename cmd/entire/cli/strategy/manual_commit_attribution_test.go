@@ -858,11 +858,11 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 
 	t.Run("one file modified", func(t *testing.T) {
 		tree1 := createTree(map[string]string{
-			testFile1:     "original",
+			testFile1:      "original",
 			"unchanged.go": "stays same",
 		})
 		tree2 := createTree(map[string]string{
-			testFile1:     "modified",
+			testFile1:      "modified",
 			"unchanged.go": "stays same",
 		})
 
