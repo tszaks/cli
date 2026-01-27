@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/utils/binary"
 )
 
 // askConfirmTTY prompts the user for a yes/no confirmation via /dev/tty.
@@ -1014,9 +1016,14 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 		fullPath := filepath.Join(worktreeRoot, filePath)
 		var content string
 		if data, err := os.ReadFile(fullPath); err == nil { //nolint:gosec // filePath is from git worktree status
-			content = string(data)
+			// Use git's binary detection algorithm (matches getFileContent behavior).
+			// Binary files are excluded from line-based attribution calculations.
+			isBinary, binErr := binary.IsBinary(bytes.NewReader(data))
+			if binErr == nil && !isBinary {
+				content = string(data)
+			}
 		}
-		// else: file deleted or unreadable, content remains empty string
+		// else: file deleted, unreadable, or binary - content remains empty string
 
 		changedFiles[filePath] = content
 	}

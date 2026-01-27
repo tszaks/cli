@@ -61,11 +61,13 @@ func getAllChangedFilesBetweenTrees(tree1, tree2 *object.Tree) []string {
 // getFileContent retrieves the content of a file from a tree.
 // Returns empty string if the file doesn't exist, can't be read, or is a binary file.
 //
-// Binary files (files containing null bytes) are silently excluded from attribution
-// calculations because line-based diffing doesn't apply to binary content. This means
-// binary files (images, compiled binaries, etc.) won't appear in attribution metrics
-// even if they were added or modified. This is intentional - attribution measures code
-// contributions via line counting, which only makes sense for text files.
+// Binary files are silently excluded from attribution calculations because line-based
+// diffing doesn't apply to binary content. This means binary files (images, compiled
+// binaries, etc.) won't appear in attribution metrics even if they were added or modified.
+// This is intentional - attribution measures code contributions via line counting,
+// which only makes sense for text files.
+//
+// Uses go-git's IsBinary() which implements git's binary detection algorithm.
 //
 // TODO: Consider tracking binary file counts separately (e.g., BinaryFilesChanged field)
 // to provide visibility into non-text file modifications.
@@ -79,15 +81,14 @@ func getFileContent(tree *object.Tree, path string) string {
 		return ""
 	}
 
-	content, err := file.Contents()
-	if err != nil {
+	// Use git's binary detection algorithm
+	isBinary, err := file.IsBinary()
+	if err != nil || isBinary {
 		return ""
 	}
 
-	// Skip binary files (contain null bytes).
-	// Binary files are excluded from line-based attribution calculations.
-	// This is intentional - line counting only applies to text files.
-	if strings.Contains(content, "\x00") {
+	content, err := file.Contents()
+	if err != nil {
 		return ""
 	}
 
@@ -363,9 +364,8 @@ func CalculatePromptAttribution(
 		result.UserLinesAdded += userAdded
 		result.UserLinesRemoved += userRemoved
 
-		// Track per-file user additions for accurate modification tracking
-		// Track per-file user additions for accurate modification tracking
-		// This enables distinguishing user self-modifications from agent modifications
+		// Track per-file user additions for accurate modification tracking.
+		// This enables distinguishing user self-modifications from agent modifications.
 		if userAdded > 0 {
 			result.UserAddedPerFile[filePath] = userAdded
 		}
