@@ -85,6 +85,7 @@ func sessionStateToStrategy(state *session.State) *SessionState {
 			UserLinesRemoved:  pa.UserLinesRemoved,
 			AgentLinesAdded:   pa.AgentLinesAdded,
 			AgentLinesRemoved: pa.AgentLinesRemoved,
+			UserAddedPerFile:  pa.UserAddedPerFile,
 		})
 	}
 	// Convert PendingPromptAttribution
@@ -95,6 +96,7 @@ func sessionStateToStrategy(state *session.State) *SessionState {
 			UserLinesRemoved:  state.PendingPromptAttribution.UserLinesRemoved,
 			AgentLinesAdded:   state.PendingPromptAttribution.AgentLinesAdded,
 			AgentLinesRemoved: state.PendingPromptAttribution.AgentLinesRemoved,
+			UserAddedPerFile:  state.PendingPromptAttribution.UserAddedPerFile,
 		}
 	}
 	return result
@@ -130,6 +132,7 @@ func sessionStateFromStrategy(state *SessionState) *session.State {
 			UserLinesRemoved:  pa.UserLinesRemoved,
 			AgentLinesAdded:   pa.AgentLinesAdded,
 			AgentLinesRemoved: pa.AgentLinesRemoved,
+			UserAddedPerFile:  pa.UserAddedPerFile,
 		})
 	}
 	// Convert PendingPromptAttribution
@@ -140,6 +143,7 @@ func sessionStateFromStrategy(state *SessionState) *session.State {
 			UserLinesRemoved:  state.PendingPromptAttribution.UserLinesRemoved,
 			AgentLinesAdded:   state.PendingPromptAttribution.AgentLinesAdded,
 			AgentLinesRemoved: state.PendingPromptAttribution.AgentLinesRemoved,
+			UserAddedPerFile:  state.PendingPromptAttribution.UserAddedPerFile,
 		}
 	}
 	return result

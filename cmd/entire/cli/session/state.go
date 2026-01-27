@@ -96,6 +96,11 @@ type PromptAttribution struct {
 	// AgentLinesRemoved is total agent lines removed so far (base → last checkpoint).
 	// Always 0 for checkpoint 1 since there's no previous checkpoint to measure against.
 	AgentLinesRemoved int `json:"agent_lines_removed"`
+
+	// UserAddedPerFile tracks per-file user additions for accurate modification tracking.
+	// This enables distinguishing user self-modifications from agent modifications.
+	// See docs/architecture/attribution.md for details.
+	UserAddedPerFile map[string]int `json:"user_added_per_file,omitempty"`
 }
 
 // StateStore provides low-level operations for managing session state files.
