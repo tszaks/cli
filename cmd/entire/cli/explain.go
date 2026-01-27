@@ -135,7 +135,8 @@ func runExplain(w io.Writer, sessionID, commitRef, checkpointID string, noPager,
 }
 
 // runExplainCheckpoint explains a specific checkpoint.
-// Supports both committed checkpoints (by checkpoint ID) and temporary checkpoints (by ~sha prefix).
+// Supports both committed checkpoints (by checkpoint ID) and temporary checkpoints (by git SHA).
+// First tries to match committed checkpoints, then falls back to temporary checkpoints.
 func runExplainCheckpoint(w io.Writer, checkpointIDPrefix string, noPager, verbose, full bool) error {
 	repo, err := openRepository()
 	if err != nil {
@@ -144,18 +145,7 @@ func runExplainCheckpoint(w io.Writer, checkpointIDPrefix string, noPager, verbo
 
 	store := checkpoint.NewGitStore(repo)
 
-	// Check if this is a temporary checkpoint (starts with ~)
-	if strings.HasPrefix(checkpointIDPrefix, "~") {
-		shaPrefix := strings.TrimPrefix(checkpointIDPrefix, "~")
-		output, found := explainTemporaryCheckpoint(repo, store, shaPrefix, verbose, full)
-		if !found {
-			return fmt.Errorf("temporary checkpoint not found: %s", checkpointIDPrefix)
-		}
-		outputExplainContent(w, output, noPager)
-		return nil
-	}
-
-	// Find in committed checkpoints by checkpoint ID prefix
+	// First, try to find in committed checkpoints by checkpoint ID prefix
 	committed, err := store.ListCommitted(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to list checkpoints: %w", err)
@@ -169,7 +159,13 @@ func runExplainCheckpoint(w io.Writer, checkpointIDPrefix string, noPager, verbo
 		}
 	}
 
+	// If not found in committed, try temporary checkpoints by git SHA
 	if fullCheckpointID.IsEmpty() {
+		output, found := explainTemporaryCheckpoint(repo, store, checkpointIDPrefix, verbose, full)
+		if found {
+			outputExplainContent(w, output, noPager)
+			return nil
+		}
 		return fmt.Errorf("checkpoint not found: %s", checkpointIDPrefix)
 	}
 
@@ -223,11 +219,8 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 
 			// Build output similar to formatCheckpointOutput but for temporary
 			var sb strings.Builder
-			shortID := tc.CommitHash.String()
-			if len(shortID) > checkpointIDDisplayLength-1 {
-				shortID = shortID[:checkpointIDDisplayLength-1]
-			}
-			fmt.Fprintf(&sb, "Checkpoint: ~%s [temporary]\n", shortID)
+			shortID := tc.CommitHash.String()[:7]
+			fmt.Fprintf(&sb, "Checkpoint: %s [temporary]\n", shortID)
 			fmt.Fprintf(&sb, "Session: %s\n", tc.SessionID)
 			fmt.Fprintf(&sb, "Created: %s\n", tc.Timestamp.Format("2006-01-02 15:04:05"))
 			sb.WriteString("\n")
@@ -1110,13 +1103,8 @@ func groupByCheckpointID(points []strategy.RewindPoint) []checkpointGroup {
 		// Determine the checkpoint ID to use
 		cpID := point.CheckpointID.String()
 		if cpID == "" {
-			// Temporary checkpoints use git commit hash with ~ prefix
-			// Use 11 chars so total length with ~ is still 12
-			cpID = point.ID
-			if len(cpID) > checkpointIDDisplayLength-1 {
-				cpID = cpID[:checkpointIDDisplayLength-1]
-			}
-			cpID = "~" + cpID
+			// All temporary checkpoints group together under "temporary"
+			cpID = "temporary"
 		}
 
 		group, exists := groupMap[cpID]
@@ -1186,11 +1174,12 @@ func formatCheckpointGroup(sb *strings.Builder, group checkpointGroup) {
 	}
 
 	// Build status indicators
+	// Skip [temporary] indicator when cpID is already "temporary" to avoid redundancy
 	var indicators []string
 	if group.isTask {
 		indicators = append(indicators, "[task]")
 	}
-	if group.isTemporary {
+	if group.isTemporary && cpID != "temporary" {
 		indicators = append(indicators, "[temporary]")
 	}
 
