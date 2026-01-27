@@ -119,7 +119,6 @@ Use --uninstall to completely remove Entire from this repository, including:
   - Git hooks (prepare-commit-msg, commit-msg, post-commit, pre-push)
   - Session state files (.git/entire-sessions/)
   - Shadow branches (entire/<hash>)
-  - Metadata branch (entire/sessions)
   - Agent hooks (Claude Code, Gemini CLI)`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if uninstall {
@@ -994,7 +993,6 @@ func runUninstall(w, errW io.Writer, force bool) error {
 	// Gather counts for display
 	sessionStateCount := countSessionStates()
 	shadowBranchCount := countShadowBranches()
-	metadataBranchExists := checkMetadataBranchExists()
 	gitHooksInstalled := strategy.IsGitHookInstalled()
 	claudeHooksInstalled := checkClaudeCodeHooksInstalled()
 	geminiHooksInstalled := checkGeminiCLIHooksInstalled()
@@ -1002,8 +1000,7 @@ func runUninstall(w, errW io.Writer, force bool) error {
 
 	// Check if there's anything to uninstall
 	if !entireDirExists && !gitHooksInstalled && sessionStateCount == 0 &&
-		shadowBranchCount == 0 && !metadataBranchExists &&
-		!claudeHooksInstalled && !geminiHooksInstalled {
+		shadowBranchCount == 0 && !claudeHooksInstalled && !geminiHooksInstalled {
 		fmt.Fprintln(w, "Entire is not installed in this repository.")
 		return nil
 	}
@@ -1022,9 +1019,6 @@ func runUninstall(w, errW io.Writer, force bool) error {
 		}
 		if shadowBranchCount > 0 {
 			fmt.Fprintf(w, "  - Shadow branches (%d)\n", shadowBranchCount)
-		}
-		if metadataBranchExists {
-			fmt.Fprintln(w, "  - entire/sessions branch (session history)")
 		}
 		switch {
 		case claudeHooksInstalled && geminiHooksInstalled:
@@ -1095,14 +1089,6 @@ func runUninstall(w, errW io.Writer, force bool) error {
 		fmt.Fprintf(w, "  Removed %d shadow branches\n", branchesRemoved)
 	}
 
-	// 6. Remove metadata branch
-	metadataRemoved, err := strategy.DeleteMetadataBranch()
-	if err != nil {
-		fmt.Fprintf(errW, "Warning: failed to remove entire/sessions branch: %v\n", err)
-	} else if metadataRemoved {
-		fmt.Fprintln(w, "  Removed entire/sessions branch")
-	}
-
 	fmt.Fprintln(w, "\nEntire CLI uninstalled successfully.")
 	return nil
 }
@@ -1127,11 +1113,6 @@ func countShadowBranches() int {
 		return 0
 	}
 	return len(branches)
-}
-
-// checkMetadataBranchExists checks if the entire/sessions branch exists.
-func checkMetadataBranchExists() bool {
-	return strategy.MetadataBranchExists()
 }
 
 // checkClaudeCodeHooksInstalled checks if Claude Code hooks are installed.

@@ -706,15 +706,6 @@ func TestCountShadowBranches(t *testing.T) {
 	}
 }
 
-func TestCheckMetadataBranchExists(t *testing.T) {
-	setupTestRepo(t)
-
-	// Should be false when branch doesn't exist
-	if checkMetadataBranchExists() {
-		t.Error("checkMetadataBranchExists() should return false when branch doesn't exist")
-	}
-}
-
 func TestRemoveEntireDirectory(t *testing.T) {
 	setupTestDir(t)
 
