@@ -90,7 +90,7 @@ rm -f "$config" "$json_out"
 """
 
 [tasks."dup:staged"]
-description = "Check duplication in staged files only"
+description = "Check duplication in staged files only (threshold 75, same as CI)"
 run = """
 staged=$(git diff --cached --name-only --diff-filter=ACM | grep '\\.go$' || true)
 if [ -z "$staged" ]; then
@@ -98,5 +98,5 @@ if [ -z "$staged" ]; then
   exit 0
 fi
 echo "Checking staged files for duplication..."
-golangci-lint run --enable-only dupl --new=false --max-issues-per-linter=0 --max-same-issues=0 $staged
+printf '%s\n' "$staged" | xargs golangci-lint run --enable-only dupl --new=false --max-issues-per-linter=0 --max-same-issues=0
 """
