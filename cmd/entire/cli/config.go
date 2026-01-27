@@ -239,6 +239,29 @@ func SaveEntireSettingsLocal(settings *EntireSettings) error {
 	return saveSettingsToFile(settings, EntireSettingsLocalFile)
 }
 
+// loadSettingsFromFile loads settings from a specific file path.
+// Returns default settings if the file doesn't exist.
+func loadSettingsFromFile(filePath string) (*EntireSettings, error) {
+	settings := &EntireSettings{
+		Strategy: strategy.DefaultStrategyName,
+		Enabled:  true, // Default to enabled
+	}
+
+	data, err := os.ReadFile(filePath) //nolint:gosec // path is from caller
+	if err != nil {
+		if os.IsNotExist(err) {
+			return settings, nil
+		}
+		return nil, fmt.Errorf("reading settings file: %w", err)
+	}
+
+	if err := json.Unmarshal(data, settings); err != nil {
+		return nil, fmt.Errorf("parsing settings file: %w", err)
+	}
+
+	return settings, nil
+}
+
 func saveSettingsToFile(settings *EntireSettings, filePath string) error {
 	// Get absolute path for the file
 	filePathAbs, err := paths.AbsPath(filePath)

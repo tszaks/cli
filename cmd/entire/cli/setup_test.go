@@ -123,12 +123,32 @@ func TestRunStatus_Enabled(t *testing.T) {
 	writeSettings(t, testSettingsEnabled)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout); err != nil {
+	if err := runStatus(&stdout, false); err != nil {
 		t.Fatalf("runStatus() error = %v", err)
 	}
 
-	if !strings.Contains(stdout.String(), "Project, enabled") {
-		t.Errorf("Expected output to show 'Project, enabled', got: %s", stdout.String())
+	if !strings.Contains(stdout.String(), "Enabled") {
+		t.Errorf("Expected output to show 'Enabled', got: %s", stdout.String())
+	}
+}
+
+func TestRunStatus_Enabled_Long(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsEnabled)
+
+	var stdout bytes.Buffer
+	if err := runStatus(&stdout, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	// Should show effective status first
+	if !strings.Contains(output, "Enabled") {
+		t.Errorf("Expected output to show effective 'Enabled', got: %s", output)
+	}
+	// Should show per-file details
+	if !strings.Contains(output, "Project, enabled") {
+		t.Errorf("Expected output to show 'Project, enabled', got: %s", output)
 	}
 }
 
@@ -137,12 +157,32 @@ func TestRunStatus_Disabled(t *testing.T) {
 	writeSettings(t, testSettingsDisabled)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout); err != nil {
+	if err := runStatus(&stdout, false); err != nil {
 		t.Fatalf("runStatus() error = %v", err)
 	}
 
-	if !strings.Contains(stdout.String(), "Project, disabled") {
-		t.Errorf("Expected output to show 'Project, disabled', got: %s", stdout.String())
+	if !strings.Contains(stdout.String(), "Disabled") {
+		t.Errorf("Expected output to show 'Disabled', got: %s", stdout.String())
+	}
+}
+
+func TestRunStatus_Disabled_Long(t *testing.T) {
+	setupTestRepo(t)
+	writeSettings(t, testSettingsDisabled)
+
+	var stdout bytes.Buffer
+	if err := runStatus(&stdout, true); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	// Should show effective status first
+	if !strings.Contains(output, "Disabled") {
+		t.Errorf("Expected output to show effective 'Disabled', got: %s", output)
+	}
+	// Should show per-file details
+	if !strings.Contains(output, "Project, disabled") {
+		t.Errorf("Expected output to show 'Project, disabled', got: %s", output)
 	}
 }
 
@@ -150,7 +190,7 @@ func TestRunStatus_NotSetUp(t *testing.T) {
 	setupTestRepo(t)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout); err != nil {
+	if err := runStatus(&stdout, false); err != nil {
 		t.Fatalf("runStatus() error = %v", err)
 	}
 
@@ -167,7 +207,7 @@ func TestRunStatus_NotGitRepository(t *testing.T) {
 	setupTestDir(t) // No git init
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout); err != nil {
+	if err := runStatus(&stdout, false); err != nil {
 		t.Fatalf("runStatus() error = %v", err)
 	}
 
@@ -503,11 +543,16 @@ func TestRunStatus_LocalSettingsOnly(t *testing.T) {
 	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": true}`)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout); err != nil {
+	if err := runStatus(&stdout, true); err != nil {
 		t.Fatalf("runStatus() error = %v", err)
 	}
 
 	output := stdout.String()
+	// Should show effective status first
+	if !strings.Contains(output, "Enabled (auto-commit)") {
+		t.Errorf("Expected output to show effective 'Enabled (auto-commit)', got: %s", output)
+	}
+	// Should show per-file details
 	if !strings.Contains(output, "Local, enabled") {
 		t.Errorf("Expected output to show 'Local, enabled', got: %s", output)
 	}
@@ -520,19 +565,46 @@ func TestRunStatus_BothProjectAndLocal(t *testing.T) {
 	setupTestRepo(t)
 	// Project: enabled=true, strategy=manual-commit
 	// Local: enabled=false, strategy=auto-commit
-	// Merged: enabled=false (local overrides), strategy=auto-commit (local overrides)
+	// Long mode shows effective status first, then each file separately
 	writeSettings(t, `{"strategy": "manual-commit", "enabled": true}`)
 	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": false}`)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout); err != nil {
+	if err := runStatus(&stdout, true); err != nil {
 		t.Fatalf("runStatus() error = %v", err)
 	}
 
 	output := stdout.String()
-	// Should show merged settings with "Project + Local" source label
-	if !strings.Contains(output, "Project + Local, disabled (auto-commit)") {
-		t.Errorf("Expected output to show 'Project + Local, disabled (auto-commit)', got: %s", output)
+	// Should show effective status first (local overrides project)
+	if !strings.Contains(output, "Disabled (auto-commit)") {
+		t.Errorf("Expected output to show effective 'Disabled (auto-commit)', got: %s", output)
+	}
+	// Should show both settings separately
+	if !strings.Contains(output, "Project, enabled (manual-commit)") {
+		t.Errorf("Expected output to show 'Project, enabled (manual-commit)', got: %s", output)
+	}
+	if !strings.Contains(output, "Local, disabled (auto-commit)") {
+		t.Errorf("Expected output to show 'Local, disabled (auto-commit)', got: %s", output)
+	}
+}
+
+func TestRunStatus_BothProjectAndLocal_Short(t *testing.T) {
+	setupTestRepo(t)
+	// Project: enabled=true, strategy=manual-commit
+	// Local: enabled=false, strategy=auto-commit
+	// Short mode shows merged/effective settings
+	writeSettings(t, `{"strategy": "manual-commit", "enabled": true}`)
+	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": false}`)
+
+	var stdout bytes.Buffer
+	if err := runStatus(&stdout, false); err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+
+	output := stdout.String()
+	// Should show merged/effective state (local overrides project)
+	if !strings.Contains(output, "Disabled (auto-commit)") {
+		t.Errorf("Expected output to show 'Disabled (auto-commit)', got: %s", output)
 	}
 }
 
@@ -541,7 +613,7 @@ func TestRunStatus_ShowsStrategy(t *testing.T) {
 	writeSettings(t, `{"strategy": "auto-commit", "enabled": true}`)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout); err != nil {
+	if err := runStatus(&stdout, false); err != nil {
 		t.Fatalf("runStatus() error = %v", err)
 	}
 
@@ -556,11 +628,16 @@ func TestRunStatus_ShowsManualCommitStrategy(t *testing.T) {
 	writeSettings(t, `{"strategy": "manual-commit", "enabled": false}`)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout); err != nil {
+	if err := runStatus(&stdout, true); err != nil {
 		t.Fatalf("runStatus() error = %v", err)
 	}
 
 	output := stdout.String()
+	// Should show effective status first
+	if !strings.Contains(output, "Disabled (manual-commit)") {
+		t.Errorf("Expected output to show effective 'Disabled (manual-commit)', got: %s", output)
+	}
+	// Should show per-file details
 	if !strings.Contains(output, "Project, disabled (manual-commit)") {
 		t.Errorf("Expected output to show 'Project, disabled (manual-commit)', got: %s", output)
 	}
