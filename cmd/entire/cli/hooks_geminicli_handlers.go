@@ -17,7 +17,6 @@ import (
 	"entire.io/cli/cmd/entire/cli/agent/geminicli"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/session"
 	"entire.io/cli/cmd/entire/cli/strategy"
 )
 
@@ -190,8 +189,8 @@ func handleGeminiSessionStart() error {
 		return errors.New("no session_id in input")
 	}
 
-	// Get or create stable session ID (reuses existing if session resumed across days)
-	entireSessionID := session.GetOrCreateEntireSessionID(input.SessionID)
+	// Use agent session ID directly as entire session ID (identity function)
+	entireSessionID := input.SessionID
 
 	// Write session ID to current_session file
 	if err := paths.WriteCurrentSession(entireSessionID); err != nil {
@@ -627,8 +626,8 @@ func handleGeminiBeforeAgent() error {
 		return errors.New("no session_id in input")
 	}
 
-	// Get or create stable session ID (reuses existing if session resumed across days)
-	entireSessionID := session.GetOrCreateEntireSessionID(input.SessionID)
+	// Use agent session ID directly as entire session ID (identity function)
+	entireSessionID := input.SessionID
 
 	// Check for concurrent sessions before proceeding
 	// This will output a blocking response and exit if there's a conflict (first time only)

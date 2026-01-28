@@ -17,14 +17,14 @@ import (
 	"entire.io/cli/cmd/entire/cli/agent/claudecode"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/session"
 	"entire.io/cli/cmd/entire/cli/sessionid"
 	"entire.io/cli/cmd/entire/cli/strategy"
 	"entire.io/cli/cmd/entire/cli/validation"
 )
 
 // currentSessionIDWithFallback returns the persisted Entire session ID when available.
-// Falls back to deriving from the model session ID for backward compatibility.
+// Falls back to using the model session ID directly (since agent ID = entire ID now).
+// The persisted session is checked for backwards compatibility with legacy date-prefixed IDs.
 func currentSessionIDWithFallback(modelSessionID string) string {
 	entireSessionID, err := paths.ReadCurrentSession()
 	if err != nil {
@@ -44,8 +44,8 @@ func currentSessionIDWithFallback(modelSessionID string) string {
 	if modelSessionID == "" {
 		return ""
 	}
-	// Get or create stable session ID (reuses existing if session resumed across days)
-	return session.GetOrCreateEntireSessionID(modelSessionID)
+	// Use agent session ID directly as entire session ID (identity function)
+	return modelSessionID
 }
 
 // hookInputData contains parsed hook input and session identifiers.
@@ -967,8 +967,8 @@ func handleSessionStart() error {
 		return errors.New("no session_id in input")
 	}
 
-	// Get or create stable session ID (reuses existing if session resumed across days)
-	entireSessionID := session.GetOrCreateEntireSessionID(input.SessionID)
+	// Use agent session ID directly as entire session ID (identity function)
+	entireSessionID := input.SessionID
 
 	// Write session ID to current_session file
 	if err := paths.WriteCurrentSession(entireSessionID); err != nil {
