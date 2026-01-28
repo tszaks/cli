@@ -112,15 +112,13 @@ func TrackCommandDetached(cmd *cobra.Command, strategy, agent string, isEntireEn
 	}
 
 	if payloadJSON, err := json.Marshal(payload); err == nil {
-		_ = spawnDetachedAnalytics(string(payloadJSON))
+		spawnDetachedAnalytics(string(payloadJSON))
 	}
-
 }
 
 // SendEvent processes an event payload in the detached subprocess.
 // This is called by the hidden __send_analytics command.
 func SendEvent(payloadJSON string) {
-
 	var payload EventPayload
 	if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
 		return
@@ -145,6 +143,7 @@ func SendEvent(payloadJSON string) {
 		props.Set(k, v)
 	}
 
+	//nolint:errcheck // Best effort telemetry - don't block on result
 	_ = client.Enqueue(posthog.Capture{
 		DistinctId: payload.DistinctID,
 		Event:      payload.Event,

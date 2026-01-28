@@ -4,7 +4,6 @@ package telemetry
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
@@ -13,10 +12,10 @@ import (
 // spawnDetachedAnalytics spawns a detached subprocess to send analytics.
 // On Unix, this uses process group detachment so the subprocess continues
 // after the parent exits.
-func spawnDetachedAnalytics(payloadJSON string) error {
+func spawnDetachedAnalytics(payloadJSON string) {
 	executable, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("get executable: %w", err)
+		return
 	}
 
 	//nolint:gosec // G204: payloadJSON is controlled internally, not user input
@@ -39,12 +38,10 @@ func spawnDetachedAnalytics(payloadJSON string) error {
 
 	// Start the process (non-blocking)
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start subprocess: %w", err)
+		return
 	}
 
 	// Release the process so it can run independently
 	//nolint:errcheck // Best effort - process should continue regardless
 	_ = cmd.Process.Release()
-
-	return nil
 }
