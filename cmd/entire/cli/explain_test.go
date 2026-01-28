@@ -852,13 +852,40 @@ func TestRunExplain_MutualExclusivityError(t *testing.T) {
 }
 
 func TestRunExplainCheckpoint_NotFound(t *testing.T) {
-	// Skip if no git repo
-	if _, err := openRepository(); err != nil {
-		t.Skip("Skipping: not in a git repository")
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Initialize git repo with an initial commit (required for checkpoint lookup)
+	repo, err := git.PlainInit(tmpDir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	w, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if _, err := w.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add test file: %v", err)
+	}
+	_, err = w.Commit("initial commit", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
 	}
 
 	var buf bytes.Buffer
-	err := runExplainCheckpoint(&buf, "nonexistent123", false, false, false)
+	err = runExplainCheckpoint(&buf, "nonexistent123", false, false, false)
 
 	if err == nil {
 		t.Error("expected error for nonexistent checkpoint")

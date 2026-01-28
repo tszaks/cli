@@ -73,7 +73,7 @@ func newExplainCmd() *cobra.Command {
 Use this command to understand what happened during agent-driven development,
 either for self-review or to understand a teammate's work.
 
-By default, explains the current session. Use flags to explain a specific
+By default, shows checkpoints on the current branch. Use flags to explain a specific
 session, commit, or checkpoint.
 
 Output verbosity levels (for --checkpoint):
@@ -153,22 +153,33 @@ func runExplainCheckpoint(w io.Writer, checkpointIDPrefix string, noPager, verbo
 		return fmt.Errorf("failed to list checkpoints: %w", err)
 	}
 
-	var fullCheckpointID id.CheckpointID
+	// Collect all matching checkpoint IDs to detect ambiguity
+	var matches []id.CheckpointID
 	for _, info := range committed {
 		if strings.HasPrefix(info.CheckpointID.String(), checkpointIDPrefix) {
-			fullCheckpointID = info.CheckpointID
-			break
+			matches = append(matches, info.CheckpointID)
 		}
 	}
 
-	// If not found in committed, try temporary checkpoints by git SHA
-	if fullCheckpointID.IsEmpty() {
+	var fullCheckpointID id.CheckpointID
+	switch len(matches) {
+	case 0:
+		// Not found in committed, try temporary checkpoints by git SHA
 		output, found := explainTemporaryCheckpoint(repo, store, checkpointIDPrefix, verbose, full)
 		if found {
 			outputExplainContent(w, output, noPager)
 			return nil
 		}
 		return fmt.Errorf("checkpoint not found: %s", checkpointIDPrefix)
+	case 1:
+		fullCheckpointID = matches[0]
+	default:
+		// Ambiguous prefix - show up to 5 examples
+		examples := make([]string, 0, 5)
+		for i := 0; i < len(matches) && i < 5; i++ {
+			examples = append(examples, matches[i].String())
+		}
+		return fmt.Errorf("ambiguous checkpoint prefix %q matches %d checkpoints: %s", checkpointIDPrefix, len(matches), strings.Join(examples, ", "))
 	}
 
 	// Load checkpoint data
@@ -205,73 +216,84 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 		return "", false
 	}
 
-	// Find checkpoint matching the SHA prefix
-	for _, tc := range tempCheckpoints {
+	// Find checkpoint matching the SHA prefix - check for ambiguity
+	var matchIdx = -1
+	for i, tc := range tempCheckpoints {
 		if strings.HasPrefix(tc.CommitHash.String(), shaPrefix) {
-			// Found it - read metadata from shadow branch commit tree
-			shadowCommit, commitErr := repo.CommitObject(tc.CommitHash)
-			if commitErr != nil {
+			if matchIdx >= 0 {
+				// Multiple matches - ambiguous prefix
 				return "", false
 			}
-
-			shadowTree, treeErr := shadowCommit.Tree()
-			if treeErr != nil {
-				return "", false
-			}
-
-			// Read prompts from shadow branch
-			sessionPrompt := strategy.ReadSessionPromptFromTree(shadowTree, tc.MetadataDir)
-
-			// Build output similar to formatCheckpointOutput but for temporary
-			var sb strings.Builder
-			shortID := tc.CommitHash.String()[:7]
-			fmt.Fprintf(&sb, "Checkpoint: %s [temporary]\n", shortID)
-			fmt.Fprintf(&sb, "Session: %s\n", tc.SessionID)
-			fmt.Fprintf(&sb, "Created: %s\n", tc.Timestamp.Format("2006-01-02 15:04:05"))
-			sb.WriteString("\n")
-
-			// Intent from prompt
-			intent := "(not available)"
-			if sessionPrompt != "" {
-				lines := strings.Split(sessionPrompt, "\n")
-				if len(lines) > 0 && lines[0] != "" {
-					intent = truncateString(lines[0], maxIntentDisplayLength)
-				}
-			}
-			fmt.Fprintf(&sb, "Intent: %s\n", intent)
-			sb.WriteString("Outcome: (not generated)\n")
-
-			// Verbose: show prompts
-			if verbose || full {
-				sb.WriteString("\n")
-				sb.WriteString("Prompts:\n")
-				if sessionPrompt != "" {
-					sb.WriteString(sessionPrompt)
-					sb.WriteString("\n")
-				} else {
-					sb.WriteString("  (none)\n")
-				}
-			}
-
-			// Full: show transcript
-			if full {
-				// Try to read transcript from shadow branch
-				transcriptPath := tc.MetadataDir + "/full.jsonl"
-				if transcriptFile, fileErr := shadowTree.File(transcriptPath); fileErr == nil {
-					if content, readErr := transcriptFile.Contents(); readErr == nil {
-						sb.WriteString("\n")
-						sb.WriteString("Transcript:\n")
-						sb.WriteString(content)
-						sb.WriteString("\n")
-					}
-				}
-			}
-
-			return sb.String(), true
+			matchIdx = i
 		}
 	}
 
-	return "", false
+	if matchIdx < 0 {
+		return "", false
+	}
+
+	tc := tempCheckpoints[matchIdx]
+
+	// Found exactly one match - read metadata from shadow branch commit tree
+	shadowCommit, commitErr := repo.CommitObject(tc.CommitHash)
+	if commitErr != nil {
+		return "", false
+	}
+
+	shadowTree, treeErr := shadowCommit.Tree()
+	if treeErr != nil {
+		return "", false
+	}
+
+	// Read prompts from shadow branch
+	sessionPrompt := strategy.ReadSessionPromptFromTree(shadowTree, tc.MetadataDir)
+
+	// Build output similar to formatCheckpointOutput but for temporary
+	var sb strings.Builder
+	shortID := tc.CommitHash.String()[:7]
+	fmt.Fprintf(&sb, "Checkpoint: %s [temporary]\n", shortID)
+	fmt.Fprintf(&sb, "Session: %s\n", tc.SessionID)
+	fmt.Fprintf(&sb, "Created: %s\n", tc.Timestamp.Format("2006-01-02 15:04:05"))
+	sb.WriteString("\n")
+
+	// Intent from prompt
+	intent := "(not available)"
+	if sessionPrompt != "" {
+		lines := strings.Split(sessionPrompt, "\n")
+		if len(lines) > 0 && lines[0] != "" {
+			intent = strategy.TruncateDescription(lines[0], maxIntentDisplayLength)
+		}
+	}
+	fmt.Fprintf(&sb, "Intent: %s\n", intent)
+	sb.WriteString("Outcome: (not generated)\n")
+
+	// Verbose: show prompts
+	if verbose || full {
+		sb.WriteString("\n")
+		sb.WriteString("Prompts:\n")
+		if sessionPrompt != "" {
+			sb.WriteString(sessionPrompt)
+			sb.WriteString("\n")
+		} else {
+			sb.WriteString("  (none)\n")
+		}
+	}
+
+	// Full: show transcript
+	if full {
+		// Try to read transcript from shadow branch
+		transcriptPath := tc.MetadataDir + "/full.jsonl"
+		if transcriptFile, fileErr := shadowTree.File(transcriptPath); fileErr == nil {
+			if content, readErr := transcriptFile.Contents(); readErr == nil {
+				sb.WriteString("\n")
+				sb.WriteString("Transcript:\n")
+				sb.WriteString(content)
+				sb.WriteString("\n")
+			}
+		}
+	}
+
+	return sb.String(), true
 }
 
 // findCommitMessageForCheckpoint searches git history for a commit with the
@@ -348,7 +370,7 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 	if result.Prompts != "" {
 		lines := strings.Split(result.Prompts, "\n")
 		if len(lines) > 0 && lines[0] != "" {
-			intent = truncateString(lines[0], maxIntentDisplayLength)
+			intent = strategy.TruncateDescription(lines[0], maxIntentDisplayLength)
 		}
 	}
 	fmt.Fprintf(&sb, "Intent: %s\n", intent)
@@ -449,8 +471,8 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 		return nil, fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
-	// Check if we're on the default branch
-	isOnDefault, _, _ := IsOnDefaultBranch() //nolint:errcheck // Best-effort, defaults to false
+	// Check if we're on the default branch (use repo-aware version)
+	isOnDefault, _ := strategy.IsOnDefaultBranch(repo)
 	var mainBranchHash plumbing.Hash
 	if !isOnDefault {
 		mainBranchHash = strategy.GetMainBranchHash(repo)
@@ -629,8 +651,7 @@ func runExplainBranchDefault(w io.Writer, noPager bool) error {
 	// Get checkpoints for this branch (strategy-agnostic)
 	points, err := getBranchCheckpoints(repo, branchCheckpointsLimit)
 	if err != nil {
-		// Log error but continue with empty list
-		points = nil
+		points = nil // Continue with empty list on error
 	}
 
 	// Format output
@@ -880,7 +901,7 @@ func runExplainCommit(w io.Writer, commitRef string) error {
 
 	// If we have a checkpoint ID but no session, try to look up session from metadata
 	if hasCheckpoint && sessionID == "" {
-		if result, err := checkpoint.NewGitStore(repo).ReadCommitted(context.Background(), checkpointID); err == nil {
+		if result, err := checkpoint.NewGitStore(repo).ReadCommitted(context.Background(), checkpointID); err == nil && result != nil {
 			info.SessionID = result.Metadata.SessionID
 		}
 	}
@@ -1147,9 +1168,12 @@ func groupByCheckpointID(points []strategy.RewindPoint) []checkpointGroup {
 			message: point.Message,
 		})
 
-		// Update flags - if any commit is temporary, the group is temporary
+		// Update flags - if any commit is temporary/task, the group is too
 		if !point.IsLogsOnly {
 			group.isTemporary = true
+		}
+		if point.IsTaskCheckpoint {
+			group.isTask = true
 		}
 	}
 
@@ -1210,7 +1234,7 @@ func formatCheckpointGroup(sb *strings.Builder, group checkpointGroup) {
 		promptStr = "(no prompt)"
 	} else {
 		// Quote actual prompts
-		promptStr = fmt.Sprintf("%q", truncateString(group.prompt, maxPromptDisplayLength))
+		promptStr = fmt.Sprintf("%q", strategy.TruncateDescription(group.prompt, maxPromptDisplayLength))
 	}
 
 	// Checkpoint header: [checkpoint_id] [indicators] prompt
@@ -1220,7 +1244,7 @@ func formatCheckpointGroup(sb *strings.Builder, group checkpointGroup) {
 	for _, commit := range group.commits {
 		// Format: "  MM-DD HH:MM (git_sha) message"
 		dateTimeStr := commit.date.Format("01-02 15:04")
-		message := truncateString(commit.message, maxMessageDisplayLength)
+		message := strategy.TruncateDescription(commit.message, maxMessageDisplayLength)
 		fmt.Fprintf(sb, "  %s (%s) %s\n", dateTimeStr, commit.gitSHA, message)
 	}
 }
@@ -1274,13 +1298,3 @@ func hasCodeChanges(commit *object.Commit) bool {
 	return false
 }
 
-// truncateString truncates a string to the specified length, adding "..." if truncated.
-func truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
-}
