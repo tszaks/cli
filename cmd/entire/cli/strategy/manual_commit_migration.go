@@ -1,0 +1,71 @@
+package strategy
+
+import (
+	"fmt"
+	"os"
+
+	"entire.io/cli/cmd/entire/cli/checkpoint"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+)
+
+// migrateShadowBranchIfNeeded checks if HEAD has changed since the session started
+// and migrates the shadow branch to the new base commit if needed.
+//
+// This handles the scenario where Claude performs a rebase, pull, or other git operation
+// that changes HEAD mid-session (via a tool call), without a new prompt being submitted.
+// Without this migration, checkpoints would be saved to an orphaned shadow branch.
+//
+// Returns true if migration occurred, false otherwise.
+func (s *ManualCommitStrategy) migrateShadowBranchIfNeeded(repo *git.Repository, state *SessionState) (bool, error) {
+	if state == nil || state.BaseCommit == "" {
+		return false, nil
+	}
+
+	head, err := repo.Head()
+	if err != nil {
+		return false, fmt.Errorf("failed to get HEAD: %w", err)
+	}
+
+	currentHead := head.Hash().String()
+	if state.BaseCommit == currentHead {
+		return false, nil // No migration needed
+	}
+
+	// HEAD changed - check if old shadow branch exists and migrate it
+	oldShadowBranch := checkpoint.ShadowBranchNameForCommit(state.BaseCommit)
+	newShadowBranch := checkpoint.ShadowBranchNameForCommit(currentHead)
+
+	oldRefName := plumbing.NewBranchReferenceName(oldShadowBranch)
+	oldRef, err := repo.Reference(oldRefName, true)
+	if err != nil {
+		// Old shadow branch doesn't exist - just update state.BaseCommit
+		// This can happen if this is the first checkpoint after HEAD changed
+		state.BaseCommit = currentHead
+		fmt.Fprintf(os.Stderr, "Updated session base commit to %s (HEAD changed during session)\n", currentHead[:7])
+		return true, nil //nolint:nilerr // err is "reference not found" which is fine - just need to update state
+	}
+
+	// Old shadow branch exists - move it to new base commit
+	newRefName := plumbing.NewBranchReferenceName(newShadowBranch)
+
+	// Create new reference pointing to same commit as old shadow branch
+	newRef := plumbing.NewHashReference(newRefName, oldRef.Hash())
+	if err := repo.Storer.SetReference(newRef); err != nil {
+		return false, fmt.Errorf("failed to create new shadow branch %s: %w", newShadowBranch, err)
+	}
+
+	// Delete old reference
+	if err := repo.Storer.RemoveReference(oldRefName); err != nil {
+		// Non-fatal: log but continue - the important thing is the new branch exists
+		fmt.Fprintf(os.Stderr, "Warning: failed to remove old shadow branch %s: %v\n", oldShadowBranch, err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Moved shadow branch from %s to %s (HEAD changed during session)\n",
+		oldShadowBranch, newShadowBranch)
+
+	// Update state with new base commit
+	state.BaseCommit = currentHead
+	return true, nil
+}
