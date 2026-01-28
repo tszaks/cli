@@ -20,14 +20,14 @@ var (
 	PostHogEndpoint = "https://eu.i.posthog.com"
 )
 
-// EventPayload represents the data passed to the detached subprocess
+// EventPayload represents the data passed to the detached subprocess.
+// Note: APIKey and Endpoint are intentionally excluded to avoid exposing
+// them in process listings (ps/top). SendEvent reads them from package-level vars.
 type EventPayload struct {
 	Event      string         `json:"event"`
 	DistinctID string         `json:"distinct_id"`
 	Properties map[string]any `json:"properties"`
 	Timestamp  time.Time      `json:"timestamp"`
-	APIKey     string         `json:"api_key"`
-	Endpoint   string         `json:"endpoint"`
 }
 
 // silentLogger suppresses PostHog log output - expected for CLI best-effort telemetry
@@ -81,8 +81,6 @@ func BuildEventPayload(cmd *cobra.Command, strategy, agent string, isEntireEnabl
 		DistinctID: machineID,
 		Properties: properties,
 		Timestamp:  time.Now(),
-		APIKey:     PostHogAPIKey,
-		Endpoint:   PostHogEndpoint,
 	}
 }
 
@@ -122,8 +120,9 @@ func SendEvent(payloadJSON string) {
 	}
 
 	// Create PostHog client - no need for fast timeouts since we're detached
-	client, err := posthog.NewWithConfig(payload.APIKey, posthog.Config{
-		Endpoint:     payload.Endpoint,
+	// Read API key and endpoint from package-level vars (not passed via argv for security)
+	client, err := posthog.NewWithConfig(PostHogAPIKey, posthog.Config{
+		Endpoint:     PostHogEndpoint,
 		Logger:       silentLogger{},
 		DisableGeoIP: posthog.Ptr(true),
 	})

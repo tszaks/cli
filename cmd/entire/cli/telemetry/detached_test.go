@@ -22,8 +22,6 @@ func TestEventPayloadSerialization(t *testing.T) {
 			"arch":            "arm64",
 		},
 		Timestamp: time.Date(2026, 1, 28, 12, 0, 0, 0, time.UTC),
-		APIKey:    "test-key",
-		Endpoint:  "https://example.com",
 	}
 
 	// Serialize
@@ -44,12 +42,6 @@ func TestEventPayloadSerialization(t *testing.T) {
 	}
 	if decoded.DistinctID != payload.DistinctID {
 		t.Errorf("DistinctID = %q, want %q", decoded.DistinctID, payload.DistinctID)
-	}
-	if decoded.APIKey != payload.APIKey {
-		t.Errorf("APIKey = %q, want %q", decoded.APIKey, payload.APIKey)
-	}
-	if decoded.Endpoint != payload.Endpoint {
-		t.Errorf("Endpoint = %q, want %q", decoded.Endpoint, payload.Endpoint)
 	}
 	if !decoded.Timestamp.Equal(payload.Timestamp) {
 		t.Errorf("Timestamp = %v, want %v", decoded.Timestamp, payload.Timestamp)
