@@ -327,7 +327,7 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 		CheckpointID:           opts.CheckpointID,
 		SessionID:              opts.SessionID,
 		Strategy:               opts.Strategy,
-		CreatedAt:              time.Now(),
+		CreatedAt:              time.Now().UTC(),
 		Branch:                 opts.Branch,
 		CheckpointsCount:       opts.CheckpointsCount,
 		FilesTouched:           opts.FilesTouched,
@@ -340,6 +340,7 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 		TranscriptUUIDAtStart:  opts.TranscriptUUIDAtStart,
 		TranscriptLinesAtStart: opts.TranscriptLinesAtStart,
 		TokenUsage:             opts.TokenUsage,
+		InitialAttribution:     opts.InitialAttribution,
 	}
 
 	// Merge with existing metadata if present (multi-session checkpoint)
@@ -377,6 +378,11 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 
 		// Sum checkpoint counts
 		metadata.CheckpointsCount = existingMetadata.CheckpointsCount + opts.CheckpointsCount
+
+		// Keep existing attribution - we calculated this for the first session based on all commits in the shadow branch already
+		if existingMetadata.InitialAttribution != nil {
+			metadata.InitialAttribution = existingMetadata.InitialAttribution
+		}
 	}
 
 	metadataJSON, err := jsonutil.MarshalIndentWithNewline(metadata, "", "  ")

@@ -70,6 +70,41 @@ type State struct {
 
 	// TranscriptPath is the path to the live transcript file (for mid-session commit detection)
 	TranscriptPath string `json:"transcript_path,omitempty"`
+
+	// PromptAttributions tracks user and agent line changes at each prompt start.
+	// This enables accurate attribution by capturing user edits between checkpoints.
+	PromptAttributions []PromptAttribution `json:"prompt_attributions,omitempty"`
+
+	// PendingPromptAttribution holds attribution calculated at prompt start (before agent runs).
+	// This is moved to PromptAttributions when SaveChanges is called.
+	PendingPromptAttribution *PromptAttribution `json:"pending_prompt_attribution,omitempty"`
+}
+
+// PromptAttribution captures line-level attribution data at the start of each prompt.
+// By recording what changed since the last checkpoint BEFORE the agent works,
+// we can accurately separate user edits from agent contributions.
+type PromptAttribution struct {
+	// CheckpointNumber is which checkpoint this was recorded before (1-indexed)
+	CheckpointNumber int `json:"checkpoint_number"`
+
+	// UserLinesAdded is lines added by user since the last checkpoint
+	UserLinesAdded int `json:"user_lines_added"`
+
+	// UserLinesRemoved is lines removed by user since the last checkpoint
+	UserLinesRemoved int `json:"user_lines_removed"`
+
+	// AgentLinesAdded is total agent lines added so far (base → last checkpoint).
+	// Always 0 for checkpoint 1 since there's no previous checkpoint to measure against.
+	AgentLinesAdded int `json:"agent_lines_added"`
+
+	// AgentLinesRemoved is total agent lines removed so far (base → last checkpoint).
+	// Always 0 for checkpoint 1 since there's no previous checkpoint to measure against.
+	AgentLinesRemoved int `json:"agent_lines_removed"`
+
+	// UserAddedPerFile tracks per-file user additions for accurate modification tracking.
+	// This enables distinguishing user self-modifications from agent modifications.
+	// See docs/architecture/attribution.md for details.
+	UserAddedPerFile map[string]int `json:"user_added_per_file,omitempty"`
 }
 
 // StateStore provides low-level operations for managing session state files.
