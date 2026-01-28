@@ -838,9 +838,10 @@ func runExplainCommit(w io.Writer, commitRef string) error {
 		}
 	}
 
-	// Check for Entire metadata
+	// Check for Entire metadata - try multiple trailer types
 	metadataDir, hasMetadata := trailers.ParseMetadata(commit.Message)
 	sessionID, hasSession := trailers.ParseSession(commit.Message)
+	checkpointID, hasCheckpoint := trailers.ParseCheckpoint(commit.Message)
 
 	// If no session trailer, try to extract from metadata path.
 	// Note: extractSessionIDFromMetadata is defined in rewind.go as it's used
@@ -865,8 +866,15 @@ func runExplainCommit(w io.Writer, commitRef string) error {
 		Email:     commit.Author.Email,
 		Date:      commit.Author.When,
 		Files:     files,
-		HasEntire: hasMetadata || hasSession,
+		HasEntire: hasMetadata || hasSession || hasCheckpoint,
 		SessionID: sessionID,
+	}
+
+	// If we have a checkpoint ID but no session, try to look up session from metadata
+	if hasCheckpoint && sessionID == "" {
+		if result, err := checkpoint.NewGitStore(repo).ReadCommitted(context.Background(), checkpointID); err == nil {
+			info.SessionID = result.Metadata.SessionID
+		}
 	}
 
 	// Format and output
