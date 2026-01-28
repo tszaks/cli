@@ -461,6 +461,7 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit log: %w", err)
 	}
+	defer iter.Close()
 
 	var points []strategy.RewindPoint
 	count := 0
