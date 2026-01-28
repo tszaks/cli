@@ -315,9 +315,9 @@ func findCommitMessageForCheckpoint(repo *git.Repository, checkpointID id.Checkp
 }
 
 // formatCheckpointOutput formats checkpoint data based on verbosity level.
-// Default: Summary (ID, session, timestamp, tokens, intent)
-// Verbose: + prompts, files, commit message
-// Full: + complete transcript
+// When verbose is false: summary only (ID, session, timestamp, tokens, intent).
+// When verbose is true: adds prompts, files, and commit message details.
+// When full is true: includes the complete transcript in addition to verbose details.
 func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID id.CheckpointID, commitMessage string, verbose, full bool) string {
 	var sb strings.Builder
 	meta := result.Metadata
