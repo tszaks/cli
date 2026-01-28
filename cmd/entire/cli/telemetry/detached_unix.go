@@ -4,6 +4,7 @@ package telemetry
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"syscall"
@@ -32,9 +33,9 @@ func spawnDetachedAnalytics(payloadJSON string) {
 	// Inherit environment (may be needed for network config)
 	cmd.Env = os.Environ()
 
-	// Don't capture stdout/stderr - let it go to /dev/null
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	// Discard stdout/stderr to prevent output leaking to parent's terminal
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
 
 	// Start the process (non-blocking)
 	if err := cmd.Start(); err != nil {
