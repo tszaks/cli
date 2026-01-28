@@ -6,6 +6,6 @@ package telemetry
 // Windows support for detached processes would require different syscall flags
 // (CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS), but telemetry is best-effort
 // so we simply skip it on unsupported platforms.
-func spawnDetachedAnalytics(_ string) {
+func spawnDetachedAnalytics(string) {
 	// No-op: detached subprocess spawning not implemented for this platform
 }

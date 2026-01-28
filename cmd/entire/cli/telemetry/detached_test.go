@@ -87,41 +87,34 @@ func TestTrackCommandDetachedRespectsOptOut(t *testing.T) {
 	TrackCommandDetached(cmd, "manual-commit", "claude-code", true, "1.0.0")
 }
 
-func TestBuildEventPayloadDefaultsAgentToAuto(t *testing.T) {
-	cmd := &cobra.Command{
-		Use: "test",
+func TestBuildEventPayloadAgent(t *testing.T) {
+	tests := []struct {
+		name          string
+		inputAgent    string
+		expectedAgent string
+	}{
+		{"defaults empty to auto", "", "auto"},
+		{"preserves explicit agent", "claude-code", "claude-code"},
 	}
 
-	payload := BuildEventPayload(cmd, "manual-commit", "", true, "1.0.0")
-	if payload == nil {
-		t.Fatal("Expected non-nil payload")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cobra.Command{Use: "test"}
+			payload := BuildEventPayload(cmd, "manual-commit", tt.inputAgent, true, "1.0.0")
+			if payload == nil {
+				t.Fatal("Expected non-nil payload")
+				return
+			}
 
-	agent, ok := payload.Properties["agent"].(string)
-	if !ok {
-		t.Fatal("Expected agent property to be a string")
-	}
-	if agent != "auto" {
-		t.Errorf("Expected agent to default to 'auto', got %q", agent)
-	}
-}
-
-func TestBuildEventPayloadPreservesExplicitAgent(t *testing.T) {
-	cmd := &cobra.Command{
-		Use: "test",
-	}
-
-	payload := BuildEventPayload(cmd, "manual-commit", "claude-code", true, "1.0.0")
-	if payload == nil {
-		t.Fatal("Expected non-nil payload")
-	}
-
-	agent, ok := payload.Properties["agent"].(string)
-	if !ok {
-		t.Fatal("Expected agent property to be a string")
-	}
-	if agent != "claude-code" {
-		t.Errorf("Expected agent to be 'claude-code', got %q", agent)
+			agent, ok := payload.Properties["agent"].(string)
+			if !ok {
+				t.Fatal("Expected agent property to be a string")
+				return
+			}
+			if agent != tt.expectedAgent {
+				t.Errorf("agent = %q, want %q", agent, tt.expectedAgent)
+			}
+		})
 	}
 }
 
