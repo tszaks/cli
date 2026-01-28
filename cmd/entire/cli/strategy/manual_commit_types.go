@@ -64,14 +64,12 @@ type SessionState struct {
 // their own previously-added lines (not agent lines), we shouldn't subtract from the agent's
 // contribution. See docs/architecture/attribution.md for details.
 type PromptAttribution struct {
-	CheckpointNumber            int            `json:"checkpoint_number"`
-	UserLinesAdded              int            `json:"user_lines_added"`
-	UserLinesRemoved            int            `json:"user_lines_removed"`
-	AgentLinesAdded             int            `json:"agent_lines_added"`             // Always 0 for checkpoint 1 (no previous checkpoint)
-	AgentLinesRemoved           int            `json:"agent_lines_removed"`           // Always 0 for checkpoint 1 (no previous checkpoint)
-	UserAddedPerFile            map[string]int `json:"user_added_per_file,omitempty"` // Per-file user additions for modification tracking
-	TranscriptLinesAtStart      int            `json:"transcript_lines_at_start,omitempty"`
-	TranscriptIdentifierAtStart string         `json:"transcript_identifier_at_start,omitempty"`
+	CheckpointNumber  int            `json:"checkpoint_number"`
+	UserLinesAdded    int            `json:"user_lines_added"`
+	UserLinesRemoved  int            `json:"user_lines_removed"`
+	AgentLinesAdded   int            `json:"agent_lines_added"`             // Always 0 for checkpoint 1 (no previous checkpoint)
+	AgentLinesRemoved int            `json:"agent_lines_removed"`           // Always 0 for checkpoint 1 (no previous checkpoint)
+	UserAddedPerFile  map[string]int `json:"user_added_per_file,omitempty"` // Per-file user additions for modification tracking
 }
 
 // CheckpointInfo represents checkpoint metadata stored on the sessions branch.
