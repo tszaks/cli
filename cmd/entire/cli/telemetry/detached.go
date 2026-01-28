@@ -1,0 +1,154 @@
+package telemetry
+
+import (
+	"encoding/json"
+	"os"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/denisbrodbeck/machineid"
+	"github.com/posthog/posthog-go"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+)
+
+var (
+	// PostHogAPIKey is set at build time for production
+	PostHogAPIKey = "phc_development_key"
+	// PostHogEndpoint is set at build time for production
+	PostHogEndpoint = "https://eu.i.posthog.com"
+)
+
+// EventPayload represents the data passed to the detached subprocess
+type EventPayload struct {
+	Event      string         `json:"event"`
+	DistinctID string         `json:"distinct_id"`
+	Properties map[string]any `json:"properties"`
+	Timestamp  time.Time      `json:"timestamp"`
+	APIKey     string         `json:"api_key"`
+	Endpoint   string         `json:"endpoint"`
+}
+
+// silentLogger suppresses PostHog log output - expected for CLI best-effort telemetry
+type silentLogger struct{}
+
+func (silentLogger) Logf(_ string, _ ...interface{})   {}
+func (silentLogger) Debugf(_ string, _ ...interface{}) {}
+func (silentLogger) Warnf(_ string, _ ...interface{})  {}
+func (silentLogger) Errorf(_ string, _ ...interface{}) {}
+
+// stringifyArg converts an argument to string for debug logging
+func stringifyArg(arg any) string {
+	switch v := arg.(type) {
+	case string:
+		return v
+	case error:
+		return v.Error()
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "<marshal error>"
+		}
+		return string(b)
+	}
+}
+
+// TrackCommandDetached tracks a command execution by spawning a detached subprocess.
+// This returns immediately without blocking the CLI.
+func TrackCommandDetached(cmd *cobra.Command, strategy, agent string, isEntireEnabled bool, version string) {
+	// Check opt-out environment variables
+	if os.Getenv("ENTIRE_TELEMETRY_OPTOUT") != "" {
+		return
+	}
+
+	if cmd == nil {
+		return
+	}
+
+	// Skip hidden commands
+	if cmd.Hidden {
+		return
+	}
+
+	// Get machine ID for distinct_id
+	machineID, err := machineid.ProtectedID("entire-cli")
+	if err != nil {
+		return
+	}
+
+	// Collect flag names (not values) for privacy
+	var flags []string
+	cmd.Flags().Visit(func(flag *pflag.Flag) {
+		flags = append(flags, flag.Name)
+	})
+
+	selectedAgent := agent
+	if selectedAgent == "" {
+		selectedAgent = "auto"
+	}
+
+	properties := map[string]any{
+		"command":         cmd.CommandPath(),
+		"strategy":        strategy,
+		"agent":           selectedAgent,
+		"isEntireEnabled": isEntireEnabled,
+		"cli_version":     version,
+		"os":              runtime.GOOS,
+		"arch":            runtime.GOARCH,
+	}
+
+	if len(flags) > 0 {
+		properties["flags"] = strings.Join(flags, ",")
+	}
+
+	payload := EventPayload{
+		Event:      "cli_command_executed",
+		DistinctID: machineID,
+		Properties: properties,
+		Timestamp:  time.Now(),
+		APIKey:     PostHogAPIKey,
+		Endpoint:   PostHogEndpoint,
+	}
+
+	if payloadJSON, err := json.Marshal(payload); err == nil {
+		_ = spawnDetachedAnalytics(string(payloadJSON))
+	}
+
+}
+
+// SendEvent processes an event payload in the detached subprocess.
+// This is called by the hidden __send_analytics command.
+func SendEvent(payloadJSON string) {
+
+	var payload EventPayload
+	if err := json.Unmarshal([]byte(payloadJSON), &payload); err != nil {
+		return
+	}
+
+	// Create PostHog client - no need for fast timeouts since we're detached
+	client, err := posthog.NewWithConfig(payload.APIKey, posthog.Config{
+		Endpoint:     payload.Endpoint,
+		Logger:       silentLogger{},
+		DisableGeoIP: posthog.Ptr(true),
+	})
+	if err != nil {
+		return
+	}
+	defer func() {
+		_ = client.Close()
+	}()
+
+	// Build properties
+	props := posthog.NewProperties()
+	for k, v := range payload.Properties {
+		props.Set(k, v)
+	}
+
+	_ = client.Enqueue(posthog.Capture{
+		DistinctId: payload.DistinctID,
+		Event:      payload.Event,
+		Properties: props,
+		Timestamp:  payload.Timestamp,
+	})
+}
