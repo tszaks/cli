@@ -192,8 +192,6 @@ All strategies implement:
 | **manual-commit** (default) | Unchanged (no commits) | `entire/<HEAD-hash>` branches + `entire/sessions` | Recommended for most workflows |
 | **auto-commit** | Creates clean commits | Orphan `entire/sessions` branch | Teams that want code commits from sessions |
 
-Legacy names `shadow` and `dual` are only recognized when reading settings or checkpoint metadata.
-
 #### Strategy Details
 
 **Manual-Commit Strategy** (`manual_commit*.go`) - Default
