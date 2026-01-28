@@ -34,8 +34,8 @@ type SessionState struct {
 	TokenUsage *agent.TokenUsage `json:"token_usage,omitempty"`
 
 	// Transcript position when session started (for multi-session checkpoints on entire/sessions)
-	TranscriptLinesAtStart int    `json:"transcript_lines_at_start,omitempty"`
-	TranscriptUUIDAtStart  string `json:"transcript_uuid_at_start,omitempty"`
+	TranscriptLinesAtStart      int    `json:"transcript_lines_at_start,omitempty"`
+	TranscriptIdentifierAtStart string `json:"transcript_identifier_at_start,omitempty"`
 
 	// PromptAttributions tracks user and agent line changes at each prompt start.
 	PromptAttributions []PromptAttribution `json:"prompt_attributions,omitempty"`

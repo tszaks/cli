@@ -539,17 +539,17 @@ func commitWithMetadata() error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to ensure strategy setup: %v\n", err)
 	}
 
-	// Get agent type from session state (set during InitializeSession)
+	// Get agent type from the currently executing hook agent (authoritative source)
 	var agentType agent.AgentType
-	if sessionState != nil {
-		agentType = sessionState.AgentType
+	if hookAgent, agentErr := GetCurrentHookAgent(); agentErr == nil {
+		agentType = hookAgent.Type()
 	}
 
 	// Get transcript position from pre-prompt state (captured at checkpoint start)
-	var transcriptUUIDAtStart string
+	var transcriptIdentifierAtStart string
 	var transcriptLinesAtStart int
 	if preState != nil {
-		transcriptUUIDAtStart = preState.LastTranscriptUUID
+		transcriptIdentifierAtStart = preState.LastTranscriptIdentifier
 		transcriptLinesAtStart = preState.LastTranscriptLineCount
 	}
 
@@ -568,20 +568,20 @@ func commitWithMetadata() error {
 
 	// Build fully-populated save context and delegate to strategy
 	ctx := strategy.SaveContext{
-		SessionID:              entireSessionID,
-		ModifiedFiles:          relModifiedFiles,
-		NewFiles:               relNewFiles,
-		DeletedFiles:           relDeletedFiles,
-		MetadataDir:            sessionDir,
-		MetadataDirAbs:         sessionDirAbs,
-		CommitMessage:          commitMessage,
-		TranscriptPath:         transcriptPath,
-		AuthorName:             author.Name,
-		AuthorEmail:            author.Email,
-		AgentType:              agentType,
-		TranscriptUUIDAtStart:  transcriptUUIDAtStart,
-		TranscriptLinesAtStart: transcriptLinesAtStart,
-		TokenUsage:             tokenUsage,
+		SessionID:                   entireSessionID,
+		ModifiedFiles:               relModifiedFiles,
+		NewFiles:                    relNewFiles,
+		DeletedFiles:                relDeletedFiles,
+		MetadataDir:                 sessionDir,
+		MetadataDirAbs:              sessionDirAbs,
+		CommitMessage:               commitMessage,
+		TranscriptPath:              transcriptPath,
+		AuthorName:                  author.Name,
+		AuthorEmail:                 author.Email,
+		AgentType:                   agentType,
+		TranscriptIdentifierAtStart: transcriptIdentifierAtStart,
+		TranscriptLinesAtStart:      transcriptLinesAtStart,
+		TokenUsage:                  tokenUsage,
 	}
 
 	if err := strat.SaveChanges(ctx); err != nil {
@@ -712,10 +712,10 @@ func handlePostTodo() error {
 		// will fall back to "Checkpoint #N" format
 	}
 
-	// Get agent type from session state
+	// Get agent type from the currently executing hook agent (authoritative source)
 	var agentType agent.AgentType
-	if sessionState, loadErr := strategy.LoadSessionState(entireSessionID); loadErr == nil && sessionState != nil {
-		agentType = sessionState.AgentType
+	if hookAgent, agentErr := GetCurrentHookAgent(); agentErr == nil {
+		agentType = hookAgent.Type()
 	}
 
 	// Build incremental checkpoint context
@@ -903,10 +903,10 @@ func handlePostTask() error {
 
 	entireSessionID := currentSessionIDWithFallback(input.SessionID)
 
-	// Get agent type from session state
+	// Get agent type from the currently executing hook agent (authoritative source)
 	var agentType agent.AgentType
-	if sessionState, loadErr := strategy.LoadSessionState(entireSessionID); loadErr == nil && sessionState != nil {
-		agentType = sessionState.AgentType
+	if hookAgent, agentErr := GetCurrentHookAgent(); agentErr == nil {
+		agentType = hookAgent.Type()
 	}
 
 	// Build task checkpoint context - strategy handles metadata creation
