@@ -53,7 +53,13 @@ func newEnableCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "enable",
 		Short: "Enable Entire",
-		Long:  "Enable Entire with interactive setup for session tracking mode",
+		Long: `Enable Entire with session tracking for your AI agent workflows.
+
+Uses the manual-commit strategy by default. To use a different strategy:
+
+  entire enable --strategy auto-commit
+
+Strategies: manual-commit (default), auto-commit`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Check if we're in a git repository first - this is a prerequisite error,
 			// not a usage error, so we silence Cobra's output and use SilentError
@@ -274,32 +280,11 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 	return nil
 }
 
-// runEnableInteractive runs the interactive enable flow with strategy selection.
+// runEnableInteractive runs the interactive enable flow.
 func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProjectSettings, forceHooks, setupShell, skipPushSessions, telemetry, disableMultisessionWarning bool) error {
-	// Build strategy options with user-friendly names
-	var selectedStrategy string
-	options := []huh.Option[string]{
-		huh.NewOption(strategyDisplayManualCommit+"  Sessions are only captured when you commit", strategyDisplayManualCommit),
-		huh.NewOption(strategyDisplayAutoCommit+"  Automatically capture sessions after agent response completion", strategyDisplayAutoCommit),
-	}
-
-	form := NewAccessibleForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Options(options...).
-				Value(&selectedStrategy),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		return fmt.Errorf("selection cancelled: %w", err)
-	}
-
-	// Map display name to internal strategy name
-	internalStrategy, ok := strategyDisplayToInternal[selectedStrategy]
-	if !ok {
-		return fmt.Errorf("unknown strategy: %s", selectedStrategy)
-	}
+	// Use the default strategy (manual-commit)
+	internalStrategy := strategy.DefaultStrategyName
+	fmt.Fprintf(w, "Using %s strategy (use --strategy to change)\n\n", strategyInternalToDisplay[internalStrategy])
 
 	// Setup Claude Code hooks
 	hooksInstalled, err := setupClaudeCodeHook(localDev, forceHooks)
@@ -410,7 +395,7 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 	}
 
 	// Show success message with display name
-	fmt.Fprintf(w, "\n✓ %s strategy enabled\n", selectedStrategy)
+	fmt.Fprintf(w, "\n✓ %s strategy enabled\n", strategyInternalToDisplay[internalStrategy])
 
 	return nil
 }
