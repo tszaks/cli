@@ -370,7 +370,7 @@ func TestGetDefaultBranchName(t *testing.T) {
 		}
 
 		result := GetDefaultBranchName(repo)
-		//nolint:goconst // "main" is clearer as literal in test assertions
+
 		if result != "main" {
 			t.Errorf("GetDefaultBranchName() = %q, want %q", result, "main")
 		}
@@ -405,7 +405,7 @@ func TestGetDefaultBranchName(t *testing.T) {
 		}
 
 		result := GetDefaultBranchName(repo)
-		//nolint:goconst // "master" is clearer as literal in test assertions
+
 		if result != "master" {
 			t.Errorf("GetDefaultBranchName() = %q, want %q", result, "master")
 		}

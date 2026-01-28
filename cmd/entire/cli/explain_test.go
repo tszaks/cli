@@ -819,6 +819,7 @@ func TestExplainCmd_HasShortFlag(t *testing.T) {
 	flag := cmd.Flags().Lookup("short")
 	if flag == nil {
 		t.Fatal("expected --short flag to exist")
+		return // unreachable but satisfies staticcheck
 	}
 
 	// Should have -s shorthand

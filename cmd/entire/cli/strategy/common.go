@@ -24,6 +24,12 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
+// Common branch name constants for default branch detection.
+const (
+	branchMain   = "main"
+	branchMaster = "master"
+)
+
 // errStop is a sentinel error used to break out of git log iteration.
 // Shared across strategies that iterate through git commits.
 // NOTE: A similar sentinel exists in checkpoint/temporary.go - this is intentional.
@@ -1243,7 +1249,7 @@ func GetCurrentBranchName(repo *git.Repository) string {
 // Returns ZeroHash if no main branch is found.
 func GetMainBranchHash(repo *git.Repository) plumbing.Hash {
 	// Try common main branch names
-	for _, branchName := range []string{"main", "master"} {
+	for _, branchName := range []string{branchMain, branchMaster} {
 		// Try local branch first
 		ref, err := repo.Reference(plumbing.NewBranchReferenceName(branchName), true)
 		if err == nil {
@@ -1275,19 +1281,19 @@ func GetDefaultBranchName(repo *git.Repository) string {
 	}
 
 	// Fallback: check if origin/main or origin/master exists
-	if _, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", "main"), true); err == nil {
-		return "main"
+	if _, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", branchMain), true); err == nil {
+		return branchMain
 	}
-	if _, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", "master"), true); err == nil {
-		return "master"
+	if _, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", branchMaster), true); err == nil {
+		return branchMaster
 	}
 
 	// Final fallback: check local branches
-	if _, err := repo.Reference(plumbing.NewBranchReferenceName("main"), true); err == nil {
-		return "main"
+	if _, err := repo.Reference(plumbing.NewBranchReferenceName(branchMain), true); err == nil {
+		return branchMain
 	}
-	if _, err := repo.Reference(plumbing.NewBranchReferenceName("master"), true); err == nil {
-		return "master"
+	if _, err := repo.Reference(plumbing.NewBranchReferenceName(branchMaster), true); err == nil {
+		return branchMaster
 	}
 
 	return ""
@@ -1305,7 +1311,7 @@ func IsOnDefaultBranch(repo *git.Repository) (bool, string) {
 	defaultBranch := GetDefaultBranchName(repo)
 	if defaultBranch == "" {
 		// Can't determine default, check common names
-		if currentBranch == "main" || currentBranch == "master" {
+		if currentBranch == branchMain || currentBranch == branchMaster {
 			return true, currentBranch
 		}
 		return false, currentBranch
