@@ -142,14 +142,20 @@ Use --uninstall to completely remove Entire from this repository, including:
 }
 
 func newStatusCmd() *cobra.Command {
-	return &cobra.Command{
+	var detailed bool
+
+	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show Entire status",
 		Long:  "Show whether Entire is currently enabled or disabled",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runStatus(cmd.OutOrStdout())
+			return runStatus(cmd.OutOrStdout(), detailed)
 		},
 	}
+
+	cmd.Flags().BoolVar(&detailed, "detailed", false, "Show detailed status for each settings file")
+
+	return cmd
 }
 
 // runEnableWithStrategy enables Entire with a specified strategy (non-interactive).
@@ -440,7 +446,7 @@ func runDisable(w io.Writer, useProjectSettings bool) error {
 	return nil
 }
 
-func runStatus(w io.Writer) error {
+func runStatus(w io.Writer, detailed bool) error {
 	// Check if we're in a git repository
 	if _, repoErr := paths.RepoRoot(); repoErr != nil {
 		fmt.Fprintln(w, "✕ not a git repository")
@@ -457,7 +463,7 @@ func runStatus(w io.Writer) error {
 		localSettingsPath = EntireSettingsLocalFile
 	}
 
-	// Check which settings files exist (for source label)
+	// Check which settings files exist
 	_, projectErr := os.Stat(settingsPath)
 	if projectErr != nil && !errors.Is(projectErr, fs.ErrNotExist) {
 		return fmt.Errorf("cannot access project settings file: %w", projectErr)
@@ -474,29 +480,66 @@ func runStatus(w io.Writer) error {
 		return nil
 	}
 
-	// Load merged settings
+	if detailed {
+		return runStatusDetailed(w, settingsPath, localSettingsPath, projectExists, localExists)
+	}
+
+	// Short output: just show the effective/merged state
 	settings, err := LoadEntireSettings()
 	if err != nil {
 		return fmt.Errorf("failed to load settings: %w", err)
 	}
-	settings.Strategy = strategy.NormalizeStrategyName(settings.Strategy)
 
-	// Determine source label
-	var sourceLabel string
-	switch {
-	case projectExists && localExists:
-		sourceLabel = "Project + Local"
-	case localExists:
-		sourceLabel = "Local"
-	default:
-		sourceLabel = "Project"
-	}
-
-	fmt.Fprintln(w, formatSettingsStatus(sourceLabel, settings))
+	fmt.Fprintln(w, formatSettingsStatusShort(settings))
 	return nil
 }
 
-// formatSettingsStatus formats a settings status line.
+// runStatusDetailed shows the effective status plus detailed status for each settings file.
+func runStatusDetailed(w io.Writer, settingsPath, localSettingsPath string, projectExists, localExists bool) error {
+	// First show the effective/merged status
+	settings, err := LoadEntireSettings()
+	if err != nil {
+		return fmt.Errorf("failed to load settings: %w", err)
+	}
+	fmt.Fprintln(w, formatSettingsStatusShort(settings))
+	fmt.Fprintln(w) // blank line
+
+	// Show project settings if it exists
+	if projectExists {
+		projectSettings, err := loadSettingsFromFile(settingsPath)
+		if err != nil {
+			return fmt.Errorf("failed to load project settings: %w", err)
+		}
+		fmt.Fprintln(w, formatSettingsStatus("Project", projectSettings))
+	}
+
+	// Show local settings if it exists
+	if localExists {
+		localSettings, err := loadSettingsFromFile(localSettingsPath)
+		if err != nil {
+			return fmt.Errorf("failed to load local settings: %w", err)
+		}
+		fmt.Fprintln(w, formatSettingsStatus("Local", localSettings))
+	}
+
+	return nil
+}
+
+// formatSettingsStatusShort formats a short settings status line.
+// Output format: "Enabled (manual-commit)" or "Disabled (auto-commit)"
+func formatSettingsStatusShort(settings *EntireSettings) string {
+	displayName := settings.Strategy
+	if dn, ok := strategyInternalToDisplay[settings.Strategy]; ok {
+		displayName = dn
+	}
+
+	if settings.Enabled {
+		return fmt.Sprintf("Enabled (%s)", displayName)
+	}
+	return fmt.Sprintf("Disabled (%s)", displayName)
+}
+
+// formatSettingsStatus formats a settings status line with source prefix.
 // Output format: "Project, enabled (manual-commit)" or "Local, disabled (auto-commit)"
 func formatSettingsStatus(prefix string, settings *EntireSettings) string {
 	displayName := settings.Strategy

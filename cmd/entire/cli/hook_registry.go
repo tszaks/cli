@@ -260,7 +260,7 @@ func newAgentHookVerbCmdWithLogging(agentName agent.AgentName, hookName string) 
 		RunE: func(_ *cobra.Command, _ []string) error {
 			// Skip silently if not in a git repository - hooks shouldn't prevent the agent from working
 			if _, err := paths.RepoRoot(); err != nil {
-				return nil //nolint:nilerr // intentional silent skip when no git repo
+				return nil
 			}
 
 			start := time.Now()

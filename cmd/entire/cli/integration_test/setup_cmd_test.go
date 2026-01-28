@@ -68,8 +68,8 @@ func TestEnableDisable(t *testing.T) {
 	RunForAllStrategiesWithBasicEnv(t, func(t *testing.T, env *TestEnv, strategyName string) {
 		// Initially should be enabled (default)
 		stdout := env.RunCLI("status")
-		if !strings.Contains(stdout, "enabled") {
-			t.Errorf("Expected status to show 'enabled', got: %s", stdout)
+		if !strings.Contains(stdout, "Enabled") {
+			t.Errorf("Expected status to show 'Enabled', got: %s", stdout)
 		}
 
 		// Disable
@@ -80,8 +80,8 @@ func TestEnableDisable(t *testing.T) {
 
 		// Check status is now disabled
 		stdout = env.RunCLI("status")
-		if !strings.Contains(stdout, "disabled") {
-			t.Errorf("Expected status to show 'disabled', got: %s", stdout)
+		if !strings.Contains(stdout, "Disabled") {
+			t.Errorf("Expected status to show 'Disabled', got: %s", stdout)
 		}
 
 		// Re-enable (using --strategy flag for non-interactive mode)
@@ -92,8 +92,8 @@ func TestEnableDisable(t *testing.T) {
 
 		// Check status is now enabled
 		stdout = env.RunCLI("status")
-		if !strings.Contains(stdout, "enabled") {
-			t.Errorf("Expected status to show 'enabled', got: %s", stdout)
+		if !strings.Contains(stdout, "Enabled") {
+			t.Errorf("Expected status to show 'Enabled', got: %s", stdout)
 		}
 	})
 }
@@ -149,8 +149,8 @@ func TestStatusWhenDisabled(t *testing.T) {
 
 		// Status command should still work and show disabled
 		stdout := env.RunCLI("status")
-		if !strings.Contains(stdout, "disabled") {
-			t.Errorf("Expected status to show 'disabled', got: %s", stdout)
+		if !strings.Contains(stdout, "Disabled") {
+			t.Errorf("Expected status to show 'Disabled', got: %s", stdout)
 		}
 	})
 }
@@ -169,8 +169,8 @@ func TestEnableWhenDisabled(t *testing.T) {
 
 		// Verify it's now enabled
 		stdout = env.RunCLI("status")
-		if !strings.Contains(stdout, "enabled") {
-			t.Errorf("Expected status to show 'enabled' after re-enabling, got: %s", stdout)
+		if !strings.Contains(stdout, "Enabled") {
+			t.Errorf("Expected status to show 'Enabled' after re-enabling, got: %s", stdout)
 		}
 	})
 }
