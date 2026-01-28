@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -144,4 +145,86 @@ func TestStateStore_RemoveAll_NonExistentDirectory(t *testing.T) {
 	if err := store.RemoveAll(); err != nil {
 		t.Fatalf("RemoveAll() on non-existent directory error = %v", err)
 	}
+}
+
+func TestFindLegacyEntireSessionID(t *testing.T) {
+	// Create a temp git repo
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Initialize git repo
+	cmd := exec.CommandContext(context.Background(), "git", "init")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Create state directory with legacy-format session files
+	stateDir := filepath.Join(tmpDir, ".git", sessionStateDirName)
+	if err := os.MkdirAll(stateDir, 0o750); err != nil {
+		t.Fatalf("failed to create state dir: %v", err)
+	}
+
+	t.Run("finds legacy session", func(t *testing.T) {
+		agentID := "abc123-def456"
+		legacySessionID := "2026-01-20-" + agentID
+
+		// Create a legacy-format state file
+		stateFile := filepath.Join(stateDir, legacySessionID+".json")
+		if err := os.WriteFile(stateFile, []byte(`{"session_id":"`+legacySessionID+`"}`), 0o600); err != nil {
+			t.Fatalf("failed to write state file: %v", err)
+		}
+		defer os.Remove(stateFile)
+
+		found := FindLegacyEntireSessionID(agentID)
+		if found != legacySessionID {
+			t.Errorf("FindLegacyEntireSessionID(%q) = %q, want %q", agentID, found, legacySessionID)
+		}
+	})
+
+	t.Run("returns empty for non-existent session", func(t *testing.T) {
+		found := FindLegacyEntireSessionID("nonexistent-session-id")
+		if found != "" {
+			t.Errorf("FindLegacyEntireSessionID(nonexistent) = %q, want empty string", found)
+		}
+	})
+
+	t.Run("returns empty for new-format session", func(t *testing.T) {
+		// Create a new-format state file (no date prefix)
+		newSessionID := "new-format-session-id"
+		stateFile := filepath.Join(stateDir, newSessionID+".json")
+		if err := os.WriteFile(stateFile, []byte(`{"session_id":"`+newSessionID+`"}`), 0o600); err != nil {
+			t.Fatalf("failed to write state file: %v", err)
+		}
+		defer os.Remove(stateFile)
+
+		// Should not find it as "legacy" since it doesn't have date prefix
+		found := FindLegacyEntireSessionID(newSessionID)
+		if found != "" {
+			t.Errorf("FindLegacyEntireSessionID(new-format) = %q, want empty string", found)
+		}
+	})
+
+	t.Run("returns empty for empty agent ID", func(t *testing.T) {
+		found := FindLegacyEntireSessionID("")
+		if found != "" {
+			t.Errorf("FindLegacyEntireSessionID('') = %q, want empty string", found)
+		}
+	})
+
+	t.Run("ignores tmp files", func(t *testing.T) {
+		agentID := "tmp-test-id"
+		legacySessionID := "2026-01-21-" + agentID
+
+		// Create a .tmp file (should be ignored)
+		tmpFile := filepath.Join(stateDir, legacySessionID+".json.tmp")
+		if err := os.WriteFile(tmpFile, []byte(`{"session_id":"`+legacySessionID+`"}`), 0o600); err != nil {
+			t.Fatalf("failed to write tmp file: %v", err)
+		}
+		defer os.Remove(tmpFile)
+
+		found := FindLegacyEntireSessionID(agentID)
+		if found != "" {
+			t.Errorf("FindLegacyEntireSessionID should ignore .tmp files, got %q", found)
+		}
+	})
 }

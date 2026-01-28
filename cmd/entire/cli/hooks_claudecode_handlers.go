@@ -17,6 +17,7 @@ import (
 	"entire.io/cli/cmd/entire/cli/agent/claudecode"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/session"
 	"entire.io/cli/cmd/entire/cli/sessionid"
 	"entire.io/cli/cmd/entire/cli/strategy"
 	"entire.io/cli/cmd/entire/cli/validation"
@@ -967,8 +968,13 @@ func handleSessionStart() error {
 		return errors.New("no session_id in input")
 	}
 
-	// Use agent session ID directly as entire session ID (identity function)
-	entireSessionID := input.SessionID
+	// Check for existing legacy session (backward compatibility with date-prefixed format)
+	// If found, preserve the old session ID to avoid orphaning state files
+	entireSessionID := session.FindLegacyEntireSessionID(input.SessionID)
+	if entireSessionID == "" {
+		// No legacy session found - use agent session ID directly (new format)
+		entireSessionID = input.SessionID
+	}
 
 	// Write session ID to current_session file
 	if err := paths.WriteCurrentSession(entireSessionID); err != nil {

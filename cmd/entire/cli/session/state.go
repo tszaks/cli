@@ -326,3 +326,53 @@ func GetWorktreePath() (string, error) {
 	}
 	return strings.TrimSpace(string(output)), nil
 }
+
+// FindLegacyEntireSessionID checks for existing session state files with a legacy date-prefixed format.
+// Takes an agent session ID and returns the corresponding entire session ID if found
+// (e.g., "2026-01-20-abc123" for agent ID "abc123"), or empty string if no legacy session exists.
+//
+// This provides backward compatibility when resuming sessions that were created before
+// the session ID format change (when EntireSessionID added a date prefix).
+func FindLegacyEntireSessionID(agentSessionID string) string {
+	if agentSessionID == "" {
+		return ""
+	}
+
+	commonDir, err := getGitCommonDir()
+	if err != nil {
+		return ""
+	}
+
+	stateDir := filepath.Join(commonDir, sessionStateDirName)
+	entries, err := os.ReadDir(stateDir)
+	if err != nil {
+		return ""
+	}
+
+	// Look for state files with legacy date-prefixed format matching this agent ID
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			continue
+		}
+
+		existingSessionID := strings.TrimSuffix(entry.Name(), ".json")
+
+		// Check if this is a legacy format (has date prefix) that matches our agent ID
+		// Legacy format: YYYY-MM-DD-<agent-uuid> (11 char prefix)
+		if len(existingSessionID) > 11 &&
+			existingSessionID[4] == '-' &&
+			existingSessionID[7] == '-' &&
+			existingSessionID[10] == '-' {
+			// Extract the agent ID portion and compare
+			extractedAgentID := existingSessionID[11:]
+			if extractedAgentID == agentSessionID {
+				return existingSessionID
+			}
+		}
+	}
+
+	return ""
+}
