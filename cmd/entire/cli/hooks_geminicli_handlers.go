@@ -17,7 +17,6 @@ import (
 	"entire.io/cli/cmd/entire/cli/agent/geminicli"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/session"
 	"entire.io/cli/cmd/entire/cli/strategy"
 )
 
@@ -164,47 +163,8 @@ func checkConcurrentSessionsGemini(entireSessionID string) {
 }
 
 // handleGeminiSessionStart handles the SessionStart hook for Gemini CLI.
-// It reads session info from stdin and sets it as the current session.
 func handleGeminiSessionStart() error {
-	// Get the agent for session ID transformation
-	ag, err := GetCurrentHookAgent()
-	if err != nil {
-		return fmt.Errorf("failed to get agent: %w", err)
-	}
-
-	// Parse hook input using agent interface
-	input, err := ag.ParseHookInput(agent.HookSessionStart, os.Stdin)
-	if err != nil {
-		return fmt.Errorf("failed to parse hook input: %w", err)
-	}
-
-	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
-	logging.Info(logCtx, "gemini-session-start",
-		slog.String("hook", "session-start"),
-		slog.String("hook_type", "agent"),
-		slog.String("model_session_id", input.SessionID),
-		slog.String("transcript_path", input.SessionRef),
-	)
-
-	if input.SessionID == "" {
-		return errors.New("no session_id in input")
-	}
-
-	// Check for existing legacy session (backward compatibility with date-prefixed format)
-	// If found, preserve the old session ID to avoid orphaning state files
-	entireSessionID := session.FindLegacyEntireSessionID(input.SessionID)
-	if entireSessionID == "" {
-		// No legacy session found - use agent session ID directly (new format)
-		entireSessionID = input.SessionID
-	}
-
-	// Write session ID to current_session file
-	if err := paths.WriteCurrentSession(entireSessionID); err != nil {
-		return fmt.Errorf("failed to set current session: %w", err)
-	}
-
-	fmt.Printf("Current session set to: %s\n", entireSessionID)
-	return nil
+	return handleSessionStartCommon()
 }
 
 // handleGeminiSessionEnd handles the SessionEnd hook for Gemini CLI.
