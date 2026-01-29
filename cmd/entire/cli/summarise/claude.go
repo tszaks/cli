@@ -45,11 +45,20 @@ Guidelines:
 - Empty arrays are fine if a category doesn't apply
 - Return ONLY the JSON object, no markdown formatting or explanation`
 
+// DefaultModel is the default model used for summarisation.
+// Sonnet provides a good balance of quality and cost, with 1M context window
+// to handle long transcripts without truncation.
+const DefaultModel = "sonnet"
+
 // ClaudeGenerator generates summaries using the Claude CLI.
 type ClaudeGenerator struct {
 	// ClaudePath is the path to the claude CLI executable.
 	// If empty, defaults to "claude" (expects it to be in PATH).
 	ClaudePath string
+
+	// Model is the Claude model to use for summarisation.
+	// If empty, defaults to DefaultModel ("sonnet").
+	Model string
 
 	// CommandRunner allows injection of the command execution for testing.
 	// If nil, uses exec.CommandContext directly.
@@ -80,8 +89,13 @@ func (g *ClaudeGenerator) Generate(ctx context.Context, input Input) (*checkpoin
 		claudePath = "claude"
 	}
 
+	model := g.Model
+	if model == "" {
+		model = DefaultModel
+	}
+
 	// Use --setting-sources user to avoid project hooks interfering with --print mode
-	cmd := runner(ctx, claudePath, "--print", "--output-format", "json", "--setting-sources", "user")
+	cmd := runner(ctx, claudePath, "--print", "--output-format", "json", "--model", model, "--setting-sources", "user")
 
 	// Pass prompt via stdin
 	cmd.Stdin = strings.NewReader(prompt)
