@@ -232,6 +232,9 @@ func runExplainCheckpoint(w, errW io.Writer, checkpointIDPrefix string, noPager,
 		if err != nil {
 			return fmt.Errorf("failed to reload checkpoint: %w", err)
 		}
+		if result == nil {
+			return fmt.Errorf("checkpoint not found after save: %s", fullCheckpointID)
+		}
 	}
 
 	// Look up the commit message for this checkpoint
@@ -273,7 +276,7 @@ func generateCheckpointSummary(w, errW io.Writer, store *checkpoint.GitStore, ch
 	fmt.Fprintln(errW, "Generating summary...")
 
 	// Generate summary using Claude CLI
-	generator := &summarise.ClaudeGenerator{}
+	var generator summarise.Generator = &summarise.ClaudeGenerator{}
 	ctx := context.Background()
 	summary, err := generator.Generate(ctx, input)
 	if err != nil {

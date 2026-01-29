@@ -2,16 +2,12 @@
 package summarise
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 
 	"entire.io/cli/cmd/entire/cli/checkpoint"
-	"entire.io/cli/cmd/entire/cli/textutil"
 	"entire.io/cli/cmd/entire/cli/transcript"
 )
 
@@ -64,44 +60,11 @@ type TranscriptLine = transcript.Line
 // BuildCondensedTranscriptFromBytes parses transcript bytes and extracts a condensed view.
 // This is a convenience function that combines parsing and condensing.
 func BuildCondensedTranscriptFromBytes(content []byte) ([]Entry, error) {
-	lines, err := parseTranscriptFromBytes(content)
+	lines, err := transcript.ParseFromBytes(content)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse transcript: %w", err)
 	}
 	return BuildCondensedTranscript(lines), nil
-}
-
-// parseTranscriptFromBytes parses transcript content from a byte slice.
-// Uses bufio.Reader to handle arbitrarily long lines.
-func parseTranscriptFromBytes(content []byte) ([]TranscriptLine, error) {
-	var lines []TranscriptLine
-	reader := bufio.NewReader(bytes.NewReader(content))
-
-	for {
-		lineBytes, err := reader.ReadBytes('\n')
-		if err != nil && err != io.EOF {
-			return nil, fmt.Errorf("failed to read transcript: %w", err)
-		}
-
-		// Handle empty line or EOF without content
-		if len(lineBytes) == 0 {
-			if err == io.EOF {
-				break
-			}
-			continue
-		}
-
-		var line TranscriptLine
-		if err := json.Unmarshal(lineBytes, &line); err == nil {
-			lines = append(lines, line)
-		}
-
-		if err == io.EOF {
-			break
-		}
-	}
-
-	return lines, nil
 }
 
 // BuildCondensedTranscript extracts a condensed view of the transcript.
@@ -128,7 +91,7 @@ func BuildCondensedTranscript(lines []TranscriptLine) []Entry {
 // extractUserEntry extracts a user entry from a transcript line.
 // Returns nil if the line doesn't contain a valid user prompt.
 func extractUserEntry(line TranscriptLine) *Entry {
-	content := extractUserContentFromMessage(line.Message)
+	content := transcript.ExtractUserContent(line.Message)
 	if content == "" {
 		return nil
 	}
@@ -136,41 +99,6 @@ func extractUserEntry(line TranscriptLine) *Entry {
 		Type:    EntryTypeUser,
 		Content: content,
 	}
-}
-
-// extractUserContentFromMessage extracts user content from a raw message.
-// Handles both string and array content formats.
-// IDE-injected context tags (like <ide_opened_file>) are stripped from the result.
-// Returns empty string if the message cannot be parsed or contains no text.
-func extractUserContentFromMessage(message json.RawMessage) string {
-	var msg transcript.UserMessage
-	if err := json.Unmarshal(message, &msg); err != nil {
-		return ""
-	}
-
-	// Handle string content
-	if str, ok := msg.Content.(string); ok {
-		return textutil.StripIDEContextTags(str)
-	}
-
-	// Handle array content (only if it contains text blocks)
-	if arr, ok := msg.Content.([]interface{}); ok {
-		var texts []string
-		for _, item := range arr {
-			if m, ok := item.(map[string]interface{}); ok {
-				if m["type"] == transcript.ContentTypeText {
-					if text, ok := m["text"].(string); ok {
-						texts = append(texts, text)
-					}
-				}
-			}
-		}
-		if len(texts) > 0 {
-			return textutil.StripIDEContextTags(strings.Join(texts, "\n\n"))
-		}
-	}
-
-	return ""
 }
 
 // extractAssistantEntries extracts assistant and tool entries from a transcript line.
