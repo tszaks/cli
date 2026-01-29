@@ -361,11 +361,6 @@ func ListAllCleanupItems() ([]CleanupItem, error) {
 
 	// Iterate over all registered strategies
 	for _, name := range List() {
-		// Skip legacy names to avoid duplicates
-		if IsLegacyStrategyName(name) {
-			continue
-		}
-
 		strat, err := Get(name)
 		if err != nil {
 			if firstErr == nil {

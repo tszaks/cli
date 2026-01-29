@@ -191,7 +191,7 @@ func TestResumeFromCurrentBranch_WithEntireCheckpointTrailer(t *testing.T) {
 	_, _, _ = setupResumeTestRepo(t, tmpDir, false)
 
 	// Set up the auto-commit strategy and create checkpoint metadata on entire/sessions branch
-	strat := strategy.NewDualStrategy()
+	strat := strategy.NewAutoCommitStrategy()
 	if err := strat.EnsureSetup(); err != nil {
 		t.Fatalf("Failed to ensure setup: %v", err)
 	}

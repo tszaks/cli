@@ -87,14 +87,6 @@ func NewAutoCommitStrategy() Strategy {
 	return &AutoCommitStrategy{}
 }
 
-// NewDualStrategy creates a new auto-commit strategy instance.
-// This legacy constructor delegates to NewAutoCommitStrategy.
-//
-
-func NewDualStrategy() Strategy {
-	return NewAutoCommitStrategy()
-}
-
 func (s *AutoCommitStrategy) Name() string {
 	return StrategyNameAutoCommit
 }
@@ -995,7 +987,7 @@ func (s *AutoCommitStrategy) ListOrphanedItems() ([]CleanupItem, error) {
 			continue
 		}
 		// Only consider checkpoints created by this strategy
-		if result.Metadata.Strategy == StrategyNameAutoCommit || result.Metadata.Strategy == StrategyNameDual {
+		if result.Metadata.Strategy == StrategyNameAutoCommit {
 			autoCommitCheckpoints[cp.CheckpointID.String()] = true
 		}
 	}
