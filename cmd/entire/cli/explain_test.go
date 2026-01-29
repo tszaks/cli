@@ -895,7 +895,7 @@ func TestRunExplainCheckpoint_NotFound(t *testing.T) {
 	}
 }
 
-func TestFormatCheckpointOutput_Default(t *testing.T) {
+func TestFormatCheckpointOutput_Short(t *testing.T) {
 	result := &checkpoint.ReadCommittedResult{
 		Metadata: checkpoint.CommittedMetadata{
 			CheckpointID:     "abc123def456",

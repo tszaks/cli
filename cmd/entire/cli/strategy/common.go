@@ -1301,8 +1301,9 @@ func GetMainBranchHash(repo *git.Repository) plumbing.Hash {
 // NOTE: Duplicated from cli/git_operations.go - see ENT-129 for consolidation.
 func GetDefaultBranchName(repo *git.Repository) string {
 	// Try to get the symbolic reference for origin/HEAD
-	ref, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", "HEAD"), true)
-	if err == nil && ref != nil {
+	// Use resolved=false to get the symbolic ref itself, then extract its target
+	ref, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", "HEAD"), false)
+	if err == nil && ref != nil && ref.Type() == plumbing.SymbolicReference {
 		target := ref.Target().String()
 		if branchName, found := strings.CutPrefix(target, "refs/remotes/origin/"); found {
 			return branchName

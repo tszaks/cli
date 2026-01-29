@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/logging"
@@ -297,15 +298,13 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 
 	// Full: show transcript
 	if full {
-		// Try to read transcript from shadow branch
-		transcriptPath := tc.MetadataDir + "/full.jsonl"
-		if transcriptFile, fileErr := shadowTree.File(transcriptPath); fileErr == nil {
-			if content, readErr := transcriptFile.Contents(); readErr == nil {
-				sb.WriteString("\n")
-				sb.WriteString("Transcript:\n")
-				sb.WriteString(content)
-				sb.WriteString("\n")
-			}
+		// Use store helper to read transcript - handles chunked and legacy layouts
+		transcript, transcriptErr := store.GetTranscriptFromCommit(tc.CommitHash, tc.MetadataDir, agent.AgentTypeUnknown)
+		if transcriptErr == nil && len(transcript) > 0 {
+			sb.WriteString("\n")
+			sb.WriteString("Transcript:\n")
+			sb.Write(transcript)
+			sb.WriteString("\n")
 		}
 	}
 
@@ -491,7 +490,23 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 	isOnDefault, _ := strategy.IsOnDefaultBranch(repo)
 	var mainBranchHash plumbing.Hash
 	if !isOnDefault {
-		mainBranchHash = strategy.GetMainBranchHash(repo)
+		// Prefer the actual default branch name (which may not be main/master)
+		if defaultBranchName := strategy.GetDefaultBranchName(repo); defaultBranchName != "" {
+			// Try local default branch first: refs/heads/<name>
+			ref, refErr := repo.Reference(plumbing.ReferenceName("refs/heads/"+defaultBranchName), true)
+			if refErr != nil {
+				// Fall back to remote default branch: refs/remotes/origin/<name>
+				ref, refErr = repo.Reference(plumbing.ReferenceName("refs/remotes/origin/"+defaultBranchName), true)
+			}
+			if refErr == nil {
+				mainBranchHash = ref.Hash()
+			}
+		}
+
+		// Fall back to main/master detection if default branch resolution failed
+		if mainBranchHash == plumbing.ZeroHash {
+			mainBranchHash = strategy.GetMainBranchHash(repo)
+		}
 	}
 
 	// Precompute commits reachable from main (for O(1) filtering instead of O(N) per commit)
