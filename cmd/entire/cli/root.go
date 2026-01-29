@@ -37,6 +37,7 @@ func NewRootCmd() *cobra.Command {
 		Long:  "A command-line interface for Entire" + gettingStarted + accessibilityHelp,
 		// Let main.go handle error printing to avoid duplication
 		SilenceErrors: true,
+		SilenceUsage:  true,
 		// Hide completion command from help but keep it functional
 		CompletionOptions: cobra.CompletionOptions{
 			HiddenDefaultCmd: true,
