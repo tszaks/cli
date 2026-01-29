@@ -407,11 +407,6 @@ func TestRunEnableWithStrategy_PreservesExistingSettings(t *testing.T) {
 		"strategy_options": {
 			"push": true,
 			"some_other_option": "value"
-		},
-		"agent_options": {
-			"claude-code": {
-				"ignore_untracked": true
-			}
 		}
 	}`
 	writeSettings(t, initialSettings)
@@ -443,18 +438,6 @@ func TestRunEnableWithStrategy_PreservesExistingSettings(t *testing.T) {
 	}
 	if settings.StrategyOptions["some_other_option"] != "value" {
 		t.Errorf("strategy_options.some_other_option should be 'value', got %v", settings.StrategyOptions["some_other_option"])
-	}
-
-	// agent_options should be preserved
-	if settings.AgentOptions == nil {
-		t.Fatal("agent_options should be preserved, but got nil")
-	}
-	claudeOpts, ok := settings.AgentOptions["claude-code"].(map[string]interface{})
-	if !ok {
-		t.Fatal("agent_options.claude-code should exist")
-	}
-	if claudeOpts["ignore_untracked"] != true {
-		t.Errorf("agent_options.claude-code.ignore_untracked should be true, got %v", claudeOpts["ignore_untracked"])
 	}
 }
 

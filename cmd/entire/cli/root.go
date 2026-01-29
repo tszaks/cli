@@ -60,7 +60,9 @@ func NewRootCmd() *cobra.Command {
 			}
 
 			// Use detached tracking (non-blocking)
-			telemetry.TrackCommandDetached(cmd, settings.Strategy, settings.Agent, settings.Enabled, Version)
+			installedAgents := GetAgentsWithHooksInstalled()
+			agentStr := JoinAgentNames(installedAgents)
+			telemetry.TrackCommandDetached(cmd, settings.Strategy, agentStr, settings.Enabled, Version)
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()

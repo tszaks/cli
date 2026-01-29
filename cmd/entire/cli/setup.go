@@ -628,9 +628,8 @@ func setupAgentHooksNonInteractive(agentName agent.AgentName, strategyName strin
 		fmt.Println(msg)
 	}
 
-	// Update settings to store the agent choice and strategy
+	// Update settings to store the strategy
 	settings, _ := LoadEntireSettings() //nolint:errcheck // settings defaults are fine
-	settings.Agent = string(agentName)
 	settings.Enabled = true
 	if localDev {
 		settings.LocalDev = localDev
