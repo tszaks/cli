@@ -638,7 +638,6 @@ func (s *GitStore) ReadCommitted(ctx context.Context, checkpointID id.Checkpoint
 		if content, contentErr := metadataFile.Contents(); contentErr == nil {
 			//nolint:errcheck,gosec // Best-effort parsing, defaults are fine
 			json.Unmarshal([]byte(content), &result.Metadata)
-			result.Metadata.Strategy = trailers.NormalizeStrategyName(result.Metadata.Strategy)
 		}
 	}
 

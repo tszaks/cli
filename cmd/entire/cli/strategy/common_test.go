@@ -459,6 +459,63 @@ func TestGetDefaultBranchName(t *testing.T) {
 			t.Errorf("GetDefaultBranchName() = %q, want empty string", result)
 		}
 	})
+
+	t.Run("returns origin/HEAD target when set", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		repo, err := git.PlainInit(tmpDir, false)
+		if err != nil {
+			t.Fatalf("failed to init repo: %v", err)
+		}
+
+		// Create initial commit
+		testFile := filepath.Join(tmpDir, "test.txt")
+		if err := os.WriteFile(testFile, []byte("test"), 0o644); err != nil {
+			t.Fatalf("failed to write test file: %v", err)
+		}
+
+		wt, err := repo.Worktree()
+		if err != nil {
+			t.Fatalf("failed to get worktree: %v", err)
+		}
+
+		if _, err := wt.Add("test.txt"); err != nil {
+			t.Fatalf("failed to add file: %v", err)
+		}
+
+		commitHash, err := wt.Commit("Initial commit", &git.CommitOptions{
+			Author: &object.Signature{Name: "Test", Email: "test@example.com"},
+		})
+		if err != nil {
+			t.Fatalf("failed to commit: %v", err)
+		}
+
+		// Create trunk branch (simulate non-standard default branch)
+		trunkRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName("trunk"), commitHash)
+		if err := repo.Storer.SetReference(trunkRef); err != nil {
+			t.Fatalf("failed to create trunk branch: %v", err)
+		}
+
+		// Create origin/trunk remote ref
+		originTrunkRef := plumbing.NewHashReference(plumbing.NewRemoteReferenceName("origin", "trunk"), commitHash)
+		if err := repo.Storer.SetReference(originTrunkRef); err != nil {
+			t.Fatalf("failed to create origin/trunk ref: %v", err)
+		}
+
+		// Set origin/HEAD to point to origin/trunk (symbolic ref)
+		originHeadRef := plumbing.NewSymbolicReference(plumbing.ReferenceName("refs/remotes/origin/HEAD"), plumbing.ReferenceName("refs/remotes/origin/trunk"))
+		if err := repo.Storer.SetReference(originHeadRef); err != nil {
+			t.Fatalf("failed to set origin/HEAD: %v", err)
+		}
+
+		// Delete master branch so it doesn't take precedence
+		_ = repo.Storer.RemoveReference(plumbing.NewBranchReferenceName("master")) //nolint:errcheck // best-effort cleanup for test
+
+		result := GetDefaultBranchName(repo)
+
+		if result != "trunk" {
+			t.Errorf("GetDefaultBranchName() = %q, want %q", result, "trunk")
+		}
+	})
 }
 
 func TestIsOnDefaultBranch(t *testing.T) {

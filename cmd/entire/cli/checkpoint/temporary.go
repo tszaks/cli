@@ -471,6 +471,37 @@ func (s *GitStore) ListTemporaryCheckpoints(ctx context.Context, baseCommit stri
 	return results, nil
 }
 
+// ListAllTemporaryCheckpoints lists checkpoint commits from ALL shadow branches.
+// This is used for checkpoint lookup when the base commit is unknown (e.g., HEAD advanced since session start).
+// The sessionID filter, if provided, limits results to commits from that session.
+func (s *GitStore) ListAllTemporaryCheckpoints(ctx context.Context, sessionID string, limit int) ([]TemporaryCheckpointInfo, error) {
+	_ = ctx // Reserved for future use
+
+	// List all shadow branches
+	branches, err := s.ListTemporary(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list shadow branches: %w", err)
+	}
+
+	var results []TemporaryCheckpointInfo
+
+	// Iterate through each shadow branch and collect checkpoints
+	for _, branch := range branches {
+		// Use the base commit from the branch to get checkpoints
+		branchCheckpoints, branchErr := s.ListTemporaryCheckpoints(ctx, branch.BaseCommit, sessionID, limit)
+		if branchErr != nil {
+			continue // Skip branches we can't read
+		}
+		results = append(results, branchCheckpoints...)
+		if len(results) >= limit {
+			results = results[:limit]
+			break
+		}
+	}
+
+	return results, nil
+}
+
 // extractToolUseIDFromPath extracts the ToolUseID from a task metadata directory path.
 // Task metadata dirs have format: .entire/metadata/<session>/tasks/<toolUseID>
 func extractToolUseIDFromPath(metadataDir string) string {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/logging"
@@ -119,6 +120,9 @@ Only one of --session, --commit, or --checkpoint can be specified at a time.`,
 	cmd.Flags().BoolVar(&generateFlag, "generate", false, "Generate an AI summary for the checkpoint")
 	cmd.Flags().BoolVar(&forceFlag, "force", false, "Regenerate summary even if one already exists (requires --generate)")
 
+	// Make --short and --full mutually exclusive
+	cmd.MarkFlagsMutuallyExclusive("short", "full")
+
 	return cmd
 }
 
@@ -192,6 +196,10 @@ func runExplainCheckpoint(w, errW io.Writer, checkpointIDPrefix string, noPager,
 		if found {
 			outputExplainContent(w, output, noPager)
 			return nil
+		}
+		// If output is non-empty, it contains an error message (e.g., ambiguous prefix)
+		if output != "" {
+			return errors.New(output)
 		}
 		return fmt.Errorf("checkpoint not found: %s", checkpointIDPrefix)
 	case 1:
@@ -283,16 +291,12 @@ func generateCheckpointSummary(w, errW io.Writer, store *checkpoint.GitStore, ch
 
 // explainTemporaryCheckpoint finds and formats a temporary checkpoint by shadow commit hash prefix.
 // Returns the formatted output and whether the checkpoint was found.
+// Searches ALL shadow branches, not just the one for current HEAD, to find checkpoints
+// created from different base commits (e.g., if HEAD advanced since session start).
 func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore, shaPrefix string, verbose, full bool) (string, bool) {
-	// Get current HEAD to find shadow branch
-	head, err := repo.Head()
-	if err != nil {
-		return "", false
-	}
-	headShort := head.Hash().String()[:7]
-
-	// List temporary checkpoints on current shadow branch
-	tempCheckpoints, err := store.ListTemporaryCheckpoints(context.Background(), headShort, "", branchCheckpointsLimit)
+	// List temporary checkpoints from ALL shadow branches
+	// This ensures we find checkpoints even if HEAD has advanced since the session started
+	tempCheckpoints, err := store.ListAllTemporaryCheckpoints(context.Background(), "", branchCheckpointsLimit)
 	if err != nil {
 		return "", false
 	}
@@ -310,9 +314,9 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 	}
 
 	if len(matches) > 1 {
-		// Multiple matches - return ambiguous error as output
+		// Multiple matches - return ambiguous error (consistent with committed checkpoint behavior)
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "Ambiguous checkpoint prefix %q matches %d temporary checkpoints:\n\n", shaPrefix, len(matches))
+		fmt.Fprintf(&sb, "ambiguous checkpoint prefix %q matches %d temporary checkpoints:\n", shaPrefix, len(matches))
 		for _, m := range matches {
 			shortID := m.CommitHash.String()[:7]
 			fmt.Fprintf(&sb, "  %s  %s  session %s\n",
@@ -320,8 +324,8 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 				m.Timestamp.Format("2006-01-02 15:04:05"),
 				m.SessionID)
 		}
-		sb.WriteString("\nPlease use a longer checkpoint prefix to disambiguate.\n")
-		return sb.String(), true
+		// Return as "not found" with error message - caller will use this as error
+		return sb.String(), false
 	}
 
 	tc := matches[0]
@@ -373,15 +377,13 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 
 	// Full: show transcript
 	if full {
-		// Try to read transcript from shadow branch
-		transcriptPath := tc.MetadataDir + "/full.jsonl"
-		if transcriptFile, fileErr := shadowTree.File(transcriptPath); fileErr == nil {
-			if content, readErr := transcriptFile.Contents(); readErr == nil {
-				sb.WriteString("\n")
-				sb.WriteString("Transcript:\n")
-				sb.WriteString(content)
-				sb.WriteString("\n")
-			}
+		// Use store helper to read transcript - handles chunked and legacy layouts
+		transcript, transcriptErr := store.GetTranscriptFromCommit(tc.CommitHash, tc.MetadataDir, agent.AgentTypeUnknown)
+		if transcriptErr == nil && len(transcript) > 0 {
+			sb.WriteString("\n")
+			sb.WriteString("Transcript:\n")
+			sb.Write(transcript)
+			sb.WriteString("\n")
 		}
 	}
 
@@ -625,6 +627,10 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 
 	head, err := repo.Head()
 	if err != nil {
+		// Unborn HEAD (no commits yet) - return empty list instead of erroring
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			return []strategy.RewindPoint{}, nil
+		}
 		return nil, fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
@@ -632,7 +638,42 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 	isOnDefault, _ := strategy.IsOnDefaultBranch(repo)
 	var mainBranchHash plumbing.Hash
 	if !isOnDefault {
-		mainBranchHash = strategy.GetMainBranchHash(repo)
+		// Prefer the actual default branch name (which may not be main/master)
+		if defaultBranchName := strategy.GetDefaultBranchName(repo); defaultBranchName != "" {
+			// Try local default branch first: refs/heads/<name>
+			ref, refErr := repo.Reference(plumbing.ReferenceName("refs/heads/"+defaultBranchName), true)
+			if refErr != nil {
+				// Fall back to remote default branch: refs/remotes/origin/<name>
+				ref, refErr = repo.Reference(plumbing.ReferenceName("refs/remotes/origin/"+defaultBranchName), true)
+			}
+			if refErr == nil {
+				mainBranchHash = ref.Hash()
+			}
+		}
+
+		// Fall back to main/master detection if default branch resolution failed
+		if mainBranchHash == plumbing.ZeroHash {
+			mainBranchHash = strategy.GetMainBranchHash(repo)
+		}
+	}
+
+	// Precompute commits reachable from main (for O(1) filtering instead of O(N) per commit)
+	// This changes the filtering from O(N*M) to O(N+M) where N=commits scanned, M=main history depth
+	reachableFromMain := make(map[plumbing.Hash]bool)
+	if mainBranchHash != plumbing.ZeroHash {
+		mainIter, mainErr := repo.Log(&git.LogOptions{From: mainBranchHash})
+		if mainErr == nil {
+			mainCount := 0
+			_ = mainIter.ForEach(func(c *object.Commit) error { //nolint:errcheck // Best-effort
+				mainCount++
+				if mainCount > 1000 { // Same depth limit as before
+					return errStopIteration
+				}
+				reachableFromMain[c.Hash] = true
+				return nil
+			})
+			mainIter.Close()
+		}
 	}
 
 	// Walk git history and collect checkpoints
@@ -660,8 +701,8 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 
 		// On feature branches, skip commits that are reachable from main
 		// (but continue scanning - there may be more feature branch commits)
-		if mainBranchHash != plumbing.ZeroHash {
-			if isAncestorOf(repo, c.Hash, mainBranchHash) {
+		if len(reachableFromMain) > 0 {
+			if reachableFromMain[c.Hash] {
 				consecutiveMainCount++
 				if consecutiveMainCount >= consecutiveMainLimit {
 					return errStopIteration // Likely exhausted feature branch commits
@@ -686,12 +727,15 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 		// Create rewind point from committed info
 		message := strings.Split(c.Message, "\n")[0]
 		point := strategy.RewindPoint{
-			ID:           c.Hash.String(),
-			Message:      message,
-			Date:         c.Committer.When,
-			IsLogsOnly:   true, // Committed checkpoints are logs-only
-			CheckpointID: cpID,
-			SessionID:    cpInfo.SessionID,
+			ID:               c.Hash.String(),
+			Message:          message,
+			Date:             c.Committer.When,
+			IsLogsOnly:       true, // Committed checkpoints are logs-only
+			CheckpointID:     cpID,
+			SessionID:        cpInfo.SessionID,
+			IsTaskCheckpoint: cpInfo.IsTask,
+			ToolUseID:        cpInfo.ToolUseID,
+			Agent:            cpInfo.Agent,
 		}
 
 		// Read session prompt from metadata branch (best-effort)
@@ -707,41 +751,9 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 		return nil, fmt.Errorf("error iterating commits: %w", err)
 	}
 
-	// Also get temporary checkpoints from shadow branch for current HEAD
-	headShort := head.Hash().String()[:7]
-	tempCheckpoints, _ := store.ListTemporaryCheckpoints(context.Background(), headShort, "", limit) //nolint:errcheck // Best-effort, continue without temp checkpoints
-	for _, tc := range tempCheckpoints {
-		shadowCommit, commitErr := repo.CommitObject(tc.CommitHash)
-		if commitErr != nil {
-			continue
-		}
-
-		// Filter out checkpoints with no code changes (only .entire/ metadata changed)
-		// This also filters out the first checkpoint which is just a baseline copy
-		if !hasCodeChanges(shadowCommit) {
-			continue
-		}
-
-		// Read session prompt from the shadow branch commit's tree (not from entire/sessions)
-		// Temporary checkpoints store their metadata in the shadow branch, not in entire/sessions
-		var sessionPrompt string
-		shadowTree, treeErr := shadowCommit.Tree()
-		if treeErr == nil {
-			sessionPrompt = strategy.ReadSessionPromptFromTree(shadowTree, tc.MetadataDir)
-		}
-
-		points = append(points, strategy.RewindPoint{
-			ID:               tc.CommitHash.String(),
-			Message:          tc.Message,
-			MetadataDir:      tc.MetadataDir,
-			Date:             tc.Timestamp,
-			IsTaskCheckpoint: tc.IsTaskCheckpoint,
-			ToolUseID:        tc.ToolUseID,
-			SessionID:        tc.SessionID,
-			SessionPrompt:    sessionPrompt,
-			IsLogsOnly:       false, // Temporary checkpoints can be fully rewound
-		})
-	}
+	// Get temporary checkpoints from ALL shadow branches whose base commit is reachable from HEAD.
+	tempPoints := getReachableTemporaryCheckpoints(repo, store, head.Hash(), isOnDefault, limit)
+	points = append(points, tempPoints...)
 
 	// Sort by date, most recent first
 	sort.Slice(points, func(i, j int) bool {
@@ -756,27 +768,57 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 	return points, nil
 }
 
-// isAncestorOf checks if commit is an ancestor of (or equal to) target.
-// Returns true if target can reach commit by following parent links.
-func isAncestorOf(repo *git.Repository, commit, target plumbing.Hash) bool {
-	if commit == target {
+// getReachableTemporaryCheckpoints returns temporary checkpoints from shadow branches
+// whose base commit is reachable from the given HEAD hash.
+// For default branches, all shadow branches are included.
+// For feature branches, only shadow branches whose base commit is in HEAD's history are included.
+func getReachableTemporaryCheckpoints(repo *git.Repository, store *checkpoint.GitStore, headHash plumbing.Hash, isOnDefault bool, limit int) []strategy.RewindPoint {
+	var points []strategy.RewindPoint
+
+	shadowBranches, _ := store.ListTemporary(context.Background()) //nolint:errcheck // Best-effort
+	for _, sb := range shadowBranches {
+		// Check if this shadow branch's base commit is reachable from current HEAD
+		if !isShadowBranchReachable(repo, sb.BaseCommit, headHash, isOnDefault) {
+			continue
+		}
+
+		// List checkpoints from this shadow branch
+		tempCheckpoints, _ := store.ListTemporaryCheckpoints(context.Background(), sb.BaseCommit, "", limit) //nolint:errcheck // Best-effort
+		for _, tc := range tempCheckpoints {
+			point := convertTemporaryCheckpoint(repo, tc)
+			if point != nil {
+				points = append(points, *point)
+			}
+		}
+	}
+
+	return points
+}
+
+// isShadowBranchReachable checks if a shadow branch's base commit is reachable from HEAD.
+// For default branches, all shadow branches are considered reachable.
+// For feature branches, we check if any commit with the base commit prefix is in HEAD's history.
+func isShadowBranchReachable(repo *git.Repository, baseCommit string, headHash plumbing.Hash, isOnDefault bool) bool {
+	// For default branch: all shadow branches are potentially relevant
+	if isOnDefault {
 		return true
 	}
 
-	iter, err := repo.Log(&git.LogOptions{From: target})
-	if err != nil {
+	// Check if base commit hash prefix matches any commit in HEAD's history
+	baseCommitIter, baseErr := repo.Log(&git.LogOptions{From: headHash})
+	if baseErr != nil {
 		return false
 	}
-	defer iter.Close()
+	defer baseCommitIter.Close()
 
+	baseCount := 0
 	found := false
-	count := 0
-	_ = iter.ForEach(func(c *object.Commit) error { //nolint:errcheck // Best-effort search, errors are non-fatal
-		count++
-		if count > 1000 {
+	_ = baseCommitIter.ForEach(func(c *object.Commit) error { //nolint:errcheck // Best-effort
+		baseCount++
+		if baseCount > commitScanLimit {
 			return errStopIteration
 		}
-		if c.Hash == commit {
+		if strings.HasPrefix(c.Hash.String(), baseCommit) {
 			found = true
 			return errStopIteration
 		}
@@ -784,6 +826,41 @@ func isAncestorOf(repo *git.Repository, commit, target plumbing.Hash) bool {
 	})
 
 	return found
+}
+
+// convertTemporaryCheckpoint converts a TemporaryCheckpointInfo to a RewindPoint.
+// Returns nil if the checkpoint should be skipped (no code changes or can't be read).
+func convertTemporaryCheckpoint(repo *git.Repository, tc checkpoint.TemporaryCheckpointInfo) *strategy.RewindPoint {
+	shadowCommit, commitErr := repo.CommitObject(tc.CommitHash)
+	if commitErr != nil {
+		return nil
+	}
+
+	// Filter out checkpoints with no code changes (only .entire/ metadata changed)
+	// This also filters out the first checkpoint which is just a baseline copy
+	if !hasCodeChanges(shadowCommit) {
+		return nil
+	}
+
+	// Read session prompt from the shadow branch commit's tree (not from entire/sessions)
+	// Temporary checkpoints store their metadata in the shadow branch, not in entire/sessions
+	var sessionPrompt string
+	shadowTree, treeErr := shadowCommit.Tree()
+	if treeErr == nil {
+		sessionPrompt = strategy.ReadSessionPromptFromTree(shadowTree, tc.MetadataDir)
+	}
+
+	return &strategy.RewindPoint{
+		ID:               tc.CommitHash.String(),
+		Message:          tc.Message,
+		MetadataDir:      tc.MetadataDir,
+		Date:             tc.Timestamp,
+		IsTaskCheckpoint: tc.IsTaskCheckpoint,
+		ToolUseID:        tc.ToolUseID,
+		SessionID:        tc.SessionID,
+		SessionPrompt:    sessionPrompt,
+		IsLogsOnly:       false, // Temporary checkpoints can be fully rewound
+	}
 }
 
 // runExplainBranchDefault shows all checkpoints on the current branch grouped by date.
@@ -797,12 +874,18 @@ func runExplainBranchDefault(w io.Writer, noPager bool) error {
 	// Get current branch name
 	branchName := strategy.GetCurrentBranchName(repo)
 	if branchName == "" {
-		// Detached HEAD state - use short commit hash instead
+		// Detached HEAD state or unborn HEAD - try to use short commit hash if possible
 		head, headErr := repo.Head()
 		if headErr != nil {
-			return fmt.Errorf("failed to get HEAD: %w", headErr)
+			// Unborn HEAD (no commits yet) - treat as empty history instead of erroring
+			if errors.Is(headErr, plumbing.ErrReferenceNotFound) {
+				branchName = "HEAD (no commits yet)"
+			} else {
+				return fmt.Errorf("failed to get HEAD: %w", headErr)
+			}
+		} else {
+			branchName = "HEAD (" + head.Hash().String()[:7] + ")"
 		}
-		branchName = "HEAD (" + head.Hash().String()[:7] + ")"
 	}
 
 	// Get checkpoints for this branch (strategy-agnostic)
@@ -1384,7 +1467,7 @@ func formatCheckpointGroup(sb *strings.Builder, group checkpointGroup) {
 	// Skip [temporary] indicator when cpID is already "temporary" to avoid redundancy
 	var indicators []string
 	if group.isTask {
-		indicators = append(indicators, "[task]")
+		indicators = append(indicators, "[Task]")
 	}
 	if group.isTemporary && cpID != "temporary" {
 		indicators = append(indicators, "[temporary]")

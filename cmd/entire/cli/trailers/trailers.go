@@ -67,7 +67,7 @@ var (
 func ParseStrategy(commitMessage string) (string, bool) {
 	matches := strategyTrailerRegex.FindStringSubmatch(commitMessage)
 	if len(matches) > 1 {
-		return NormalizeStrategyName(strings.TrimSpace(matches[1])), true
+		return strings.TrimSpace(matches[1]), true
 	}
 	return "", false
 }
@@ -160,20 +160,6 @@ func ParseAllSessions(commitMessage string) []string {
 		}
 	}
 	return sessionIDs
-}
-
-// NormalizeStrategyName maps legacy strategy names to current names.
-// These are the strategy names used during initial development and are kept for backwards
-// compatibility.
-func NormalizeStrategyName(name string) string {
-	switch name {
-	case "dual":
-		return "auto-commit"
-	case "shadow":
-		return "manual-commit"
-	default:
-		return name
-	}
 }
 
 // FormatStrategy creates a commit message with just the strategy trailer.
