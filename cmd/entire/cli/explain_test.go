@@ -39,6 +39,34 @@ func TestNewExplainCmd(t *testing.T) {
 	}
 }
 
+func TestExplainCmd_ShowsHelpForPositionalArgWithoutFlag(t *testing.T) {
+	cmd := newExplainCmd()
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"abc123"}) // positional arg without --checkpoint, --session, or --commit
+
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	// Should show hint on stderr
+	errOutput := stderr.String()
+	if !strings.Contains(errOutput, "Hint:") {
+		t.Errorf("expected hint message on stderr, got:\n%s", errOutput)
+	}
+
+	// Should show help text on stdout (contains usage info)
+	output := stdout.String()
+	if !strings.Contains(output, "Usage:") {
+		t.Errorf("expected help output with 'Usage:', got:\n%s", output)
+	}
+	if !strings.Contains(output, "--checkpoint") {
+		t.Errorf("expected help output to mention --checkpoint flag, got:\n%s", output)
+	}
+}
+
 func TestExplainSession_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)

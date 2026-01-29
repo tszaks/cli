@@ -84,7 +84,12 @@ Output verbosity levels (for --checkpoint):
   --full:    + complete transcript
 
 Only one of --session, --commit, or --checkpoint can be specified at a time.`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// If positional args provided without qualifier flags, show help
+			if len(args) > 0 && sessionFlag == "" && commitFlag == "" && checkpointFlag == "" {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Hint: use --checkpoint, --session, or --commit to specify what to explain\n\n")
+				return cmd.Help()
+			}
 			// Check if Entire is disabled
 			if checkDisabledGuard(cmd.OutOrStdout()) {
 				return nil
