@@ -247,7 +247,7 @@ func runExplainCheckpoint(w, errW io.Writer, checkpointIDPrefix string, noPager,
 }
 
 // generateCheckpointSummary generates an AI summary for a checkpoint and persists it.
-func generateCheckpointSummary(w, errW io.Writer, store *checkpoint.GitStore, checkpointID id.CheckpointID, result *checkpoint.ReadCommittedResult, force bool) error {
+func generateCheckpointSummary(w, _ io.Writer, store *checkpoint.GitStore, checkpointID id.CheckpointID, result *checkpoint.ReadCommittedResult, force bool) error {
 	// Check if summary already exists
 	if result.Metadata.Summary != nil && !force {
 		return fmt.Errorf("checkpoint %s already has a summary (use --force to regenerate)", checkpointID)
@@ -272,12 +272,11 @@ func generateCheckpointSummary(w, errW io.Writer, store *checkpoint.GitStore, ch
 		FilesTouched: result.Metadata.FilesTouched,
 	}
 
-	// Show progress indicator
-	fmt.Fprintln(errW, "Generating summary...")
-
 	// Generate summary using Claude CLI
-	var generator summarise.Generator = &summarise.ClaudeGenerator{}
 	ctx := context.Background()
+	logging.Info(ctx, "generating checkpoint summary")
+
+	var generator summarise.Generator = &summarise.ClaudeGenerator{}
 	summary, err := generator.Generate(ctx, input)
 	if err != nil {
 		return fmt.Errorf("failed to generate summary: %w", err)
