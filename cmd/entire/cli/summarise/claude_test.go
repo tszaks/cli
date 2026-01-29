@@ -173,7 +173,7 @@ func TestClaudeGenerator_MarkdownCodeBlock(t *testing.T) {
 func TestBuildSummarisationPrompt(t *testing.T) {
 	transcriptText := "[User] Hello\n\n[Assistant] Hi"
 
-	prompt := BuildSummarisationPrompt(transcriptText)
+	prompt := buildSummarisationPrompt(transcriptText)
 
 	if !strings.Contains(prompt, "<transcript>") {
 		t.Error("prompt should contain <transcript> tag")

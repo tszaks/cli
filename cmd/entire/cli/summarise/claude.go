@@ -76,7 +76,7 @@ func (g *ClaudeGenerator) Generate(ctx context.Context, input Input) (*checkpoin
 	transcriptText := FormatCondensedTranscript(input)
 
 	// Build the prompt
-	prompt := BuildSummarisationPrompt(transcriptText)
+	prompt := buildSummarisationPrompt(transcriptText)
 
 	// Execute the Claude CLI
 	runner := g.CommandRunner
@@ -142,8 +142,8 @@ func (g *ClaudeGenerator) Generate(ctx context.Context, input Input) (*checkpoin
 	return &summary, nil
 }
 
-// BuildSummarisationPrompt creates the prompt for the Claude CLI.
-func BuildSummarisationPrompt(transcriptText string) string {
+// buildSummarisationPrompt creates the prompt for the Claude CLI.
+func buildSummarisationPrompt(transcriptText string) string {
 	return fmt.Sprintf(summarisationPromptTemplate, transcriptText)
 }
 
