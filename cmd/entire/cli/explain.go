@@ -1297,4 +1297,3 @@ func hasCodeChanges(commit *object.Commit) bool {
 
 	return false
 }
-

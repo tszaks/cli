@@ -19,6 +19,7 @@ const (
 	transcriptTypeUser      = "user"
 	transcriptTypeAssistant = "assistant"
 	contentTypeText         = "text"
+	contentTypeToolUse      = "tool_use"
 )
 
 // parseTranscript reads and parses a Claude Code transcript file.
@@ -391,7 +392,7 @@ func extractModifiedFiles(transcript []transcriptLine) []string {
 			}
 
 			for _, block := range msg.Content {
-				if block.Type == "tool_use" {
+				if block.Type == contentTypeToolUse {
 					isModifyTool := false
 					for _, name := range claudecode.FileModificationTools {
 						if block.Name == name {
@@ -436,7 +437,7 @@ func extractKeyActions(transcript []transcriptLine, maxActions int) []string {
 			}
 
 			for _, block := range msg.Content {
-				if block.Type == "tool_use" {
+				if block.Type == contentTypeToolUse {
 					var input toolInput
 					_ = json.Unmarshal(block.Input, &input) //nolint:errcheck // Best-effort parsing for display purposes
 
