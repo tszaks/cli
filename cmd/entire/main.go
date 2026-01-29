@@ -35,8 +35,8 @@ func main() {
 		switch {
 		case errors.As(err, &silent):
 			// Command already printed the error
-		case strings.Contains(err.Error(), "unknown command"):
-			showSuggestion(rootCmd)
+		case strings.Contains(err.Error(), "unknown command") || strings.Contains(err.Error(), "unknown flag"):
+			showSuggestion(rootCmd, err)
 		default:
 			fmt.Fprintln(rootCmd.OutOrStderr(), err)
 		}
@@ -47,17 +47,8 @@ func main() {
 	cancel() // Cleanup on successful exit
 }
 
-func showSuggestion(cmd *cobra.Command) {
+func showSuggestion(cmd *cobra.Command, err error) {
 	// Print usage first (brew style)
 	fmt.Fprint(cmd.OutOrStderr(), cmd.UsageString())
-
-	// Build error message with optional suggestion
-	errMsg := fmt.Sprintf("Unknown command: %s %s", cmd.CommandPath(), os.Args[1])
-	suggestions := cmd.SuggestionsFor(os.Args[1])
-	if len(suggestions) > 0 {
-		errMsg += fmt.Sprintf(". Did you mean \"%s\"?", suggestions[0])
-	}
-
-	// Print error at the end
-	fmt.Fprintf(cmd.OutOrStderr(), "\nError: Invalid usage: %s\n", errMsg)
+	fmt.Fprintf(cmd.OutOrStderr(), "\nError: Invalid usage: %v\n", err)
 }

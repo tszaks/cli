@@ -68,11 +68,6 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 
-	cmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
-		fmt.Fprint(cmd.OutOrStderr(), cmd.UsageString())
-		fmt.Fprintf(cmd.OutOrStderr(), "\nError: Invalid usage: %v\n", err)
-		return NewSilentError(err)
-	})
 	// Add subcommands here
 	cmd.AddCommand(newRewindCmd())
 	cmd.AddCommand(newResumeCmd())
