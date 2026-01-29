@@ -66,7 +66,8 @@ func (g *ClaudeCLIGenerator) Generate(ctx context.Context, input SummaryInput) (
 		runner = exec.CommandContext
 	}
 
-	cmd := runner(ctx, "claude", "--print", "--output-format", "json")
+	// Use --setting-sources user to avoid project hooks interfering with --print mode
+	cmd := runner(ctx, "claude", "--print", "--output-format", "json", "--setting-sources", "user")
 
 	// Pass prompt via stdin
 	cmd.Stdin = strings.NewReader(prompt)
