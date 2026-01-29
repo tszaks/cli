@@ -430,11 +430,8 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 	meta := result.Metadata
 
 	// Header - always shown
-	shortID := checkpointID
-	if len(shortID) > checkpointIDDisplayLength {
-		shortID = shortID[:checkpointIDDisplayLength]
-	}
-	fmt.Fprintf(&sb, "Checkpoint: %s\n", shortID)
+	// Note: CheckpointID is always exactly 12 characters, matching checkpointIDDisplayLength
+	fmt.Fprintf(&sb, "Checkpoint: %s\n", checkpointID)
 	fmt.Fprintf(&sb, "Session: %s\n", meta.SessionID)
 	fmt.Fprintf(&sb, "Created: %s\n", meta.CreatedAt.Format("2006-01-02 15:04:05"))
 

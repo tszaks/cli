@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"entire.io/cli/cmd/entire/cli/checkpoint"
-	"entire.io/cli/cmd/entire/cli/textutil"
 )
 
 // SummaryGenerator generates checkpoint summaries using an LLM.
@@ -77,48 +76,15 @@ func BuildCondensedTranscript(transcript []transcriptLine) []TranscriptEntry {
 // extractUserEntry extracts a user entry from a transcript line.
 // Returns nil if the line doesn't contain a valid user prompt.
 func extractUserEntry(line transcriptLine) *TranscriptEntry {
-	var msg userMessage
-	if err := json.Unmarshal(line.Message, &msg); err != nil {
+	// Use shared helper for user content extraction
+	content := extractUserContentFromMessage(line.Message)
+	if content == "" {
 		return nil
 	}
-
-	// Handle string content
-	if str, ok := msg.Content.(string); ok {
-		cleaned := textutil.StripIDEContextTags(str)
-		if cleaned == "" {
-			return nil
-		}
-		return &TranscriptEntry{
-			Type:    EntryTypeUser,
-			Content: cleaned,
-		}
+	return &TranscriptEntry{
+		Type:    EntryTypeUser,
+		Content: content,
 	}
-
-	// Handle array content (only if it contains text blocks)
-	if arr, ok := msg.Content.([]interface{}); ok {
-		var texts []string
-		for _, item := range arr {
-			if m, ok := item.(map[string]interface{}); ok {
-				if m["type"] == contentTypeText {
-					if text, ok := m["text"].(string); ok {
-						texts = append(texts, text)
-					}
-				}
-			}
-		}
-		if len(texts) > 0 {
-			cleaned := textutil.StripIDEContextTags(strings.Join(texts, "\n\n"))
-			if cleaned == "" {
-				return nil
-			}
-			return &TranscriptEntry{
-				Type:    EntryTypeUser,
-				Content: cleaned,
-			}
-		}
-	}
-
-	return nil
 }
 
 // extractAssistantEntries extracts assistant and tool entries from a transcript line.

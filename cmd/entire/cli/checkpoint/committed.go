@@ -847,7 +847,7 @@ func (s *GitStore) UpdateSummary(ctx context.Context, checkpointID id.Checkpoint
 	}
 
 	authorName, authorEmail := getGitAuthorFromRepo(s.repo)
-	commitMsg := fmt.Sprintf("Update summary: %s", checkpointID)
+	commitMsg := fmt.Sprintf("Update summary for checkpoint %s (session: %s)", checkpointID, existingMetadata.SessionID)
 	newCommitHash, err := s.createCommit(newTreeHash, ref.Hash(), commitMsg, authorName, authorEmail)
 	if err != nil {
 		return err

@@ -13,6 +13,11 @@ import (
 )
 
 // summarizationPromptTemplate is the prompt used to generate summaries via the Claude CLI.
+//
+// Security note: The transcript is wrapped in <transcript> tags to provide clear boundary
+// markers. This helps contain any potentially malicious content within the transcript
+// (e.g., prompt injection attempts in user messages or file contents) by giving the LLM
+// a clear structural signal about where the untrusted content begins and ends.
 const summarizationPromptTemplate = `Analyze this development session transcript and generate a structured summary.
 
 <transcript>
@@ -42,6 +47,10 @@ Guidelines:
 
 // ClaudeCLIGenerator generates summaries using the Claude CLI.
 type ClaudeCLIGenerator struct {
+	// ClaudePath is the path to the claude CLI executable.
+	// If empty, defaults to "claude" (expects it to be in PATH).
+	ClaudePath string
+
 	// CommandRunner allows injection of the command execution for testing.
 	// If nil, uses exec.CommandContext directly.
 	CommandRunner func(ctx context.Context, name string, args ...string) *exec.Cmd
@@ -66,8 +75,13 @@ func (g *ClaudeCLIGenerator) Generate(ctx context.Context, input SummaryInput) (
 		runner = exec.CommandContext
 	}
 
+	claudePath := g.ClaudePath
+	if claudePath == "" {
+		claudePath = "claude"
+	}
+
 	// Use --setting-sources user to avoid project hooks interfering with --print mode
-	cmd := runner(ctx, "claude", "--print", "--output-format", "json", "--setting-sources", "user")
+	cmd := runner(ctx, claudePath, "--print", "--output-format", "json", "--setting-sources", "user")
 
 	// Pass prompt via stdin
 	cmd.Stdin = strings.NewReader(prompt)
