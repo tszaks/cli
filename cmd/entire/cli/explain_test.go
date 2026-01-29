@@ -1454,10 +1454,9 @@ func TestRunExplainBranchDefault_DetachedHead(t *testing.T) {
 
 	output := stdout.String()
 
-	// Should indicate detached HEAD state
+	// Should indicate detached HEAD state in branch name
 	if !strings.Contains(output, "HEAD") && !strings.Contains(output, "detached") {
-		// We need to handle detached HEAD somehow - either show HEAD or show a message
-		t.Logf("Output for detached HEAD: %s", output)
+		t.Errorf("expected output to indicate detached HEAD state, got: %s", output)
 	}
 }
 
@@ -1859,7 +1858,9 @@ func TestGetBranchCheckpoints_FiltersMainCommits(t *testing.T) {
 		t.Fatalf("getBranchCheckpoints() error = %v", err)
 	}
 
-	// The filtering should have run without error
-	// (we can't fully test without setting up entire/sessions branch with checkpoint data)
-	t.Logf("Got %d checkpoints (expected 0 without checkpoint data)", len(points))
+	// Without checkpoint data (no entire/sessions branch), should return 0 checkpoints
+	// This validates the filtering code path runs without error
+	if len(points) != 0 {
+		t.Errorf("expected 0 checkpoints without checkpoint data, got %d", len(points))
+	}
 }

@@ -171,6 +171,10 @@ func runExplainCheckpoint(w io.Writer, checkpointIDPrefix string, noPager, verbo
 			outputExplainContent(w, output, noPager)
 			return nil
 		}
+		// If output is non-empty, it contains an error message (e.g., ambiguous prefix)
+		if output != "" {
+			return errors.New(output)
+		}
 		return fmt.Errorf("checkpoint not found: %s", checkpointIDPrefix)
 	case 1:
 		fullCheckpointID = matches[0]
@@ -230,9 +234,9 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 	}
 
 	if len(matches) > 1 {
-		// Multiple matches - return ambiguous error as output
+		// Multiple matches - return ambiguous error (consistent with committed checkpoint behavior)
 		var sb strings.Builder
-		fmt.Fprintf(&sb, "Ambiguous checkpoint prefix %q matches %d temporary checkpoints:\n\n", shaPrefix, len(matches))
+		fmt.Fprintf(&sb, "ambiguous checkpoint prefix %q matches %d temporary checkpoints:\n", shaPrefix, len(matches))
 		for _, m := range matches {
 			shortID := m.CommitHash.String()[:7]
 			fmt.Fprintf(&sb, "  %s  %s  session %s\n",
@@ -240,8 +244,8 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 				m.Timestamp.Format("2006-01-02 15:04:05"),
 				m.SessionID)
 		}
-		sb.WriteString("\nPlease use a longer checkpoint prefix to disambiguate.\n")
-		return sb.String(), true
+		// Return as "not found" with error message - caller will use this as error
+		return sb.String(), false
 	}
 
 	tc := matches[0]
@@ -490,6 +494,25 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 		mainBranchHash = strategy.GetMainBranchHash(repo)
 	}
 
+	// Precompute commits reachable from main (for O(1) filtering instead of O(N) per commit)
+	// This changes the filtering from O(N*M) to O(N+M) where N=commits scanned, M=main history depth
+	reachableFromMain := make(map[plumbing.Hash]bool)
+	if mainBranchHash != plumbing.ZeroHash {
+		mainIter, mainErr := repo.Log(&git.LogOptions{From: mainBranchHash})
+		if mainErr == nil {
+			mainCount := 0
+			_ = mainIter.ForEach(func(c *object.Commit) error { //nolint:errcheck // Best-effort
+				mainCount++
+				if mainCount > 1000 { // Same depth limit as before
+					return errStopIteration
+				}
+				reachableFromMain[c.Hash] = true
+				return nil
+			})
+			mainIter.Close()
+		}
+	}
+
 	// Walk git history and collect checkpoints
 	iter, err := repo.Log(&git.LogOptions{
 		From:  head.Hash(),
@@ -515,8 +538,8 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 
 		// On feature branches, skip commits that are reachable from main
 		// (but continue scanning - there may be more feature branch commits)
-		if mainBranchHash != plumbing.ZeroHash {
-			if strategy.IsAncestorOf(repo, c.Hash, mainBranchHash) {
+		if len(reachableFromMain) > 0 {
+			if reachableFromMain[c.Hash] {
 				consecutiveMainCount++
 				if consecutiveMainCount >= consecutiveMainLimit {
 					return errStopIteration // Likely exhausted feature branch commits
@@ -541,12 +564,15 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 		// Create rewind point from committed info
 		message := strings.Split(c.Message, "\n")[0]
 		point := strategy.RewindPoint{
-			ID:           c.Hash.String(),
-			Message:      message,
-			Date:         c.Committer.When,
-			IsLogsOnly:   true, // Committed checkpoints are logs-only
-			CheckpointID: cpID,
-			SessionID:    cpInfo.SessionID,
+			ID:               c.Hash.String(),
+			Message:          message,
+			Date:             c.Committer.When,
+			IsLogsOnly:       true, // Committed checkpoints are logs-only
+			CheckpointID:     cpID,
+			SessionID:        cpInfo.SessionID,
+			IsTaskCheckpoint: cpInfo.IsTask,
+			ToolUseID:        cpInfo.ToolUseID,
+			Agent:            cpInfo.Agent,
 		}
 
 		// Read session prompt from metadata branch (best-effort)
