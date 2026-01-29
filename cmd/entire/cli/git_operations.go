@@ -11,7 +11,6 @@ import (
 	"entire.io/cli/cmd/entire/cli/strategy"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -330,24 +329,21 @@ func CheckoutBranch(ref string) error {
 }
 
 // FetchAndCheckoutRemoteBranch fetches a branch from origin and creates a local tracking branch.
+// Uses git CLI instead of go-git for fetch because go-git doesn't use credential helpers,
+// which breaks HTTPS URLs that require authentication.
 func FetchAndCheckoutRemoteBranch(branchName string) error {
+	// Use git CLI for fetch (go-git's fetch can be tricky with auth)
+	ctx := context.Background()
+	refSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branchName, branchName)
+	//nolint:gosec // G204: refSpec is constructed from branchName which comes from git refs, not user input
+	fetchCmd := exec.CommandContext(ctx, "git", "fetch", "origin", refSpec)
+	if output, err := fetchCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to fetch branch from origin: %s", strings.TrimSpace(string(output)))
+	}
+
 	repo, err := openRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open repository: %w", err)
-	}
-
-	// Fetch the specific branch from origin
-	remote, err := repo.Remote("origin")
-	if err != nil {
-		return fmt.Errorf("failed to get origin remote: %w", err)
-	}
-
-	refSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branchName, branchName)
-	err = remote.Fetch(&git.FetchOptions{
-		RefSpecs: []config.RefSpec{config.RefSpec(refSpec)},
-	})
-	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		return fmt.Errorf("failed to fetch branch from origin: %w", err)
 	}
 
 	// Get the remote branch reference
@@ -369,26 +365,23 @@ func FetchAndCheckoutRemoteBranch(branchName string) error {
 
 // FetchMetadataBranch fetches the entire/sessions branch from origin and creates/updates the local branch.
 // This is used when the metadata branch exists on remote but not locally.
+// Uses git CLI instead of go-git for fetch because go-git doesn't use credential helpers,
+// which breaks HTTPS URLs that require authentication.
 func FetchMetadataBranch() error {
+	branchName := paths.MetadataBranchName
+
+	// Use git CLI for fetch (go-git's fetch can be tricky with auth)
+	ctx := context.Background()
+	refSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branchName, branchName)
+	//nolint:gosec // G204: branchName is a constant from paths package
+	fetchCmd := exec.CommandContext(ctx, "git", "fetch", "origin", refSpec)
+	if output, err := fetchCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to fetch %s from origin: %s", branchName, strings.TrimSpace(string(output)))
+	}
+
 	repo, err := openRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open repository: %w", err)
-	}
-
-	branchName := paths.MetadataBranchName
-
-	// Fetch the specific branch from origin
-	remote, err := repo.Remote("origin")
-	if err != nil {
-		return fmt.Errorf("failed to get origin remote: %w", err)
-	}
-
-	refSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branchName, branchName)
-	err = remote.Fetch(&git.FetchOptions{
-		RefSpecs: []config.RefSpec{config.RefSpec(refSpec)},
-	})
-	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		return fmt.Errorf("failed to fetch %s from origin: %w", branchName, err)
 	}
 
 	// Get the remote branch reference
