@@ -75,40 +75,6 @@ func TestLoadEntireSettings_EnabledDefaultsToTrue(t *testing.T) {
 	}
 }
 
-func TestLoadEntireSettings_LegacyStrategyNames(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	settingsDir := filepath.Dir(EntireSettingsFile)
-	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
-		t.Fatalf("Failed to create settings dir: %v", err)
-	}
-
-	if err := os.WriteFile(EntireSettingsFile, []byte(`{"strategy": "shadow"}`), 0o644); err != nil {
-		t.Fatalf("Failed to write settings file: %v", err)
-	}
-
-	settings, err := LoadEntireSettings()
-	if err != nil {
-		t.Fatalf("LoadEntireSettings() error = %v", err)
-	}
-	if settings.Strategy != strategy.StrategyNameManualCommit {
-		t.Errorf("Strategy = %q, want %q", settings.Strategy, strategy.StrategyNameManualCommit)
-	}
-
-	if err := os.WriteFile(EntireSettingsLocalFile, []byte(`{"strategy": "dual"}`), 0o644); err != nil {
-		t.Fatalf("Failed to write local settings file: %v", err)
-	}
-
-	settings, err = LoadEntireSettings()
-	if err != nil {
-		t.Fatalf("LoadEntireSettings() error = %v", err)
-	}
-	if settings.Strategy != strategy.StrategyNameAutoCommit {
-		t.Errorf("Strategy = %q, want %q", settings.Strategy, strategy.StrategyNameAutoCommit)
-	}
-}
-
 func TestSaveEntireSettings_PreservesEnabled(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)

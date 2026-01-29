@@ -51,8 +51,6 @@ func List() []string {
 
 // Strategy name constants
 const (
-	StrategyNameDual         = "dual"   // Legacy name (auto-commit)
-	StrategyNameShadow       = "shadow" // Legacy name (manual-commit)
 	StrategyNameManualCommit = "manual-commit"
 	StrategyNameAutoCommit   = "auto-commit"
 )
@@ -73,23 +71,4 @@ func Default() Strategy {
 		}
 	}
 	return s
-}
-
-// NormalizeStrategyName maps legacy strategy names to current names.
-// These are the strategy names used during initial development and are kept for backwards
-// compatibility
-func NormalizeStrategyName(name string) string {
-	switch name {
-	case StrategyNameDual:
-		return StrategyNameAutoCommit
-	case StrategyNameShadow:
-		return StrategyNameManualCommit
-	default:
-		return name
-	}
-}
-
-// IsLegacyStrategyName returns true for names that should be mapped.
-func IsLegacyStrategyName(name string) bool {
-	return name == StrategyNameDual || name == StrategyNameShadow
 }
