@@ -39,31 +39,37 @@ func TestNewExplainCmd(t *testing.T) {
 	}
 }
 
-func TestExplainCmd_ShowsHelpForPositionalArgWithoutFlag(t *testing.T) {
-	cmd := newExplainCmd()
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-	cmd.SetArgs([]string{"abc123"}) // positional arg without --checkpoint, --session, or --commit
-
-	err := cmd.Execute()
-	if err != nil {
-		t.Fatalf("expected no error, got: %v", err)
+func TestExplainCmd_RejectsPositionalArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"positional arg without flags", []string{"abc123"}},
+		{"positional arg with checkpoint flag", []string{"abc123", "--checkpoint", "def456"}},
+		{"positional arg after flags", []string{"--checkpoint", "def456", "abc123"}},
 	}
 
-	// Should show hint on stderr
-	errOutput := stderr.String()
-	if !strings.Contains(errOutput, "Hint:") {
-		t.Errorf("expected hint message on stderr, got:\n%s", errOutput)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := newExplainCmd()
+			var stdout, stderr bytes.Buffer
+			cmd.SetOut(&stdout)
+			cmd.SetErr(&stderr)
+			cmd.SetArgs(tt.args)
 
-	// Should show help text on stdout (contains usage info)
-	output := stdout.String()
-	if !strings.Contains(output, "Usage:") {
-		t.Errorf("expected help output with 'Usage:', got:\n%s", output)
-	}
-	if !strings.Contains(output, "--checkpoint") {
-		t.Errorf("expected help output to mention --checkpoint flag, got:\n%s", output)
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatalf("expected error for positional args, got nil")
+			}
+
+			// Should show helpful error with hint
+			if !strings.Contains(err.Error(), "unexpected argument") {
+				t.Errorf("expected 'unexpected argument' error, got: %v", err)
+			}
+			if !strings.Contains(err.Error(), "Hint:") {
+				t.Errorf("expected hint in error message, got: %v", err)
+			}
+		})
 	}
 }
 
