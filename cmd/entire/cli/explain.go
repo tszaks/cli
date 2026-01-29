@@ -287,7 +287,7 @@ func generateCheckpointSummary(w, _ io.Writer, store *checkpoint.GitStore, check
 		return fmt.Errorf("failed to save summary: %w", err)
 	}
 
-	fmt.Fprintln(w, "Summary generated and saved.")
+	fmt.Fprintln(w, "✓ Summary generated and saved")
 	return nil
 }
 
