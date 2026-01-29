@@ -3,20 +3,22 @@ package summarise
 import (
 	"encoding/json"
 	"testing"
+
+	"entire.io/cli/cmd/entire/cli/transcript"
 )
 
 func TestBuildCondensedTranscript_UserPrompts(t *testing.T) {
-	transcript := []TranscriptLine{
+	lines := []TranscriptLine{
 		{
 			Type: "user",
 			UUID: "user-1",
-			Message: mustMarshal(t, userMessage{
+			Message: mustMarshal(t, transcript.UserMessage{
 				Content: "Hello, please help me with this task",
 			}),
 		},
 	}
 
-	entries := BuildCondensedTranscript(transcript)
+	entries := BuildCondensedTranscript(lines)
 
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -32,19 +34,19 @@ func TestBuildCondensedTranscript_UserPrompts(t *testing.T) {
 }
 
 func TestBuildCondensedTranscript_AssistantResponses(t *testing.T) {
-	transcript := []TranscriptLine{
+	lines := []TranscriptLine{
 		{
 			Type: "assistant",
 			UUID: "assistant-1",
-			Message: mustMarshal(t, assistantMessage{
-				Content: []contentBlock{
+			Message: mustMarshal(t, transcript.AssistantMessage{
+				Content: []transcript.ContentBlock{
 					{Type: "text", Text: "I'll help you with that."},
 				},
 			}),
 		},
 	}
 
-	entries := BuildCondensedTranscript(transcript)
+	entries := BuildCondensedTranscript(lines)
 
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -60,16 +62,16 @@ func TestBuildCondensedTranscript_AssistantResponses(t *testing.T) {
 }
 
 func TestBuildCondensedTranscript_ToolCalls(t *testing.T) {
-	transcript := []TranscriptLine{
+	lines := []TranscriptLine{
 		{
 			Type: "assistant",
 			UUID: "assistant-1",
-			Message: mustMarshal(t, assistantMessage{
-				Content: []contentBlock{
+			Message: mustMarshal(t, transcript.AssistantMessage{
+				Content: []transcript.ContentBlock{
 					{
 						Type: "tool_use",
 						Name: "Read",
-						Input: mustMarshal(t, toolInput{
+						Input: mustMarshal(t, transcript.ToolInput{
 							FilePath: "/path/to/file.go",
 						}),
 					},
@@ -78,7 +80,7 @@ func TestBuildCondensedTranscript_ToolCalls(t *testing.T) {
 		},
 	}
 
-	entries := BuildCondensedTranscript(transcript)
+	entries := BuildCondensedTranscript(lines)
 
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -98,16 +100,16 @@ func TestBuildCondensedTranscript_ToolCalls(t *testing.T) {
 }
 
 func TestBuildCondensedTranscript_ToolCallWithCommand(t *testing.T) {
-	transcript := []TranscriptLine{
+	lines := []TranscriptLine{
 		{
 			Type: "assistant",
 			UUID: "assistant-1",
-			Message: mustMarshal(t, assistantMessage{
-				Content: []contentBlock{
+			Message: mustMarshal(t, transcript.AssistantMessage{
+				Content: []transcript.ContentBlock{
 					{
 						Type: "tool_use",
 						Name: "Bash",
-						Input: mustMarshal(t, toolInput{
+						Input: mustMarshal(t, transcript.ToolInput{
 							Command: "go test ./...",
 						}),
 					},
@@ -116,7 +118,7 @@ func TestBuildCondensedTranscript_ToolCallWithCommand(t *testing.T) {
 		},
 	}
 
-	entries := BuildCondensedTranscript(transcript)
+	entries := BuildCondensedTranscript(lines)
 
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -127,18 +129,19 @@ func TestBuildCondensedTranscript_ToolCallWithCommand(t *testing.T) {
 	}
 }
 
+//nolint:dupl // Test functions intentionally similar for different tag types
 func TestBuildCondensedTranscript_StripIDEContextTags(t *testing.T) {
-	transcript := []TranscriptLine{
+	lines := []TranscriptLine{
 		{
 			Type: "user",
 			UUID: "user-1",
-			Message: mustMarshal(t, userMessage{
+			Message: mustMarshal(t, transcript.UserMessage{
 				Content: "<ide_opened_file>some file content</ide_opened_file>Please review this code",
 			}),
 		},
 	}
 
-	entries := BuildCondensedTranscript(transcript)
+	entries := BuildCondensedTranscript(lines)
 
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -149,18 +152,19 @@ func TestBuildCondensedTranscript_StripIDEContextTags(t *testing.T) {
 	}
 }
 
+//nolint:dupl // Test functions intentionally similar for different tag types
 func TestBuildCondensedTranscript_StripSystemTags(t *testing.T) {
-	transcript := []TranscriptLine{
+	lines := []TranscriptLine{
 		{
 			Type: "user",
 			UUID: "user-1",
-			Message: mustMarshal(t, userMessage{
+			Message: mustMarshal(t, transcript.UserMessage{
 				Content: "<system-reminder>internal instructions</system-reminder>User question here",
 			}),
 		},
 	}
 
-	entries := BuildCondensedTranscript(transcript)
+	entries := BuildCondensedTranscript(lines)
 
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -172,24 +176,24 @@ func TestBuildCondensedTranscript_StripSystemTags(t *testing.T) {
 }
 
 func TestBuildCondensedTranscript_MixedContent(t *testing.T) {
-	transcript := []TranscriptLine{
+	lines := []TranscriptLine{
 		{
 			Type: "user",
 			UUID: "user-1",
-			Message: mustMarshal(t, userMessage{
+			Message: mustMarshal(t, transcript.UserMessage{
 				Content: "Create a new file",
 			}),
 		},
 		{
 			Type: "assistant",
 			UUID: "assistant-1",
-			Message: mustMarshal(t, assistantMessage{
-				Content: []contentBlock{
+			Message: mustMarshal(t, transcript.AssistantMessage{
+				Content: []transcript.ContentBlock{
 					{Type: "text", Text: "I'll create that file for you."},
 					{
 						Type: "tool_use",
 						Name: "Write",
-						Input: mustMarshal(t, toolInput{
+						Input: mustMarshal(t, transcript.ToolInput{
 							FilePath: "/path/to/new.go",
 						}),
 					},
@@ -198,7 +202,7 @@ func TestBuildCondensedTranscript_MixedContent(t *testing.T) {
 		},
 	}
 
-	entries := BuildCondensedTranscript(transcript)
+	entries := BuildCondensedTranscript(lines)
 
 	if len(entries) != 3 {
 		t.Fatalf("expected 3 entries, got %d", len(entries))
@@ -218,9 +222,9 @@ func TestBuildCondensedTranscript_MixedContent(t *testing.T) {
 }
 
 func TestBuildCondensedTranscript_EmptyTranscript(t *testing.T) {
-	transcript := []TranscriptLine{}
+	lines := []TranscriptLine{}
 
-	entries := BuildCondensedTranscript(transcript)
+	entries := BuildCondensedTranscript(lines)
 
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries for empty transcript, got %d", len(entries))
@@ -229,7 +233,7 @@ func TestBuildCondensedTranscript_EmptyTranscript(t *testing.T) {
 
 func TestBuildCondensedTranscript_UserArrayContent(t *testing.T) {
 	// Test user message with array content (text blocks)
-	transcript := []TranscriptLine{
+	lines := []TranscriptLine{
 		{
 			Type: "user",
 			UUID: "user-1",
@@ -248,7 +252,7 @@ func TestBuildCondensedTranscript_UserArrayContent(t *testing.T) {
 		},
 	}
 
-	entries := BuildCondensedTranscript(transcript)
+	entries := BuildCondensedTranscript(lines)
 
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
@@ -261,26 +265,26 @@ func TestBuildCondensedTranscript_UserArrayContent(t *testing.T) {
 }
 
 func TestBuildCondensedTranscript_SkipsEmptyContent(t *testing.T) {
-	transcript := []TranscriptLine{
+	lines := []TranscriptLine{
 		{
 			Type: "user",
 			UUID: "user-1",
-			Message: mustMarshal(t, userMessage{
+			Message: mustMarshal(t, transcript.UserMessage{
 				Content: "<ide_opened_file>only tags</ide_opened_file>",
 			}),
 		},
 		{
 			Type: "assistant",
 			UUID: "assistant-1",
-			Message: mustMarshal(t, assistantMessage{
-				Content: []contentBlock{
+			Message: mustMarshal(t, transcript.AssistantMessage{
+				Content: []transcript.ContentBlock{
 					{Type: "text", Text: ""}, // Empty text
 				},
 			}),
 		},
 	}
 
-	entries := BuildCondensedTranscript(transcript)
+	entries := BuildCondensedTranscript(lines)
 
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries for empty content, got %d", len(entries))

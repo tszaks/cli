@@ -12,6 +12,7 @@ import (
 
 	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/textutil"
+	"entire.io/cli/cmd/entire/cli/transcript"
 )
 
 // Generator generates checkpoint summaries using an LLM.
@@ -57,48 +58,8 @@ type Entry struct {
 	ToolDetail string
 }
 
-// TranscriptLine represents a single line in a Claude Code transcript.
-// This mirrors the structure in the cli package's types.go.
-type TranscriptLine struct {
-	Type    string          `json:"type"`
-	UUID    string          `json:"uuid"`
-	Message json.RawMessage `json:"message"`
-}
-
-// Constants for transcript parsing
-const (
-	transcriptTypeUser      = "user"
-	transcriptTypeAssistant = "assistant"
-	contentTypeText         = "text"
-	contentTypeToolUse      = "tool_use"
-)
-
-// userMessage represents a user message in the transcript
-type userMessage struct {
-	Content interface{} `json:"content"`
-}
-
-// assistantMessage represents an assistant message in the transcript
-type assistantMessage struct {
-	Content []contentBlock `json:"content"`
-}
-
-// contentBlock represents a block within an assistant message
-type contentBlock struct {
-	Type  string          `json:"type"`
-	Text  string          `json:"text,omitempty"`
-	Name  string          `json:"name,omitempty"`
-	Input json.RawMessage `json:"input,omitempty"`
-}
-
-// toolInput represents the input to various tools
-type toolInput struct {
-	FilePath     string `json:"file_path,omitempty"`
-	NotebookPath string `json:"notebook_path,omitempty"`
-	Description  string `json:"description,omitempty"`
-	Command      string `json:"command,omitempty"`
-	Pattern      string `json:"pattern,omitempty"`
-}
+// TranscriptLine is an alias to the shared transcript.Line type.
+type TranscriptLine = transcript.Line
 
 // BuildCondensedTranscriptFromBytes parses transcript bytes and extracts a condensed view.
 // This is a convenience function that combines parsing and condensing.
@@ -146,16 +107,16 @@ func parseTranscriptFromBytes(content []byte) ([]TranscriptLine, error) {
 // BuildCondensedTranscript extracts a condensed view of the transcript.
 // It processes user prompts, assistant responses, and tool calls into
 // a simplified format suitable for LLM summarisation.
-func BuildCondensedTranscript(transcript []TranscriptLine) []Entry {
+func BuildCondensedTranscript(lines []TranscriptLine) []Entry {
 	var entries []Entry
 
-	for _, line := range transcript {
+	for _, line := range lines {
 		switch line.Type {
-		case transcriptTypeUser:
+		case transcript.TypeUser:
 			if entry := extractUserEntry(line); entry != nil {
 				entries = append(entries, *entry)
 			}
-		case transcriptTypeAssistant:
+		case transcript.TypeAssistant:
 			assistantEntries := extractAssistantEntries(line)
 			entries = append(entries, assistantEntries...)
 		}
@@ -182,7 +143,7 @@ func extractUserEntry(line TranscriptLine) *Entry {
 // IDE-injected context tags (like <ide_opened_file>) are stripped from the result.
 // Returns empty string if the message cannot be parsed or contains no text.
 func extractUserContentFromMessage(message json.RawMessage) string {
-	var msg userMessage
+	var msg transcript.UserMessage
 	if err := json.Unmarshal(message, &msg); err != nil {
 		return ""
 	}
@@ -197,7 +158,7 @@ func extractUserContentFromMessage(message json.RawMessage) string {
 		var texts []string
 		for _, item := range arr {
 			if m, ok := item.(map[string]interface{}); ok {
-				if m["type"] == contentTypeText {
+				if m["type"] == transcript.ContentTypeText {
 					if text, ok := m["text"].(string); ok {
 						texts = append(texts, text)
 					}
@@ -214,7 +175,7 @@ func extractUserContentFromMessage(message json.RawMessage) string {
 
 // extractAssistantEntries extracts assistant and tool entries from a transcript line.
 func extractAssistantEntries(line TranscriptLine) []Entry {
-	var msg assistantMessage
+	var msg transcript.AssistantMessage
 	if err := json.Unmarshal(line.Message, &msg); err != nil {
 		return nil
 	}
@@ -223,15 +184,15 @@ func extractAssistantEntries(line TranscriptLine) []Entry {
 
 	for _, block := range msg.Content {
 		switch block.Type {
-		case contentTypeText:
+		case transcript.ContentTypeText:
 			if block.Text != "" {
 				entries = append(entries, Entry{
 					Type:    EntryTypeAssistant,
 					Content: block.Text,
 				})
 			}
-		case contentTypeToolUse:
-			var input toolInput
+		case transcript.ContentTypeToolUse:
+			var input transcript.ToolInput
 			_ = json.Unmarshal(block.Input, &input) //nolint:errcheck // Best-effort parsing
 
 			detail := input.Description

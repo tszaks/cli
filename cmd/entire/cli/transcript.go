@@ -12,14 +12,15 @@ import (
 
 	"entire.io/cli/cmd/entire/cli/agent/claudecode"
 	"entire.io/cli/cmd/entire/cli/textutil"
+	"entire.io/cli/cmd/entire/cli/transcript"
 )
 
-// Transcript message type constants
+// Transcript message type constants - aliases to transcript package for local use.
 const (
-	transcriptTypeUser      = "user"
-	transcriptTypeAssistant = "assistant"
-	contentTypeText         = "text"
-	contentTypeToolUse      = "tool_use"
+	transcriptTypeUser      = transcript.TypeUser
+	transcriptTypeAssistant = transcript.TypeAssistant
+	contentTypeText         = transcript.ContentTypeText
+	contentTypeToolUse      = transcript.ContentTypeToolUse
 )
 
 // parseTranscript reads and parses a Claude Code transcript file.

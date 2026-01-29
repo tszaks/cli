@@ -239,12 +239,12 @@ func runExplainCheckpoint(w, errW io.Writer, checkpointIDPrefix string, noPager,
 func generateCheckpointSummary(w, errW io.Writer, store *checkpoint.GitStore, checkpointID id.CheckpointID, result *checkpoint.ReadCommittedResult, force bool) error {
 	// Check if summary already exists
 	if result.Metadata.Summary != nil && !force {
-		return fmt.Errorf("checkpoint %s already has a summary (use --force to regenerate)", checkpointID.String()[:checkpointIDDisplayLength])
+		return fmt.Errorf("checkpoint %s already has a summary (use --force to regenerate)", checkpointID)
 	}
 
 	// Check if transcript exists
 	if len(result.Transcript) == 0 {
-		return fmt.Errorf("checkpoint %s has no transcript to summarise", checkpointID.String()[:checkpointIDDisplayLength])
+		return fmt.Errorf("checkpoint %s has no transcript to summarise", checkpointID)
 	}
 
 	// Build condensed transcript for summarisation
@@ -253,7 +253,7 @@ func generateCheckpointSummary(w, errW io.Writer, store *checkpoint.GitStore, ch
 		return fmt.Errorf("failed to parse transcript: %w", err)
 	}
 	if len(condensed) == 0 {
-		return fmt.Errorf("checkpoint %s transcript has no content to summarise", checkpointID.String()[:checkpointIDDisplayLength])
+		return fmt.Errorf("checkpoint %s transcript has no content to summarise", checkpointID)
 	}
 
 	input := summarise.Input{
