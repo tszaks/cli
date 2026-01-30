@@ -320,6 +320,44 @@ func TestHasUncommittedChanges(t *testing.T) {
 	if !hasChanges {
 		t.Error("HasUncommittedChanges() = false, want true for untracked file")
 	}
+
+	// Clean up untracked file for next test
+	if err := os.Remove(filepath.Join(tmpDir, "untracked.txt")); err != nil {
+		t.Fatalf("Failed to remove untracked file: %v", err)
+	}
+
+	// Test global gitignore (core.excludesfile) handling
+	// go-git doesn't read global gitignore, so we use git CLI instead.
+	// Simulate global gitignore by setting core.excludesfile in repo config.
+	// The file must be outside the repo to avoid showing up as untracked itself.
+	globalIgnoreDir := t.TempDir()
+	globalIgnoreFile := filepath.Join(globalIgnoreDir, "global-gitignore")
+	if err := os.WriteFile(globalIgnoreFile, []byte("*.globally-ignored\n"), 0o644); err != nil {
+		t.Fatalf("Failed to write global gitignore: %v", err)
+	}
+
+	// Set core.excludesfile in repo config
+	cmd := exec.CommandContext(context.Background(), "git", "config", "core.excludesfile", globalIgnoreFile)
+	cmd.Dir = tmpDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to set core.excludesfile: %v", err)
+	}
+
+	// Create a file that matches the global ignore pattern
+	if err := os.WriteFile(filepath.Join(tmpDir, "secret.globally-ignored"), []byte("ignored"), 0o644); err != nil {
+		t.Fatalf("Failed to write globally ignored file: %v", err)
+	}
+
+	// Test with globally gitignored file - should return false (clean)
+	// This catches regressions if someone switches back to go-git's Status()
+	// which doesn't read core.excludesfile (global gitignore)
+	hasChanges, err = HasUncommittedChanges()
+	if err != nil {
+		t.Fatalf("HasUncommittedChanges() error = %v", err)
+	}
+	if hasChanges {
+		t.Error("HasUncommittedChanges() = true, want false for globally gitignored file (core.excludesfile)")
+	}
 }
 
 func TestFindNewUntrackedFiles(t *testing.T) {
