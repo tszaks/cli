@@ -84,6 +84,12 @@ Output verbosity levels (for --checkpoint):
   --full:    + complete transcript
 
 Only one of --session, --commit, or --checkpoint can be specified at a time.`,
+		Args: func(_ *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unexpected argument %q\nHint: use --checkpoint, --session, or --commit to specify what to explain", args[0])
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Check if Entire is disabled
 			if checkDisabledGuard(cmd.OutOrStdout()) {
