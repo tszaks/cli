@@ -241,24 +241,18 @@ func GetMergeBase(branch1, branch2 string) (*plumbing.Hash, error) {
 
 // HasUncommittedChanges checks if there are any uncommitted changes in the repository.
 // This includes staged changes, unstaged changes, and untracked files.
+// Uses git CLI instead of go-git because go-git doesn't respect global gitignore
+// (core.excludesfile) which can cause false positives for globally ignored files.
 func HasUncommittedChanges() (bool, error) {
-	repo, err := openRepository()
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain")
+	output, err := cmd.Output()
 	if err != nil {
-		return false, fmt.Errorf("failed to open git repository: %w", err)
+		return false, fmt.Errorf("failed to get git status: %w", err)
 	}
 
-	w, err := repo.Worktree()
-	if err != nil {
-		return false, fmt.Errorf("failed to get worktree: %w", err)
-	}
-
-	status, err := w.Status()
-	if err != nil {
-		return false, fmt.Errorf("failed to get status: %w", err)
-	}
-
-	// Check if status is clean (no changes of any kind)
-	return !status.IsClean(), nil
+	// If output is empty, there are no changes
+	return len(strings.TrimSpace(string(output))) > 0, nil
 }
 
 // findNewUntrackedFiles finds files that are newly untracked (not in pre-existing list)
