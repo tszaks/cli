@@ -517,10 +517,17 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 		fmt.Fprintf(&sb, "Intent: %s\n", meta.Summary.Intent)
 		fmt.Fprintf(&sb, "Outcome: %s\n", meta.Summary.Outcome)
 	} else {
-		// Fallback: use first line of scoped prompts for intent
+		// Fallback: use first line of scoped prompts for intent,
+		// or fall back to result.Prompts for backwards compatibility with older checkpoints
 		intent := "(not generated)"
 		if len(scopedPrompts) > 0 && scopedPrompts[0] != "" {
 			intent = strategy.TruncateDescription(scopedPrompts[0], maxIntentDisplayLength)
+		} else if result.Prompts != "" {
+			// Backwards compatibility: use stored prompts if no transcript available
+			lines := strings.Split(result.Prompts, "\n")
+			if len(lines) > 0 && lines[0] != "" {
+				intent = strategy.TruncateDescription(lines[0], maxIntentDisplayLength)
+			}
 		}
 		fmt.Fprintf(&sb, "Intent: %s\n", intent)
 		sb.WriteString("Outcome: (not generated)\n")
@@ -553,12 +560,17 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 
 		sb.WriteString("\n")
 
-		// Prompts section (using scoped prompts, not full session)
+		// Prompts section (using scoped prompts, or fall back to stored prompts for backwards compat)
 		sb.WriteString("Prompts:\n")
-		if len(scopedPrompts) > 0 {
+		switch {
+		case len(scopedPrompts) > 0:
 			sb.WriteString(strings.Join(scopedPrompts, "\n\n---\n\n"))
 			sb.WriteString("\n")
-		} else {
+		case result.Prompts != "":
+			// Backwards compatibility: use stored prompts if no transcript available
+			sb.WriteString(result.Prompts)
+			sb.WriteString("\n")
+		default:
 			sb.WriteString("  (none)\n")
 		}
 	}

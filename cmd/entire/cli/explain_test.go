@@ -2167,3 +2167,57 @@ func TestFormatCheckpointOutput_UsesScopedPrompts(t *testing.T) {
 		t.Errorf("expected first prompt to be excluded from scoped output, got:\n%s", output)
 	}
 }
+
+func TestFormatCheckpointOutput_FallsBackToStoredPrompts(t *testing.T) {
+	// Test backwards compatibility: when no transcript exists, use stored prompts
+	result := &checkpoint.ReadCommittedResult{
+		Metadata: checkpoint.CommittedMetadata{
+			CheckpointID:           "abc123def456",
+			SessionID:              "2026-01-30-test-session",
+			CreatedAt:              time.Date(2026, 1, 30, 10, 30, 0, 0, time.UTC),
+			FilesTouched:           []string{"main.go"},
+			TranscriptLinesAtStart: 0,
+		},
+		Prompts:    "Stored prompt from older checkpoint",
+		Transcript: nil, // No transcript available
+	}
+
+	// Verbose output should fall back to stored prompts
+	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", true, false)
+
+	// Intent should use stored prompt
+	if !strings.Contains(output, "Stored prompt from older checkpoint") {
+		t.Errorf("expected fallback to stored prompts, got:\n%s", output)
+	}
+}
+
+func TestFormatCheckpointOutput_FullShowsEntireTranscript(t *testing.T) {
+	// Test that --full mode shows the entire transcript, not scoped
+	fullTranscript := []byte(`{"type":"user","uuid":"u1","message":{"content":"First prompt"}}
+{"type":"assistant","uuid":"a1","message":{"content":[{"type":"text","text":"First response"}]}}
+{"type":"user","uuid":"u2","message":{"content":"Second prompt"}}
+{"type":"assistant","uuid":"a2","message":{"content":[{"type":"text","text":"Second response"}]}}
+`)
+
+	result := &checkpoint.ReadCommittedResult{
+		Metadata: checkpoint.CommittedMetadata{
+			CheckpointID:           "abc123def456",
+			SessionID:              "2026-01-30-test-session",
+			CreatedAt:              time.Date(2026, 1, 30, 10, 30, 0, 0, time.UTC),
+			FilesTouched:           []string{"main.go"},
+			TranscriptLinesAtStart: 2, // Checkpoint starts at line 2
+		},
+		Transcript: fullTranscript,
+	}
+
+	// Full mode should show the ENTIRE transcript (not scoped)
+	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", false, true)
+
+	// Should show the full transcript including first prompt (even though scoped prompts exclude it)
+	if !strings.Contains(output, "First prompt") {
+		t.Errorf("expected --full to show entire transcript including first prompt, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Second prompt") {
+		t.Errorf("expected --full to show entire transcript including second prompt, got:\n%s", output)
+	}
+}
