@@ -985,6 +985,14 @@ func TestFormatCheckpointOutput_Short(t *testing.T) {
 }
 
 func TestFormatCheckpointOutput_Verbose(t *testing.T) {
+	// Transcript with user prompts that match what we expect to see
+	transcriptContent := []byte(`{"type":"user","uuid":"u1","message":{"content":"Add a new feature"}}
+{"type":"assistant","uuid":"a1","message":{"content":[{"type":"text","text":"I'll add the feature"}]}}
+{"type":"user","uuid":"u2","message":{"content":"Fix the bug"}}
+{"type":"assistant","uuid":"a2","message":{"content":[{"type":"text","text":"Fixed it"}]}}
+{"type":"user","uuid":"u3","message":{"content":"Refactor the code"}}
+`)
+
 	result := &checkpoint.ReadCommittedResult{
 		Metadata: checkpoint.CommittedMetadata{
 			CheckpointID:     "abc123def456",
@@ -996,8 +1004,10 @@ func TestFormatCheckpointOutput_Verbose(t *testing.T) {
 				InputTokens:  10000,
 				OutputTokens: 5000,
 			},
+			TranscriptLinesAtStart: 0, // All content is this checkpoint's
 		},
-		Prompts: "Add a new feature\nFix the bug\nRefactor the code",
+		Prompts:    "Add a new feature\nFix the bug\nRefactor the code",
+		Transcript: transcriptContent,
 	}
 
 	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "feat: implement user authentication", true, false)
@@ -2045,5 +2055,115 @@ func TestGetBranchCheckpoints_FiltersMainCommits(t *testing.T) {
 	// This validates the filtering code path runs without error
 	if len(points) != 0 {
 		t.Errorf("expected 0 checkpoints without checkpoint data, got %d", len(points))
+	}
+}
+
+func TestScopeTranscriptForCheckpoint_SlicesTranscript(t *testing.T) {
+	// Transcript with 5 lines - prompts 1, 2, 3 with their responses
+	fullTranscript := []byte(`{"type":"user","uuid":"u1","message":{"content":"prompt 1"}}
+{"type":"assistant","uuid":"a1","message":{"content":[{"type":"text","text":"response 1"}]}}
+{"type":"user","uuid":"u2","message":{"content":"prompt 2"}}
+{"type":"assistant","uuid":"a2","message":{"content":[{"type":"text","text":"response 2"}]}}
+{"type":"user","uuid":"u3","message":{"content":"prompt 3"}}
+`)
+
+	// Checkpoint starts at line 2 (after prompt 1 and response 1)
+	// Should only include lines 2-4 (prompt 2, response 2, prompt 3)
+	scoped := scopeTranscriptForCheckpoint(fullTranscript, 2)
+
+	// Parse the scoped transcript to verify content
+	lines, err := parseTranscriptFromBytes(scoped)
+	if err != nil {
+		t.Fatalf("failed to parse scoped transcript: %v", err)
+	}
+
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines in scoped transcript, got %d", len(lines))
+	}
+
+	// First line should be prompt 2 (u2), not prompt 1
+	if lines[0].UUID != "u2" {
+		t.Errorf("expected first line to be u2 (prompt 2), got %s", lines[0].UUID)
+	}
+
+	// Last line should be prompt 3 (u3)
+	if lines[2].UUID != "u3" {
+		t.Errorf("expected last line to be u3 (prompt 3), got %s", lines[2].UUID)
+	}
+}
+
+func TestScopeTranscriptForCheckpoint_ZeroLinesReturnsAll(t *testing.T) {
+	transcript := []byte(`{"type":"user","uuid":"u1","message":{"content":"prompt 1"}}
+{"type":"user","uuid":"u2","message":{"content":"prompt 2"}}
+`)
+
+	// With linesAtStart=0, should return full transcript
+	scoped := scopeTranscriptForCheckpoint(transcript, 0)
+
+	lines, err := parseTranscriptFromBytes(scoped)
+	if err != nil {
+		t.Fatalf("failed to parse scoped transcript: %v", err)
+	}
+
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines with linesAtStart=0, got %d", len(lines))
+	}
+}
+
+func TestExtractPromptsFromScopedTranscript(t *testing.T) {
+	// Transcript with 4 lines - 2 user prompts, 2 assistant responses
+	transcript := []byte(`{"type":"user","uuid":"u1","message":{"content":"First prompt"}}
+{"type":"assistant","uuid":"a1","message":{"content":[{"type":"text","text":"First response"}]}}
+{"type":"user","uuid":"u2","message":{"content":"Second prompt"}}
+{"type":"assistant","uuid":"a2","message":{"content":[{"type":"text","text":"Second response"}]}}
+`)
+
+	prompts := extractPromptsFromTranscript(transcript)
+
+	if len(prompts) != 2 {
+		t.Fatalf("expected 2 prompts, got %d", len(prompts))
+	}
+
+	if prompts[0] != "First prompt" {
+		t.Errorf("expected first prompt 'First prompt', got %q", prompts[0])
+	}
+
+	if prompts[1] != "Second prompt" {
+		t.Errorf("expected second prompt 'Second prompt', got %q", prompts[1])
+	}
+}
+
+func TestFormatCheckpointOutput_UsesScopedPrompts(t *testing.T) {
+	// Full transcript with 4 lines (2 prompts + 2 responses)
+	// Checkpoint starts at line 2 (should only show second prompt)
+	fullTranscript := []byte(`{"type":"user","uuid":"u1","message":{"content":"First prompt - should NOT appear"}}
+{"type":"assistant","uuid":"a1","message":{"content":[{"type":"text","text":"First response"}]}}
+{"type":"user","uuid":"u2","message":{"content":"Second prompt - SHOULD appear"}}
+{"type":"assistant","uuid":"a2","message":{"content":[{"type":"text","text":"Second response"}]}}
+`)
+
+	result := &checkpoint.ReadCommittedResult{
+		Metadata: checkpoint.CommittedMetadata{
+			CheckpointID:           "abc123def456",
+			SessionID:              "2026-01-30-test-session",
+			CreatedAt:              time.Date(2026, 1, 30, 10, 30, 0, 0, time.UTC),
+			FilesTouched:           []string{"main.go"},
+			TranscriptLinesAtStart: 2, // Checkpoint starts at line 2
+		},
+		Prompts:    "First prompt - should NOT appear\nSecond prompt - SHOULD appear", // Full prompts (not scoped yet)
+		Transcript: fullTranscript,
+	}
+
+	// Verbose output should use scoped prompts
+	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", true, false)
+
+	// Should show ONLY the second prompt (scoped)
+	if !strings.Contains(output, "Second prompt - SHOULD appear") {
+		t.Errorf("expected scoped prompt in output, got:\n%s", output)
+	}
+
+	// Should NOT show the first prompt (it's before this checkpoint's scope)
+	if strings.Contains(output, "First prompt - should NOT appear") {
+		t.Errorf("expected first prompt to be excluded from scoped output, got:\n%s", output)
 	}
 }

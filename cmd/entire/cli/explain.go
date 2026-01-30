@@ -18,6 +18,7 @@ import (
 	"entire.io/cli/cmd/entire/cli/strategy"
 	"entire.io/cli/cmd/entire/cli/summarise"
 	"entire.io/cli/cmd/entire/cli/trailers"
+	"entire.io/cli/cmd/entire/cli/transcript"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -253,6 +254,8 @@ func runExplainCheckpoint(w, errW io.Writer, checkpointIDPrefix string, noPager,
 }
 
 // generateCheckpointSummary generates an AI summary for a checkpoint and persists it.
+// The summary is generated from the scoped transcript (only this checkpoint's portion),
+// not the entire session transcript.
 func generateCheckpointSummary(w, _ io.Writer, store *checkpoint.GitStore, checkpointID id.CheckpointID, result *checkpoint.ReadCommittedResult, force bool) error {
 	// Check if summary already exists
 	if result.Metadata.Summary != nil && !force {
@@ -264,8 +267,14 @@ func generateCheckpointSummary(w, _ io.Writer, store *checkpoint.GitStore, check
 		return fmt.Errorf("checkpoint %s has no transcript to summarise", checkpointID)
 	}
 
-	// Build condensed transcript for summarisation
-	condensed, err := summarise.BuildCondensedTranscriptFromBytes(result.Transcript)
+	// Scope the transcript to only this checkpoint's portion
+	scopedTranscript := scopeTranscriptForCheckpoint(result.Transcript, result.Metadata.TranscriptLinesAtStart)
+	if len(scopedTranscript) == 0 {
+		return fmt.Errorf("checkpoint %s has no transcript content for this checkpoint (scoped)", checkpointID)
+	}
+
+	// Build condensed transcript for summarisation from the scoped portion
+	condensed, err := summarise.BuildCondensedTranscriptFromBytes(scopedTranscript)
 	if err != nil {
 		return fmt.Errorf("failed to parse transcript: %w", err)
 	}
@@ -441,13 +450,52 @@ func findCommitMessageForCheckpoint(repo *git.Repository, checkpointID id.Checkp
 	return ""
 }
 
+// scopeTranscriptForCheckpoint slices a transcript to include only the lines
+// relevant to a specific checkpoint, starting from linesAtStart.
+// This allows showing only what happened during a checkpoint, not the entire session.
+func scopeTranscriptForCheckpoint(fullTranscript []byte, linesAtStart int) []byte {
+	return transcript.SliceFromLine(fullTranscript, linesAtStart)
+}
+
+// extractPromptsFromTranscript extracts user prompts from transcript bytes.
+// Returns a slice of prompt strings.
+func extractPromptsFromTranscript(transcriptBytes []byte) []string {
+	if len(transcriptBytes) == 0 {
+		return nil
+	}
+
+	condensed, err := summarise.BuildCondensedTranscriptFromBytes(transcriptBytes)
+	if err != nil {
+		return nil
+	}
+
+	var prompts []string
+	for _, entry := range condensed {
+		if entry.Type == summarise.EntryTypeUser && entry.Content != "" {
+			prompts = append(prompts, entry.Content)
+		}
+	}
+	return prompts
+}
+
 // formatCheckpointOutput formats checkpoint data based on verbosity level.
 // When verbose is false: summary only (ID, session, timestamp, tokens, intent).
 // When verbose is true: adds prompts, files, and commit message details.
 // When full is true: includes the complete transcript in addition to verbose details.
+//
+// Prompts are scoped to only show what happened during this checkpoint, not the entire
+// session. This uses TranscriptLinesAtStart from metadata to slice the transcript.
 func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID id.CheckpointID, commitMessage string, verbose, full bool) string {
 	var sb strings.Builder
 	meta := result.Metadata
+
+	// Scope the transcript to this checkpoint's portion
+	// If TranscriptLinesAtStart > 0, we slice the transcript to only include
+	// lines from that point onwards (excluding earlier checkpoint content)
+	scopedTranscript := scopeTranscriptForCheckpoint(result.Transcript, meta.TranscriptLinesAtStart)
+
+	// Extract prompts from the scoped transcript (not the full session's prompts)
+	scopedPrompts := extractPromptsFromTranscript(scopedTranscript)
 
 	// Header - always shown
 	// Note: CheckpointID is always exactly 12 characters, matching checkpointIDDisplayLength
@@ -469,13 +517,10 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 		fmt.Fprintf(&sb, "Intent: %s\n", meta.Summary.Intent)
 		fmt.Fprintf(&sb, "Outcome: %s\n", meta.Summary.Outcome)
 	} else {
-		// Fallback: use first line of prompts for intent
+		// Fallback: use first line of scoped prompts for intent
 		intent := "(not generated)"
-		if result.Prompts != "" {
-			lines := strings.Split(result.Prompts, "\n")
-			if len(lines) > 0 && lines[0] != "" {
-				intent = strategy.TruncateDescription(lines[0], maxIntentDisplayLength)
-			}
+		if len(scopedPrompts) > 0 && scopedPrompts[0] != "" {
+			intent = strategy.TruncateDescription(scopedPrompts[0], maxIntentDisplayLength)
 		}
 		fmt.Fprintf(&sb, "Intent: %s\n", intent)
 		sb.WriteString("Outcome: (not generated)\n")
@@ -508,10 +553,10 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 
 		sb.WriteString("\n")
 
-		// Prompts section
+		// Prompts section (using scoped prompts, not full session)
 		sb.WriteString("Prompts:\n")
-		if result.Prompts != "" {
-			sb.WriteString(result.Prompts)
+		if len(scopedPrompts) > 0 {
+			sb.WriteString(strings.Join(scopedPrompts, "\n\n---\n\n"))
 			sb.WriteString("\n")
 		} else {
 			sb.WriteString("  (none)\n")
