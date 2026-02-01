@@ -135,6 +135,8 @@ Only one of --session, --commit, or --checkpoint can be specified at a time.`,
 
 	// Make --short, --full, and --raw-transcript mutually exclusive
 	cmd.MarkFlagsMutuallyExclusive("short", "full", "raw-transcript")
+	// --generate and --raw-transcript are incompatible (summary would be generated but not shown)
+	cmd.MarkFlagsMutuallyExclusive("generate", "raw-transcript")
 
 	return cmd
 }
@@ -370,9 +372,14 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 	if rawTranscript {
 		transcriptBytes, transcriptErr := store.GetTranscriptFromCommit(tc.CommitHash, tc.MetadataDir, agent.AgentTypeUnknown)
 		if transcriptErr != nil || len(transcriptBytes) == 0 {
-			return "", false
+			// Return specific error message (consistent with committed checkpoints)
+			return fmt.Sprintf("checkpoint %s has no transcript", tc.CommitHash.String()[:7]), false
 		}
-		return string(transcriptBytes), true
+		// Write directly to stdout (no pager, no formatting) - matches committed checkpoint behavior
+		if _, writeErr := fmt.Fprint(os.Stdout, string(transcriptBytes)); writeErr != nil {
+			return fmt.Sprintf("failed to write transcript: %v", writeErr), false
+		}
+		return "", true
 	}
 
 	// Found exactly one match - read metadata from shadow branch commit tree
@@ -409,12 +416,30 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 	sb.WriteString("Outcome: (not generated)\n")
 
 	// Transcript section: full shows entire session, verbose shows checkpoint scope
-	// For temporary checkpoints, we need to load the full transcript from commit for --full mode
+	// For temporary checkpoints, load transcript and compute scope from parent commit
 	var fullTranscript []byte
-	if full {
+	var scopedTranscript []byte
+	if full || verbose {
 		fullTranscript, _ = store.GetTranscriptFromCommit(tc.CommitHash, tc.MetadataDir, agent.AgentTypeUnknown) //nolint:errcheck // Best-effort
+
+		if verbose && len(fullTranscript) > 0 {
+			// Compute scoped transcript by finding where parent's transcript ended
+			// Each shadow branch commit has the full transcript up to that point,
+			// so we diff against parent to get just this checkpoint's activity
+			scopedTranscript = fullTranscript // Default to full if no parent
+			if shadowCommit.NumParents() > 0 {
+				if parent, parentErr := shadowCommit.Parent(0); parentErr == nil {
+					parentTranscript, _ := store.GetTranscriptFromCommit(parent.Hash, tc.MetadataDir, agent.AgentTypeUnknown) //nolint:errcheck // Best-effort
+					if len(parentTranscript) > 0 {
+						// Count lines in parent transcript to know where to slice from
+						parentLineCount := countLines(parentTranscript)
+						scopedTranscript = transcript.SliceFromLine(fullTranscript, parentLineCount)
+					}
+				}
+			}
+		}
 	}
-	appendTranscriptSection(&sb, verbose, full, fullTranscript, nil, sessionPrompt)
+	appendTranscriptSection(&sb, verbose, full, fullTranscript, scopedTranscript, sessionPrompt)
 
 	return sb.String(), true
 }
@@ -1590,6 +1615,21 @@ func formatCheckpointGroup(sb *strings.Builder, group checkpointGroup) {
 		message := strategy.TruncateDescription(commit.message, maxMessageDisplayLength)
 		fmt.Fprintf(sb, "  %s (%s) %s\n", dateTimeStr, commit.gitSHA, message)
 	}
+}
+
+// countLines counts the number of lines in a byte slice.
+// Empty content returns 0, otherwise counts newlines + 1.
+func countLines(content []byte) int {
+	if len(content) == 0 {
+		return 0
+	}
+	count := 1
+	for _, b := range content {
+		if b == '\n' {
+			count++
+		}
+	}
+	return count
 }
 
 // hasCodeChanges returns true if the commit has changes to non-metadata files.
