@@ -208,7 +208,7 @@ func runExplainCheckpoint(w, errW io.Writer, checkpointIDPrefix string, noPager,
 		if generate {
 			return fmt.Errorf("cannot generate summary for temporary checkpoint %s (only committed checkpoints supported)", checkpointIDPrefix)
 		}
-		output, found := explainTemporaryCheckpoint(repo, store, checkpointIDPrefix, verbose, full, rawTranscript)
+		output, found := explainTemporaryCheckpoint(w, repo, store, checkpointIDPrefix, verbose, full, rawTranscript)
 		if found {
 			outputExplainContent(w, output, noPager)
 			return nil
@@ -331,7 +331,8 @@ func generateCheckpointSummary(w, _ io.Writer, store *checkpoint.GitStore, check
 // Returns the formatted output and whether the checkpoint was found.
 // Searches ALL shadow branches, not just the one for current HEAD, to find checkpoints
 // created from different base commits (e.g., if HEAD advanced since session start).
-func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore, shaPrefix string, verbose, full, rawTranscript bool) (string, bool) {
+// The writer w is used for raw transcript output to bypass the pager.
+func explainTemporaryCheckpoint(w io.Writer, repo *git.Repository, store *checkpoint.GitStore, shaPrefix string, verbose, full, rawTranscript bool) (string, bool) {
 	// List temporary checkpoints from ALL shadow branches
 	// This ensures we find checkpoints even if HEAD has advanced since the session started
 	tempCheckpoints, err := store.ListAllTemporaryCheckpoints(context.Background(), "", branchCheckpointsLimit)
@@ -375,8 +376,8 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 			// Return specific error message (consistent with committed checkpoints)
 			return fmt.Sprintf("checkpoint %s has no transcript", tc.CommitHash.String()[:7]), false
 		}
-		// Write directly to stdout (no pager, no formatting) - matches committed checkpoint behavior
-		if _, writeErr := fmt.Fprint(os.Stdout, string(transcriptBytes)); writeErr != nil {
+		// Write directly to writer (no pager, no formatting) - matches committed checkpoint behavior
+		if _, writeErr := fmt.Fprint(w, string(transcriptBytes)); writeErr != nil {
 			return fmt.Sprintf("failed to write transcript: %v", writeErr), false
 		}
 		return "", true
@@ -1618,12 +1619,13 @@ func formatCheckpointGroup(sb *strings.Builder, group checkpointGroup) {
 }
 
 // countLines counts the number of lines in a byte slice.
-// Empty content returns 0, otherwise counts newlines + 1.
+// For JSONL content (where each line ends with \n), this returns the line count.
+// Empty content returns 0.
 func countLines(content []byte) int {
 	if len(content) == 0 {
 		return 0
 	}
-	count := 1
+	count := 0
 	for _, b := range content {
 		if b == '\n' {
 			count++
