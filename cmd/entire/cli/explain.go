@@ -292,26 +292,11 @@ func generateCheckpointSummary(w, _ io.Writer, store *checkpoint.GitStore, check
 		return fmt.Errorf("checkpoint %s has no transcript content for this checkpoint (scoped)", checkpointID)
 	}
 
-	// Build condensed transcript for summarisation from the scoped portion
-	condensed, err := summarise.BuildCondensedTranscriptFromBytes(scopedTranscript)
-	if err != nil {
-		return fmt.Errorf("failed to parse transcript: %w", err)
-	}
-	if len(condensed) == 0 {
-		return fmt.Errorf("checkpoint %s transcript has no content to summarise", checkpointID)
-	}
-
-	input := summarise.Input{
-		Transcript:   condensed,
-		FilesTouched: result.Metadata.FilesTouched,
-	}
-
-	// Generate summary using Claude CLI
+	// Generate summary using shared helper
 	ctx := context.Background()
 	logging.Info(ctx, "generating checkpoint summary")
 
-	var generator summarise.Generator = &summarise.ClaudeGenerator{}
-	summary, err := generator.Generate(ctx, input)
+	summary, err := summarise.GenerateFromTranscript(ctx, scopedTranscript, result.Metadata.FilesTouched, nil)
 	if err != nil {
 		return fmt.Errorf("failed to generate summary: %w", err)
 	}
