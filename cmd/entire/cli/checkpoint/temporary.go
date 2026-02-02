@@ -197,8 +197,8 @@ func (s *GitStore) ListTemporary(ctx context.Context) ([]TemporaryInfo, error) {
 
 		sessionID, _ := trailers.ParseSession(commit.Message)
 
-		// Extract base commit from branch name
-		baseCommit := strings.TrimPrefix(branchName, ShadowBranchPrefix)
+		// Extract base commit from branch name (handles new "entire/<commit>-<worktreeHash>" format)
+		baseCommit, _, _ := ParseShadowBranchName(branchName)
 
 		results = append(results, TemporaryInfo{
 			BranchName:   branchName,
@@ -620,6 +620,26 @@ func ShadowBranchNameForCommit(baseCommit, worktreeID string) string {
 	}
 	worktreeHash := HashWorktreeID(worktreeID)
 	return ShadowBranchPrefix + commitPart + "-" + worktreeHash
+}
+
+// ParseShadowBranchName extracts the commit prefix and worktree hash from a shadow branch name.
+// Input format: "entire/<commit[:7]>-<worktreeHash[:6]>"
+// Returns (commitPrefix, worktreeHash, ok). Returns ("", "", false) if not a valid shadow branch.
+func ParseShadowBranchName(branchName string) (commitPrefix, worktreeHash string, ok bool) {
+	if !strings.HasPrefix(branchName, ShadowBranchPrefix) {
+		return "", "", false
+	}
+	suffix := strings.TrimPrefix(branchName, ShadowBranchPrefix)
+
+	// Find the last dash - everything before is commit prefix, after is worktree hash
+	lastDash := strings.LastIndex(suffix, "-")
+	if lastDash == -1 || lastDash == 0 || lastDash == len(suffix)-1 {
+		// No dash, or dash at start/end - invalid format
+		// Could be old format "entire/<commit[:7]>" without worktree hash
+		return suffix, "", true // Return as commit prefix with empty worktree hash
+	}
+
+	return suffix[:lastDash], suffix[lastDash+1:], true
 }
 
 // getOrCreateShadowBranch gets or creates the shadow branch for checkpoints.

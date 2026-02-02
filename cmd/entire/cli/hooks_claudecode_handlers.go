@@ -158,11 +158,17 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 			// Non-fatal: continue without worktree path
 			worktreePath = ""
 		}
+		worktreeID, err := paths.GetWorktreeID(worktreePath)
+		if err != nil {
+			// Non-fatal: continue with empty worktree ID (main worktree)
+			worktreeID = ""
+		}
 		agentType := ag.Type()
 		newState := &strategy.SessionState{
 			SessionID:              entireSessionID,
 			BaseCommit:             head.Hash().String(),
 			WorktreePath:           worktreePath,
+			WorktreeID:             worktreeID,
 			ConcurrentWarningShown: true,
 			StartedAt:              time.Now(),
 			AgentType:              agentType,
@@ -187,7 +193,7 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 		}
 
 		// Try to read the other session's initial prompt
-		otherPrompt := strategy.ReadSessionPromptFromShadow(repo, otherSession.BaseCommit, otherSession.SessionID)
+		otherPrompt := strategy.ReadSessionPromptFromShadow(repo, otherSession.BaseCommit, otherSession.WorktreeID, otherSession.SessionID)
 
 		// Build message with other session's prompt if available
 		var message string

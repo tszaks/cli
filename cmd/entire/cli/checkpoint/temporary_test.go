@@ -91,3 +91,108 @@ func TestShadowBranchNameForCommit(t *testing.T) {
 		})
 	}
 }
+
+func TestParseShadowBranchName(t *testing.T) {
+	tests := []struct {
+		name         string
+		branchName   string
+		wantCommit   string
+		wantWorktree string
+		wantOK       bool
+	}{
+		{
+			name:         "new format with worktree hash",
+			branchName:   "entire/abc1234-e3b0c4",
+			wantCommit:   "abc1234",
+			wantWorktree: "e3b0c4",
+			wantOK:       true,
+		},
+		{
+			name:         "old format without worktree hash",
+			branchName:   "entire/abc1234",
+			wantCommit:   "abc1234",
+			wantWorktree: "",
+			wantOK:       true,
+		},
+		{
+			name:         "full commit hash with worktree",
+			branchName:   "entire/abcdef1234567890-fedcba",
+			wantCommit:   "abcdef1234567890",
+			wantWorktree: "fedcba",
+			wantOK:       true,
+		},
+		{
+			name:         "not a shadow branch",
+			branchName:   "main",
+			wantCommit:   "",
+			wantWorktree: "",
+			wantOK:       false,
+		},
+		{
+			name:         "entire/sessions is not a shadow branch",
+			branchName:   "entire/sessions",
+			wantCommit:   "sessions",
+			wantWorktree: "",
+			wantOK:       true, // Parser doesn't validate content, just extracts
+		},
+		{
+			name:         "empty suffix after prefix",
+			branchName:   "entire/",
+			wantCommit:   "",
+			wantWorktree: "",
+			wantOK:       true, // Empty commit, empty worktree
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			commit, worktree, ok := ParseShadowBranchName(tt.branchName)
+			if ok != tt.wantOK {
+				t.Errorf("ParseShadowBranchName(%q) ok = %v, want %v", tt.branchName, ok, tt.wantOK)
+			}
+			if commit != tt.wantCommit {
+				t.Errorf("ParseShadowBranchName(%q) commit = %q, want %q", tt.branchName, commit, tt.wantCommit)
+			}
+			if worktree != tt.wantWorktree {
+				t.Errorf("ParseShadowBranchName(%q) worktree = %q, want %q", tt.branchName, worktree, tt.wantWorktree)
+			}
+		})
+	}
+}
+
+func TestParseShadowBranchName_RoundTrip(t *testing.T) {
+	// Test that ShadowBranchNameForCommit and ParseShadowBranchName are inverses
+	testCases := []struct {
+		baseCommit string
+		worktreeID string
+	}{
+		{"abc1234567890", ""},
+		{"abc1234567890", "test-worktree"},
+		{"deadbeef", "feature/auth"},
+	}
+
+	for _, tc := range testCases {
+		branchName := ShadowBranchNameForCommit(tc.baseCommit, tc.worktreeID)
+		commitPrefix, worktreeHash, ok := ParseShadowBranchName(branchName)
+
+		if !ok {
+			t.Errorf("ParseShadowBranchName failed for %q", branchName)
+			continue
+		}
+
+		// Commit should be truncated to 7 chars
+		expectedCommit := tc.baseCommit
+		if len(expectedCommit) > ShadowBranchHashLength {
+			expectedCommit = expectedCommit[:ShadowBranchHashLength]
+		}
+		if commitPrefix != expectedCommit {
+			t.Errorf("Round trip commit mismatch: got %q, want %q", commitPrefix, expectedCommit)
+		}
+
+		// Worktree hash should match
+		expectedWorktree := HashWorktreeID(tc.worktreeID)
+		if worktreeHash != expectedWorktree {
+			t.Errorf("Round trip worktree mismatch: got %q, want %q", worktreeHash, expectedWorktree)
+		}
+	}
+}
