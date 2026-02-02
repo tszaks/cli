@@ -135,3 +135,93 @@ func TestExtractUserContent_ToolResultsIgnored(t *testing.T) {
 		t.Errorf("expected empty string for tool results, got '%s'", content)
 	}
 }
+
+func TestSliceFromLine_SkipsFirstNLines(t *testing.T) {
+	// 5 JSONL lines
+	content := []byte(`{"type":"user","uuid":"u1","message":{"content":"prompt 1"}}
+{"type":"assistant","uuid":"a1","message":{"content":[{"type":"text","text":"response 1"}]}}
+{"type":"user","uuid":"u2","message":{"content":"prompt 2"}}
+{"type":"assistant","uuid":"a2","message":{"content":[{"type":"text","text":"response 2"}]}}
+{"type":"user","uuid":"u3","message":{"content":"prompt 3"}}
+`)
+
+	// Skip first 2 lines, should get lines 3-5
+	sliced := SliceFromLine(content, 2)
+
+	lines, err := ParseFromBytes(sliced)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines after skipping 2, got %d", len(lines))
+	}
+
+	if lines[0].UUID != "u2" {
+		t.Errorf("expected first line to be u2, got %s", lines[0].UUID)
+	}
+	if lines[1].UUID != "a2" {
+		t.Errorf("expected second line to be a2, got %s", lines[1].UUID)
+	}
+	if lines[2].UUID != "u3" {
+		t.Errorf("expected third line to be u3, got %s", lines[2].UUID)
+	}
+}
+
+func TestSliceFromLine_ZeroReturnsAll(t *testing.T) {
+	content := []byte(`{"type":"user","uuid":"u1","message":{"content":"prompt 1"}}
+{"type":"user","uuid":"u2","message":{"content":"prompt 2"}}
+`)
+
+	sliced := SliceFromLine(content, 0)
+
+	lines, err := ParseFromBytes(sliced)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(lines))
+	}
+}
+
+func TestSliceFromLine_SkipMoreThanExists(t *testing.T) {
+	content := []byte(`{"type":"user","uuid":"u1","message":{"content":"prompt 1"}}
+`)
+
+	// Skip more lines than exist
+	sliced := SliceFromLine(content, 10)
+
+	if len(sliced) != 0 {
+		t.Errorf("expected empty slice when skipping more lines than exist, got %d bytes", len(sliced))
+	}
+}
+
+func TestSliceFromLine_EmptyContent(t *testing.T) {
+	sliced := SliceFromLine([]byte{}, 5)
+
+	if len(sliced) != 0 {
+		t.Errorf("expected empty slice for empty content, got %d bytes", len(sliced))
+	}
+}
+
+func TestSliceFromLine_NoTrailingNewline(t *testing.T) {
+	// No trailing newline
+	content := []byte(`{"type":"user","uuid":"u1","message":{"content":"prompt 1"}}
+{"type":"user","uuid":"u2","message":{"content":"prompt 2"}}`)
+
+	sliced := SliceFromLine(content, 1)
+
+	lines, err := ParseFromBytes(sliced)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line after skipping 1, got %d", len(lines))
+	}
+
+	if lines[0].UUID != "u2" {
+		t.Errorf("expected line to be u2, got %s", lines[0].UUID)
+	}
+}
