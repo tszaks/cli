@@ -47,6 +47,23 @@ Integration tests use the `//go:build integration` build tag and are located in 
 mise run fmt && mise run lint
 ```
 
+### Before Every Commit (REQUIRED)
+
+**CI will fail if you skip these steps:**
+
+```bash
+mise run fmt      # Format code (CI enforces gofmt)
+mise run lint     # Lint check (CI enforces golangci-lint)
+mise run test:ci  # Run all tests (unit + integration)
+```
+
+Or combined: `mise run fmt && mise run lint && mise run test:ci`
+
+**Common CI failures from skipping this:**
+- `gofmt` formatting differences → run `mise run fmt`
+- Lint errors → run `mise run lint` and fix issues
+- Test failures → run `mise run test` and fix
+
 ### Code Duplication Prevention
 
 Before implementing Go code, use `/go:discover-related` to find existing utilities and patterns that might be reusable.
@@ -412,9 +429,8 @@ Trailers:
 
 # Important Notes
 
-- Tests: always run `mise run test` before committing changes
+- **Before committing:** Follow the "Before Every Commit (REQUIRED)" checklist above - CI will fail without it
 - Integration tests: run `mise run test:integration` when changing integration test code
-- Formatting and linting: always run `mise run fmt && mise run lint` before committing changes
 - When adding new features, ensure they are well-tested and documented.
 - Always check for code duplication and refactor as needed.
 
