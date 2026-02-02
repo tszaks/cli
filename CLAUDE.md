@@ -189,15 +189,16 @@ All strategies implement:
 
 | Strategy | Main Branch | Metadata Storage | Use Case |
 |----------|-------------|------------------|----------|
-| **manual-commit** (default) | Unchanged (no commits) | `entire/<HEAD-hash>` branches + `entire/sessions` | Recommended for most workflows |
+| **manual-commit** (default) | Unchanged (no commits) | `entire/<HEAD-hash>-<worktreeHash>` branches + `entire/sessions` | Recommended for most workflows |
 | **auto-commit** | Creates clean commits | Orphan `entire/sessions` branch | Teams that want code commits from sessions |
 
 #### Strategy Details
 
 **Manual-Commit Strategy** (`manual_commit*.go`) - Default
 - **Does not modify** the active branch - no commits created on the working branch
-- Creates shadow branch `entire/<HEAD-commit-hash[:7]>` per base commit for checkpoints
-- **Supports multiple concurrent sessions** - checkpoints from different sessions interleave on the same shadow branch
+- Creates shadow branch `entire/<HEAD-commit-hash[:7]>-<worktreeHash[:6]>` per base commit + worktree
+- **Worktree-specific branches** - each git worktree gets its own shadow branch namespace, preventing conflicts
+- **Supports multiple concurrent sessions** - checkpoints from different sessions in the same directory interleave on the same shadow branch
 - Session logs are condensed to permanent `entire/sessions` branch on user commits
 - Builds git trees in-memory using go-git plumbing APIs
 - Rewind restores files from shadow branch commit tree (does not use `git reset`)
@@ -248,7 +249,7 @@ All strategies implement:
 
 #### Metadata Structure
 
-**Shadow Strategy** - Shadow branches (`entire/<commit-hash>`):
+**Shadow Strategy** - Shadow branches (`entire/<commit-hash[:7]>-<worktreeHash[:6]>`):
 ```
 .entire/metadata/<session-id>/
 ├── full.jsonl               # Session transcript
@@ -362,7 +363,7 @@ entire/sessions commit:
   - Auto-commit: Always added when creating commits
   - Manual-commit: Added by hook; user can remove to skip linking
 
-**On shadow branch commits (`entire/<commit-hash>`) - manual-commit only:**
+**On shadow branch commits (`entire/<commit-hash[:7]>-<worktreeHash[:6]>`) - manual-commit only:**
 - `Entire-Session: <session-id>` - Session identifier
 - `Entire-Metadata: <path>` - Path to metadata directory within the tree
 - `Entire-Task-Metadata: <path>` - Path to task metadata directory (for task checkpoints)
@@ -384,22 +385,23 @@ Trailers:
 #### Multi-Session Behavior
 
 **Concurrent Sessions:**
-- When a second session starts while another has uncommitted checkpoints, a warning is shown
+- When a second session starts in the same directory while another has uncommitted checkpoints, a warning is shown
 - Both sessions can proceed - their checkpoints interleave on the same shadow branch
 - Each session's `RewindPoint` includes `SessionID` and `SessionPrompt` to help identify which checkpoint belongs to which session
 - On commit, all sessions are condensed together with archived sessions in numbered subfolders
+- Note: Different git worktrees have separate shadow branches (worktree-specific naming), so concurrent sessions in different worktrees do not conflict
 
 **Orphaned Shadow Branches:**
 - A shadow branch is "orphaned" if it exists but has no corresponding session state file
 - This can happen if the state file is manually deleted or lost
 - When a new session starts with an orphaned branch, the branch is automatically reset
-- If the existing session DOES have a state file (e.g., cross-worktree conflict), a `SessionIDConflictError` is returned
+- If the existing session DOES have a state file (concurrent session in same directory), a `SessionIDConflictError` is returned
 
 **Shadow Branch Migration (Pull/Rebase):**
 - If user does stash → pull → apply (or rebase), HEAD changes but work isn't committed
 - The shadow branch would be orphaned at the old commit
 - Detection: base commit changed AND old shadow branch still exists (would be deleted if user committed)
-- Action: shadow branch is renamed from `entire/<old-hash>` to `entire/<new-hash>`
+- Action: shadow branch is renamed from `entire/<old-hash>-<worktreeHash>` to `entire/<new-hash>-<worktreeHash>`
 - Session continues seamlessly with checkpoints preserved
 
 #### When Modifying Strategies
