@@ -165,6 +165,27 @@ Personal overrides, gitignored by default:
 | `agent` | `claude-code`, `gemini`, etc. | AI agent to integrate with |
 | `log_level` | `debug`, `info`, `warn`, `error` | Logging verbosity |
 | `strategy_options.push_sessions` | `true`, `false` | Auto-push `entire/sessions` branch on git push |
+| `strategy_options.summarise.enabled` | `true`, `false` | Auto-generate AI summaries at commit time (manual-commit only) |
+
+### Auto-Summarisation
+
+When enabled, Entire automatically generates AI summaries for checkpoints at commit time (manual-commit strategy only). Summaries capture intent, outcome, learnings, friction points, and open items from the session.
+
+```json
+{
+  "strategy_options": {
+    "summarise": {
+      "enabled": true
+    }
+  }
+}
+```
+
+**Requirements:**
+- Claude CLI must be installed and authenticated (`claude` command available in PATH)
+- Summary generation is non-blocking: failures are logged but don't prevent commits
+
+**Note:** Currently uses Claude CLI for summary generation. Other AI backends may be supported in future versions.
 
 ### Settings Priority
 
