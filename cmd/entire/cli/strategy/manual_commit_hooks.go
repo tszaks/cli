@@ -778,8 +778,8 @@ func addCheckpointTrailerWithComment(message string, checkpointID id.CheckpointI
 // If the session already exists and HEAD has moved (e.g., user committed), updates
 // BaseCommit to the new HEAD so future checkpoints go to the correct shadow branch.
 //
-// If there's an existing shadow branch with activity from a different worktree,
-// returns a ShadowBranchConflictError to allow the caller to inform the user.
+// If there's an existing shadow branch with commits from a different session ID,
+// returns a SessionIDConflictError to prevent orphaning existing session work.
 //
 // agentType is the human-readable name of the agent (e.g., "Claude Code").
 // transcriptPath is the path to the live transcript file (for mid-session commit detection).
@@ -840,7 +840,7 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 						}
 					} else {
 						// Existing session has state - this is a real conflict
-						// (e.g., different worktree at same commit)
+						// (e.g., concurrent sessions in same directory)
 						return &SessionIDConflictError{
 							ExistingSession: existingSessionID,
 							NewSession:      sessionID,
@@ -929,36 +929,6 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 	}
 	// If state exists but BaseCommit is empty, it's a partial state from concurrent warning
 	// Continue below to properly initialize it
-
-	currentWorktree, err := GetWorktreePath()
-	if err != nil {
-		return fmt.Errorf("failed to get worktree path: %w", err)
-	}
-
-	// Check for existing sessions on the same base commit from different worktrees
-	existingSessions, err := s.findSessionsForCommit(head.Hash().String())
-	if err != nil {
-		// Log but continue - conflict detection is best-effort
-		fmt.Fprintf(os.Stderr, "Warning: failed to check for existing sessions: %v\n", err)
-	} else {
-		for _, existingState := range existingSessions {
-			// Skip sessions from the same worktree
-			if existingState.WorktreePath == currentWorktree {
-				continue
-			}
-
-			// Found a session from a different worktree on the same base commit
-			shadowBranch := getShadowBranchNameForCommit(head.Hash().String(), currentWorktreeID)
-			return &ShadowBranchConflictError{
-				Branch:           shadowBranch,
-				ExistingSession:  existingState.SessionID,
-				ExistingWorktree: existingState.WorktreePath,
-				LastActivity:     existingState.StartedAt,
-				CurrentSession:   sessionID,
-				CurrentWorktree:  currentWorktree,
-			}
-		}
-	}
 
 	// Initialize new session
 	state, err = s.initializeSession(repo, sessionID, agentType, transcriptPath)

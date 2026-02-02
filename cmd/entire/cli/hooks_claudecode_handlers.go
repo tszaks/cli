@@ -253,35 +253,6 @@ func handleSessionStartCommon() error {
 
 // handleSessionInitErrors handles session initialization errors and provides user-friendly messages.
 func handleSessionInitErrors(ag agent.Agent, initErr error) error {
-	// Check for shadow branch conflict error (worktree conflict)
-	var conflictErr *strategy.ShadowBranchConflictError
-	if errors.As(initErr, &conflictErr) {
-		message := fmt.Sprintf(
-			"Warning: Shadow branch conflict detected!\n\n"+
-				"Branch: %s\n"+
-				"Existing session: %s\n"+
-				"From worktree: %s\n"+
-				"Started: %s\n\n"+
-				"This may indicate another agent session is active from a different worktree,\n"+
-				"or a previous session wasn't completed.\n\n"+
-				"Options:\n"+
-				"1. Commit your changes (git commit) to create a new base commit\n"+
-				"2. Run 'entire rewind reset' to discard the shadow branch and start fresh\n"+
-				"3. Continue the previous session from the original worktree: %s",
-			conflictErr.Branch,
-			conflictErr.ExistingSession,
-			conflictErr.ExistingWorktree,
-			conflictErr.LastActivity.Format(time.RFC822),
-			conflictErr.ExistingWorktree,
-		)
-		// Output blocking JSON response - user must resolve conflict before continuing
-		if err := outputHookResponse(false, message); err != nil {
-			return err
-		}
-		// Return nil so hook exits cleanly (status 0), not with error status
-		return nil
-	}
-
 	// Check for session ID conflict error (shadow branch has different session)
 	var sessionConflictErr *strategy.SessionIDConflictError
 	if errors.As(initErr, &sessionConflictErr) {
