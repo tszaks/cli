@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	"entire.io/cli/cmd/entire/cli/agent"
@@ -13,7 +14,9 @@ import (
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/summarise"
 	"entire.io/cli/cmd/entire/cli/textutil"
+	"entire.io/cli/cmd/entire/cli/transcript"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -216,6 +219,28 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		}
 	}
 
+	// Generate summary if enabled
+	var summary *cpkg.Summary
+	if isSummariseEnabled() && len(sessionData.Transcript) > 0 {
+		summariseCtx := logging.WithComponent(context.Background(), "summarise")
+
+		// Scope transcript to this checkpoint's portion
+		scopedTranscript := transcript.SliceFromLine(sessionData.Transcript, state.TranscriptLinesAtStart)
+		if len(scopedTranscript) > 0 {
+			var err error
+			summary, err = summarise.GenerateFromTranscript(context.Background(), scopedTranscript, sessionData.FilesTouched, nil)
+			if err != nil {
+				logging.Warn(summariseCtx, "summary generation failed",
+					slog.String("session_id", state.SessionID),
+					slog.String("error", err.Error()))
+				// Continue without summary - non-blocking
+			} else {
+				logging.Info(summariseCtx, "summary generated",
+					slog.String("session_id", state.SessionID))
+			}
+		}
+	}
+
 	// Write checkpoint metadata using the checkpoint store
 	if err := store.WriteCommitted(context.Background(), cpkg.WriteCommittedOptions{
 		CheckpointID:                checkpointID,
@@ -235,6 +260,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		TranscriptLinesAtStart:      state.TranscriptLinesAtStart,
 		TokenUsage:                  sessionData.TokenUsage,
 		InitialAttribution:          attribution,
+		Summary:                     summary,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to write checkpoint metadata: %w", err)
 	}
@@ -452,4 +478,63 @@ func generateContextFromPrompts(prompts []string) []byte {
 	}
 
 	return []byte(buf.String())
+}
+
+// isSummariseEnabled checks if auto-summarise is enabled in settings.
+// Reads the settings file directly to avoid import cycles with the cli package.
+// Checks settings.local.json first, then settings.json.
+func isSummariseEnabled() bool {
+	// Try local settings first (user preference, not committed)
+	localSettingsPath, err := paths.AbsPath(".entire/settings.local.json")
+	if err != nil {
+		localSettingsPath = ".entire/settings.local.json"
+	}
+	if enabled, found := readSummariseEnabledFromFile(localSettingsPath); found {
+		return enabled
+	}
+
+	// Fall back to shared settings
+	sharedSettingsPath, err := paths.AbsPath(".entire/settings.json")
+	if err != nil {
+		sharedSettingsPath = ".entire/settings.json"
+	}
+	if enabled, found := readSummariseEnabledFromFile(sharedSettingsPath); found {
+		return enabled
+	}
+
+	// Default: summarise is disabled
+	return false
+}
+
+// readSummariseEnabledFromFile reads summarise.enabled from a specific settings file.
+// Returns (enabled, found). If not found, returns (false, false).
+func readSummariseEnabledFromFile(settingsPath string) (bool, bool) {
+	//nolint:gosec // G304: settingsPath is always a hardcoded constant from this package
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		return false, false
+	}
+
+	var settings struct {
+		StrategyOptions map[string]interface{} `json:"strategy_options"`
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return false, false
+	}
+
+	if settings.StrategyOptions == nil {
+		return false, false
+	}
+
+	summariseOpts, ok := settings.StrategyOptions["summarise"].(map[string]interface{})
+	if !ok {
+		return false, false
+	}
+
+	enabled, ok := summariseOpts["enabled"].(bool)
+	if !ok {
+		return false, false
+	}
+
+	return enabled, true
 }
