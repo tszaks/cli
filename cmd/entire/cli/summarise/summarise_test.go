@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"entire.io/cli/cmd/entire/cli/transcript"
@@ -128,6 +129,138 @@ func TestBuildCondensedTranscript_ToolCallWithCommand(t *testing.T) {
 
 	if entries[0].ToolDetail != "go test ./..." {
 		t.Errorf("expected tool detail 'go test ./...', got %s", entries[0].ToolDetail)
+	}
+}
+
+func TestBuildCondensedTranscript_SkillToolMinimalDetail(t *testing.T) {
+	lines := []transcript.Line{
+		{
+			Type: "assistant",
+			UUID: "assistant-1",
+			Message: mustMarshal(t, transcript.AssistantMessage{
+				Content: []transcript.ContentBlock{
+					{
+						Type: "tool_use",
+						Name: "Skill",
+						Input: mustMarshal(t, transcript.ToolInput{
+							Skill: "superpowers:brainstorming",
+						}),
+					},
+				},
+			}),
+		},
+	}
+
+	entries := BuildCondensedTranscript(lines)
+
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+
+	if entries[0].ToolName != "Skill" {
+		t.Errorf("expected tool name Skill, got %s", entries[0].ToolName)
+	}
+
+	// Should only show the skill name, not any verbose content
+	if entries[0].ToolDetail != "superpowers:brainstorming" {
+		t.Errorf("expected tool detail 'superpowers:brainstorming', got %s", entries[0].ToolDetail)
+	}
+}
+
+func TestBuildCondensedTranscript_WebFetchMinimalDetail(t *testing.T) {
+	lines := []transcript.Line{
+		{
+			Type: "assistant",
+			UUID: "assistant-1",
+			Message: mustMarshal(t, transcript.AssistantMessage{
+				Content: []transcript.ContentBlock{
+					{
+						Type: "tool_use",
+						Name: "WebFetch",
+						Input: mustMarshal(t, transcript.ToolInput{
+							URL:    "https://example.com/docs",
+							Prompt: "Extract the API documentation",
+						}),
+					},
+				},
+			}),
+		},
+	}
+
+	entries := BuildCondensedTranscript(lines)
+
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+
+	// Should only show the URL, not the prompt
+	if entries[0].ToolDetail != "https://example.com/docs" {
+		t.Errorf("expected tool detail 'https://example.com/docs', got %s", entries[0].ToolDetail)
+	}
+}
+
+func TestBuildCondensedTranscript_SkipsSkillContentInjection(t *testing.T) {
+	skillContent := `Base directory for this skill: /Users/alex/.claude/plugins/cache/superpowers/4.1.1/skills/brainstorming
+
+# Brainstorming Ideas Into Designs
+
+## Overview
+
+This is verbose skill content that should not appear in summaries...`
+
+	lines := []transcript.Line{
+		{
+			Type: "user",
+			UUID: "user-1",
+			Message: mustMarshal(t, transcript.UserMessage{
+				Content: "Invoke the superpowers:brainstorming skill",
+			}),
+		},
+		{
+			Type: "assistant",
+			UUID: "assistant-1",
+			Message: mustMarshal(t, transcript.AssistantMessage{
+				Content: []transcript.ContentBlock{
+					{Type: "tool_use", Name: "Skill", Input: mustMarshal(t, transcript.ToolInput{Skill: "superpowers:brainstorming"})},
+				},
+			}),
+		},
+		{
+			Type: "user",
+			UUID: "user-2",
+			Message: mustMarshal(t, transcript.UserMessage{
+				Content: skillContent, // This should be filtered out
+			}),
+		},
+		{
+			Type: "user",
+			UUID: "user-3",
+			Message: mustMarshal(t, transcript.UserMessage{
+				Content: "Now help me brainstorm a feature",
+			}),
+		},
+	}
+
+	entries := BuildCondensedTranscript(lines)
+
+	// Should have: user prompt, tool call, user prompt (NOT the skill content)
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries (skill content filtered), got %d", len(entries))
+	}
+
+	// Verify the skill content was filtered
+	for _, entry := range entries {
+		if entry.Type == EntryTypeUser && strings.Contains(entry.Content, "Base directory for this skill") {
+			t.Error("skill content injection should have been filtered out")
+		}
+	}
+
+	// Verify the real user messages are present
+	if entries[0].Content != "Invoke the superpowers:brainstorming skill" {
+		t.Errorf("first user message wrong: %s", entries[0].Content)
+	}
+	if entries[2].Content != "Now help me brainstorm a feature" {
+		t.Errorf("last user message wrong: %s", entries[2].Content)
 	}
 }
 

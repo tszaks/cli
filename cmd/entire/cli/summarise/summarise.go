@@ -97,6 +97,15 @@ type Entry struct {
 	ToolDetail string
 }
 
+// minimalDetailTools lists tools that should show only essential details in summaries.
+// These tools often have verbose outputs that don't add value to summarisation.
+// The detail shown is typically just a path, URL, or identifier rather than full content.
+var minimalDetailTools = map[string]bool{
+	"Skill":    true, // Show skill name only, not loaded content
+	"Read":     true, // Show file path only, not file contents
+	"WebFetch": true, // Show URL only, not fetched content
+}
+
 // BuildCondensedTranscriptFromBytes parses transcript bytes and extracts a condensed view.
 // This is a convenience function that combines parsing and condensing.
 func BuildCondensedTranscriptFromBytes(content []byte) ([]Entry, error) {
@@ -128,13 +137,24 @@ func BuildCondensedTranscript(lines []transcript.Line) []Entry {
 	return entries
 }
 
+// skillContentPrefix identifies user messages that are skill content injections.
+// These are injected after a Skill tool call and contain the full skill instructions.
+const skillContentPrefix = "Base directory for this skill:"
+
 // extractUserEntry extracts a user entry from a transcript line.
-// Returns nil if the line doesn't contain a valid user prompt.
+// Returns nil if the line doesn't contain a valid user prompt or is skill content.
 func extractUserEntry(line transcript.Line) *Entry {
 	content := transcript.ExtractUserContent(line.Message)
 	if content == "" {
 		return nil
 	}
+
+	// Skip skill content injections - these are verbose skill instructions
+	// injected as user messages after Skill tool invocations
+	if strings.HasPrefix(content, skillContentPrefix) {
+		return nil
+	}
+
 	return &Entry{
 		Type:    EntryTypeUser,
 		Content: content,
@@ -163,19 +183,7 @@ func extractAssistantEntries(line transcript.Line) []Entry {
 			var input transcript.ToolInput
 			_ = json.Unmarshal(block.Input, &input) //nolint:errcheck // Best-effort parsing
 
-			detail := input.Description
-			if detail == "" {
-				detail = input.Command
-			}
-			if detail == "" {
-				detail = input.FilePath
-			}
-			if detail == "" {
-				detail = input.NotebookPath
-			}
-			if detail == "" {
-				detail = input.Pattern
-			}
+			detail := extractToolDetail(block.Name, input)
 
 			entries = append(entries, Entry{
 				Type:       EntryTypeTool,
@@ -186,6 +194,41 @@ func extractAssistantEntries(line transcript.Line) []Entry {
 	}
 
 	return entries
+}
+
+// extractToolDetail extracts an appropriate detail string for a tool call.
+// For tools in minimalDetailTools, only essential identifiers are shown.
+// For other tools, the full detail chain is used.
+func extractToolDetail(toolName string, input transcript.ToolInput) string {
+	// For minimal detail tools, extract only the essential identifier
+	if minimalDetailTools[toolName] {
+		switch toolName {
+		case "Skill":
+			return input.Skill
+		case "Read":
+			if input.FilePath != "" {
+				return input.FilePath
+			}
+			return input.NotebookPath
+		case "WebFetch":
+			return input.URL
+		}
+	}
+
+	// For other tools, use the full detail chain
+	if input.Description != "" {
+		return input.Description
+	}
+	if input.Command != "" {
+		return input.Command
+	}
+	if input.FilePath != "" {
+		return input.FilePath
+	}
+	if input.NotebookPath != "" {
+		return input.NotebookPath
+	}
+	return input.Pattern
 }
 
 // FormatCondensedTranscript formats an Input into a human-readable string for LLM.
