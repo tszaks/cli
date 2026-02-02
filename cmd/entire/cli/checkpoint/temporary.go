@@ -69,7 +69,8 @@ func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOption
 	}
 
 	// Get shadow branch name
-	shadowBranchName := ShadowBranchNameForCommit(opts.BaseCommit)
+	// TODO(task-5): Use opts.WorktreeID once added to WriteTemporaryOptions
+	shadowBranchName := ShadowBranchNameForCommit(opts.BaseCommit, "")
 
 	// Get or create shadow branch
 	parentHash, baseTreeHash, err := s.getOrCreateShadowBranch(shadowBranchName)
@@ -138,10 +139,11 @@ func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOption
 
 // ReadTemporary reads the latest checkpoint from a shadow branch.
 // Returns nil if the shadow branch doesn't exist.
+// TODO(task-5): Add worktreeID parameter once WriteTemporaryOptions is updated
 func (s *GitStore) ReadTemporary(ctx context.Context, baseCommit string) (*ReadTemporaryResult, error) {
 	_ = ctx // Reserved for future use
 
-	shadowBranchName := ShadowBranchNameForCommit(baseCommit)
+	shadowBranchName := ShadowBranchNameForCommit(baseCommit, "")
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 
 	ref, err := s.repo.Reference(refName, true)
@@ -240,7 +242,8 @@ func (s *GitStore) WriteTemporaryTask(ctx context.Context, opts WriteTemporaryTa
 	}
 
 	// Get shadow branch name
-	shadowBranchName := ShadowBranchNameForCommit(opts.BaseCommit)
+	// TODO(task-5): Use opts.WorktreeID once added to WriteTemporaryTaskOptions
+	shadowBranchName := ShadowBranchNameForCommit(opts.BaseCommit, "")
 
 	// Get or create shadow branch
 	parentHash, baseTreeHash, err := s.getOrCreateShadowBranch(shadowBranchName)
@@ -408,10 +411,11 @@ func (s *GitStore) addTaskMetadataToTree(baseTreeHash plumbing.Hash, opts WriteT
 // ListTemporaryCheckpoints lists all checkpoint commits on a shadow branch.
 // This returns individual commits (rewind points), not just branch info.
 // The sessionID filter, if provided, limits results to commits from that session.
+// TODO(task-5): Add worktreeID parameter once WriteTemporaryOptions is updated
 func (s *GitStore) ListTemporaryCheckpoints(ctx context.Context, baseCommit string, sessionID string, limit int) ([]TemporaryCheckpointInfo, error) {
 	_ = ctx // Reserved for future use
 
-	shadowBranchName := ShadowBranchNameForCommit(baseCommit)
+	shadowBranchName := ShadowBranchNameForCommit(baseCommit, "")
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 
 	ref, err := s.repo.Reference(refName, true)
@@ -575,16 +579,18 @@ func (s *GitStore) GetTranscriptFromCommit(commitHash plumbing.Hash, metadataDir
 }
 
 // ShadowBranchExists checks if a shadow branch exists for the given base commit.
+// TODO(task-5): Add worktreeID parameter once WriteTemporaryOptions is updated
 func (s *GitStore) ShadowBranchExists(baseCommit string) bool {
-	shadowBranchName := ShadowBranchNameForCommit(baseCommit)
+	shadowBranchName := ShadowBranchNameForCommit(baseCommit, "")
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	_, err := s.repo.Reference(refName, true)
 	return err == nil
 }
 
 // DeleteShadowBranch deletes the shadow branch for the given base commit.
+// TODO(task-5): Add worktreeID parameter once WriteTemporaryOptions is updated
 func (s *GitStore) DeleteShadowBranch(baseCommit string) error {
-	shadowBranchName := ShadowBranchNameForCommit(baseCommit)
+	shadowBranchName := ShadowBranchNameForCommit(baseCommit, "")
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	if err := s.repo.Storer.RemoveReference(refName); err != nil {
 		return fmt.Errorf("failed to delete shadow branch %s: %w", shadowBranchName, err)
@@ -592,13 +598,17 @@ func (s *GitStore) DeleteShadowBranch(baseCommit string) error {
 	return nil
 }
 
-// ShadowBranchNameForCommit returns the shadow branch name for a base commit hash.
-// Uses the first ShadowBranchHashLength characters of the commit hash.
-func ShadowBranchNameForCommit(baseCommit string) string {
+// ShadowBranchNameForCommit returns the shadow branch name for a base commit hash
+// and worktree identifier. The worktree ID should be empty for the main worktree
+// or the internal git worktree name for linked worktrees.
+// Format: entire/<commit[:7]>-<hash(worktreeID)[:6]>
+func ShadowBranchNameForCommit(baseCommit, worktreeID string) string {
+	commitPart := baseCommit
 	if len(baseCommit) >= ShadowBranchHashLength {
-		return ShadowBranchPrefix + baseCommit[:ShadowBranchHashLength]
+		commitPart = baseCommit[:ShadowBranchHashLength]
 	}
-	return ShadowBranchPrefix + baseCommit
+	worktreeHash := HashWorktreeID(worktreeID)
+	return ShadowBranchPrefix + commitPart + "-" + worktreeHash
 }
 
 // getOrCreateShadowBranch gets or creates the shadow branch for checkpoints.

@@ -448,7 +448,7 @@ func (s *ManualCommitStrategy) resetShadowBranchToCheckpoint(repo *git.Repositor
 	}
 
 	// Reset the shadow branch to the checkpoint commit
-	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit)
+	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 
 	// Update the reference to point to the checkpoint commit

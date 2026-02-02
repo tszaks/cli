@@ -7,6 +7,7 @@ import (
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/checkpoint"
+	"entire.io/cli/cmd/entire/cli/paths"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -83,7 +84,7 @@ func (s *ManualCommitStrategy) listAllSessionStates() ([]*SessionState, error) {
 		// AND has no LastCheckpointID (not recently condensed)
 		// Sessions with LastCheckpointID are valid - they were condensed and the shadow
 		// branch was intentionally deleted. Keep them for LastCheckpointID reuse.
-		shadowBranch := getShadowBranchNameForCommit(state.BaseCommit)
+		shadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 		refName := plumbing.NewBranchReferenceName(shadowBranch)
 		if _, err := repo.Reference(refName, true); err != nil {
 			// Shadow branch doesn't exist
@@ -203,6 +204,12 @@ func (s *ManualCommitStrategy) initializeSession(repo *git.Repository, sessionID
 		return nil, fmt.Errorf("failed to get worktree path: %w", err)
 	}
 
+	// Get worktree ID for shadow branch naming
+	worktreeID, err := paths.GetWorktreeID(worktreePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get worktree ID: %w", err)
+	}
+
 	// Capture untracked files at session start to preserve them during rewind
 	untrackedFiles, err := collectUntrackedFiles()
 	if err != nil {
@@ -222,6 +229,7 @@ func (s *ManualCommitStrategy) initializeSession(repo *git.Repository, sessionID
 		SessionID:              sessionID,
 		BaseCommit:             head.Hash().String(),
 		WorktreePath:           worktreePath,
+		WorktreeID:             worktreeID,
 		StartedAt:              time.Now(),
 		CheckpointCount:        0,
 		UntrackedFilesAtStart:  untrackedFiles,
@@ -237,10 +245,8 @@ func (s *ManualCommitStrategy) initializeSession(repo *git.Repository, sessionID
 	return state, nil
 }
 
-// getShadowBranchNameForCommit returns the shadow branch name for the given base commit.
-func getShadowBranchNameForCommit(baseCommit string) string {
-	if len(baseCommit) >= checkpoint.ShadowBranchHashLength {
-		return shadowBranchPrefix + baseCommit[:checkpoint.ShadowBranchHashLength]
-	}
-	return shadowBranchPrefix + baseCommit
+// getShadowBranchNameForCommit returns the shadow branch name for the given base commit and worktree ID.
+// worktreeID should be empty for the main worktree or the internal git worktree name for linked worktrees.
+func getShadowBranchNameForCommit(baseCommit, worktreeID string) string {
+	return checkpoint.ShadowBranchNameForCommit(baseCommit, worktreeID)
 }

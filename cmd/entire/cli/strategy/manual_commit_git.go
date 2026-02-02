@@ -54,7 +54,7 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 	}
 
 	// Check if shadow branch exists to report whether we created it
-	shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit)
+	shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	branchExisted := store.ShadowBranchExists(state.BaseCommit)
 
 	// Use the pending attribution calculated at prompt start (in InitializeSession)
@@ -187,7 +187,7 @@ func (s *ManualCommitStrategy) SaveTaskCheckpoint(ctx TaskCheckpointContext) err
 	}
 
 	// Check if shadow branch exists to report whether we created it
-	shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit)
+	shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	branchExisted := store.ShadowBranchExists(state.BaseCommit)
 
 	// Compute metadata paths for commit message

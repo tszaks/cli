@@ -53,3 +53,41 @@ func TestHashWorktreeID_DifferentInputs(t *testing.T) {
 		t.Errorf("HashWorktreeID produced same hash for different inputs: %q", hash1)
 	}
 }
+
+func TestShadowBranchNameForCommit(t *testing.T) {
+	tests := []struct {
+		name       string
+		baseCommit string
+		worktreeID string
+		want       string
+	}{
+		{
+			name:       "main worktree",
+			baseCommit: "abc1234567890",
+			worktreeID: "",
+			want:       "entire/abc1234-" + HashWorktreeID(""),
+		},
+		{
+			name:       "linked worktree",
+			baseCommit: "abc1234567890",
+			worktreeID: "test-123",
+			want:       "entire/abc1234-" + HashWorktreeID("test-123"),
+		},
+		{
+			name:       "short commit hash",
+			baseCommit: "abc",
+			worktreeID: "wt",
+			want:       "entire/abc-" + HashWorktreeID("wt"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ShadowBranchNameForCommit(tt.baseCommit, tt.worktreeID)
+			if got != tt.want {
+				t.Errorf("ShadowBranchNameForCommit(%q, %q) = %q, want %q",
+					tt.baseCommit, tt.worktreeID, got, tt.want)
+			}
+		})
+	}
+}
