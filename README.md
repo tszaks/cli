@@ -102,7 +102,7 @@ Entire offers two strategies for capturing your work:
 | `entire disable` | Remove Entire hooks from repository                                           |
 | `entire enable`  | Enable Entire in your repository (uses `manual-commit` by default)            |
 | `entire explain` | Explain a session or commit                                                   |
-| `entire reset`   | Reset deletes the shadow branch and session state for the current HEAD commit |
+| `entire reset`   | Delete the shadow branch and session state for the current HEAD commit        |
 | `entire resume`  | Resume a previous session                                                     |
 | `entire rewind`  | Rewind to a previous checkpoint                                               |
 | `entire session` | View and manage sessions (list, show details, view logs)                      |
