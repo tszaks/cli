@@ -295,34 +295,6 @@ func IsMultiSessionWarningDisabled() bool {
 	return false
 }
 
-// SummariseOptions contains configuration for automatic summary generation.
-type SummariseOptions struct {
-	Enabled bool
-}
-
-// GetSummariseOptions returns the summarise configuration from strategy_options.
-// Returns SummariseOptions{Enabled: false} if not configured or on error.
-func GetSummariseOptions() SummariseOptions {
-	settings, err := LoadEntireSettings()
-	if err != nil {
-		return SummariseOptions{}
-	}
-	if settings.StrategyOptions == nil {
-		return SummariseOptions{}
-	}
-
-	summariseOpts, ok := settings.StrategyOptions["summarise"].(map[string]interface{})
-	if !ok {
-		return SummariseOptions{}
-	}
-
-	enabled, ok := summariseOpts["enabled"].(bool)
-	if !ok {
-		return SummariseOptions{}
-	}
-	return SummariseOptions{Enabled: enabled}
-}
-
 // GetAgentsWithHooksInstalled returns names of agents that have hooks installed.
 func GetAgentsWithHooksInstalled() []agent.AgentName {
 	var installed []agent.AgentName
