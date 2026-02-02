@@ -19,8 +19,8 @@ const (
 type SessionState struct {
 	SessionID                string          `json:"session_id"`
 	BaseCommit               string          `json:"base_commit"`
-	WorktreePath             string          `json:"worktree_path,omitempty"`  // Absolute path to the worktree root
-	WorktreeID               string          `json:"worktree_id,omitempty"`    // Internal git worktree identifier (empty for main worktree)
+	WorktreePath             string          `json:"worktree_path,omitempty"` // Absolute path to the worktree root
+	WorktreeID               string          `json:"worktree_id,omitempty"`   // Internal git worktree identifier (empty for main worktree)
 	StartedAt                time.Time       `json:"started_at"`
 	CheckpointCount          int             `json:"checkpoint_count"`
 	CondensedTranscriptLines int             `json:"condensed_transcript_lines,omitempty"` // Lines already included in previous condensation

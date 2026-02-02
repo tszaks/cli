@@ -446,4 +446,3 @@ func createShadowBranchWithoutTrailer(t *testing.T, repoDir, branchName string) 
 		t.Fatalf("Failed to create branch reference: %v", err)
 	}
 }
-
