@@ -135,6 +135,8 @@ Only one of --session, --commit, or --checkpoint can be specified at a time.`,
 
 	// Make --short, --full, and --raw-transcript mutually exclusive
 	cmd.MarkFlagsMutuallyExclusive("short", "full", "raw-transcript")
+	// --generate and --raw-transcript are incompatible (summary would be generated but not shown)
+	cmd.MarkFlagsMutuallyExclusive("generate", "raw-transcript")
 
 	return cmd
 }
@@ -206,7 +208,7 @@ func runExplainCheckpoint(w, errW io.Writer, checkpointIDPrefix string, noPager,
 		if generate {
 			return fmt.Errorf("cannot generate summary for temporary checkpoint %s (only committed checkpoints supported)", checkpointIDPrefix)
 		}
-		output, found := explainTemporaryCheckpoint(repo, store, checkpointIDPrefix, verbose, full, rawTranscript)
+		output, found := explainTemporaryCheckpoint(w, repo, store, checkpointIDPrefix, verbose, full, rawTranscript)
 		if found {
 			outputExplainContent(w, output, noPager)
 			return nil
@@ -314,7 +316,8 @@ func generateCheckpointSummary(w, _ io.Writer, store *checkpoint.GitStore, check
 // Returns the formatted output and whether the checkpoint was found.
 // Searches ALL shadow branches, not just the one for current HEAD, to find checkpoints
 // created from different base commits (e.g., if HEAD advanced since session start).
-func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore, shaPrefix string, verbose, full, rawTranscript bool) (string, bool) {
+// The writer w is used for raw transcript output to bypass the pager.
+func explainTemporaryCheckpoint(w io.Writer, repo *git.Repository, store *checkpoint.GitStore, shaPrefix string, verbose, full, rawTranscript bool) (string, bool) {
 	// List temporary checkpoints from ALL shadow branches
 	// This ensures we find checkpoints even if HEAD has advanced since the session started
 	tempCheckpoints, err := store.ListAllTemporaryCheckpoints(context.Background(), "", branchCheckpointsLimit)
@@ -355,9 +358,14 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 	if rawTranscript {
 		transcriptBytes, transcriptErr := store.GetTranscriptFromCommit(tc.CommitHash, tc.MetadataDir, agent.AgentTypeUnknown)
 		if transcriptErr != nil || len(transcriptBytes) == 0 {
-			return "", false
+			// Return specific error message (consistent with committed checkpoints)
+			return fmt.Sprintf("checkpoint %s has no transcript", tc.CommitHash.String()[:7]), false
 		}
-		return string(transcriptBytes), true
+		// Write directly to writer (no pager, no formatting) - matches committed checkpoint behavior
+		if _, writeErr := fmt.Fprint(w, string(transcriptBytes)); writeErr != nil {
+			return fmt.Sprintf("failed to write transcript: %v", writeErr), false
+		}
+		return "", true
 	}
 
 	// Found exactly one match - read metadata from shadow branch commit tree
@@ -394,12 +402,30 @@ func explainTemporaryCheckpoint(repo *git.Repository, store *checkpoint.GitStore
 	sb.WriteString("Outcome: (not generated)\n")
 
 	// Transcript section: full shows entire session, verbose shows checkpoint scope
-	// For temporary checkpoints, we need to load the full transcript from commit for --full mode
+	// For temporary checkpoints, load transcript and compute scope from parent commit
 	var fullTranscript []byte
-	if full {
+	var scopedTranscript []byte
+	if full || verbose {
 		fullTranscript, _ = store.GetTranscriptFromCommit(tc.CommitHash, tc.MetadataDir, agent.AgentTypeUnknown) //nolint:errcheck // Best-effort
+
+		if verbose && len(fullTranscript) > 0 {
+			// Compute scoped transcript by finding where parent's transcript ended
+			// Each shadow branch commit has the full transcript up to that point,
+			// so we diff against parent to get just this checkpoint's activity
+			scopedTranscript = fullTranscript // Default to full if no parent
+			if shadowCommit.NumParents() > 0 {
+				if parent, parentErr := shadowCommit.Parent(0); parentErr == nil {
+					parentTranscript, _ := store.GetTranscriptFromCommit(parent.Hash, tc.MetadataDir, agent.AgentTypeUnknown) //nolint:errcheck // Best-effort
+					if len(parentTranscript) > 0 {
+						// Count lines in parent transcript to know where to slice from
+						parentLineCount := countLines(parentTranscript)
+						scopedTranscript = transcript.SliceFromLine(fullTranscript, parentLineCount)
+					}
+				}
+			}
+		}
 	}
-	appendTranscriptSection(&sb, verbose, full, fullTranscript, nil, sessionPrompt)
+	appendTranscriptSection(&sb, verbose, full, fullTranscript, scopedTranscript, sessionPrompt)
 
 	return sb.String(), true
 }
@@ -764,9 +790,6 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 	}
 	defer iter.Close()
 
-	// Fetch metadata branch tree once (used for reading session prompts)
-	metadataTree, _ := strategy.GetMetadataBranchTree(repo) //nolint:errcheck // Best-effort, continue without prompts
-
 	var points []strategy.RewindPoint
 	count := 0
 	consecutiveMainCount := 0
@@ -815,10 +838,18 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 			ToolUseID:        cpInfo.ToolUseID,
 			Agent:            cpInfo.Agent,
 		}
-
 		// Read session prompt from metadata branch (best-effort)
-		if metadataTree != nil {
-			point.SessionPrompt = strategy.ReadSessionPromptFromTree(metadataTree, cpID.Path())
+		result, _ := store.ReadCommitted(context.Background(), cpID) //nolint:errcheck  // Best-effort
+		if result != nil {
+			// Scope the transcript to this checkpoint's portion
+			// If TranscriptLinesAtStart > 0, we slice the transcript to only include
+			// lines from that point onwards (excluding earlier checkpoint content)
+			scopedTranscript := scopeTranscriptForCheckpoint(result.Transcript, result.Metadata.TranscriptLinesAtStart)
+			// Extract prompts from the scoped transcript (not the full session's prompts)
+			scopedPrompts := extractPromptsFromTranscript(scopedTranscript)
+			if len(scopedPrompts) > 0 && scopedPrompts[0] != "" {
+				point.SessionPrompt = scopedPrompts[0]
+			}
 		}
 
 		points = append(points, point)
@@ -1575,6 +1606,22 @@ func formatCheckpointGroup(sb *strings.Builder, group checkpointGroup) {
 		message := strategy.TruncateDescription(commit.message, maxMessageDisplayLength)
 		fmt.Fprintf(sb, "  %s (%s) %s\n", dateTimeStr, commit.gitSHA, message)
 	}
+}
+
+// countLines counts the number of lines in a byte slice.
+// For JSONL content (where each line ends with \n), this returns the line count.
+// Empty content returns 0.
+func countLines(content []byte) int {
+	if len(content) == 0 {
+		return 0
+	}
+	count := 0
+	for _, b := range content {
+		if b == '\n' {
+			count++
+		}
+	}
+	return count
 }
 
 // hasCodeChanges returns true if the commit has changes to non-metadata files.
