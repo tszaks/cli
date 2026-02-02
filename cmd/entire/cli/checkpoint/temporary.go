@@ -2,6 +2,8 @@ package checkpoint
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,10 +35,20 @@ const (
 	// Shadow branches are named "entire/<hash>" using the first 7 characters of the commit hash.
 	ShadowBranchHashLength = 7
 
+	// WorktreeIDHashLength is the number of hex characters used for worktree ID hash.
+	WorktreeIDHashLength = 6
+
 	// gitDir and entireDir are excluded from tree operations.
 	gitDir    = ".git"
 	entireDir = ".entire"
 )
+
+// HashWorktreeID returns a short hash of the worktree identifier.
+// Used to create unique shadow branch names per worktree.
+func HashWorktreeID(worktreeID string) string {
+	h := sha256.Sum256([]byte(worktreeID))
+	return hex.EncodeToString(h[:])[:WorktreeIDHashLength]
+}
 
 // WriteTemporary writes a temporary checkpoint to a shadow branch.
 // Shadow branches are named entire/<base-commit-short-hash>.
