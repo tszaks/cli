@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/sessionid"
 	"entire.io/cli/cmd/entire/cli/strategy"
 
@@ -34,7 +35,7 @@ func TestSessionIDConflict_OrphanedBranchIsReset(t *testing.T) {
 	env.InitEntire(strategy.StrategyNameManualCommit)
 
 	baseHead := env.GetHeadHash()
-	shadowBranch := "entire/" + baseHead[:7]
+	shadowBranch := env.GetShadowBranchNameForCommit(baseHead)
 
 	// Create a session and checkpoint (this creates the shadow branch)
 	session1 := env.NewSession()
@@ -144,7 +145,7 @@ func TestSessionIDConflict_NoShadowBranch(t *testing.T) {
 	env.InitEntire(strategy.StrategyNameManualCommit)
 
 	baseHead := env.GetHeadHash()
-	shadowBranch := "entire/" + baseHead[:7]
+	shadowBranch := env.GetShadowBranchNameForCommit(baseHead)
 
 	// Verify no shadow branch exists
 	if env.BranchExists(shadowBranch) {
@@ -175,7 +176,7 @@ func TestSessionIDConflict_ManuallyCreatedOrphanedBranch(t *testing.T) {
 	env.InitEntire(strategy.StrategyNameManualCommit)
 
 	baseHead := env.GetHeadHash()
-	shadowBranch := "entire/" + baseHead[:7]
+	shadowBranch := env.GetShadowBranchNameForCommit(baseHead)
 
 	// Manually create a shadow branch with a different session ID
 	// This simulates a shadow branch that was left behind (e.g., from a crash)
@@ -211,7 +212,8 @@ func TestSessionIDConflict_ManuallyCreatedOrphanedBranch(t *testing.T) {
 
 // TestSessionIDConflict_ExistingSessionWithState tests that when a shadow branch exists
 // from a different session AND that session has a state file (not orphaned), a blocking
-// hook response is returned. This simulates the cross-worktree scenario.
+// hook response is returned. This simulates the same-worktree, different-session scenario
+// (e.g., concurrent sessions in the same directory).
 func TestSessionIDConflict_ExistingSessionWithState(t *testing.T) {
 	env := NewTestEnv(t)
 	defer env.Cleanup()
@@ -226,7 +228,11 @@ func TestSessionIDConflict_ExistingSessionWithState(t *testing.T) {
 	env.InitEntire(strategy.StrategyNameManualCommit)
 
 	baseHead := env.GetHeadHash()
-	shadowBranch := "entire/" + baseHead[:7]
+	worktreeID, err := paths.GetWorktreeID(env.RepoDir)
+	if err != nil {
+		t.Fatalf("Failed to get worktree ID: %v", err)
+	}
+	shadowBranch := env.GetShadowBranchNameForCommit(baseHead)
 
 	// Create a shadow branch with a specific session ID
 	otherSessionID := "other-session-id"
@@ -237,13 +243,14 @@ func TestSessionIDConflict_ExistingSessionWithState(t *testing.T) {
 		t.Fatalf("Shadow branch %s should exist after creation", shadowBranch)
 	}
 
-	// Manually create a state file for the other session (simulating cross-worktree scenario)
+	// Manually create a state file for the other session (same worktree, different session)
 	// This makes the shadow branch NOT orphaned
 	entireOtherSessionID := sessionid.EntireSessionID(otherSessionID)
 	otherState := &strategy.SessionState{
 		SessionID:       entireOtherSessionID,
 		BaseCommit:      baseHead,
-		WorktreePath:    "/some/other/worktree", // Different worktree
+		WorktreePath:    env.RepoDir, // Same worktree
+		WorktreeID:      worktreeID,  // Same worktree ID
 		CheckpointCount: 1,
 	}
 	// Write state file directly to test repo (can't use strategy.SaveSessionState as it uses cwd)
@@ -266,6 +273,7 @@ func TestSessionIDConflict_ExistingSessionWithState(t *testing.T) {
 	}
 
 	// Try to start a new session - should return blocking response (not error)
+	// The concurrent session check runs FIRST and shows a warning about the other session
 	session := env.NewSession()
 	hookResp, err := env.SimulateUserPromptSubmitWithResponse(session.ID)
 	// After the fix, the hook should succeed (no error) but return blocking response
@@ -274,17 +282,18 @@ func TestSessionIDConflict_ExistingSessionWithState(t *testing.T) {
 	}
 
 	// Verify the hook response blocks and contains expected message
+	// The concurrent session warning shows "Another session is active" message
 	if hookResp == nil {
 		t.Fatal("Expected hook response, got nil")
 	}
 	if hookResp.Continue {
 		t.Error("Expected hook to block (Continue: false)")
 	}
-	if !strings.Contains(hookResp.StopReason, "Session ID conflict") {
-		t.Errorf("Expected 'Session ID conflict' in stop reason, got: %s", hookResp.StopReason)
+	if !strings.Contains(hookResp.StopReason, "Another session is active") {
+		t.Errorf("Expected 'Another session is active' in stop reason, got: %s", hookResp.StopReason)
 	}
-	if !strings.Contains(hookResp.StopReason, shadowBranch) {
-		t.Errorf("Expected shadow branch %s in message, got: %s", shadowBranch, hookResp.StopReason)
+	if !strings.Contains(hookResp.StopReason, "other-session-id") {
+		t.Errorf("Expected other session ID in message, got: %s", hookResp.StopReason)
 	}
 	t.Logf("Got expected blocking response: %s", hookResp.StopReason)
 }
@@ -368,7 +377,7 @@ func TestSessionIDConflict_ShadowBranchWithoutTrailer(t *testing.T) {
 	env.InitEntire(strategy.StrategyNameManualCommit)
 
 	baseHead := env.GetHeadHash()
-	shadowBranch := "entire/" + baseHead[:7]
+	shadowBranch := env.GetShadowBranchNameForCommit(baseHead)
 
 	// Create a shadow branch without Entire-Session trailer (simulating old format)
 	createShadowBranchWithoutTrailer(t, env.RepoDir, shadowBranch)
@@ -437,3 +446,4 @@ func createShadowBranchWithoutTrailer(t *testing.T, repoDir, branchName string) 
 		t.Fatalf("Failed to create branch reference: %v", err)
 	}
 }
+
