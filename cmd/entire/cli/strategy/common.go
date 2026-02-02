@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"entire.io/cli/cmd/entire/cli/agent"
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/trailers"
@@ -350,21 +351,12 @@ func ReadAllSessionPromptsFromTree(tree *object.Tree, checkpointPath string, ses
 
 // ReadSessionPromptFromShadow reads the first prompt for a session from the shadow branch.
 // Returns an empty string if the prompt cannot be read.
-func ReadSessionPromptFromShadow(repo *git.Repository, baseCommit, sessionID string) string {
-	// Get shadow branch for this base commit (try full hash first, then shortened)
-	shadowBranchName := shadowBranchPrefix + baseCommit
+func ReadSessionPromptFromShadow(repo *git.Repository, baseCommit, worktreeID, sessionID string) string {
+	// Get shadow branch for this base commit using worktree-specific naming
+	shadowBranchName := checkpoint.ShadowBranchNameForCommit(baseCommit, worktreeID)
 	ref, err := repo.Reference(plumbing.NewBranchReferenceName(shadowBranchName), true)
 	if err != nil {
-		// Try shortened hash (7 chars)
-		if len(baseCommit) > 7 {
-			shadowBranchName = shadowBranchPrefix + baseCommit[:7]
-			ref, err = repo.Reference(plumbing.NewBranchReferenceName(shadowBranchName), true)
-			if err != nil {
-				return ""
-			}
-		} else {
-			return ""
-		}
+		return ""
 	}
 
 	commit, err := repo.CommitObject(ref.Hash())

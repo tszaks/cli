@@ -158,11 +158,17 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 			// Non-fatal: continue without worktree path
 			worktreePath = ""
 		}
+		worktreeID, err := paths.GetWorktreeID(worktreePath)
+		if err != nil {
+			// Non-fatal: continue with empty worktree ID (main worktree)
+			worktreeID = ""
+		}
 		agentType := ag.Type()
 		newState := &strategy.SessionState{
 			SessionID:              entireSessionID,
 			BaseCommit:             head.Hash().String(),
 			WorktreePath:           worktreePath,
+			WorktreeID:             worktreeID,
 			ConcurrentWarningShown: true,
 			StartedAt:              time.Now(),
 			AgentType:              agentType,
@@ -187,7 +193,7 @@ func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, erro
 		}
 
 		// Try to read the other session's initial prompt
-		otherPrompt := strategy.ReadSessionPromptFromShadow(repo, otherSession.BaseCommit, otherSession.SessionID)
+		otherPrompt := strategy.ReadSessionPromptFromShadow(repo, otherSession.BaseCommit, otherSession.WorktreeID, otherSession.SessionID)
 
 		// Build message with other session's prompt if available
 		var message string
@@ -253,35 +259,6 @@ func handleSessionStartCommon() error {
 
 // handleSessionInitErrors handles session initialization errors and provides user-friendly messages.
 func handleSessionInitErrors(ag agent.Agent, initErr error) error {
-	// Check for shadow branch conflict error (worktree conflict)
-	var conflictErr *strategy.ShadowBranchConflictError
-	if errors.As(initErr, &conflictErr) {
-		message := fmt.Sprintf(
-			"Warning: Shadow branch conflict detected!\n\n"+
-				"Branch: %s\n"+
-				"Existing session: %s\n"+
-				"From worktree: %s\n"+
-				"Started: %s\n\n"+
-				"This may indicate another agent session is active from a different worktree,\n"+
-				"or a previous session wasn't completed.\n\n"+
-				"Options:\n"+
-				"1. Commit your changes (git commit) to create a new base commit\n"+
-				"2. Run 'entire rewind reset' to discard the shadow branch and start fresh\n"+
-				"3. Continue the previous session from the original worktree: %s",
-			conflictErr.Branch,
-			conflictErr.ExistingSession,
-			conflictErr.ExistingWorktree,
-			conflictErr.LastActivity.Format(time.RFC822),
-			conflictErr.ExistingWorktree,
-		)
-		// Output blocking JSON response - user must resolve conflict before continuing
-		if err := outputHookResponse(false, message); err != nil {
-			return err
-		}
-		// Return nil so hook exits cleanly (status 0), not with error status
-		return nil
-	}
-
 	// Check for session ID conflict error (shadow branch has different session)
 	var sessionConflictErr *strategy.SessionIDConflictError
 	if errors.As(initErr, &sessionConflictErr) {

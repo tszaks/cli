@@ -361,15 +361,8 @@ func verifyShadowCheckpointStorage(t *testing.T, env *TestEnv, sessionID, taskTo
 		t.Fatalf("failed to open repo: %v", err)
 	}
 
-	// Get HEAD hash to determine shadow branch name
-	head, err := repo.Head()
-	if err != nil {
-		t.Fatalf("failed to get HEAD: %v", err)
-	}
-	headHash := head.Hash().String()
-
-	// Shadow branch is entire/<first-7-chars-of-head>
-	shadowBranchName := "entire/" + headHash[:7]
+	// Get shadow branch name using worktree-specific naming
+	shadowBranchName := env.GetShadowBranchName()
 
 	// Get shadow branch reference
 	shadowRef, err := repo.Reference(plumbing.NewBranchReferenceName(shadowBranchName), true)

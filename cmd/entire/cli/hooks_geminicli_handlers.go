@@ -145,7 +145,7 @@ func checkConcurrentSessionsGemini(entireSessionID string) {
 		}
 
 		// Try to read the other session's initial prompt
-		otherPrompt := strategy.ReadSessionPromptFromShadow(repo, otherSession.BaseCommit, otherSession.SessionID)
+		otherPrompt := strategy.ReadSessionPromptFromShadow(repo, otherSession.BaseCommit, otherSession.WorktreeID, otherSession.SessionID)
 
 		// Build message - matches Claude Code format but with Gemini-specific instructions
 		var message string

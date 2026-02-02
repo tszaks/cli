@@ -33,6 +33,10 @@ type State struct {
 	// WorktreePath is the absolute path to the worktree root
 	WorktreePath string `json:"worktree_path,omitempty"`
 
+	// WorktreeID is the internal git worktree identifier (empty for main worktree)
+	// Derived from .git/worktrees/<name>/, stable across git worktree move
+	WorktreeID string `json:"worktree_id,omitempty"`
+
 	// StartedAt is when the session was started
 	StartedAt time.Time `json:"started_at"`
 

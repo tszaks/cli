@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"entire.io/cli/cmd/entire/cli/agent"
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/jsonutil"
 	"entire.io/cli/cmd/entire/cli/paths"
@@ -534,6 +535,31 @@ func (env *TestEnv) GetHeadHash() string {
 	}
 
 	return head.Hash().String()
+}
+
+// GetShadowBranchName returns the worktree-specific shadow branch name for the current HEAD.
+// Format: entire/<commit[:7]>-<hash(worktreeID)[:6]>
+func (env *TestEnv) GetShadowBranchName() string {
+	env.T.Helper()
+
+	headHash := env.GetHeadHash()
+	worktreeID, err := paths.GetWorktreeID(env.RepoDir)
+	if err != nil {
+		env.T.Fatalf("failed to get worktree ID: %v", err)
+	}
+	return checkpoint.ShadowBranchNameForCommit(headHash, worktreeID)
+}
+
+// GetShadowBranchNameForCommit returns the worktree-specific shadow branch name for a given commit.
+// Format: entire/<commit[:7]>-<hash(worktreeID)[:6]>
+func (env *TestEnv) GetShadowBranchNameForCommit(commitHash string) string {
+	env.T.Helper()
+
+	worktreeID, err := paths.GetWorktreeID(env.RepoDir)
+	if err != nil {
+		env.T.Fatalf("failed to get worktree ID: %v", err)
+	}
+	return checkpoint.ShadowBranchNameForCommit(commitHash, worktreeID)
 }
 
 // GetGitLog returns a list of commit hashes from HEAD.

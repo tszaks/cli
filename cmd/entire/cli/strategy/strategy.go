@@ -25,21 +25,6 @@ var ErrNotTaskCheckpoint = errors.New("not a task checkpoint")
 // ErrNotImplemented is returned when a feature is not yet implemented.
 var ErrNotImplemented = errors.New("not implemented")
 
-// ShadowBranchConflictError is returned when a shadow branch already exists
-// with activity from a different session or worktree.
-type ShadowBranchConflictError struct {
-	Branch           string    // The shadow branch name (e.g., "entire/abc1234")
-	ExistingSession  string    // Session ID of the existing session
-	ExistingWorktree string    // Worktree path of the existing session
-	LastActivity     time.Time // When the existing session was last active
-	CurrentSession   string    // Session ID of the current session attempting to start
-	CurrentWorktree  string    // Worktree path of the current session
-}
-
-func (e *ShadowBranchConflictError) Error() string {
-	return "shadow branch conflict: existing session from different worktree"
-}
-
 // SessionIDConflictError is returned when trying to start a new session
 // but the shadow branch already has commits from a different session ID.
 // This prevents orphaning existing session work.

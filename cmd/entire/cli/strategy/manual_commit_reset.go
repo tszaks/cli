@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"entire.io/cli/cmd/entire/cli/paths"
+
 	"github.com/charmbracelet/huh"
 	"github.com/go-git/go-git/v5/plumbing"
 )
@@ -28,8 +30,18 @@ func (s *ManualCommitStrategy) Reset(force bool) error {
 		return fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
+	// Get current worktree ID for shadow branch naming
+	worktreePath, err := GetWorktreePath()
+	if err != nil {
+		return fmt.Errorf("failed to get worktree path: %w", err)
+	}
+	worktreeID, err := paths.GetWorktreeID(worktreePath)
+	if err != nil {
+		return fmt.Errorf("failed to get worktree ID: %w", err)
+	}
+
 	// Get shadow branch name for current HEAD
-	shadowBranchName := getShadowBranchNameForCommit(head.Hash().String())
+	shadowBranchName := getShadowBranchNameForCommit(head.Hash().String(), worktreeID)
 
 	// Check if shadow branch exists
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)

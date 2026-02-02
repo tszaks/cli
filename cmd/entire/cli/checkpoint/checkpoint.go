@@ -73,8 +73,9 @@ type Store interface {
 
 	// ReadTemporary reads the latest checkpoint from a shadow branch.
 	// baseCommit is the commit hash the session is based on.
+	// worktreeID is the internal git worktree identifier (empty for main worktree).
 	// Returns nil, nil if the shadow branch doesn't exist.
-	ReadTemporary(ctx context.Context, baseCommit string) (*ReadTemporaryResult, error)
+	ReadTemporary(ctx context.Context, baseCommit, worktreeID string) (*ReadTemporaryResult, error)
 
 	// ListTemporary lists all shadow branches with their checkpoint info.
 	ListTemporary(ctx context.Context) ([]TemporaryInfo, error)
@@ -108,6 +109,10 @@ type WriteTemporaryOptions struct {
 
 	// BaseCommit is the commit hash this session is based on
 	BaseCommit string
+
+	// WorktreeID is the internal git worktree identifier (empty for main worktree)
+	// Used to create worktree-specific shadow branch names
+	WorktreeID string
 
 	// ModifiedFiles are files that have been modified (relative paths)
 	ModifiedFiles []string
@@ -431,6 +436,10 @@ type WriteTemporaryTaskOptions struct {
 
 	// BaseCommit is the commit hash this session is based on
 	BaseCommit string
+
+	// WorktreeID is the internal git worktree identifier (empty for main worktree)
+	// Used to create worktree-specific shadow branch names
+	WorktreeID string
 
 	// ToolUseID is the unique identifier for this Task tool invocation
 	ToolUseID string

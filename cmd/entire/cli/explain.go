@@ -907,7 +907,7 @@ func getReachableTemporaryCheckpoints(repo *git.Repository, store *checkpoint.Gi
 		}
 
 		// List checkpoints from this shadow branch
-		tempCheckpoints, _ := store.ListTemporaryCheckpoints(context.Background(), sb.BaseCommit, "", limit) //nolint:errcheck // Best-effort
+		tempCheckpoints, _ := store.ListCheckpointsForBranch(context.Background(), sb.BranchName, "", limit) //nolint:errcheck // Best-effort
 		for _, tc := range tempCheckpoints {
 			point := convertTemporaryCheckpoint(repo, tc)
 			if point != nil {

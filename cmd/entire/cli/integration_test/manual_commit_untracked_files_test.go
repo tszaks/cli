@@ -82,7 +82,7 @@ func TestShadow_UntrackedFilePreservation(t *testing.T) {
 	}
 
 	// Verify shadow branch created
-	expectedShadowBranch := "entire/" + initialHead[:7]
+	expectedShadowBranch := env.GetShadowBranchNameForCommit(initialHead)
 	if !env.BranchExists(expectedShadowBranch) {
 		t.Errorf("Expected shadow branch %s to exist", expectedShadowBranch)
 	}
