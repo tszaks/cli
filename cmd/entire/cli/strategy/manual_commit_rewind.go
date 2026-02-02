@@ -57,7 +57,7 @@ func (s *ManualCommitStrategy) GetRewindPoints(limit int) ([]RewindPoint, error)
 	sessionPrompts := make(map[string]string)
 
 	for _, state := range sessions {
-		checkpoints, err := store.ListTemporaryCheckpoints(context.Background(), state.BaseCommit, state.SessionID, limit)
+		checkpoints, err := store.ListTemporaryCheckpoints(context.Background(), state.BaseCommit, state.WorktreeID, state.SessionID, limit)
 		if err != nil {
 			continue // Error reading checkpoints, skip this session
 		}

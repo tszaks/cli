@@ -69,8 +69,7 @@ func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOption
 	}
 
 	// Get shadow branch name
-	// TODO(task-5): Use opts.WorktreeID once added to WriteTemporaryOptions
-	shadowBranchName := ShadowBranchNameForCommit(opts.BaseCommit, "")
+	shadowBranchName := ShadowBranchNameForCommit(opts.BaseCommit, opts.WorktreeID)
 
 	// Get or create shadow branch
 	parentHash, baseTreeHash, err := s.getOrCreateShadowBranch(shadowBranchName)
@@ -139,11 +138,11 @@ func (s *GitStore) WriteTemporary(ctx context.Context, opts WriteTemporaryOption
 
 // ReadTemporary reads the latest checkpoint from a shadow branch.
 // Returns nil if the shadow branch doesn't exist.
-// TODO(task-5): Add worktreeID parameter once WriteTemporaryOptions is updated
-func (s *GitStore) ReadTemporary(ctx context.Context, baseCommit string) (*ReadTemporaryResult, error) {
+// worktreeID should be empty for main worktree or the internal git worktree name for linked worktrees.
+func (s *GitStore) ReadTemporary(ctx context.Context, baseCommit, worktreeID string) (*ReadTemporaryResult, error) {
 	_ = ctx // Reserved for future use
 
-	shadowBranchName := ShadowBranchNameForCommit(baseCommit, "")
+	shadowBranchName := ShadowBranchNameForCommit(baseCommit, worktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 
 	ref, err := s.repo.Reference(refName, true)
@@ -242,8 +241,7 @@ func (s *GitStore) WriteTemporaryTask(ctx context.Context, opts WriteTemporaryTa
 	}
 
 	// Get shadow branch name
-	// TODO(task-5): Use opts.WorktreeID once added to WriteTemporaryTaskOptions
-	shadowBranchName := ShadowBranchNameForCommit(opts.BaseCommit, "")
+	shadowBranchName := ShadowBranchNameForCommit(opts.BaseCommit, opts.WorktreeID)
 
 	// Get or create shadow branch
 	parentHash, baseTreeHash, err := s.getOrCreateShadowBranch(shadowBranchName)
@@ -411,11 +409,24 @@ func (s *GitStore) addTaskMetadataToTree(baseTreeHash plumbing.Hash, opts WriteT
 // ListTemporaryCheckpoints lists all checkpoint commits on a shadow branch.
 // This returns individual commits (rewind points), not just branch info.
 // The sessionID filter, if provided, limits results to commits from that session.
-// TODO(task-5): Add worktreeID parameter once WriteTemporaryOptions is updated
-func (s *GitStore) ListTemporaryCheckpoints(ctx context.Context, baseCommit string, sessionID string, limit int) ([]TemporaryCheckpointInfo, error) {
+// worktreeID should be empty for main worktree or the internal git worktree name for linked worktrees.
+func (s *GitStore) ListTemporaryCheckpoints(ctx context.Context, baseCommit, worktreeID, sessionID string, limit int) ([]TemporaryCheckpointInfo, error) {
+	shadowBranchName := ShadowBranchNameForCommit(baseCommit, worktreeID)
+	return s.listCheckpointsForBranch(ctx, shadowBranchName, sessionID, limit)
+}
+
+// ListCheckpointsForBranch lists checkpoint commits for a shadow branch by name.
+// Use this when you already have the full branch name (e.g., from ListTemporary).
+// The sessionID filter, if provided, limits results to commits from that session.
+func (s *GitStore) ListCheckpointsForBranch(ctx context.Context, branchName, sessionID string, limit int) ([]TemporaryCheckpointInfo, error) {
+	return s.listCheckpointsForBranch(ctx, branchName, sessionID, limit)
+}
+
+// listCheckpointsForBranch lists checkpoint commits for a specific shadow branch name.
+// This is an internal helper used by ListTemporaryCheckpoints, ListCheckpointsForBranch, and ListAllTemporaryCheckpoints.
+func (s *GitStore) listCheckpointsForBranch(ctx context.Context, shadowBranchName, sessionID string, limit int) ([]TemporaryCheckpointInfo, error) {
 	_ = ctx // Reserved for future use
 
-	shadowBranchName := ShadowBranchNameForCommit(baseCommit, "")
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 
 	ref, err := s.repo.Reference(refName, true)
@@ -503,8 +514,8 @@ func (s *GitStore) ListAllTemporaryCheckpoints(ctx context.Context, sessionID st
 
 	// Iterate through each shadow branch and collect checkpoints
 	for _, branch := range branches {
-		// Use the base commit from the branch to get checkpoints
-		branchCheckpoints, branchErr := s.ListTemporaryCheckpoints(ctx, branch.BaseCommit, sessionID, limit)
+		// Use the branch name directly to get checkpoints
+		branchCheckpoints, branchErr := s.listCheckpointsForBranch(ctx, branch.BranchName, sessionID, limit)
 		if branchErr != nil {
 			continue // Skip branches we can't read
 		}
@@ -578,19 +589,19 @@ func (s *GitStore) GetTranscriptFromCommit(commitHash plumbing.Hash, metadataDir
 	return nil, ErrNoTranscript
 }
 
-// ShadowBranchExists checks if a shadow branch exists for the given base commit.
-// TODO(task-5): Add worktreeID parameter once WriteTemporaryOptions is updated
-func (s *GitStore) ShadowBranchExists(baseCommit string) bool {
-	shadowBranchName := ShadowBranchNameForCommit(baseCommit, "")
+// ShadowBranchExists checks if a shadow branch exists for the given base commit and worktree.
+// worktreeID should be empty for main worktree or the internal git worktree name for linked worktrees.
+func (s *GitStore) ShadowBranchExists(baseCommit, worktreeID string) bool {
+	shadowBranchName := ShadowBranchNameForCommit(baseCommit, worktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	_, err := s.repo.Reference(refName, true)
 	return err == nil
 }
 
-// DeleteShadowBranch deletes the shadow branch for the given base commit.
-// TODO(task-5): Add worktreeID parameter once WriteTemporaryOptions is updated
-func (s *GitStore) DeleteShadowBranch(baseCommit string) error {
-	shadowBranchName := ShadowBranchNameForCommit(baseCommit, "")
+// DeleteShadowBranch deletes the shadow branch for the given base commit and worktree.
+// worktreeID should be empty for main worktree or the internal git worktree name for linked worktrees.
+func (s *GitStore) DeleteShadowBranch(baseCommit, worktreeID string) error {
+	shadowBranchName := ShadowBranchNameForCommit(baseCommit, worktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	if err := s.repo.Storer.RemoveReference(refName); err != nil {
 		return fmt.Errorf("failed to delete shadow branch %s: %w", shadowBranchName, err)
