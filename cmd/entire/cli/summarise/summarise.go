@@ -4,12 +4,55 @@ package summarise
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
 	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/transcript"
 )
+
+// GenerateFromTranscript generates a summary from raw transcript bytes.
+// This is the shared implementation used by both explain --generate and auto-summarise.
+//
+// Parameters:
+//   - ctx: context for cancellation
+//   - transcriptBytes: raw transcript bytes (JSONL format)
+//   - filesTouched: list of files modified during the session
+//   - generator: summary generator to use (if nil, uses default ClaudeGenerator)
+//
+// Returns nil, error if transcript is empty or cannot be parsed.
+func GenerateFromTranscript(ctx context.Context, transcriptBytes []byte, filesTouched []string, generator Generator) (*checkpoint.Summary, error) {
+	if len(transcriptBytes) == 0 {
+		return nil, errors.New("empty transcript")
+	}
+
+	// Build condensed transcript for summarisation
+	condensed, err := BuildCondensedTranscriptFromBytes(transcriptBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse transcript: %w", err)
+	}
+	if len(condensed) == 0 {
+		return nil, errors.New("transcript has no content to summarise")
+	}
+
+	input := Input{
+		Transcript:   condensed,
+		FilesTouched: filesTouched,
+	}
+
+	// Use default generator if none provided
+	if generator == nil {
+		generator = &ClaudeGenerator{}
+	}
+
+	summary, err := generator.Generate(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate summary: %w", err)
+	}
+
+	return summary, nil
+}
 
 // Generator generates checkpoint summaries using an LLM.
 type Generator interface {

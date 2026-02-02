@@ -1,7 +1,9 @@
 package summarise
 
 import (
+	"context"
 	"encoding/json"
+	"os/exec"
 	"testing"
 
 	"entire.io/cli/cmd/entire/cli/transcript"
@@ -356,6 +358,54 @@ func TestFormatCondensedTranscript_EmptyInput(t *testing.T) {
 
 	if result != "" {
 		t.Errorf("expected empty string for empty input, got: %s", result)
+	}
+}
+
+func TestGenerateFromTranscript(t *testing.T) {
+	// Test with mock generator
+	mockGenerator := &ClaudeGenerator{
+		CommandRunner: func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+			response := `{"result":"{\"intent\":\"Test intent\",\"outcome\":\"Test outcome\",\"learnings\":{\"repo\":[],\"code\":[],\"workflow\":[]},\"friction\":[],\"open_items\":[]}"}`
+			return exec.CommandContext(ctx, "sh", "-c", "printf '%s' '"+response+"'")
+		},
+	}
+
+	transcript := []byte(`{"type":"user","message":{"content":"Hello"}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Hi there"}]}}`)
+
+	summary, err := GenerateFromTranscript(context.Background(), transcript, []string{"file.go"}, mockGenerator)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if summary == nil {
+		t.Fatal("expected non-nil summary")
+	}
+	if summary.Intent != "Test intent" {
+		t.Errorf("unexpected intent: %s", summary.Intent)
+	}
+}
+
+func TestGenerateFromTranscript_EmptyTranscript(t *testing.T) {
+	mockGenerator := &ClaudeGenerator{}
+
+	summary, err := GenerateFromTranscript(context.Background(), []byte{}, []string{}, mockGenerator)
+	if err == nil {
+		t.Error("expected error for empty transcript")
+	}
+	if summary != nil {
+		t.Error("expected nil summary")
+	}
+}
+
+func TestGenerateFromTranscript_NilGenerator(t *testing.T) {
+	transcript := []byte(`{"type":"user","message":{"content":"Hello"}}`)
+
+	// With nil generator, should use default ClaudeGenerator
+	// This will fail because claude CLI isn't available in test, but tests the nil handling
+	_, err := GenerateFromTranscript(context.Background(), transcript, []string{}, nil)
+	// Error is expected (claude CLI not available), but function should not panic
+	if err == nil {
+		t.Log("Unexpectedly succeeded - claude CLI must be available")
 	}
 }
 
