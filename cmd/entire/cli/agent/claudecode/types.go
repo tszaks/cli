@@ -10,6 +10,7 @@ type ClaudeSettings struct {
 // ClaudeHooks contains the hook configurations
 type ClaudeHooks struct {
 	SessionStart     []ClaudeHookMatcher `json:"SessionStart,omitempty"`
+	SessionEnd       []ClaudeHookMatcher `json:"SessionEnd,omitempty"`
 	UserPromptSubmit []ClaudeHookMatcher `json:"UserPromptSubmit,omitempty"`
 	Stop             []ClaudeHookMatcher `json:"Stop,omitempty"`
 	PreToolUse       []ClaudeHookMatcher `json:"PreToolUse,omitempty"`

@@ -54,6 +54,14 @@ func init() {
 		return handleClaudeCodeSessionStart()
 	})
 
+	RegisterHookHandler(agent.AgentNameClaudeCode, claudecode.HookNameSessionEnd, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleClaudeCodeSessionEnd()
+	})
+
 	RegisterHookHandler(agent.AgentNameClaudeCode, claudecode.HookNameStop, func() error {
 		enabled, err := IsEnabled()
 		if err == nil && !enabled {
