@@ -273,7 +273,7 @@ func handleSessionStartCommon() error {
 }
 
 // checkConcurrentSessions checks for concurrent session conflicts and shows warnings if needed.
-// Returns true if the hook should be skipped due to an unresolved conflict.
+// Returns a non-nil error if the hook should be skipped due to an unresolved conflict or if a check fails; otherwise returns nil.
 func checkConcurrentSessions(ag agent.Agent, sessionID string) error {
 	strat := GetStrategy()
 
