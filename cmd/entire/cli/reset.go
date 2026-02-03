@@ -3,10 +3,10 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"io"
 
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 )
 
@@ -34,12 +34,10 @@ Example: If HEAD is at commit abc1234567890, the command will:
   3. Delete the shadow branch entire/abc1234
 
 Without --force, prompts for confirmation before deleting.`,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			// Check if in git repository
 			if _, err := paths.RepoRoot(); err != nil {
-				cmd.SilenceUsage = true
-				fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository.")
-				return NewSilentError(errors.New("not a git repository"))
+				return errors.New("not a git repository")
 			}
 
 			// Get current strategy
@@ -48,12 +46,34 @@ Without --force, prompts for confirmation before deleting.`,
 			// Check if strategy supports reset
 			resetter, ok := strat.(strategy.SessionResetter)
 			if !ok {
-				cmd.SilenceUsage = true
-				return handleStrategyDoesNotSupportReset(cmd.ErrOrStderr(), strat.Name())
+				return fmt.Errorf("strategy %s does not support reset", strat.Name())
+			}
+
+			if !forceFlag {
+				var confirmed bool
+
+				form := NewAccessibleForm(
+					huh.NewGroup(
+						huh.NewConfirm().
+							Title("Reset session data?").
+							Value(&confirmed),
+					),
+				)
+
+				if err := form.Run(); err != nil {
+					if errors.Is(err, huh.ErrUserAborted) {
+						return nil
+					}
+					return fmt.Errorf("failed to get confirmation: %w", err)
+				}
+
+				if !confirmed {
+					return nil
+				}
 			}
 
 			// Call strategy's Reset method
-			if err := resetter.Reset(forceFlag); err != nil {
+			if err := resetter.Reset(); err != nil {
 				return fmt.Errorf("reset failed: %w", err)
 			}
 
@@ -64,17 +84,4 @@ Without --force, prompts for confirmation before deleting.`,
 	cmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Skip confirmation prompt")
 
 	return cmd
-}
-
-func handleStrategyDoesNotSupportReset(w io.Writer, strategyName string) error {
-	switch strategyName {
-	case strategy.StrategyNameAutoCommit:
-		fmt.Fprintln(w, "The auto-commit strategy doesn't use shadow branches.")
-		fmt.Fprintln(w, "To reset your branch, use Git directly:")
-		fmt.Fprintln(w, "  git reset --hard <commit>")
-		return NewSilentError(errors.New("auto-commit strategy does not support reset"))
-	default:
-		fmt.Fprintf(w, "The %s strategy does not support reset.\n", strategyName)
-		return NewSilentError(fmt.Errorf("strategy %s does not support reset", strategyName))
-	}
 }

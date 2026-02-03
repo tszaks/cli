@@ -220,8 +220,8 @@ func TestResetCmd_NotGitRepo(t *testing.T) {
 
 	// Verify error message
 	output := stderr.String()
-	if !strings.Contains(output, "Not a git repository") {
-		t.Errorf("Expected 'Not a git repository' message, got: %s", output)
+	if !strings.Contains(output, "not a git repository") {
+		t.Errorf("Expected 'not a git repository' message, got: %s", output)
 	}
 }
 
@@ -244,11 +244,8 @@ func TestResetCmd_AutoCommitStrategy(t *testing.T) {
 
 	// Verify helpful error message
 	output := stderr.String()
-	if !strings.Contains(output, "auto-commit strategy doesn't use shadow branches") {
+	if !strings.Contains(output, "strategy auto-commit does not support reset") {
 		t.Errorf("Expected message about auto-commit strategy, got: %s", output)
-	}
-	if !strings.Contains(output, "git reset --hard") {
-		t.Errorf("Expected suggestion to use 'git reset --hard', got: %s", output)
 	}
 }
 

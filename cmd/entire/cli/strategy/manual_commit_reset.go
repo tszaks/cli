@@ -6,7 +6,6 @@ import (
 
 	"entire.io/cli/cmd/entire/cli/paths"
 
-	"github.com/charmbracelet/huh"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 
@@ -18,7 +17,7 @@ func isAccessibleMode() bool {
 
 // Reset deletes the shadow branch and session state for the current HEAD.
 // This allows starting fresh without existing checkpoints.
-func (s *ManualCommitStrategy) Reset(force bool) error {
+func (s *ManualCommitStrategy) Reset() error {
 	repo, err := OpenRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
@@ -58,40 +57,6 @@ func (s *ManualCommitStrategy) Reset(force bool) error {
 	if !hasShadowBranch && len(sessions) == 0 {
 		fmt.Fprintf(os.Stderr, "Nothing to reset for %s\n", shadowBranchName)
 		return nil
-	}
-
-	// Confirm before deleting
-	if !force {
-		confirmed := false
-		description := "This will delete:\n"
-		if len(sessions) > 0 {
-			description += fmt.Sprintf("  - %d session state file(s)\n", len(sessions))
-		}
-		if hasShadowBranch {
-			description += fmt.Sprintf("  - Shadow branch %s\n", shadowBranchName)
-		}
-		description += "\nThis action cannot be undone."
-
-		form := huh.NewForm(
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title("Reset session data?").
-					Description(description).
-					Affirmative("Delete").
-					Negative("Cancel").
-					Value(&confirmed),
-			),
-		)
-		if isAccessibleMode() {
-			form = form.WithAccessible(true)
-		}
-		if err := form.Run(); err != nil {
-			return fmt.Errorf("confirmation failed: %w", err)
-		}
-		if !confirmed {
-			fmt.Fprintf(os.Stderr, "Cancelled\n")
-			return nil
-		}
 	}
 
 	// Clear all sessions for this commit
