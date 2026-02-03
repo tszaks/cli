@@ -964,6 +964,54 @@ func handleClaudeCodeSessionStart() error {
 	return handleSessionStartCommon()
 }
 
+// handleClaudeCodeSessionEnd handles the SessionEnd hook for Claude Code.
+// This fires when the user explicitly closes the session.
+// Updates the session state with EndedAt timestamp.
+func handleClaudeCodeSessionEnd() error {
+	ag, err := GetCurrentHookAgent()
+	if err != nil {
+		return fmt.Errorf("failed to get agent: %w", err)
+	}
+
+	input, err := ag.ParseHookInput(agent.HookStop, os.Stdin)
+	if err != nil {
+		return fmt.Errorf("failed to parse hook input: %w", err)
+	}
+
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
+	logging.Info(logCtx, "session-end",
+		slog.String("hook", "session-end"),
+		slog.String("hook_type", "agent"),
+		slog.String("model_session_id", input.SessionID),
+	)
+
+	entireSessionID := currentSessionIDWithFallback(input.SessionID)
+	if entireSessionID == "" {
+		return nil // No session to update
+	}
+
+	return markSessionEnded(entireSessionID)
+}
+
+// markSessionEnded updates the session state with the current time as EndedAt.
+func markSessionEnded(sessionID string) error {
+	state, err := strategy.LoadSessionState(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to load session state: %w", err)
+	}
+	if state == nil {
+		return nil // No state file, nothing to update
+	}
+
+	now := time.Now()
+	state.EndedAt = &now
+
+	if err := strategy.SaveSessionState(state); err != nil {
+		return fmt.Errorf("failed to save session state: %w", err)
+	}
+	return nil
+}
+
 // hookResponse represents a JSON response for Claude Code hooks.
 // Used to control whether Claude continues processing the prompt.
 type hookResponse struct {
