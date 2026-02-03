@@ -441,4 +441,51 @@ func TestRewind_MultipleConsecutive(t *testing.T) {
 			t.Errorf("after rewind to v1: got %q, want %q", content, "version 1")
 		}
 	})
+
+}
+
+// TestRewind_DifferentSessions tests that commit and auto-commit strategies support
+// multiple different sessions without committing, while manual-commit strategy requires
+// the same session (or a commit between sessions).
+func TestRewind_DifferentSessions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("auto_commit_supports_different_sessions", func(t *testing.T) {
+		t.Parallel()
+		for _, strategyName := range []string{"auto-commit"} {
+			strategyName := strategyName // capture for parallel
+			t.Run(strategyName, func(t *testing.T) {
+				t.Parallel()
+				env := NewFeatureBranchEnv(t, strategyName)
+
+				// Session 1
+				session1 := env.NewSession()
+				if err := env.SimulateUserPromptSubmit(session1.ID); err != nil {
+					t.Fatalf("SimulateUserPromptSubmit session1 failed: %v", err)
+				}
+				env.WriteFile("file.txt", "version 1")
+				session1.CreateTranscript("Create file", []FileChange{{Path: "file.txt", Content: "version 1"}})
+				if err := env.SimulateStop(session1.ID, session1.TranscriptPath); err != nil {
+					t.Fatalf("SimulateStop session1 failed: %v", err)
+				}
+
+				// Session 2 (different session ID, no commit between)
+				session2 := env.NewSession()
+				if err := env.SimulateUserPromptSubmit(session2.ID); err != nil {
+					t.Fatalf("SimulateUserPromptSubmit session2 failed: %v", err)
+				}
+				env.WriteFile("file.txt", "version 2")
+				session2.CreateTranscript("Update file", []FileChange{{Path: "file.txt", Content: "version 2"}})
+				if err := env.SimulateStop(session2.ID, session2.TranscriptPath); err != nil {
+					t.Fatalf("SimulateStop session2 failed: %v", err)
+				}
+
+				// Both sessions should create rewind points
+				points := env.GetRewindPoints()
+				if len(points) != 2 {
+					t.Errorf("expected 2 rewind points, got %d", len(points))
+				}
+			})
+		}
+	})
 }

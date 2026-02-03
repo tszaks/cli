@@ -11,6 +11,7 @@ import (
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/logging"
+	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/strategy"
 )
 
@@ -266,6 +267,11 @@ func handleSessionStartCommon() error {
 	}
 	if err := checkConcurrentSessions(ag, input.SessionID); err != nil {
 		return err
+	}
+
+	// TODO: keep this until we clean up gemini hooks.
+	if err := paths.WriteCurrentSession(input.SessionID); err != nil {
+		return fmt.Errorf("failed to set current session: %w", err)
 	}
 
 	return nil
