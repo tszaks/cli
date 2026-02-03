@@ -173,9 +173,36 @@ func handleGeminiSessionStart() error {
 // SessionEnd serves as a cleanup/fallback - it will commit any uncommitted changes that
 // weren't captured by AfterAgent (e.g., if the user exits mid-response).
 func handleGeminiSessionEnd() error {
-	// Note: Don't parse stdin here - commitWithMetadataGemini() does its own parsing
-	// and stdin can only be read once. Logging happens inside parseGeminiSessionEnd().
-	return commitWithMetadataGemini()
+	// Set up logging context
+	ag, err := GetCurrentHookAgent()
+	if err != nil {
+		return fmt.Errorf("failed to get agent: %w", err)
+	}
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
+
+	// Commit any uncommitted changes (consumes stdin)
+	if err := commitWithMetadataGemini(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to commit metadata: %v\n", err)
+	}
+
+	// Mark session as ended (use persisted session ID since stdin consumed)
+	entireSessionID, err := paths.ReadCurrentSession()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to read current session: %v\n", err)
+	}
+	if entireSessionID != "" {
+		logging.Info(logCtx, "session-end-mark",
+			slog.String("hook", "session-end"),
+			slog.String("hook_type", "agent"),
+			slog.String("entire_session_id", entireSessionID),
+		)
+
+		if err := markSessionEnded(entireSessionID); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to mark session ended: %v\n", err)
+		}
+	}
+
+	return nil
 }
 
 // geminiSessionContext holds parsed session data for Gemini commits.
@@ -199,14 +226,14 @@ func parseGeminiSessionEnd() (*geminiSessionContext, error) {
 		return nil, fmt.Errorf("failed to get agent: %w", err)
 	}
 
-	input, err := ag.ParseHookInput(agent.HookStop, os.Stdin)
+	input, err := ag.ParseHookInput(agent.HookSessionEnd, os.Stdin)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
 	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
-	logging.Info(logCtx, "stop",
-		slog.String("hook", "stop"),
+	logging.Info(logCtx, "session-end",
+		slog.String("hook", "session-end"),
 		slog.String("hook_type", "agent"),
 		slog.String("model_session_id", input.SessionID),
 		slog.String("transcript_path", input.SessionRef),
