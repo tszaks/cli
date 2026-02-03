@@ -62,6 +62,75 @@ func verifySessionState(t *testing.T, loaded, expected *SessionState) {
 	}
 }
 
+// TestLoadSessionState_WithEndedAt tests that EndedAt serializes/deserializes correctly.
+func TestLoadSessionState_WithEndedAt(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	// Test with EndedAt set
+	endedAt := time.Now().Add(-time.Hour) // 1 hour ago
+	state := &SessionState{
+		SessionID:       "test-session-ended",
+		BaseCommit:      "abc123def456",
+		StartedAt:       time.Now().Add(-2 * time.Hour),
+		EndedAt:         &endedAt,
+		CheckpointCount: 5,
+	}
+
+	err = SaveSessionState(state)
+	if err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	loaded, err := LoadSessionState("test-session-ended")
+	if err != nil {
+		t.Fatalf("LoadSessionState() error = %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("LoadSessionState() returned nil")
+	}
+
+	// Verify EndedAt was preserved
+	if loaded.EndedAt == nil {
+		t.Fatal("EndedAt was nil after load, expected non-nil")
+	}
+	if !loaded.EndedAt.Equal(endedAt) {
+		t.Errorf("EndedAt = %v, want %v", *loaded.EndedAt, endedAt)
+	}
+
+	// Test with EndedAt nil (active session)
+	stateActive := &SessionState{
+		SessionID:       "test-session-active",
+		BaseCommit:      "xyz789",
+		StartedAt:       time.Now(),
+		EndedAt:         nil,
+		CheckpointCount: 1,
+	}
+
+	err = SaveSessionState(stateActive)
+	if err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	loadedActive, err := LoadSessionState("test-session-active")
+	if err != nil {
+		t.Fatalf("LoadSessionState() error = %v", err)
+	}
+	if loadedActive == nil {
+		t.Fatal("LoadSessionState() returned nil")
+	}
+
+	// Verify EndedAt remains nil
+	if loadedActive.EndedAt != nil {
+		t.Errorf("EndedAt = %v, want nil for active session", *loadedActive.EndedAt)
+	}
+}
+
 // TestLoadSessionState_PackageLevel_NonExistent tests loading a non-existent session.
 func TestLoadSessionState_PackageLevel_NonExistent(t *testing.T) {
 	dir := t.TempDir()
