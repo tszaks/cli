@@ -174,8 +174,9 @@ func GetClaudeProjectDir(repoPath string) (string, error) {
 	return filepath.Join(homeDir, ".claude", "projects", projectDir), nil
 }
 
-// SessionMetadataDirFromSessionID returns the path to a session's metadata directory.
-// Takes a session ID.
+// SessionMetadataDirFromSessionID returns the path to a session's metadata directory
+// for the given Entire session ID. The sessionID must be the full, already date-prefixed
+// Entire session identifier as stored on disk, not an agent-specific or raw Claude ID.
 func SessionMetadataDirFromSessionID(sessionID string) string {
 	return EntireMetadataDir + "/" + sessionID
 }
