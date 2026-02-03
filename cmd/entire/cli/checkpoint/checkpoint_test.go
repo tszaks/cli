@@ -800,7 +800,6 @@ func TestUpdateSummary_NotFound(t *testing.T) {
 
 // TestListCommitted_FallsBackToRemote verifies that ListCommitted can find
 // checkpoints when only origin/entire/sessions exists (simulating post-clone state).
-// This is a TDD test - it should FAIL until the implementation is updated.
 func TestListCommitted_FallsBackToRemote(t *testing.T) {
 	// Create "remote" repo (non-bare, so we can make commits)
 	remoteDir := t.TempDir()
