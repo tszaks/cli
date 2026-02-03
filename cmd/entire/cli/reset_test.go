@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -91,20 +92,26 @@ func TestResetCmd_NothingToReset(t *testing.T) {
 func TestResetCmd_WithForce(t *testing.T) {
 	repo, commitHash := setupResetTestRepo(t)
 
-	// Create shadow branch
-	shortHash := commitHash.String()[:7]
-	shadowBranch := "entire/" + shortHash
+	// Get worktree path and ID for shadow branch naming
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	worktreePath := wt.Filesystem.Root()
+	worktreeID, err := paths.GetWorktreeID(worktreePath)
+	if err != nil {
+		t.Fatalf("failed to get worktree ID: %v", err)
+	}
+
+	// Create shadow branch with correct naming format
+	shadowBranch := checkpoint.ShadowBranchNameForCommit(commitHash.String(), worktreeID)
 	shadowRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(shadowBranch), commitHash)
 	if err := repo.Storer.SetReference(shadowRef); err != nil {
 		t.Fatalf("failed to create shadow branch: %v", err)
 	}
 
 	// Create session state file
-	wt, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("failed to get worktree: %v", err)
-	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := worktreePath
 	sessionStateDir := filepath.Join(repoRoot, ".git", "entire-sessions")
 	if err := os.MkdirAll(sessionStateDir, 0o755); err != nil {
 		t.Fatalf("failed to create session state dir: %v", err)
@@ -252,20 +259,26 @@ func TestResetCmd_AutoCommitStrategy(t *testing.T) {
 func TestResetCmd_MultipleSessions(t *testing.T) {
 	repo, commitHash := setupResetTestRepo(t)
 
-	// Create shadow branch
-	shortHash := commitHash.String()[:7]
-	shadowBranch := "entire/" + shortHash
+	// Get worktree path and ID for shadow branch naming
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	worktreePath := wt.Filesystem.Root()
+	worktreeID, err := paths.GetWorktreeID(worktreePath)
+	if err != nil {
+		t.Fatalf("failed to get worktree ID: %v", err)
+	}
+
+	// Create shadow branch with correct naming format
+	shadowBranch := checkpoint.ShadowBranchNameForCommit(commitHash.String(), worktreeID)
 	shadowRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(shadowBranch), commitHash)
 	if err := repo.Storer.SetReference(shadowRef); err != nil {
 		t.Fatalf("failed to create shadow branch: %v", err)
 	}
 
 	// Create multiple session state files
-	wt, err := repo.Worktree()
-	if err != nil {
-		t.Fatalf("failed to get worktree: %v", err)
-	}
-	repoRoot := wt.Filesystem.Root()
+	repoRoot := worktreePath
 	sessionStateDir := filepath.Join(repoRoot, ".git", "entire-sessions")
 	if err := os.MkdirAll(sessionStateDir, 0o755); err != nil {
 		t.Fatalf("failed to create session state dir: %v", err)
