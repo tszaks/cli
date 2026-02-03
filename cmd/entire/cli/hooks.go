@@ -264,7 +264,6 @@ func handleSessionStartCommon() error {
 	if IsMultiSessionWarningDisabled() {
 		return nil
 	}
-	// UNLESS the situation has changed (e.g., user committed, so no more conflict).
 	if err := checkConcurrentSessions(ag, input.SessionID); err != nil {
 		return err
 	}
