@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/agent/geminicli"
@@ -46,120 +45,6 @@ func outputGeminiBlockingResponse(reason string) {
 		fmt.Fprintf(os.Stderr, "Error encoding blocking response: %v\n", err)
 	}
 	os.Exit(0)
-}
-
-// checkConcurrentSessionsGemini checks for concurrent session conflicts for Gemini CLI.
-// If a conflict is found (first time), it outputs a Gemini-format blocking response and exits (via os.Exit).
-// If the warning was already shown, subsequent calls proceed normally (both sessions create interleaved checkpoints).
-// Note: This function may call os.Exit(0) and not return if a blocking response is needed on first conflict.
-func checkConcurrentSessionsGemini(entireSessionID string) {
-	// Check if warnings are disabled via settings
-	if IsMultiSessionWarningDisabled() {
-		return
-	}
-
-	// Always use the Gemini agent for resume commands in Gemini hooks
-	// (don't use GetAgent() which may return Claude based on settings)
-	geminiAgent, err := agent.Get("gemini")
-	if err != nil {
-		// Fall back to default if Gemini agent not found (shouldn't happen)
-		geminiAgent = agent.Default()
-	}
-	strat := GetStrategy()
-
-	concurrentChecker, ok := strat.(strategy.ConcurrentSessionChecker)
-	if !ok {
-		return // Strategy doesn't support concurrent checks
-	}
-
-	// Check if this session already acknowledged the warning
-	existingState, loadErr := strategy.LoadSessionState(entireSessionID)
-	warningAlreadyShown := loadErr == nil && existingState != nil && existingState.ConcurrentWarningShown
-
-	// Check for other active sessions with checkpoints (on current HEAD)
-	otherSession, checkErr := concurrentChecker.HasOtherActiveSessionsWithCheckpoints(entireSessionID)
-	hasConflict := checkErr == nil && otherSession != nil
-
-	if warningAlreadyShown {
-		// Warning was already shown to user - don't show it again, just proceed normally
-		// Both sessions will create interleaved checkpoints as promised in the warning message
-		if !hasConflict {
-			// Conflict resolved (e.g., user committed) - clear the flag
-			if existingState != nil {
-				existingState.ConcurrentWarningShown = false
-				if saveErr := strategy.SaveSessionState(existingState); saveErr != nil {
-					fmt.Fprintf(os.Stderr, "Warning: failed to clear concurrent warning flag: %v\n", saveErr)
-				}
-			}
-		}
-		return // Proceed normally
-	}
-
-	if hasConflict {
-		// First time seeing conflict - show warning
-		// Include BaseCommit and WorktreePath so session state is complete if conflict later resolves
-		repo, err := strategy.OpenRepository()
-		if err != nil {
-			// Output user-friendly error message via blocking response
-			outputGeminiBlockingResponse(fmt.Sprintf("Failed to open git repository: %v\n\nPlease ensure you're in a git repository and try again.", err))
-			// outputGeminiBlockingResponse calls os.Exit(0), never returns
-		}
-		head, err := repo.Head()
-		if err != nil {
-			// Output user-friendly error message via blocking response
-			outputGeminiBlockingResponse(fmt.Sprintf("Failed to get git HEAD: %v\n\nPlease ensure the repository has at least one commit.", err))
-			// outputGeminiBlockingResponse calls os.Exit(0), never returns
-		}
-		worktreePath, err := strategy.GetWorktreePath()
-		if err != nil {
-			// Non-fatal: proceed without worktree path
-			worktreePath = ""
-		}
-
-		agentType := geminiAgent.Type()
-		newState := &strategy.SessionState{
-			SessionID:              entireSessionID,
-			BaseCommit:             head.Hash().String(),
-			WorktreePath:           worktreePath,
-			ConcurrentWarningShown: true,
-			StartedAt:              time.Now(),
-			AgentType:              agentType,
-		}
-		if saveErr := strategy.SaveSessionState(newState); saveErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to save session state: %v\n", saveErr)
-		}
-
-		// Get resume command for the other session using the CONFLICTING session's agent type.
-		// If the conflicting session is from a different agent (e.g., Claude when we're Gemini),
-		// use that agent's resume command format. Otherwise, use our own format.
-		var resumeCmd string
-		if otherSession.AgentType != "" && otherSession.AgentType != agentType {
-			// Different agent type - look up the conflicting agent
-			if conflictingAgent, agentErr := agent.GetByAgentType(otherSession.AgentType); agentErr == nil {
-				resumeCmd = conflictingAgent.FormatResumeCommand(conflictingAgent.ExtractAgentSessionID(otherSession.SessionID))
-			}
-		}
-		// Fall back to Gemini agent if same type or couldn't get the conflicting agent
-		if resumeCmd == "" {
-			resumeCmd = geminiAgent.FormatResumeCommand(geminiAgent.ExtractAgentSessionID(otherSession.SessionID))
-		}
-
-		// Try to read the other session's initial prompt
-		otherPrompt := strategy.ReadSessionPromptFromShadow(repo, otherSession.BaseCommit, otherSession.WorktreeID, otherSession.SessionID)
-
-		// Build message - matches Claude Code format but with Gemini-specific instructions
-		var message string
-		suppressHint := "\n\nTo suppress this warning in future sessions, run:\n  entire enable --disable-multisession-warning"
-		if otherPrompt != "" {
-			message = fmt.Sprintf("Another session is active: \"%s\"\n\nYou can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, exit Gemini CLI and run: %s%s\n\nPress the up arrow key to get your prompt back.", otherPrompt, resumeCmd, suppressHint)
-		} else {
-			message = "Another session is active with uncommitted changes. You can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, exit Gemini CLI and run: " + resumeCmd + suppressHint + "\n\nPress the up arrow key to get your prompt back."
-		}
-
-		// Output blocking JSON response and exit
-		outputGeminiBlockingResponse(message)
-		// outputGeminiBlockingResponse calls os.Exit(0), never returns
-	}
 }
 
 // handleGeminiSessionStart handles the SessionStart hook for Gemini CLI.
@@ -615,11 +500,6 @@ func handleGeminiBeforeAgent() error {
 		return errors.New("no session_id in input")
 	}
 
-	// Check for concurrent sessions before proceeding
-	// This will output a blocking response and exit if there's a conflict (first time only)
-	// On subsequent prompts, it proceeds normally (both sessions create interleaved checkpoints)
-	checkConcurrentSessionsGemini(input.SessionID)
-
 	// Capture pre-prompt state with transcript position (Gemini-specific)
 	// This captures both untracked files and the current transcript message count
 	// so we can calculate token usage for just this prompt/response cycle
@@ -631,10 +511,8 @@ func handleGeminiBeforeAgent() error {
 	strat := GetStrategy()
 	if initializer, ok := strat.(strategy.SessionInitializer); ok {
 		agentType := ag.Type()
-		if initErr := initializer.InitializeSession(input.SessionID, agentType, input.SessionRef); initErr != nil {
-			if handleErr := handleSessionInitErrors(ag, initErr); handleErr != nil {
-				return handleErr
-			}
+		if err := initializer.InitializeSession(input.SessionID, agentType, input.SessionRef); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize session state: %v\n", err)
 		}
 	}
 

@@ -3,14 +3,12 @@
 package integration
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/sessionid"
 	"entire.io/cli/cmd/entire/cli/strategy"
 
@@ -208,94 +206,6 @@ func TestSessionIDConflict_ManuallyCreatedOrphanedBranch(t *testing.T) {
 	} else {
 		t.Logf("New session has %d checkpoint(s)", state.CheckpointCount)
 	}
-}
-
-// TestSessionIDConflict_ExistingSessionWithState tests that when a shadow branch exists
-// from a different session AND that session has a state file (not orphaned), a blocking
-// hook response is returned. This simulates the same-worktree, different-session scenario
-// (e.g., concurrent sessions in the same directory).
-func TestSessionIDConflict_ExistingSessionWithState(t *testing.T) {
-	env := NewTestEnv(t)
-	defer env.Cleanup()
-
-	// Setup
-	env.InitRepo()
-	env.WriteFile("README.md", "# Test")
-	env.GitAdd("README.md")
-	env.GitCommit("Initial commit")
-
-	env.GitCheckoutNewBranch("feature/test")
-	env.InitEntire(strategy.StrategyNameManualCommit)
-
-	baseHead := env.GetHeadHash()
-	worktreeID, err := paths.GetWorktreeID(env.RepoDir)
-	if err != nil {
-		t.Fatalf("Failed to get worktree ID: %v", err)
-	}
-	shadowBranch := env.GetShadowBranchNameForCommit(baseHead)
-
-	// Create a shadow branch with a specific session ID
-	otherSessionID := "other-session-id"
-	createOrphanedShadowBranch(t, env.RepoDir, shadowBranch, otherSessionID)
-
-	// Verify shadow branch exists
-	if !env.BranchExists(shadowBranch) {
-		t.Fatalf("Shadow branch %s should exist after creation", shadowBranch)
-	}
-
-	// Manually create a state file for the other session (same worktree, different session)
-	// This makes the shadow branch NOT orphaned
-	entireOtherSessionID := sessionid.EntireSessionID(otherSessionID)
-	otherState := &strategy.SessionState{
-		SessionID:       entireOtherSessionID,
-		BaseCommit:      baseHead,
-		WorktreePath:    env.RepoDir, // Same worktree
-		WorktreeID:      worktreeID,  // Same worktree ID
-		CheckpointCount: 1,
-	}
-	// Write state file directly to test repo (can't use strategy.SaveSessionState as it uses cwd)
-	stateDir := filepath.Join(env.RepoDir, ".git", "entire-sessions")
-	if err := os.MkdirAll(stateDir, 0o755); err != nil {
-		t.Fatalf("Failed to create session state dir: %v", err)
-	}
-	stateData, err := json.Marshal(otherState)
-	if err != nil {
-		t.Fatalf("Failed to marshal session state: %v", err)
-	}
-	stateFile := filepath.Join(stateDir, entireOtherSessionID+".json")
-	if err := os.WriteFile(stateFile, stateData, 0o644); err != nil {
-		t.Fatalf("Failed to write session state file: %v", err)
-	}
-
-	// Verify state file exists
-	if _, err := os.Stat(stateFile); err != nil {
-		t.Fatalf("State file should exist: %v", err)
-	}
-
-	// Try to start a new session - should return blocking response (not error)
-	// The concurrent session check runs FIRST and shows a warning about the other session
-	session := env.NewSession()
-	hookResp, err := env.SimulateUserPromptSubmitWithResponse(session.ID)
-	// After the fix, the hook should succeed (no error) but return blocking response
-	if err != nil {
-		t.Errorf("Hook should not error (should block via JSON response), got: %v", err)
-	}
-
-	// Verify the hook response blocks and contains expected message
-	// The concurrent session warning shows "Another session is active" message
-	if hookResp == nil {
-		t.Fatal("Expected hook response, got nil")
-	}
-	if hookResp.Continue {
-		t.Error("Expected hook to block (Continue: false)")
-	}
-	if !strings.Contains(hookResp.StopReason, "Another session is active") {
-		t.Errorf("Expected 'Another session is active' in stop reason, got: %s", hookResp.StopReason)
-	}
-	if !strings.Contains(hookResp.StopReason, "other-session-id") {
-		t.Errorf("Expected other session ID in message, got: %s", hookResp.StopReason)
-	}
-	t.Logf("Got expected blocking response: %s", hookResp.StopReason)
 }
 
 // createOrphanedShadowBranch creates a shadow branch with a specific session ID

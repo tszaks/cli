@@ -5,7 +5,6 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -62,246 +61,12 @@ func parseAndLogHookInput() (*hookInputData, error) {
 	}, nil
 }
 
-// checkConcurrentSessions checks for concurrent session conflicts and shows warnings if needed.
-// Returns true if the hook should be skipped due to an unresolved conflict.
-func checkConcurrentSessions(ag agent.Agent, entireSessionID string) (bool, error) {
-	// Check if warnings are disabled via settings
-	if IsMultiSessionWarningDisabled() {
-		return false, nil
-	}
-
-	strat := GetStrategy()
-
-	concurrentChecker, ok := strat.(strategy.ConcurrentSessionChecker)
-	if !ok {
-		return false, nil // Strategy doesn't support concurrent checks
-	}
-
-	// Check if this session already acknowledged the warning
-	existingState, loadErr := strategy.LoadSessionState(entireSessionID)
-	warningAlreadyShown := loadErr == nil && existingState != nil && existingState.ConcurrentWarningShown
-
-	// Check for other active sessions with checkpoints (on current HEAD)
-	otherSession, checkErr := concurrentChecker.HasOtherActiveSessionsWithCheckpoints(entireSessionID)
-	hasConflict := checkErr == nil && otherSession != nil
-
-	if warningAlreadyShown {
-		if hasConflict {
-			// Warning was shown and conflict still exists - skip hooks
-			return true, nil
-		}
-		// Warning was shown but conflict is resolved (e.g., user committed)
-		// Clear the flag and proceed normally
-		if existingState != nil {
-			existingState.ConcurrentWarningShown = false
-			if saveErr := strategy.SaveSessionState(existingState); saveErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to clear concurrent warning flag: %v\n", saveErr)
-			}
-		}
-		return false, nil
-	}
-
-	if hasConflict {
-		// First time seeing conflict - show warning
-		// Include BaseCommit and WorktreePath so session state is complete for condensation
-		repo, err := strategy.OpenRepository()
-		if err != nil {
-			// Output user-friendly error message via hook response
-			if outputErr := outputHookResponse(false, fmt.Sprintf("Failed to open git repository: %v\n\nPlease ensure you're in a git repository and try again.", err)); outputErr != nil {
-				return false, outputErr
-			}
-			return true, nil // Skip hook after outputting response
-		}
-		head, err := repo.Head()
-		if err != nil {
-			// Output user-friendly error message via hook response
-			if outputErr := outputHookResponse(false, fmt.Sprintf("Failed to get git HEAD: %v\n\nPlease ensure the repository has at least one commit.", err)); outputErr != nil {
-				return false, outputErr
-			}
-			return true, nil // Skip hook after outputting response
-		}
-		worktreePath, err := strategy.GetWorktreePath()
-		if err != nil {
-			// Non-fatal: continue without worktree path
-			worktreePath = ""
-		}
-		worktreeID, err := paths.GetWorktreeID(worktreePath)
-		if err != nil {
-			// Non-fatal: continue with empty worktree ID (main worktree)
-			worktreeID = ""
-		}
-		agentType := ag.Type()
-		newState := &strategy.SessionState{
-			SessionID:              entireSessionID,
-			BaseCommit:             head.Hash().String(),
-			WorktreePath:           worktreePath,
-			WorktreeID:             worktreeID,
-			ConcurrentWarningShown: true,
-			StartedAt:              time.Now(),
-			AgentType:              agentType,
-		}
-		if saveErr := strategy.SaveSessionState(newState); saveErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to save session state: %v\n", saveErr)
-		}
-
-		// Get resume command for the other session using the CONFLICTING session's agent type.
-		// If the conflicting session is from a different agent (e.g., Gemini when we're Claude),
-		// use that agent's resume command format. Otherwise, use our own format (backward compatible).
-		var resumeCmd string
-		if otherSession.AgentType != "" && otherSession.AgentType != agentType {
-			// Different agent type - look up the conflicting agent
-			if conflictingAgent, agentErr := agent.GetByAgentType(otherSession.AgentType); agentErr == nil {
-				resumeCmd = conflictingAgent.FormatResumeCommand(conflictingAgent.ExtractAgentSessionID(otherSession.SessionID))
-			}
-		}
-		// Fall back to current agent if same type or couldn't get the conflicting agent
-		if resumeCmd == "" {
-			resumeCmd = ag.FormatResumeCommand(ag.ExtractAgentSessionID(otherSession.SessionID))
-		}
-
-		// Try to read the other session's initial prompt
-		otherPrompt := strategy.ReadSessionPromptFromShadow(repo, otherSession.BaseCommit, otherSession.WorktreeID, otherSession.SessionID)
-
-		// Build message with other session's prompt if available
-		var message string
-		suppressHint := "\n\nTo suppress this warning in future sessions, run:\n  entire enable --disable-multisession-warning"
-		if otherPrompt != "" {
-			message = fmt.Sprintf("Another session is active: \"%s\"\n\nYou can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, exit Claude and run: %s%s\n\nPress the up arrow key to get your prompt back.", otherPrompt, resumeCmd, suppressHint)
-		} else {
-			message = "Another session is active with uncommitted changes. You can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, exit Claude and run: " + resumeCmd + suppressHint + "\n\nPress the up arrow key to get your prompt back."
-		}
-
-		// Output blocking JSON response - warn about concurrent sessions but allow continuation
-		// Both sessions will capture checkpoints, which will be interleaved on the shadow branch
-		if err := outputHookResponse(false, message); err != nil {
-			return false, err // Failed to output response
-		}
-		// Block the first prompt to show the warning, but subsequent prompts will proceed
-		return true, nil
-	}
-
-	return false, nil
-}
-
-// handleSessionStartCommon is the shared implementation for session start hooks.
-// Used by both Claude Code and Gemini CLI handlers.
-func handleSessionStartCommon() error {
-	// ag, err := GetCurrentHookAgent()
-	// if err != nil {
-	// 	return fmt.Errorf("failed to get agent: %w", err)
-	// }
-
-	// input, err := ag.ParseHookInput(agent.HookSessionStart, os.Stdin)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to parse hook input: %w", err)
-	// }
-
-	// logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
-	// logging.Info(logCtx, "session-start",
-	// 	slog.String("hook", "session-start"),
-	// 	slog.String("hook_type", "agent"),
-	// 	slog.String("model_session_id", input.SessionID),
-	// 	slog.String("transcript_path", input.SessionRef),
-	// )
-
-	// if input.SessionID == "" {
-	// 	return errors.New("no session_id in input")
-	// }
-
-	// // Check for existing legacy session (backward compatibility with date-prefixed format)
-	// // If found, preserve the old session ID to avoid orphaning state files
-	// entireSessionID := session.FindLegacyEntireSessionID(input.SessionID)
-	// if entireSessionID == "" {
-	// 	// No legacy session found - use agent session ID directly (new format)
-	// 	entireSessionID = input.SessionID
-	// }
-
-	// if err := paths.WriteCurrentSession(entireSessionID); err != nil {
-	// 	return fmt.Errorf("failed to set current session: %w", err)
-	// }
-
-	// fmt.Printf("Current session set to: %s\n", entireSessionID)
-	return nil
-}
-
-// handleSessionInitErrors handles session initialization errors and provides user-friendly messages.
-func handleSessionInitErrors(ag agent.Agent, initErr error) error {
-	// Check for session ID conflict error (shadow branch has different session)
-	var sessionConflictErr *strategy.SessionIDConflictError
-	if errors.As(initErr, &sessionConflictErr) {
-		// If multi-session warnings are disabled, skip this error silently
-		// The user has explicitly opted to work with multiple concurrent sessions
-		if IsMultiSessionWarningDisabled() {
-			return nil
-		}
-
-		// Check if EITHER session has the concurrent warning shown
-		// If so, the user was already warned and chose to continue - allow concurrent sessions
-		existingState, loadErr := strategy.LoadSessionState(sessionConflictErr.ExistingSession)
-		newState, newLoadErr := strategy.LoadSessionState(sessionConflictErr.NewSession)
-		if (loadErr == nil && existingState != nil && existingState.ConcurrentWarningShown) ||
-			(newLoadErr == nil && newState != nil && newState.ConcurrentWarningShown) {
-			// At least one session was warned - allow concurrent operation
-			return nil
-		}
-		// Try to get the conflicting session's agent type from its state file
-		// If it's a different agent type, use that agent's resume command format
-		var resumeCmd string
-		if loadErr == nil && existingState != nil && existingState.AgentType != "" {
-			if conflictingAgent, agentErr := agent.GetByAgentType(existingState.AgentType); agentErr == nil {
-				resumeCmd = conflictingAgent.FormatResumeCommand(conflictingAgent.ExtractAgentSessionID(sessionConflictErr.ExistingSession))
-			}
-		}
-		// Fall back to current agent if we couldn't get the conflicting agent
-		if resumeCmd == "" {
-			resumeCmd = ag.FormatResumeCommand(ag.ExtractAgentSessionID(sessionConflictErr.ExistingSession))
-		}
-		message := fmt.Sprintf(
-			"Warning: Session ID conflict detected!\n\n"+
-				"Shadow branch: %s\n"+
-				"Existing session: %s\n"+
-				"New session: %s\n\n"+
-				"The shadow branch already has checkpoints from a different session.\n"+
-				"Starting a new session would orphan the existing work.\n\n"+
-				"Options:\n"+
-				"1. Commit your changes (git commit) to create a new base commit\n"+
-				"2. Run 'entire reset' to discard the shadow branch and start fresh\n"+
-				"3. Resume the existing session: %s\n\n"+
-				"To suppress this warning in future sessions, run:\n"+
-				"  entire enable --disable-multisession-warning",
-			sessionConflictErr.ShadowBranch,
-			sessionConflictErr.ExistingSession,
-			sessionConflictErr.NewSession,
-			resumeCmd,
-		)
-		// Output blocking JSON response - user must resolve conflict before continuing
-		if err := outputHookResponse(false, message); err != nil {
-			return err
-		}
-		// Return nil so hook exits cleanly (status 0), not with error status
-		return nil
-	}
-
-	// Unknown error type
-	fmt.Fprintf(os.Stderr, "Warning: failed to initialize session state: %v\n", initErr)
-	return nil
-}
-
 // captureInitialState captures the initial state on user prompt submit.
 func captureInitialState() error {
 	// Parse hook input and setup logging
 	hookData, err := parseAndLogHookInput()
 	if err != nil {
 		return err
-	}
-
-	// UNLESS the situation has changed (e.g., user committed, so no more conflict).
-	skipHook, err := checkConcurrentSessions(hookData.agent, hookData.sessionID)
-	if err != nil {
-		return err
-	}
-	if skipHook {
-		return nil
 	}
 
 	// CLI captures state directly (including transcript position)
@@ -313,10 +78,8 @@ func captureInitialState() error {
 	strat := GetStrategy()
 	if initializer, ok := strat.(strategy.SessionInitializer); ok {
 		agentType := hookData.agent.Type()
-		if initErr := initializer.InitializeSession(hookData.sessionID, agentType, hookData.input.SessionRef); initErr != nil {
-			if err := handleSessionInitErrors(hookData.agent, initErr); err != nil {
-				return err
-			}
+		if err := initializer.InitializeSession(hookData.sessionID, agentType, hookData.input.SessionRef); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize session state: %v\n", err)
 		}
 	}
 
@@ -946,13 +709,12 @@ func handleClaudeCodeSessionEnd() error {
 		slog.String("model_session_id", input.SessionID),
 	)
 
-	entireSessionID := currentSessionIDWithFallback(input.SessionID)
-	if entireSessionID == "" {
+	if input.SessionID == "" {
 		return nil // No session to update
 	}
 
 	// Best-effort cleanup - don't block session closure on failure
-	if err := markSessionEnded(entireSessionID); err != nil {
+	if err := markSessionEnded(input.SessionID); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to mark session ended: %v\n", err)
 	}
 	return nil
@@ -980,16 +742,13 @@ func markSessionEnded(sessionID string) error {
 // hookResponse represents a JSON response for Claude Code hooks.
 // Used to control whether Claude continues processing the prompt.
 type hookResponse struct {
-	Continue   bool   `json:"continue"`
-	StopReason string `json:"stopReason,omitempty"`
+	SystemMessage string `json:"systemMessage,omitempty"`
 }
 
 // outputHookResponse outputs a JSON response to stdout for Claude Code hooks.
-// When continueExec is false, Claude will block the current operation and show the reason to the user.
-func outputHookResponse(continueExec bool, reason string) error {
+func outputHookResponse(reason string) error {
 	resp := hookResponse{
-		Continue:   continueExec,
-		StopReason: reason,
+		SystemMessage: reason,
 	}
 	if err := json.NewEncoder(os.Stdout).Encode(resp); err != nil {
 		return fmt.Errorf("failed to encode hook response: %w", err)
