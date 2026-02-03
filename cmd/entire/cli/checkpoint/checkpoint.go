@@ -255,7 +255,12 @@ type WriteCommittedOptions struct {
 	// comparing checkpoint tree (agent work) to committed tree (may include human edits)
 	InitialAttribution *InitialAttribution
 
-	// Summary is the AI-generated summary for this checkpoint
+	// Summary is an optional AI-generated summary for this checkpoint.
+	// This field may be nil when:
+	//   - summarisation is disabled in settings
+	//   - summary generation failed (non-blocking, logged as warning)
+	//   - the transcript was empty or too short to summarise
+	//   - the checkpoint predates the summarisation feature
 	Summary *Summary
 }
 

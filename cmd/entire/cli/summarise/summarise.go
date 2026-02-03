@@ -150,7 +150,10 @@ func extractUserEntry(line transcript.Line) *Entry {
 	}
 
 	// Skip skill content injections - these are verbose skill instructions
-	// injected as user messages after Skill tool invocations
+	// injected as user messages after Skill tool invocations in Claude Code.
+	// The prefix "Base directory for this skill:" is added by the superpowers
+	// plugin when loading skill content. This filtering reduces transcript noise
+	// since skill content is documentation, not user intent.
 	if strings.HasPrefix(content, skillContentPrefix) {
 		return nil
 	}

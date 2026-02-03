@@ -222,7 +222,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 	// Generate summary if enabled
 	var summary *cpkg.Summary
 	if isSummariseEnabled() && len(sessionData.Transcript) > 0 {
-		summariseCtx := logging.WithComponent(context.Background(), "summarise")
+		summariseCtx := logging.WithComponent(logCtx, "summarise")
 
 		// Scope transcript to this checkpoint's portion
 		scopedTranscript := transcript.SliceFromLine(sessionData.Transcript, state.TranscriptLinesAtStart)

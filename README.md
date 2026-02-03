@@ -165,11 +165,11 @@ Personal overrides, gitignored by default:
 | `agent` | `claude-code`, `gemini`, etc. | AI agent to integrate with |
 | `log_level` | `debug`, `info`, `warn`, `error` | Logging verbosity |
 | `strategy_options.push_sessions` | `true`, `false` | Auto-push `entire/sessions` branch on git push |
-| `strategy_options.summarise.enabled` | `true`, `false` | Auto-generate AI summaries at commit time (manual-commit only) |
+| `strategy_options.summarise.enabled` | `true`, `false` | Auto-generate AI summaries at commit time |
 
 ### Auto-Summarisation
 
-When enabled, Entire automatically generates AI summaries for checkpoints at commit time (manual-commit strategy only). Summaries capture intent, outcome, learnings, friction points, and open items from the session.
+When enabled, Entire automatically generates AI summaries for checkpoints at commit time. Summaries capture intent, outcome, learnings, friction points, and open items from the session.
 
 ```json
 {
