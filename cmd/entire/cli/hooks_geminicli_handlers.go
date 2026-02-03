@@ -207,16 +207,15 @@ func handleGeminiSessionEnd() error {
 
 // geminiSessionContext holds parsed session data for Gemini commits.
 type geminiSessionContext struct {
-	entireSessionID string
-	modelSessionID  string
-	transcriptPath  string
-	sessionDir      string
-	sessionDirAbs   string
-	transcriptData  []byte
-	allPrompts      []string
-	summary         string
-	modifiedFiles   []string
-	commitMessage   string
+	sessionID      string
+	transcriptPath string
+	sessionDir     string
+	sessionDirAbs  string
+	transcriptData []byte
+	allPrompts     []string
+	summary        string
+	modifiedFiles  []string
+	commitMessage  string
 }
 
 // parseGeminiSessionEnd parses the session-end hook input and validates transcript.
@@ -239,12 +238,10 @@ func parseGeminiSessionEnd() (*geminiSessionContext, error) {
 		slog.String("transcript_path", input.SessionRef),
 	)
 
-	modelSessionID := input.SessionID
-	if modelSessionID == "" {
-		modelSessionID = "unknown"
+	sessionID := input.SessionID
+	if sessionID == "" {
+		sessionID = unknownSessionID
 	}
-
-	entireSessionID := currentSessionIDWithFallback(modelSessionID)
 
 	transcriptPath := input.SessionRef
 	if transcriptPath == "" || !fileExists(transcriptPath) {
@@ -252,15 +249,14 @@ func parseGeminiSessionEnd() (*geminiSessionContext, error) {
 	}
 
 	return &geminiSessionContext{
-		entireSessionID: entireSessionID,
-		modelSessionID:  modelSessionID,
-		transcriptPath:  transcriptPath,
+		sessionID:      sessionID,
+		transcriptPath: transcriptPath,
 	}, nil
 }
 
 // setupGeminiSessionDir creates session directory and copies transcript.
 func setupGeminiSessionDir(ctx *geminiSessionContext) error {
-	ctx.sessionDir = paths.SessionMetadataDirFromEntireID(ctx.entireSessionID)
+	ctx.sessionDir = paths.SessionMetadataDirFromSessionID(ctx.sessionID)
 	sessionDirAbs, err := paths.AbsPath(ctx.sessionDir)
 	if err != nil {
 		sessionDirAbs = ctx.sessionDir
@@ -336,7 +332,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 		return fmt.Errorf("failed to get repo root: %w", err)
 	}
 
-	preState, err := LoadPrePromptState(ctx.entireSessionID)
+	preState, err := LoadPrePromptState(ctx.sessionID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load pre-prompt state: %v\n", err)
 	}
@@ -381,7 +377,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 	if totalChanges == 0 {
 		fmt.Fprintf(os.Stderr, "No files were modified during this session\n")
 		fmt.Fprintf(os.Stderr, "Skipping commit\n")
-		if cleanupErr := CleanupPrePromptState(ctx.entireSessionID); cleanupErr != nil {
+		if cleanupErr := CleanupPrePromptState(ctx.sessionID); cleanupErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to cleanup pre-prompt state: %v\n", cleanupErr)
 		}
 		return nil
@@ -390,7 +386,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 	logFileChanges(relModifiedFiles, relNewFiles, relDeletedFiles)
 
 	contextFile := filepath.Join(ctx.sessionDirAbs, paths.ContextFileName)
-	if err := createContextFileForGemini(contextFile, ctx.commitMessage, ctx.entireSessionID, ctx.allPrompts, ctx.summary); err != nil {
+	if err := createContextFileForGemini(contextFile, ctx.commitMessage, ctx.sessionID, ctx.allPrompts, ctx.summary); err != nil {
 		return fmt.Errorf("failed to create context file: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "Created context file: %s\n", ctx.sessionDir+"/"+paths.ContextFileName)
@@ -420,7 +416,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 	}
 
 	saveCtx := strategy.SaveContext{
-		SessionID:                   ctx.entireSessionID,
+		SessionID:                   ctx.sessionID,
 		ModifiedFiles:               relModifiedFiles,
 		NewFiles:                    relNewFiles,
 		DeletedFiles:                relDeletedFiles,
@@ -440,7 +436,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 		return fmt.Errorf("failed to save session: %w", err)
 	}
 
-	if cleanupErr := CleanupPrePromptState(ctx.entireSessionID); cleanupErr != nil {
+	if cleanupErr := CleanupPrePromptState(ctx.sessionID); cleanupErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup pre-prompt state: %v\n", cleanupErr)
 	}
 
@@ -619,18 +615,15 @@ func handleGeminiBeforeAgent() error {
 		return errors.New("no session_id in input")
 	}
 
-	// Get the entire session ID, handling legacy date-prefixed format
-	entireSessionID := currentSessionIDWithFallback(input.SessionID)
-
 	// Check for concurrent sessions before proceeding
 	// This will output a blocking response and exit if there's a conflict (first time only)
 	// On subsequent prompts, it proceeds normally (both sessions create interleaved checkpoints)
-	checkConcurrentSessionsGemini(entireSessionID)
+	checkConcurrentSessionsGemini(input.SessionID)
 
 	// Capture pre-prompt state with transcript position (Gemini-specific)
 	// This captures both untracked files and the current transcript message count
 	// so we can calculate token usage for just this prompt/response cycle
-	if err := CaptureGeminiPrePromptState(entireSessionID, input.SessionRef); err != nil {
+	if err := CaptureGeminiPrePromptState(input.SessionID, input.SessionRef); err != nil {
 		return fmt.Errorf("failed to capture pre-prompt state: %w", err)
 	}
 
@@ -638,7 +631,7 @@ func handleGeminiBeforeAgent() error {
 	strat := GetStrategy()
 	if initializer, ok := strat.(strategy.SessionInitializer); ok {
 		agentType := ag.Type()
-		if initErr := initializer.InitializeSession(entireSessionID, agentType, input.SessionRef); initErr != nil {
+		if initErr := initializer.InitializeSession(input.SessionID, agentType, input.SessionRef); initErr != nil {
 			if handleErr := handleSessionInitErrors(ag, initErr); handleErr != nil {
 				return handleErr
 			}
@@ -681,12 +674,10 @@ func handleGeminiAfterAgent() error {
 		slog.String("transcript_path", input.SessionRef),
 	)
 
-	modelSessionID := input.SessionID
-	if modelSessionID == "" {
-		modelSessionID = "unknown"
+	sessionID := input.SessionID
+	if sessionID == "" {
+		sessionID = unknownSessionID
 	}
-
-	entireSessionID := currentSessionIDWithFallback(modelSessionID)
 
 	transcriptPath := input.SessionRef
 	if transcriptPath == "" || !fileExists(transcriptPath) {
@@ -695,9 +686,8 @@ func handleGeminiAfterAgent() error {
 
 	// Create session context and commit
 	ctx := &geminiSessionContext{
-		entireSessionID: entireSessionID,
-		modelSessionID:  modelSessionID,
-		transcriptPath:  transcriptPath,
+		sessionID:      sessionID,
+		transcriptPath: transcriptPath,
 	}
 
 	if err := setupGeminiSessionDir(ctx); err != nil {

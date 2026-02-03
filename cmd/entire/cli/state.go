@@ -521,7 +521,7 @@ func DetectChangedFiles() (modified, newFiles, deleted []string, err error) {
 // Returns 1 if no checkpoints exist yet.
 func GetNextCheckpointSequence(sessionID, taskToolUseID string) int {
 	// ctx.SessionID is already an Entire session ID (date-prefixed), so use SessionMetadataDirFromEntireID
-	sessionMetadataDir := paths.SessionMetadataDirFromEntireID(sessionID)
+	sessionMetadataDir := paths.SessionMetadataDirFromSessionID(sessionID)
 	taskMetadataDir := strategy.TaskMetadataDir(sessionMetadataDir, taskToolUseID)
 	checkpointsDir := filepath.Join(taskMetadataDir, "checkpoints")
 
