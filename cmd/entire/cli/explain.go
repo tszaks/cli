@@ -266,8 +266,11 @@ func runExplainCheckpoint(w, errW io.Writer, checkpointIDPrefix string, noPager,
 	// Look up the commit message for this checkpoint
 	commitMessage := findCommitMessageForCheckpoint(repo, fullCheckpointID)
 
+	// Look up the author for this checkpoint (best-effort, ignore errors)
+	author, _ := store.GetCheckpointAuthor(context.Background(), fullCheckpointID) //nolint:errcheck // Author is optional
+
 	// Format and output
-	output := formatCheckpointOutput(result, fullCheckpointID, commitMessage, verbose, full)
+	output := formatCheckpointOutput(result, fullCheckpointID, commitMessage, author, verbose, full)
 	outputExplainContent(w, output, noPager)
 	return nil
 }
@@ -521,7 +524,9 @@ func extractPromptsFromTranscript(transcriptBytes []byte) []string {
 //
 // Transcript scope is controlled by TranscriptLinesAtStart in metadata, which indicates
 // where this checkpoint's content begins in the full session transcript.
-func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID id.CheckpointID, commitMessage string, verbose, full bool) string {
+//
+// Author is displayed when available (only for committed checkpoints).
+func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID id.CheckpointID, commitMessage string, author checkpoint.Author, verbose, full bool) string {
 	var sb strings.Builder
 	meta := result.Metadata
 
@@ -538,6 +543,11 @@ func formatCheckpointOutput(result *checkpoint.ReadCommittedResult, checkpointID
 	fmt.Fprintf(&sb, "Checkpoint: %s\n", checkpointID)
 	fmt.Fprintf(&sb, "Session: %s\n", meta.SessionID)
 	fmt.Fprintf(&sb, "Created: %s\n", meta.CreatedAt.Format("2006-01-02 15:04:05"))
+
+	// Author (only for committed checkpoints with known author)
+	if author.Name != "" {
+		fmt.Fprintf(&sb, "Author: %s <%s>\n", author.Name, author.Email)
+	}
 
 	// Token usage
 	if meta.TokenUsage != nil {

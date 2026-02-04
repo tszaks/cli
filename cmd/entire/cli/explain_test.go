@@ -884,7 +884,7 @@ func TestFormatCheckpointOutput_Short(t *testing.T) {
 	}
 
 	// Default mode: empty commit message (not shown anyway in default mode)
-	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", false, false)
+	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", checkpoint.Author{}, false, false)
 
 	// Should show checkpoint ID
 	if !strings.Contains(output, "abc123def456") {
@@ -938,7 +938,7 @@ func TestFormatCheckpointOutput_Verbose(t *testing.T) {
 		Transcript: transcriptContent,
 	}
 
-	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "feat: implement user authentication", true, false)
+	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "feat: implement user authentication", checkpoint.Author{}, true, false)
 
 	// Should show checkpoint ID (like default)
 	if !strings.Contains(output, "abc123def456") {
@@ -991,7 +991,7 @@ func TestFormatCheckpointOutput_Verbose_NoCommitMessage(t *testing.T) {
 	}
 
 	// When commit message is empty, should not show Commit section
-	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", true, false)
+	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", checkpoint.Author{}, true, false)
 
 	if strings.Contains(output, "Commit:") {
 		t.Error("verbose output should not show Commit section when message is empty")
@@ -1019,7 +1019,7 @@ func TestFormatCheckpointOutput_Full(t *testing.T) {
 		Transcript: []byte(transcriptData),
 	}
 
-	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "feat: add user login", false, true)
+	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "feat: add user login", checkpoint.Author{}, false, true)
 
 	// Should show checkpoint ID (like default)
 	if !strings.Contains(output, "abc123def456") {
@@ -1073,7 +1073,7 @@ func TestFormatCheckpointOutput_WithSummary(t *testing.T) {
 	}
 
 	// Test default output (non-verbose) with summary
-	output := formatCheckpointOutput(result, cpID, "", false, false)
+	output := formatCheckpointOutput(result, cpID, "", checkpoint.Author{}, false, false)
 
 	// Should show AI-generated intent and outcome
 	if !strings.Contains(output, "Intent: Implement user authentication") {
@@ -1088,7 +1088,7 @@ func TestFormatCheckpointOutput_WithSummary(t *testing.T) {
 	}
 
 	// Test verbose output with summary
-	verboseOutput := formatCheckpointOutput(result, cpID, "", true, false)
+	verboseOutput := formatCheckpointOutput(result, cpID, "", checkpoint.Author{}, true, false)
 
 	// Verbose should show learnings sections
 	if !strings.Contains(verboseOutput, "Learnings:") {
@@ -2084,7 +2084,7 @@ func TestFormatCheckpointOutput_UsesScopedPrompts(t *testing.T) {
 	}
 
 	// Verbose output should use scoped prompts
-	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", true, false)
+	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", checkpoint.Author{}, true, false)
 
 	// Should show ONLY the second prompt (scoped)
 	if !strings.Contains(output, "Second prompt - SHOULD appear") {
@@ -2112,7 +2112,7 @@ func TestFormatCheckpointOutput_FallsBackToStoredPrompts(t *testing.T) {
 	}
 
 	// Verbose output should fall back to stored prompts
-	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", true, false)
+	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", checkpoint.Author{}, true, false)
 
 	// Intent should use stored prompt
 	if !strings.Contains(output, "Stored prompt from older checkpoint") {
@@ -2140,7 +2140,7 @@ func TestFormatCheckpointOutput_FullShowsEntireTranscript(t *testing.T) {
 	}
 
 	// Full mode should show the ENTIRE transcript (not scoped)
-	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", false, true)
+	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", checkpoint.Author{}, false, true)
 
 	// Should show the full transcript including first prompt (even though scoped prompts exclude it)
 	if !strings.Contains(output, "First prompt") {
@@ -2374,5 +2374,50 @@ func TestRunExplain_SessionWithCommitStillMutuallyExclusive(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "cannot specify multiple") {
 		t.Errorf("expected 'cannot specify multiple' error, got: %v", err)
+	}
+}
+
+func TestFormatCheckpointOutput_WithAuthor(t *testing.T) {
+	result := &checkpoint.ReadCommittedResult{
+		Metadata: checkpoint.CommittedMetadata{
+			CheckpointID: "abc123def456",
+			SessionID:    "2026-01-30-test-session",
+			CreatedAt:    time.Date(2026, 1, 30, 10, 30, 0, 0, time.UTC),
+			FilesTouched: []string{"main.go"},
+		},
+		Prompts: "Add a new feature",
+	}
+
+	author := checkpoint.Author{
+		Name:  "Alice Developer",
+		Email: "alice@example.com",
+	}
+
+	// With author, should show author line
+	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", author, true, false)
+
+	if !strings.Contains(output, "Author: Alice Developer <alice@example.com>") {
+		t.Errorf("expected author line in output, got:\n%s", output)
+	}
+}
+
+func TestFormatCheckpointOutput_EmptyAuthor(t *testing.T) {
+	result := &checkpoint.ReadCommittedResult{
+		Metadata: checkpoint.CommittedMetadata{
+			CheckpointID: "abc123def456",
+			SessionID:    "2026-01-30-test-session",
+			CreatedAt:    time.Date(2026, 1, 30, 10, 30, 0, 0, time.UTC),
+			FilesTouched: []string{"main.go"},
+		},
+		Prompts: "Add a new feature",
+	}
+
+	// Empty author - should not show author line
+	author := checkpoint.Author{}
+
+	output := formatCheckpointOutput(result, id.MustCheckpointID("abc123def456"), "", author, true, false)
+
+	if strings.Contains(output, "Author:") {
+		t.Errorf("expected no author line for empty author, got:\n%s", output)
 	}
 }
