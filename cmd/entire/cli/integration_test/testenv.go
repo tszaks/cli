@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/format/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -263,6 +264,9 @@ func (env *TestEnv) InitRepo() {
 	cfg.User.Email = "test@example.com"
 
 	// Disable GPG signing for test commits (prevents failures if user has commit.gpgsign=true globally)
+	if cfg.Raw == nil {
+		cfg.Raw = config.New()
+	}
 	cfg.Raw.Section("commit").SetOption("gpgsign", "false")
 
 	if err := repo.SetConfig(cfg); err != nil {
