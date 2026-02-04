@@ -49,6 +49,20 @@ func TestNewExplainCmd(t *testing.T) {
 	}
 }
 
+func TestExplainCmd_SearchAllFlag(t *testing.T) {
+	cmd := newExplainCmd()
+
+	// Verify --search-all flag exists
+	flag := cmd.Flags().Lookup("search-all")
+	if flag == nil {
+		t.Fatal("expected --search-all flag to exist")
+	}
+
+	if flag.DefValue != "false" {
+		t.Errorf("expected default value 'false', got %q", flag.DefValue)
+	}
+}
+
 func TestExplainCmd_RejectsPositionalArgs(t *testing.T) {
 	tests := []struct {
 		name string
@@ -366,7 +380,7 @@ func TestExplainDefault_NoCheckpoints_ShowsHelpfulMessage(t *testing.T) {
 func TestExplainBothFlagsError(t *testing.T) {
 	// Test that providing both --session and --commit returns an error
 	var stdout, stderr bytes.Buffer
-	err := runExplain(&stdout, &stderr, "session-id", "commit-sha", "", false, false, false, false, false, false)
+	err := runExplain(&stdout, &stderr, "session-id", "commit-sha", "", false, false, false, false, false, false, false)
 
 	if err == nil {
 		t.Error("expected error when both flags provided, got nil")
@@ -894,7 +908,7 @@ func TestRunExplain_MutualExclusivityError(t *testing.T) {
 	var buf, errBuf bytes.Buffer
 
 	// Providing both --session and --checkpoint should error
-	err := runExplain(&buf, &errBuf, "session-id", "", "checkpoint-id", false, false, false, false, false, false)
+	err := runExplain(&buf, &errBuf, "session-id", "", "checkpoint-id", false, false, false, false, false, false, false)
 
 	if err == nil {
 		t.Error("expected error when multiple flags provided")
@@ -938,7 +952,7 @@ func TestRunExplainCheckpoint_NotFound(t *testing.T) {
 	}
 
 	var buf, errBuf bytes.Buffer
-	err = runExplainCheckpoint(&buf, &errBuf, "nonexistent123", false, false, false, false, false, false)
+	err = runExplainCheckpoint(&buf, &errBuf, "nonexistent123", false, false, false, false, false, false, false)
 
 	if err == nil {
 		t.Error("expected error for nonexistent checkpoint")

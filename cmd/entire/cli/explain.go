@@ -71,6 +71,7 @@ func newExplainCmd() *cobra.Command {
 	var rawTranscriptFlag bool
 	var generateFlag bool
 	var forceFlag bool
+	var searchAllFlag bool
 
 	cmd := &cobra.Command{
 		Use:   "explain",
@@ -119,7 +120,7 @@ Only one of --session, --commit, or --checkpoint can be specified at a time.`,
 
 			// Convert short flag to verbose (verbose = !short)
 			verbose := !shortFlag
-			return runExplain(cmd.OutOrStdout(), cmd.ErrOrStderr(), sessionFlag, commitFlag, checkpointFlag, noPagerFlag, verbose, fullFlag, rawTranscriptFlag, generateFlag, forceFlag)
+			return runExplain(cmd.OutOrStdout(), cmd.ErrOrStderr(), sessionFlag, commitFlag, checkpointFlag, noPagerFlag, verbose, fullFlag, rawTranscriptFlag, generateFlag, forceFlag, searchAllFlag)
 		},
 	}
 
@@ -132,6 +133,7 @@ Only one of --session, --commit, or --checkpoint can be specified at a time.`,
 	cmd.Flags().BoolVar(&rawTranscriptFlag, "raw-transcript", false, "Show raw transcript file (JSONL format)")
 	cmd.Flags().BoolVar(&generateFlag, "generate", false, "Generate an AI summary for the checkpoint")
 	cmd.Flags().BoolVar(&forceFlag, "force", false, "Regenerate summary even if one already exists (requires --generate)")
+	cmd.Flags().BoolVar(&searchAllFlag, "search-all", false, "Search all commits (no branch/depth limit, may be slow)")
 
 	// Make --short, --full, and --raw-transcript mutually exclusive
 	cmd.MarkFlagsMutuallyExclusive("short", "full", "raw-transcript")
@@ -142,7 +144,7 @@ Only one of --session, --commit, or --checkpoint can be specified at a time.`,
 }
 
 // runExplain routes to the appropriate explain function based on flags.
-func runExplain(w, errW io.Writer, sessionID, commitRef, checkpointID string, noPager, verbose, full, rawTranscript, generate, force bool) error {
+func runExplain(w, errW io.Writer, sessionID, commitRef, checkpointID string, noPager, verbose, full, rawTranscript, generate, force, searchAll bool) error {
 	// Count mutually exclusive flags
 	flagCount := 0
 	if sessionID != "" {
@@ -166,7 +168,7 @@ func runExplain(w, errW io.Writer, sessionID, commitRef, checkpointID string, no
 		return runExplainCommit(w, commitRef)
 	}
 	if checkpointID != "" {
-		return runExplainCheckpoint(w, errW, checkpointID, noPager, verbose, full, rawTranscript, generate, force)
+		return runExplainCheckpoint(w, errW, checkpointID, noPager, verbose, full, rawTranscript, generate, force, searchAll)
 	}
 
 	// Default: explain current session
@@ -179,7 +181,10 @@ func runExplain(w, errW io.Writer, sessionID, commitRef, checkpointID string, no
 // When generate is true, generates an AI summary for the checkpoint.
 // When force is true, regenerates even if a summary already exists.
 // When rawTranscript is true, outputs only the raw transcript file (JSONL format).
-func runExplainCheckpoint(w, errW io.Writer, checkpointIDPrefix string, noPager, verbose, full, rawTranscript, generate, force bool) error {
+// When searchAll is true, searches all commits without branch/depth limits (used for finding associated commits).
+//
+//nolint:revive,unparam // searchAll parameter will be used in Task 5 (associated commits feature)
+func runExplainCheckpoint(w, errW io.Writer, checkpointIDPrefix string, noPager, verbose, full, rawTranscript, generate, force, searchAll bool) error {
 	repo, err := openRepository()
 	if err != nil {
 		return fmt.Errorf("not a git repository: %w", err)
