@@ -685,9 +685,6 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 
 	// Count sessions to restore
 	totalSessions := len(summary.Sessions)
-	if totalSessions == 0 {
-		totalSessions = 1 // backwards compatibility
-	}
 	if totalSessions > 1 {
 		fmt.Fprintf(os.Stderr, "Restoring %d sessions from checkpoint:\n", totalSessions)
 	}
@@ -796,10 +793,6 @@ func (s *ManualCommitStrategy) classifySessionsForRestore(ctx context.Context, c
 	var sessions []SessionRestoreInfo
 
 	totalSessions := len(summary.Sessions)
-	if totalSessions == 0 {
-		totalSessions = 1 // backwards compatibility
-	}
-
 	// Check all sessions (0-based indexing)
 	for i := range totalSessions {
 		content, err := store.ReadSessionContent(ctx, checkpointID, i)
