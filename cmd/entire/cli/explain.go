@@ -27,19 +27,6 @@ import (
 	"golang.org/x/term"
 )
 
-// commitInfo holds information about a commit for display purposes.
-type commitInfo struct {
-	SHA       string
-	ShortSHA  string
-	Message   string
-	Author    string
-	Email     string
-	Date      time.Time
-	Files     []string
-	HasEntire bool
-	SessionID string
-}
-
 // interaction holds a single prompt and its responses for display.
 type interaction struct {
 	Prompt    string
@@ -165,7 +152,7 @@ func runExplain(w, errW io.Writer, sessionID, commitRef, checkpointID string, no
 		return runExplainSession(w, sessionID, noPager)
 	}
 	if commitRef != "" {
-		return runExplainCommit(w, commitRef)
+		return runExplainCommit(w, commitRef, noPager, verbose, full, searchAll)
 	}
 	if checkpointID != "" {
 		return runExplainCheckpoint(w, errW, checkpointID, noPager, verbose, full, rawTranscript, generate, force, searchAll)
@@ -1197,8 +1184,10 @@ func gatherCheckpointDetails(strat strategy.Strategy, session *strategy.Session)
 	return details
 }
 
-// runExplainCommit explains a specific commit.
-func runExplainCommit(w io.Writer, commitRef string) error {
+// runExplainCommit looks up the checkpoint associated with a commit.
+// Extracts the Entire-Checkpoint trailer and delegates to checkpoint detail view.
+// If no trailer found, shows a message indicating no associated checkpoint.
+func runExplainCommit(w io.Writer, commitRef string, noPager, verbose, full, searchAll bool) error {
 	repo, err := openRepository()
 	if err != nil {
 		return fmt.Errorf("not a git repository: %w", err)
@@ -1215,73 +1204,18 @@ func runExplainCommit(w io.Writer, commitRef string) error {
 		return fmt.Errorf("failed to get commit: %w", err)
 	}
 
-	// Get files changed in this commit (diff from parent to current)
-	var files []string
-	commitTree, err := commit.Tree()
-	if err == nil && commit.NumParents() > 0 {
-		parent, parentErr := commit.Parent(0)
-		if parentErr == nil {
-			parentTree, treeErr := parent.Tree()
-			if treeErr == nil {
-				// Diff from parent to current commit to show what changed
-				changes, diffErr := parentTree.Diff(commitTree)
-				if diffErr == nil {
-					for _, change := range changes {
-						name := change.To.Name
-						if name == "" {
-							name = change.From.Name
-						}
-						files = append(files, name)
-					}
-				}
-			}
-		}
-	}
-
-	// Check for Entire metadata - try multiple trailer types
-	metadataDir, hasMetadata := trailers.ParseMetadata(commit.Message)
-	sessionID, hasSession := trailers.ParseSession(commit.Message)
+	// Extract Entire-Checkpoint trailer
 	checkpointID, hasCheckpoint := trailers.ParseCheckpoint(commit.Message)
-
-	// If no session trailer, try to extract from metadata path.
-	// Note: extractSessionIDFromMetadata is defined in rewind.go as it's used
-	// by both the rewind and explain commands for parsing metadata paths.
-	if !hasSession && hasMetadata {
-		sessionID = extractSessionIDFromMetadata(metadataDir)
-		hasSession = sessionID != ""
+	if !hasCheckpoint {
+		fmt.Fprintln(w, "No associated Entire checkpoint")
+		fmt.Fprintf(w, "\nCommit %s does not have an Entire-Checkpoint trailer.\n", hash.String()[:7])
+		fmt.Fprintln(w, "This commit was not created during an Entire session, or the trailer was removed.")
+		return nil
 	}
 
-	// Build commit info
-	fullSHA := hash.String()
-	shortSHA := fullSHA
-	if len(fullSHA) >= 7 {
-		shortSHA = fullSHA[:7]
-	}
-
-	info := &commitInfo{
-		SHA:       fullSHA,
-		ShortSHA:  shortSHA,
-		Message:   strings.Split(commit.Message, "\n")[0], // First line only
-		Author:    commit.Author.Name,
-		Email:     commit.Author.Email,
-		Date:      commit.Author.When,
-		Files:     files,
-		HasEntire: hasMetadata || hasSession || hasCheckpoint,
-		SessionID: sessionID,
-	}
-
-	// If we have a checkpoint ID but no session, try to look up session from metadata
-	if hasCheckpoint && sessionID == "" {
-		if result, err := checkpoint.NewGitStore(repo).ReadCommitted(context.Background(), checkpointID); err == nil && result != nil {
-			info.SessionID = result.Metadata.SessionID
-		}
-	}
-
-	// Format and output
-	output := formatCommitInfo(info)
-	fmt.Fprint(w, output)
-
-	return nil
+	// Delegate to checkpoint detail view
+	// Note: We pass a nil errW since runExplainCheckpoint only uses it for generate mode
+	return runExplainCheckpoint(w, nil, checkpointID.String(), noPager, verbose, full, false, false, false, searchAll)
 }
 
 // formatSessionInfo formats session information for display.
@@ -1361,41 +1295,6 @@ func formatSessionInfo(session *strategy.Session, sourceRef string, checkpoints 
 				}
 			}
 		}
-	}
-
-	return sb.String()
-}
-
-// formatCommitInfo formats commit information for display.
-func formatCommitInfo(info *commitInfo) string {
-	var sb strings.Builder
-
-	fmt.Fprintf(&sb, "Commit: %s (%s)\n", info.SHA, info.ShortSHA)
-	fmt.Fprintf(&sb, "Date: %s\n", info.Date.Format("2006-01-02 15:04:05"))
-
-	if info.HasEntire && info.SessionID != "" {
-		fmt.Fprintf(&sb, "Session: %s\n", info.SessionID)
-	}
-
-	sb.WriteString("\n")
-
-	// Message
-	sb.WriteString("Message:\n")
-	fmt.Fprintf(&sb, "  %s\n", info.Message)
-	sb.WriteString("\n")
-
-	// Files modified
-	if len(info.Files) > 0 {
-		fmt.Fprintf(&sb, "Files Modified (%d):\n", len(info.Files))
-		for _, file := range info.Files {
-			fmt.Fprintf(&sb, "  - %s\n", file)
-		}
-		sb.WriteString("\n")
-	}
-
-	// Note for non-Entire commits
-	if !info.HasEntire {
-		sb.WriteString("Note: No Entire session data available for this commit.\n")
 	}
 
 	return sb.String()

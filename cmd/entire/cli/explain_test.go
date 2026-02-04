@@ -132,7 +132,7 @@ func TestExplainCommit_NotFound(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	err := runExplainCommit(&stdout, "nonexistent")
+	err := runExplainCommit(&stdout, "nonexistent", false, false, false, false)
 
 	if err == nil {
 		t.Error("expected error for nonexistent commit, got nil")
@@ -176,27 +176,26 @@ func TestExplainCommit_NoEntireData(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	err = runExplainCommit(&stdout, commitHash.String())
+	err = runExplainCommit(&stdout, commitHash.String(), false, false, false, false)
 	if err != nil {
 		t.Fatalf("runExplainCommit() should not error for non-Entire commits, got: %v", err)
 	}
 
 	output := stdout.String()
 
-	// Should show git info
+	// Should show message indicating no Entire checkpoint (new behavior)
+	if !strings.Contains(output, "No associated Entire checkpoint") {
+		t.Errorf("expected output to indicate no Entire checkpoint, got: %s", output)
+	}
+	// Should mention the commit hash
 	if !strings.Contains(output, commitHash.String()[:7]) {
 		t.Errorf("expected output to contain short commit hash, got: %s", output)
 	}
-	if !strings.Contains(output, "regular commit") {
-		t.Errorf("expected output to contain commit message, got: %s", output)
-	}
-	// Should show no Entire data message
-	if !strings.Contains(output, "No Entire session data") {
-		t.Errorf("expected output to indicate no Entire data, got: %s", output)
-	}
 }
 
-func TestExplainCommit_WithEntireData(t *testing.T) {
+func TestExplainCommit_WithMetadataTrailerButNoCheckpoint(t *testing.T) {
+	// Test that commits with Entire-Metadata trailer (but no Entire-Checkpoint)
+	// now show "no checkpoint" message (new behavior)
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
 
@@ -224,7 +223,7 @@ func TestExplainCommit_WithEntireData(t *testing.T) {
 		t.Fatalf("failed to create prompt file: %v", err)
 	}
 
-	// Create a commit with Entire metadata trailer
+	// Create a commit with Entire-Metadata trailer (but NO Entire-Checkpoint)
 	testFile := filepath.Join(tmpDir, "test.txt")
 	if err := os.WriteFile(testFile, []byte("feature content"), 0o644); err != nil {
 		t.Fatalf("failed to write test file: %v", err)
@@ -233,7 +232,7 @@ func TestExplainCommit_WithEntireData(t *testing.T) {
 		t.Fatalf("failed to add test file: %v", err)
 	}
 
-	// Commit with Entire-Metadata trailer
+	// Commit with Entire-Metadata trailer (no Entire-Checkpoint)
 	metadataDir := ".entire/metadata/" + sessionID
 	commitMessage := trailers.FormatMetadata("Add new feature", metadataDir)
 	commitHash, err := w.Commit(commitMessage, &git.CommitOptions{
@@ -247,21 +246,20 @@ func TestExplainCommit_WithEntireData(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	err = runExplainCommit(&stdout, commitHash.String())
+	err = runExplainCommit(&stdout, commitHash.String(), false, false, false, false)
 	if err != nil {
 		t.Fatalf("runExplainCommit() error = %v", err)
 	}
 
 	output := stdout.String()
 
-	// Should show commit info
+	// New behavior: should show "no checkpoint" message since there's no Entire-Checkpoint trailer
+	if !strings.Contains(output, "No associated Entire checkpoint") {
+		t.Errorf("expected 'No associated Entire checkpoint' message, got: %s", output)
+	}
+	// Should mention the commit hash
 	if !strings.Contains(output, commitHash.String()[:7]) {
 		t.Errorf("expected output to contain short commit hash, got: %s", output)
-	}
-	// Should show session info - the session ID is extracted from the metadata path
-	// The format is test-session-xyz789 (extracted from the full path)
-	if !strings.Contains(output, "Session:") {
-		t.Errorf("expected output to contain 'Session:', got: %s", output)
 	}
 }
 
@@ -509,74 +507,6 @@ func TestFormatSessionInfo_WithSourceRef(t *testing.T) {
 	}
 	if !strings.Contains(output, sourceRef) {
 		t.Errorf("expected output to contain source ref %q, got:\n%s", sourceRef, output)
-	}
-}
-
-func TestFormatCommitInfo(t *testing.T) {
-	now := time.Now()
-	info := &commitInfo{
-		SHA:       "abc1234567890abcdef1234567890abcdef123456",
-		ShortSHA:  "abc1234",
-		Message:   "Test commit message",
-		Author:    "Test Author",
-		Email:     "test@example.com",
-		Date:      now,
-		Files:     []string{"file1.go", "file2.go"},
-		HasEntire: false,
-		SessionID: "",
-	}
-
-	output := formatCommitInfo(info)
-
-	// Verify output contains expected sections
-	if !strings.Contains(output, "Commit:") {
-		t.Error("expected output to contain 'Commit:'")
-	}
-	if !strings.Contains(output, info.ShortSHA) {
-		t.Error("expected output to contain short SHA")
-	}
-	if !strings.Contains(output, info.SHA) {
-		t.Error("expected output to contain full SHA")
-	}
-	if !strings.Contains(output, "Message:") {
-		t.Error("expected output to contain 'Message:'")
-	}
-	if !strings.Contains(output, info.Message) {
-		t.Error("expected output to contain commit message")
-	}
-	if !strings.Contains(output, "Files Modified") {
-		t.Error("expected output to contain 'Files Modified'")
-	}
-	if !strings.Contains(output, "No Entire session data") {
-		t.Error("expected output to contain no Entire data message")
-	}
-}
-
-func TestFormatCommitInfo_WithEntireData(t *testing.T) {
-	now := time.Now()
-	info := &commitInfo{
-		SHA:       "abc1234567890abcdef1234567890abcdef123456",
-		ShortSHA:  "abc1234",
-		Message:   "Test commit message",
-		Author:    "Test Author",
-		Email:     "test@example.com",
-		Date:      now,
-		Files:     []string{"file1.go"},
-		HasEntire: true,
-		SessionID: "2025-12-09-test-session",
-	}
-
-	output := formatCommitInfo(info)
-
-	// Verify output contains expected sections
-	if !strings.Contains(output, "Session:") {
-		t.Error("expected output to contain 'Session:'")
-	}
-	if !strings.Contains(output, info.SessionID) {
-		t.Error("expected output to contain session ID")
-	}
-	if strings.Contains(output, "No Entire session data") {
-		t.Error("expected output to NOT contain no Entire data message")
 	}
 }
 
@@ -2243,5 +2173,96 @@ func TestFormatCheckpointOutput_FullShowsEntireTranscript(t *testing.T) {
 	}
 	if !strings.Contains(output, "Second prompt") {
 		t.Errorf("expected --full to show entire transcript including second prompt, got:\n%s", output)
+	}
+}
+
+func TestRunExplainCommit_NoCheckpointTrailer(t *testing.T) {
+	// Create test repo with a commit that has no Entire-Checkpoint trailer
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	repo, err := git.PlainInit(tmpDir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Create a commit without checkpoint trailer
+	w, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("content"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if _, err := w.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add test file: %v", err)
+	}
+	hash, err := w.Commit("Regular commit without trailer", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to create commit: %v", err)
+	}
+
+	var buf bytes.Buffer
+	err = runExplainCommit(&buf, hash.String()[:7], false, false, false, false)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "No associated Entire checkpoint") {
+		t.Errorf("expected 'No associated Entire checkpoint' message, got: %s", output)
+	}
+}
+
+func TestRunExplainCommit_WithCheckpointTrailer(t *testing.T) {
+	// Create test repo with a commit that has an Entire-Checkpoint trailer
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	repo, err := git.PlainInit(tmpDir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	// Create a commit with checkpoint trailer
+	w, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("content"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	if _, err := w.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add test file: %v", err)
+	}
+
+	// Create commit with checkpoint trailer
+	checkpointID := "abc123def456"
+	commitMsg := "Feature commit\n\nEntire-Checkpoint: " + checkpointID + "\n"
+	hash, err := w.Commit(commitMsg, &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to create commit: %v", err)
+	}
+
+	var buf bytes.Buffer
+	// This should try to look up the checkpoint and fail (checkpoint doesn't exist in store)
+	// but it should still attempt the lookup rather than showing commit details
+	err = runExplainCommit(&buf, hash.String()[:7], false, false, false, false)
+
+	// Should error because the checkpoint doesn't exist in the store
+	if err == nil {
+		t.Fatalf("expected error for missing checkpoint in store, got nil")
+	}
+
+	// Error should mention checkpoint not found
+	if !strings.Contains(err.Error(), "checkpoint not found") && !strings.Contains(err.Error(), "abc123def456") {
+		t.Errorf("expected error about checkpoint not found, got: %v", err)
 	}
 }
