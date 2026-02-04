@@ -342,13 +342,7 @@ type CommittedMetadata struct {
 	FilesTouched     []string        `json:"files_touched"`
 
 	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor")
-	// For multi-session checkpoints, this is the first agent (see Agents for all)
-	Agent  agent.AgentType   `json:"agent,omitempty"`
-	Agents []agent.AgentType `json:"agents,omitempty"` // All agents that contributed (multi-session, deduplicated)
-
-	// Multi-session support: when multiple sessions contribute to the same checkpoint
-	SessionCount int      `json:"session_count,omitempty"` // Number of sessions (1 if omitted for backwards compat)
-	SessionIDs   []string `json:"session_ids,omitempty"`   // All session IDs that contributed
+	Agent agent.AgentType `json:"agent,omitempty"`
 
 	// Task checkpoint fields (only populated for task checkpoints)
 	IsTask    bool   `json:"is_task,omitempty"`
@@ -366,6 +360,46 @@ type CommittedMetadata struct {
 
 	// InitialAttribution is line-level attribution calculated at commit time
 	InitialAttribution *InitialAttribution `json:"initial_attribution,omitempty"`
+}
+
+// SessionFilePaths contains the absolute paths to session files from the git tree root.
+// Paths include the full checkpoint path prefix (e.g., "/a1/b2c3d4e5f6/1/metadata.json").
+// Used in CheckpointSummary.Sessions to map session IDs to their file locations.
+type SessionFilePaths struct {
+	Metadata    string `json:"metadata"`
+	Transcript  string `json:"transcript"`
+	Context     string `json:"context"`
+	ContentHash string `json:"content_hash"`
+	Prompt      string `json:"prompt"`
+}
+
+// CheckpointSummary is the root-level metadata.json for a checkpoint.
+// It contains aggregated statistics from all sessions and a map of session IDs
+// to their file paths. Session-specific data (including initial_attribution)
+// is stored in the session's subdirectory metadata.json.
+//
+// Structure on entire/sessions branch:
+//
+//	<checkpoint-id[:2]>/<checkpoint-id[2:]>/
+//	├── metadata.json         # This CheckpointSummary
+//	├── 1/                    # First session
+//	│   ├── metadata.json     # Session-specific CommittedMetadata
+//	│   ├── full.jsonl
+//	│   ├── prompt.txt
+//	│   ├── context.md
+//	│   └── content_hash.txt
+//	├── 2/                    # Second session
+//	└── 3/                    # Third session...
+//
+//nolint:revive // Named CheckpointSummary to avoid conflict with existing Summary struct
+type CheckpointSummary struct {
+	CheckpointID     id.CheckpointID    `json:"checkpoint_id"`
+	Strategy         string             `json:"strategy"`
+	Branch           string             `json:"branch,omitempty"`
+	CheckpointsCount int                `json:"checkpoints_count"`
+	FilesTouched     []string           `json:"files_touched"`
+	Sessions         []SessionFilePaths `json:"sessions"`
+	TokenUsage       *agent.TokenUsage  `json:"token_usage,omitempty"`
 }
 
 // Summary contains AI-generated summary of a checkpoint.

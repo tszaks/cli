@@ -150,11 +150,11 @@ func TestManualCommit_Attribution(t *testing.T) {
 		t.Fatalf("Failed to get sessions tree: %v", err)
 	}
 
-	// Read metadata.json from sharded path
-	metadataPath := checkpointID.String()[:2] + "/" + checkpointID.String()[2:] + "/metadata.json"
+	// Read session-level metadata.json from sharded path (InitialAttribution is in 0/metadata.json)
+	metadataPath := SessionMetadataPath(checkpointID.String())
 	metadataFile, err := sessionsTree.File(metadataPath)
 	if err != nil {
-		t.Fatalf("Failed to read metadata.json at path %s: %v", metadataPath, err)
+		t.Fatalf("Failed to read session metadata.json at path %s: %v", metadataPath, err)
 	}
 
 	metadataContent, err := metadataFile.Contents()
@@ -292,10 +292,11 @@ func TestManualCommit_AttributionDeletionOnly(t *testing.T) {
 		t.Fatalf("Failed to get sessions tree: %v", err)
 	}
 
-	metadataPath := checkpointID.String()[:2] + "/" + checkpointID.String()[2:] + "/metadata.json"
+	// Read session-level metadata.json (InitialAttribution is in 0/metadata.json)
+	metadataPath := SessionMetadataPath(checkpointID.String())
 	metadataFile, err := sessionsTree.File(metadataPath)
 	if err != nil {
-		t.Fatalf("Failed to read metadata.json: %v", err)
+		t.Fatalf("Failed to read session metadata.json at path %s: %v", metadataPath, err)
 	}
 
 	metadataContent, err := metadataFile.Contents()
@@ -513,6 +514,7 @@ func TestManualCommit_AttributionNoDoubleCount(t *testing.T) {
 }
 
 // getAttributionFromMetadata reads attribution from a checkpoint on entire/sessions branch.
+// InitialAttribution is stored in session-level metadata (0/metadata.json).
 func getAttributionFromMetadata(t *testing.T, repo *git.Repository, checkpointID id.CheckpointID) *checkpoint.InitialAttribution {
 	t.Helper()
 
@@ -531,10 +533,11 @@ func getAttributionFromMetadata(t *testing.T, repo *git.Repository, checkpointID
 		t.Fatalf("Failed to get sessions tree: %v", err)
 	}
 
-	metadataPath := checkpointID.String()[:2] + "/" + checkpointID.String()[2:] + "/metadata.json"
+	// Read session-level metadata (InitialAttribution is in 0/metadata.json)
+	metadataPath := SessionMetadataPath(checkpointID.String())
 	metadataFile, err := sessionsTree.File(metadataPath)
 	if err != nil {
-		t.Fatalf("Failed to read metadata.json at path %s: %v", metadataPath, err)
+		t.Fatalf("Failed to read session metadata.json at path %s: %v", metadataPath, err)
 	}
 
 	metadataContent, err := metadataFile.Contents()

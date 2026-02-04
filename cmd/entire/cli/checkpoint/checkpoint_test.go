@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -20,6 +21,8 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
+
+const testSession1 = "session-1"
 
 func TestCheckpointType_Values(t *testing.T) {
 	// Verify the enum values are distinct
@@ -144,7 +147,7 @@ func TestWriteCommitted_AgentField(t *testing.T) {
 		t.Fatalf("WriteCommitted() error = %v", err)
 	}
 
-	// Verify metadata.json contains agent field
+	// Verify root metadata.json contains agents in the Agents array
 	ref, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
 	if err != nil {
 		t.Fatalf("failed to get metadata branch reference: %v", err)
@@ -160,12 +163,16 @@ func TestWriteCommitted_AgentField(t *testing.T) {
 		t.Fatalf("failed to get tree: %v", err)
 	}
 
-	// Read metadata.json from the sharded path
+	// Read root metadata.json from the sharded path
 	shardedPath := checkpointID.Path()
-	metadataPath := shardedPath + "/" + paths.MetadataFileName
-	metadataFile, err := tree.File(metadataPath)
+	checkpointTree, err := tree.Tree(shardedPath)
 	if err != nil {
-		t.Fatalf("failed to find metadata.json at %s: %v", metadataPath, err)
+		t.Fatalf("failed to find checkpoint tree at %s: %v", shardedPath, err)
+	}
+
+	metadataFile, err := checkpointTree.File(paths.MetadataFileName)
+	if err != nil {
+		t.Fatalf("failed to find metadata.json: %v", err)
 	}
 
 	content, err := metadataFile.Contents()
@@ -173,13 +180,34 @@ func TestWriteCommitted_AgentField(t *testing.T) {
 		t.Fatalf("failed to read metadata.json: %v", err)
 	}
 
-	var metadata CommittedMetadata
-	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
-		t.Fatalf("failed to parse metadata.json: %v", err)
+	// Root metadata is now CheckpointSummary (without Agents array)
+	var summary CheckpointSummary
+	if err := json.Unmarshal([]byte(content), &summary); err != nil {
+		t.Fatalf("failed to parse metadata.json as CheckpointSummary: %v", err)
 	}
 
-	if metadata.Agent != agentType {
-		t.Errorf("metadata.Agent = %q, want %q", metadata.Agent, agentType)
+	// Agent should be in the session-level metadata, not in the summary
+	// Read first session's metadata to verify agent (1-based indexing)
+	if len(summary.Sessions) > 0 {
+		sessionTree, err := checkpointTree.Tree("1")
+		if err != nil {
+			t.Fatalf("failed to get session tree: %v", err)
+		}
+		sessionMetadataFile, err := sessionTree.File(paths.MetadataFileName)
+		if err != nil {
+			t.Fatalf("failed to find session metadata.json: %v", err)
+		}
+		sessionContent, err := sessionMetadataFile.Contents()
+		if err != nil {
+			t.Fatalf("failed to read session metadata.json: %v", err)
+		}
+		var sessionMetadata CommittedMetadata
+		if err := json.Unmarshal([]byte(sessionContent), &sessionMetadata); err != nil {
+			t.Fatalf("failed to parse session metadata.json: %v", err)
+		}
+		if sessionMetadata.Agent != agentType {
+			t.Errorf("sessionMetadata.Agent = %q, want %q", sessionMetadata.Agent, agentType)
+		}
 	}
 
 	// Verify commit message contains Entire-Agent trailer
@@ -189,8 +217,9 @@ func TestWriteCommitted_AgentField(t *testing.T) {
 	}
 }
 
-// readCheckpointMetadata reads metadata.json from the metadata branch for a checkpoint.
-func readCheckpointMetadata(t *testing.T, repo *git.Repository, checkpointID id.CheckpointID) CommittedMetadata {
+// readLatestSessionMetadata reads the session-specific metadata from the latest session subdirectory.
+// This is where session-specific fields like Summary are stored.
+func readLatestSessionMetadata(t *testing.T, repo *git.Repository, checkpointID id.CheckpointID) CommittedMetadata {
 	t.Helper()
 
 	ref, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
@@ -208,147 +237,55 @@ func readCheckpointMetadata(t *testing.T, repo *git.Repository, checkpointID id.
 		t.Fatalf("failed to get tree: %v", err)
 	}
 
-	metadataPath := checkpointID.Path() + "/" + paths.MetadataFileName
-	metadataFile, err := tree.File(metadataPath)
+	checkpointTree, err := tree.Tree(checkpointID.Path())
 	if err != nil {
-		t.Fatalf("failed to find metadata.json: %v", err)
+		t.Fatalf("failed to get checkpoint tree: %v", err)
 	}
 
-	content, err := metadataFile.Contents()
+	// Read root metadata.json to get session count
+	rootFile, err := checkpointTree.File(paths.MetadataFileName)
 	if err != nil {
-		t.Fatalf("failed to read metadata.json: %v", err)
+		t.Fatalf("failed to find root metadata.json: %v", err)
+	}
+
+	rootContent, err := rootFile.Contents()
+	if err != nil {
+		t.Fatalf("failed to read root metadata.json: %v", err)
+	}
+
+	var summary CheckpointSummary
+	if err := json.Unmarshal([]byte(rootContent), &summary); err != nil {
+		t.Fatalf("failed to parse root metadata.json: %v", err)
+	}
+
+	// Read session-level metadata from latest session subdirectory (1-based indexing)
+	latestIndex := len(summary.Sessions)
+	sessionDir := strconv.Itoa(latestIndex)
+	sessionTree, err := checkpointTree.Tree(sessionDir)
+	if err != nil {
+		t.Fatalf("failed to get session tree at %s: %v", sessionDir, err)
+	}
+
+	sessionFile, err := sessionTree.File(paths.MetadataFileName)
+	if err != nil {
+		t.Fatalf("failed to find session metadata.json: %v", err)
+	}
+
+	content, err := sessionFile.Contents()
+	if err != nil {
+		t.Fatalf("failed to read session metadata.json: %v", err)
 	}
 
 	var metadata CommittedMetadata
 	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
-		t.Fatalf("failed to parse metadata.json: %v", err)
+		t.Fatalf("failed to parse session metadata.json: %v", err)
 	}
 
 	return metadata
 }
 
-func TestWriteCommitted_AgentsArray_SingleSession(t *testing.T) {
-	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
-	checkpointID := id.MustCheckpointID("c1d2e3f4a5b6")
-
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
-		CheckpointID: checkpointID,
-		SessionID:    "test-session-single",
-		Strategy:     "auto-commit",
-		Agent:        agent.AgentTypeGemini,
-		Transcript:   []byte("test transcript"),
-		AuthorName:   "Test Author",
-		AuthorEmail:  "test@example.com",
-	})
-	if err != nil {
-		t.Fatalf("WriteCommitted() error = %v", err)
-	}
-
-	metadata := readCheckpointMetadata(t, repo, checkpointID)
-
-	if metadata.Agent != agent.AgentTypeGemini {
-		t.Errorf("metadata.Agent = %q, want %q", metadata.Agent, agent.AgentTypeGemini)
-	}
-	if len(metadata.Agents) != 0 {
-		t.Errorf("metadata.Agents length = %d, want 0 (single-session should not have agents array)", len(metadata.Agents))
-	}
-}
-
-func TestWriteCommitted_AgentsArray_MultiSession(t *testing.T) {
-	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
-	checkpointID := id.MustCheckpointID("d2e3f4a5b6c7")
-
-	// First session with Gemini CLI
-	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
-		CheckpointID: checkpointID,
-		SessionID:    "session-1",
-		Strategy:     "auto-commit",
-		Agent:        agent.AgentTypeGemini,
-		Transcript:   []byte("gemini transcript"),
-		AuthorName:   "Test Author",
-		AuthorEmail:  "test@example.com",
-	})
-	if err != nil {
-		t.Fatalf("WriteCommitted() first session error = %v", err)
-	}
-
-	// Second session with Claude Code (same checkpoint ID triggers merge)
-	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
-		CheckpointID: checkpointID,
-		SessionID:    "session-2",
-		Strategy:     "auto-commit",
-		Agent:        agent.AgentTypeClaudeCode,
-		Transcript:   []byte("claude transcript"),
-		AuthorName:   "Test Author",
-		AuthorEmail:  "test@example.com",
-	})
-	if err != nil {
-		t.Fatalf("WriteCommitted() second session error = %v", err)
-	}
-
-	metadata := readCheckpointMetadata(t, repo, checkpointID)
-
-	// Verify Agent is the first agent (backwards compat)
-	if metadata.Agent != agent.AgentTypeGemini {
-		t.Errorf("metadata.Agent = %q, want %q (first agent for backwards compat)", metadata.Agent, agent.AgentTypeGemini)
-	}
-
-	// Verify Agents array contains both agents in order
-	if len(metadata.Agents) != 2 {
-		t.Errorf("metadata.Agents length = %d, want 2", len(metadata.Agents))
-	}
-	if len(metadata.Agents) >= 2 {
-		if metadata.Agents[0] != agent.AgentTypeGemini {
-			t.Errorf("metadata.Agents[0] = %q, want %q", metadata.Agents[0], agent.AgentTypeGemini)
-		}
-		if metadata.Agents[1] != agent.AgentTypeClaudeCode {
-			t.Errorf("metadata.Agents[1] = %q, want %q", metadata.Agents[1], agent.AgentTypeClaudeCode)
-		}
-	}
-
-	if metadata.SessionCount != 2 {
-		t.Errorf("metadata.SessionCount = %d, want 2", metadata.SessionCount)
-	}
-}
-
-func TestWriteCommitted_AgentsArray_Deduplication(t *testing.T) {
-	repo, _ := setupBranchTestRepo(t)
-	store := NewGitStore(repo)
-	checkpointID := id.MustCheckpointID("e3f4a5b6c7d8")
-
-	// Two sessions with the same agent
-	for i := 1; i <= 2; i++ {
-		err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
-			CheckpointID: checkpointID,
-			SessionID:    "session-" + string(rune('0'+i)),
-			Strategy:     "auto-commit",
-			Agent:        agent.AgentTypeClaudeCode,
-			Transcript:   []byte("transcript"),
-			AuthorName:   "Test Author",
-			AuthorEmail:  "test@example.com",
-		})
-		if err != nil {
-			t.Fatalf("WriteCommitted() session %d error = %v", i, err)
-		}
-	}
-
-	metadata := readCheckpointMetadata(t, repo, checkpointID)
-
-	// Should only have one agent (deduplicated)
-	if len(metadata.Agents) != 1 {
-		t.Errorf("metadata.Agents length = %d, want 1 (deduplicated)", len(metadata.Agents))
-	}
-	if len(metadata.Agents) > 0 && metadata.Agents[0] != agent.AgentTypeClaudeCode {
-		t.Errorf("metadata.Agents[0] = %q, want %q", metadata.Agents[0], agent.AgentTypeClaudeCode)
-	}
-
-	// But session count should be 2
-	if metadata.SessionCount != 2 {
-		t.Errorf("metadata.SessionCount = %d, want 2", metadata.SessionCount)
-	}
-}
+// Note: Tests for Agents array and SessionCount fields have been removed
+// as those fields were removed from CommittedMetadata in the simplification.
 
 // TestWriteTemporary_Deduplication verifies that WriteTemporary skips creating
 // a new commit when the tree hash matches the previous checkpoint.
@@ -572,12 +509,8 @@ func TestArchiveExistingSession_ChunkedTranscript(t *testing.T) {
 		basePath + paths.ContentHashFileName:         {Name: basePath + paths.ContentHashFileName, Hash: plumbing.NewHash("ggg")},
 	}
 
-	existingMetadata := &CommittedMetadata{
-		SessionCount: 1,
-	}
-
-	// Archive the existing session
-	store.archiveExistingSession(basePath, existingMetadata, entries)
+	// Archive the existing session (sessionCount = 1)
+	store.archiveExistingSession(basePath, 1, entries)
 
 	archivePath := basePath + "1/"
 
@@ -722,8 +655,8 @@ func TestUpdateSummary(t *testing.T) {
 		t.Fatalf("WriteCommitted() error = %v", err)
 	}
 
-	// Verify no summary initially
-	metadata := readCheckpointMetadata(t, repo, checkpointID)
+	// Verify no summary initially (summary is stored in session-level metadata)
+	metadata := readLatestSessionMetadata(t, repo, checkpointID)
 	if metadata.Summary != nil {
 		t.Error("initial checkpoint should not have a summary")
 	}
@@ -746,8 +679,8 @@ func TestUpdateSummary(t *testing.T) {
 		t.Fatalf("UpdateSummary() error = %v", err)
 	}
 
-	// Verify summary was saved
-	updatedMetadata := readCheckpointMetadata(t, repo, checkpointID)
+	// Verify summary was saved (in session-level metadata)
+	updatedMetadata := readLatestSessionMetadata(t, repo, checkpointID)
 	if updatedMetadata.Summary == nil {
 		t.Fatal("updated checkpoint should have a summary")
 	}

@@ -766,13 +766,35 @@ func (s *AutoCommitStrategy) GetTaskCheckpointTranscript(point RewindPoint) ([]b
 		return nil, fmt.Errorf("failed to get metadata tree: %w", err)
 	}
 
-	// MetadataDir for auto-commit task checkpoints is: cond-YYYYMMDD-HHMMSS-XXXXXXXX/tasks/<tool-use-id>
-	// Session transcript is at: cond-YYYYMMDD-HHMMSS-XXXXXXXX/<TranscriptFileName>
+	// MetadataDir for auto-commit task checkpoints is: <id[:2]>/<id[2:]>/tasks/<tool-use-id>
 	// Extract the checkpoint path by removing "/tasks/<tool-use-id>"
 	metadataDir := point.MetadataDir
 	if idx := strings.Index(metadataDir, "/tasks/"); idx > 0 {
 		checkpointPath := metadataDir[:idx]
-		transcriptPath := checkpointPath + "/" + paths.TranscriptFileName
+
+		// Use the first session's transcript path from sessions array
+		transcriptPath := ""
+		summaryFile, summaryErr := tree.File(checkpointPath + "/" + paths.MetadataFileName)
+		if summaryErr == nil {
+			summaryContent, contentErr := summaryFile.Contents()
+			if contentErr == nil {
+				var summary checkpoint.CheckpointSummary
+				if json.Unmarshal([]byte(summaryContent), &summary) == nil && len(summary.Sessions) > 0 {
+					// Use first session's transcript path (task checkpoints have only one session)
+					// SessionFilePaths now contains absolute paths with leading "/"
+					// Strip the leading "/" for tree.File() which expects paths without leading slash
+					if summary.Sessions[0].Transcript != "" {
+						transcriptPath = strings.TrimPrefix(summary.Sessions[0].Transcript, "/")
+					}
+				}
+			}
+		}
+
+		// Fall back to old format if sessions map not available
+		if transcriptPath == "" {
+			transcriptPath = checkpointPath + "/" + paths.TranscriptFileName
+		}
+
 		file, err := tree.File(transcriptPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to find transcript at %s: %w", transcriptPath, err)
