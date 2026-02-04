@@ -1,4 +1,4 @@
-package summarise
+package summarize
 
 import (
 	"context"

@@ -1,5 +1,5 @@
-// Package summarise provides AI-powered summarisation of development sessions.
-package summarise
+// Package summarize provides AI-powered summarization of development sessions.
+package summarize
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 )
 
 // GenerateFromTranscript generates a summary from raw transcript bytes.
-// This is the shared implementation used by both explain --generate and auto-summarise.
+// This is the shared implementation used by both explain --generate and auto-summarize.
 //
 // Parameters:
 //   - ctx: context for cancellation
@@ -27,13 +27,13 @@ func GenerateFromTranscript(ctx context.Context, transcriptBytes []byte, filesTo
 		return nil, errors.New("empty transcript")
 	}
 
-	// Build condensed transcript for summarisation
+	// Build condensed transcript for summarization
 	condensed, err := BuildCondensedTranscriptFromBytes(transcriptBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse transcript: %w", err)
 	}
 	if len(condensed) == 0 {
-		return nil, errors.New("transcript has no content to summarise")
+		return nil, errors.New("transcript has no content to summarize")
 	}
 
 	input := Input{
@@ -61,7 +61,7 @@ type Generator interface {
 	Generate(ctx context.Context, input Input) (*checkpoint.Summary, error)
 }
 
-// Input contains condensed checkpoint data for summarisation.
+// Input contains condensed checkpoint data for summarization.
 type Input struct {
 	// Transcript is the condensed transcript entries
 	Transcript []Entry
@@ -98,7 +98,7 @@ type Entry struct {
 }
 
 // minimalDetailTools lists tools that should show only essential details in summaries.
-// These tools often have verbose outputs that don't add value to summarisation.
+// These tools often have verbose outputs that don't add value to summarization.
 // The detail shown is typically just a path, URL, or identifier rather than full content.
 var minimalDetailTools = map[string]bool{
 	"Skill":    true, // Show skill name only, not loaded content
@@ -118,7 +118,7 @@ func BuildCondensedTranscriptFromBytes(content []byte) ([]Entry, error) {
 
 // BuildCondensedTranscript extracts a condensed view of the transcript.
 // It processes user prompts, assistant responses, and tool calls into
-// a simplified format suitable for LLM summarisation.
+// a simplified format suitable for LLM summarization.
 func BuildCondensedTranscript(lines []transcript.Line) []Entry {
 	var entries []Entry
 

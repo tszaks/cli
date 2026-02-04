@@ -14,7 +14,7 @@ import (
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/summarise"
+	"entire.io/cli/cmd/entire/cli/summarize"
 	"entire.io/cli/cmd/entire/cli/textutil"
 	"entire.io/cli/cmd/entire/cli/transcript"
 
@@ -221,21 +221,21 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 
 	// Generate summary if enabled
 	var summary *cpkg.Summary
-	if isSummariseEnabled() && len(sessionData.Transcript) > 0 {
-		summariseCtx := logging.WithComponent(logCtx, "summarise")
+	if isSummarizeEnabled() && len(sessionData.Transcript) > 0 {
+		summarizeCtx := logging.WithComponent(logCtx, "summarize")
 
 		// Scope transcript to this checkpoint's portion
 		scopedTranscript := transcript.SliceFromLine(sessionData.Transcript, state.TranscriptLinesAtStart)
 		if len(scopedTranscript) > 0 {
 			var err error
-			summary, err = summarise.GenerateFromTranscript(summariseCtx, scopedTranscript, sessionData.FilesTouched, nil)
+			summary, err = summarize.GenerateFromTranscript(summarizeCtx, scopedTranscript, sessionData.FilesTouched, nil)
 			if err != nil {
-				logging.Warn(summariseCtx, "summary generation failed",
+				logging.Warn(summarizeCtx, "summary generation failed",
 					slog.String("session_id", state.SessionID),
 					slog.String("error", err.Error()))
 				// Continue without summary - non-blocking
 			} else {
-				logging.Info(summariseCtx, "summary generated",
+				logging.Info(summarizeCtx, "summary generated",
 					slog.String("session_id", state.SessionID))
 			}
 		}
@@ -480,16 +480,16 @@ func generateContextFromPrompts(prompts []string) []byte {
 	return []byte(buf.String())
 }
 
-// isSummariseEnabled checks if auto-summarise is enabled in settings.
+// isSummarizeEnabled checks if auto-summarize is enabled in settings.
 // Reads the settings file directly to avoid import cycles with the cli package.
 // Checks settings.local.json first, then settings.json.
-func isSummariseEnabled() bool {
+func isSummarizeEnabled() bool {
 	// Try local settings first (user preference, not committed)
 	localSettingsPath, err := paths.AbsPath(".entire/settings.local.json")
 	if err != nil {
 		localSettingsPath = ".entire/settings.local.json"
 	}
-	if enabled, found := readSummariseEnabledFromFile(localSettingsPath); found {
+	if enabled, found := readSummarizeEnabledFromFile(localSettingsPath); found {
 		return enabled
 	}
 
@@ -498,17 +498,17 @@ func isSummariseEnabled() bool {
 	if err != nil {
 		sharedSettingsPath = ".entire/settings.json"
 	}
-	if enabled, found := readSummariseEnabledFromFile(sharedSettingsPath); found {
+	if enabled, found := readSummarizeEnabledFromFile(sharedSettingsPath); found {
 		return enabled
 	}
 
-	// Default: summarise is disabled
+	// Default: summarize is disabled
 	return false
 }
 
-// readSummariseEnabledFromFile reads summarise.enabled from a specific settings file.
+// readSummarizeEnabledFromFile reads summarize.enabled from a specific settings file.
 // Returns (enabled, found). If not found, returns (false, false).
-func readSummariseEnabledFromFile(settingsPath string) (bool, bool) {
+func readSummarizeEnabledFromFile(settingsPath string) (bool, bool) {
 	//nolint:gosec // G304: settingsPath is always a hardcoded constant from this package
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
@@ -526,12 +526,12 @@ func readSummariseEnabledFromFile(settingsPath string) (bool, bool) {
 		return false, false
 	}
 
-	summariseOpts, ok := settings.StrategyOptions["summarise"].(map[string]interface{})
+	summarizeOpts, ok := settings.StrategyOptions["summarize"].(map[string]interface{})
 	if !ok {
 		return false, false
 	}
 
-	enabled, ok := summariseOpts["enabled"].(bool)
+	enabled, ok := summarizeOpts["enabled"].(bool)
 	if !ok {
 		return false, false
 	}

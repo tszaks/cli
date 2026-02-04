@@ -257,10 +257,10 @@ type WriteCommittedOptions struct {
 
 	// Summary is an optional AI-generated summary for this checkpoint.
 	// This field may be nil when:
-	//   - summarisation is disabled in settings
+	//   - summarization is disabled in settings
 	//   - summary generation failed (non-blocking, logged as warning)
-	//   - the transcript was empty or too short to summarise
-	//   - the checkpoint predates the summarisation feature
+	//   - the transcript was empty or too short to summarize
+	//   - the checkpoint predates the summarization feature
 	Summary *Summary
 }
 
