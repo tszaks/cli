@@ -22,8 +22,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-const testSession1 = "session-1"
-
 func TestCheckpointType_Values(t *testing.T) {
 	// Verify the enum values are distinct
 	if Temporary == Committed {

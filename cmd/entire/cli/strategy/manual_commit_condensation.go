@@ -85,18 +85,18 @@ func (s *ManualCommitStrategy) getCheckpointLog(checkpointID id.CheckpointID) ([
 		return nil, fmt.Errorf("failed to get checkpoint store: %w", err)
 	}
 
-	result, err := store.ReadCommitted(context.Background(), checkpointID)
+	content, err := store.ReadLatestSessionContent(context.Background(), checkpointID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read checkpoint: %w", err)
 	}
-	if result == nil {
+	if content == nil {
 		return nil, fmt.Errorf("checkpoint not found: %s", checkpointID)
 	}
-	if len(result.Transcript) == 0 {
+	if len(content.Transcript) == 0 {
 		return nil, fmt.Errorf("no transcript found for checkpoint: %s", checkpointID)
 	}
 
-	return result.Transcript, nil
+	return content.Transcript, nil
 }
 
 // CondenseSession condenses a session's shadow branch to permanent storage.
