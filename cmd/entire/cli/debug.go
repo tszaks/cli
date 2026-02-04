@@ -190,10 +190,11 @@ func printTranscriptChanges(w io.Writer, transcriptPath, currentSession, repoRoo
 		if loadErr != nil {
 			fmt.Fprintf(w, "  Error loading pre-prompt state: %v\n", loadErr)
 		}
-		newFiles, deletedFiles, err = ComputeFileChanges(preState)
-		if err != nil {
-			fmt.Fprintf(w, "  Error computing file changes: %v\n", err)
-		}
+	}
+	// Always call ComputeFileChanges - deleted files don't depend on preState
+	newFiles, deletedFiles, err = ComputeFileChanges(preState)
+	if err != nil {
+		fmt.Fprintf(w, "  Error computing file changes: %v\n", err)
 	}
 
 	// Filter and normalize paths
