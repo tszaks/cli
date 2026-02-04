@@ -28,19 +28,31 @@ func TestExplain_NoCurrentSession(t *testing.T) {
 	})
 }
 
-func TestExplain_SessionNotFound(t *testing.T) {
+func TestExplain_SessionFilter(t *testing.T) {
 	t.Parallel()
 	RunForAllStrategies(t, func(t *testing.T, env *TestEnv, strategyName string) {
-		// Try to explain a non-existent session
+		// --session now filters the list view instead of showing session details
+		// A nonexistent session ID should show an empty list, not an error
 		output, err := env.RunCLIWithError("explain", "--session", "nonexistent-session-id")
 
-		if err == nil {
-			t.Errorf("expected error for nonexistent session, got output: %s", output)
+		if err != nil {
+			t.Errorf("expected success (empty list) for session filter, got error: %v, output: %s", err, output)
 			return
 		}
 
-		if !strings.Contains(output, "session not found") {
-			t.Errorf("expected 'session not found' error, got: %s", output)
+		// Should show branch header
+		if !strings.Contains(output, "Branch:") {
+			t.Errorf("expected 'Branch:' header in output, got: %s", output)
+		}
+
+		// Should show 0 checkpoints (filter found no matches)
+		if !strings.Contains(output, "Checkpoints: 0") {
+			t.Errorf("expected 'Checkpoints: 0' for nonexistent session filter, got: %s", output)
+		}
+
+		// Should show filter info
+		if !strings.Contains(output, "Filtered by session:") {
+			t.Errorf("expected 'Filtered by session:' in output, got: %s", output)
 		}
 	})
 }

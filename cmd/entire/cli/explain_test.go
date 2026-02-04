@@ -97,31 +97,6 @@ func TestExplainCmd_RejectsPositionalArgs(t *testing.T) {
 	}
 }
 
-func TestExplainSession_NotFound(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	// Initialize git repo
-	if _, err := git.PlainInit(tmpDir, false); err != nil {
-		t.Fatalf("failed to init git repo: %v", err)
-	}
-
-	// Create .entire directory
-	if err := os.MkdirAll(".entire", 0o750); err != nil {
-		t.Fatalf("failed to create .entire dir: %v", err)
-	}
-
-	var stdout bytes.Buffer
-	err := runExplainSession(&stdout, "nonexistent-session", false)
-
-	if err == nil {
-		t.Error("expected error for nonexistent session, got nil")
-	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("expected 'not found' in error, got: %v", err)
-	}
-}
-
 func TestExplainCommit_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
@@ -1234,7 +1209,7 @@ func TestFormatBranchCheckpoints_BasicOutput(t *testing.T) {
 		},
 	}
 
-	output := formatBranchCheckpoints("feature/my-branch", points)
+	output := formatBranchCheckpoints("feature/my-branch", points, "")
 
 	// Should show branch name
 	if !strings.Contains(output, "feature/my-branch") {
@@ -1287,7 +1262,7 @@ func TestFormatBranchCheckpoints_GroupedByCheckpointID(t *testing.T) {
 		},
 	}
 
-	output := formatBranchCheckpoints("main", points)
+	output := formatBranchCheckpoints("main", points, "")
 
 	// Should group by checkpoint ID - check for checkpoint headers
 	if !strings.Contains(output, "[chk111111111]") {
@@ -1314,7 +1289,7 @@ func TestFormatBranchCheckpoints_GroupedByCheckpointID(t *testing.T) {
 }
 
 func TestFormatBranchCheckpoints_NoCheckpoints(t *testing.T) {
-	output := formatBranchCheckpoints("feature/empty-branch", nil)
+	output := formatBranchCheckpoints("feature/empty-branch", nil, "")
 
 	// Should show branch name
 	if !strings.Contains(output, "feature/empty-branch") {
@@ -1340,7 +1315,7 @@ func TestFormatBranchCheckpoints_ShowsSessionInfo(t *testing.T) {
 		},
 	}
 
-	output := formatBranchCheckpoints("main", points)
+	output := formatBranchCheckpoints("main", points, "")
 
 	// Should show session prompt
 	if !strings.Contains(output, "This is my test prompt") {
@@ -1369,7 +1344,7 @@ func TestFormatBranchCheckpoints_ShowsTemporaryIndicator(t *testing.T) {
 		},
 	}
 
-	output := formatBranchCheckpoints("main", points)
+	output := formatBranchCheckpoints("main", points, "")
 
 	// Should indicate temporary (non-committed) checkpoints with [temporary]
 	if !strings.Contains(output, "[temporary]") {
@@ -1400,7 +1375,7 @@ func TestFormatBranchCheckpoints_ShowsTaskCheckpoints(t *testing.T) {
 		},
 	}
 
-	output := formatBranchCheckpoints("main", points)
+	output := formatBranchCheckpoints("main", points, "")
 
 	// Should indicate task checkpoint
 	if !strings.Contains(output, "[Task]") && !strings.Contains(output, "task") {
@@ -1421,7 +1396,7 @@ func TestFormatBranchCheckpoints_TruncatesLongMessages(t *testing.T) {
 		},
 	}
 
-	output := formatBranchCheckpoints("main", points)
+	output := formatBranchCheckpoints("main", points, "")
 
 	// Output should not contain the full 200 character message
 	if strings.Contains(output, longMessage) {
@@ -2264,5 +2239,140 @@ func TestRunExplainCommit_WithCheckpointTrailer(t *testing.T) {
 	// Error should mention checkpoint not found
 	if !strings.Contains(err.Error(), "checkpoint not found") && !strings.Contains(err.Error(), "abc123def456") {
 		t.Errorf("expected error about checkpoint not found, got: %v", err)
+	}
+}
+
+func TestFormatBranchCheckpoints_SessionFilter(t *testing.T) {
+	now := time.Now()
+	points := []strategy.RewindPoint{
+		{
+			ID:            "abc123def456",
+			Message:       "Checkpoint from session 1",
+			Date:          now,
+			CheckpointID:  "chk111111111",
+			SessionID:     "2026-01-22-session-alpha",
+			SessionPrompt: "Task for session alpha",
+		},
+		{
+			ID:            "def456ghi789",
+			Message:       "Checkpoint from session 2",
+			Date:          now.Add(-time.Hour),
+			CheckpointID:  "chk222222222",
+			SessionID:     "2026-01-22-session-beta",
+			SessionPrompt: "Task for session beta",
+		},
+		{
+			ID:            "ghi789jkl012",
+			Message:       "Another checkpoint from session 1",
+			Date:          now.Add(-2 * time.Hour),
+			CheckpointID:  "chk333333333",
+			SessionID:     "2026-01-22-session-alpha",
+			SessionPrompt: "Another task for session alpha",
+		},
+	}
+
+	t.Run("no filter shows all checkpoints", func(t *testing.T) {
+		output := formatBranchCheckpoints("main", points, "")
+
+		// Should show all checkpoints
+		if !strings.Contains(output, "Checkpoints: 3") {
+			t.Errorf("expected 'Checkpoints: 3' in output, got:\n%s", output)
+		}
+		// Should show prompts from both sessions
+		if !strings.Contains(output, "Task for session alpha") {
+			t.Errorf("expected alpha session prompt in output, got:\n%s", output)
+		}
+		if !strings.Contains(output, "Task for session beta") {
+			t.Errorf("expected beta session prompt in output, got:\n%s", output)
+		}
+	})
+
+	t.Run("filter by exact session ID", func(t *testing.T) {
+		output := formatBranchCheckpoints("main", points, "2026-01-22-session-alpha")
+
+		// Should show only alpha checkpoints (2 of them)
+		if !strings.Contains(output, "Checkpoints: 2") {
+			t.Errorf("expected 'Checkpoints: 2' in output, got:\n%s", output)
+		}
+		if !strings.Contains(output, "Task for session alpha") {
+			t.Errorf("expected alpha session prompt in output, got:\n%s", output)
+		}
+		// Should NOT contain beta session prompt
+		if strings.Contains(output, "Task for session beta") {
+			t.Errorf("expected output to NOT contain beta session prompt, got:\n%s", output)
+		}
+		// Should show filter info
+		if !strings.Contains(output, "Filtered by session:") {
+			t.Errorf("expected 'Filtered by session:' in output, got:\n%s", output)
+		}
+	})
+
+	t.Run("filter by session ID prefix", func(t *testing.T) {
+		output := formatBranchCheckpoints("main", points, "2026-01-22-session-b")
+
+		// Should show only beta checkpoint (1)
+		if !strings.Contains(output, "Checkpoints: 1") {
+			t.Errorf("expected 'Checkpoints: 1' in output, got:\n%s", output)
+		}
+		if !strings.Contains(output, "Task for session beta") {
+			t.Errorf("expected beta session prompt in output, got:\n%s", output)
+		}
+	})
+
+	t.Run("filter with no matches", func(t *testing.T) {
+		output := formatBranchCheckpoints("main", points, "nonexistent-session")
+
+		// Should show 0 checkpoints
+		if !strings.Contains(output, "Checkpoints: 0") {
+			t.Errorf("expected 'Checkpoints: 0' in output, got:\n%s", output)
+		}
+		// Should show filter info even with no matches
+		if !strings.Contains(output, "Filtered by session:") {
+			t.Errorf("expected 'Filtered by session:' in output, got:\n%s", output)
+		}
+	})
+}
+
+func TestRunExplain_SessionFlagFiltersListView(t *testing.T) {
+	// Test that --session alone (without --checkpoint or --commit) filters the list view
+	// This is a unit test for the routing logic
+	var buf, errBuf bytes.Buffer
+
+	// When session is specified alone, it should NOT error for mutual exclusivity
+	// It should route to the list view with a filter (which may fail for other reasons
+	// like not being in a git repo, but not for mutual exclusivity)
+	err := runExplain(&buf, &errBuf, "some-session", "", "", false, false, false, false, false, false, false)
+
+	// Should NOT be a mutual exclusivity error
+	if err != nil && strings.Contains(err.Error(), "cannot specify multiple") {
+		t.Errorf("--session alone should not trigger mutual exclusivity error, got: %v", err)
+	}
+}
+
+func TestRunExplain_SessionWithCheckpointStillMutuallyExclusive(t *testing.T) {
+	// Test that --session with --checkpoint is still an error
+	var buf, errBuf bytes.Buffer
+
+	err := runExplain(&buf, &errBuf, "some-session", "", "some-checkpoint", false, false, false, false, false, false, false)
+
+	if err == nil {
+		t.Error("expected error when --session and --checkpoint both specified")
+	}
+	if !strings.Contains(err.Error(), "cannot specify multiple") {
+		t.Errorf("expected 'cannot specify multiple' error, got: %v", err)
+	}
+}
+
+func TestRunExplain_SessionWithCommitStillMutuallyExclusive(t *testing.T) {
+	// Test that --session with --commit is still an error
+	var buf, errBuf bytes.Buffer
+
+	err := runExplain(&buf, &errBuf, "some-session", "some-commit", "", false, false, false, false, false, false, false)
+
+	if err == nil {
+		t.Error("expected error when --session and --commit both specified")
+	}
+	if !strings.Contains(err.Error(), "cannot specify multiple") {
+		t.Errorf("expected 'cannot specify multiple' error, got: %v", err)
 	}
 }

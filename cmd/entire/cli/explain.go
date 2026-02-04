@@ -68,8 +68,15 @@ func newExplainCmd() *cobra.Command {
 Use this command to understand what happened during agent-driven development,
 either for self-review or to understand a teammate's work.
 
-By default, shows checkpoints on the current branch. Use flags to explain a specific
-session, commit, or checkpoint.
+By default, shows checkpoints on the current branch. Use flags to filter or
+explain specific items.
+
+Filtering the list view:
+  --session      Filter checkpoints by session ID (or prefix)
+
+Viewing specific items:
+  --commit       Explain a specific commit (shows its associated checkpoint)
+  --checkpoint   Explain a specific checkpoint by ID
 
 Output verbosity levels (for --checkpoint):
   Default:         Detailed view with scoped prompts (ID, session, tokens, intent, prompts, files)
@@ -81,7 +88,7 @@ Summary generation (for --checkpoint):
   --generate    Generate an AI summary for the checkpoint
   --force       Regenerate even if a summary already exists (requires --generate)
 
-Only one of --session, --commit, or --checkpoint can be specified at a time.`,
+Note: --session filters the list view; --commit and --checkpoint are mutually exclusive.`,
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				return fmt.Errorf("unexpected argument %q\nHint: use --checkpoint, --session, or --commit to specify what to explain", args[0])
@@ -111,7 +118,7 @@ Only one of --session, --commit, or --checkpoint can be specified at a time.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&sessionFlag, "session", "", "Explain a specific session (ID or prefix)")
+	cmd.Flags().StringVar(&sessionFlag, "session", "", "Filter checkpoints by session ID (or prefix)")
 	cmd.Flags().StringVar(&commitFlag, "commit", "", "Explain a specific commit (SHA or ref)")
 	cmd.Flags().StringVarP(&checkpointFlag, "checkpoint", "c", "", "Explain a specific checkpoint (ID or prefix)")
 	cmd.Flags().BoolVar(&noPagerFlag, "no-pager", false, "Disable pager output")
@@ -132,25 +139,24 @@ Only one of --session, --commit, or --checkpoint can be specified at a time.`,
 
 // runExplain routes to the appropriate explain function based on flags.
 func runExplain(w, errW io.Writer, sessionID, commitRef, checkpointID string, noPager, verbose, full, rawTranscript, generate, force, searchAll bool) error {
-	// Count mutually exclusive flags
+	// Count mutually exclusive flags (--commit and --checkpoint are mutually exclusive)
+	// --session is now a filter for the list view, not a separate mode
 	flagCount := 0
-	if sessionID != "" {
-		flagCount++
-	}
 	if commitRef != "" {
 		flagCount++
 	}
 	if checkpointID != "" {
 		flagCount++
 	}
+	// If --session is combined with --commit or --checkpoint, that's still an error
+	if sessionID != "" && flagCount > 0 {
+		return errors.New("cannot specify multiple of --session, --commit, --checkpoint")
+	}
 	if flagCount > 1 {
 		return errors.New("cannot specify multiple of --session, --commit, --checkpoint")
 	}
 
 	// Route to appropriate handler
-	if sessionID != "" {
-		return runExplainSession(w, sessionID, noPager)
-	}
 	if commitRef != "" {
 		return runExplainCommit(w, commitRef, noPager, verbose, full, searchAll)
 	}
@@ -158,8 +164,8 @@ func runExplain(w, errW io.Writer, sessionID, commitRef, checkpointID string, no
 		return runExplainCheckpoint(w, errW, checkpointID, noPager, verbose, full, rawTranscript, generate, force, searchAll)
 	}
 
-	// Default: explain current session
-	return runExplainDefault(w, noPager)
+	// Default or with session filter: show list view (optionally filtered by session)
+	return runExplainBranchWithFilter(w, noPager, sessionID)
 }
 
 // runExplainCheckpoint explains a specific checkpoint.
@@ -979,9 +985,9 @@ func convertTemporaryCheckpoint(repo *git.Repository, tc checkpoint.TemporaryChe
 	}
 }
 
-// runExplainBranchDefault shows all checkpoints on the current branch grouped by date.
+// runExplainBranchWithFilter shows checkpoints on the current branch, optionally filtered by session.
 // This is strategy-agnostic - it queries checkpoints directly.
-func runExplainBranchDefault(w io.Writer, noPager bool) error {
+func runExplainBranchWithFilter(w io.Writer, noPager bool, sessionFilter string) error {
 	repo, err := openRepository()
 	if err != nil {
 		return fmt.Errorf("not a git repository: %w", err)
@@ -1013,10 +1019,16 @@ func runExplainBranchDefault(w io.Writer, noPager bool) error {
 	}
 
 	// Format output
-	output := formatBranchCheckpoints(branchName, points)
+	output := formatBranchCheckpoints(branchName, points, sessionFilter)
 
 	outputExplainContent(w, output, noPager)
 	return nil
+}
+
+// runExplainBranchDefault shows all checkpoints on the current branch grouped by date.
+// This is a convenience wrapper that calls runExplainBranchWithFilter with no filter.
+func runExplainBranchDefault(w io.Writer, noPager bool) error {
+	return runExplainBranchWithFilter(w, noPager, "")
 }
 
 // outputExplainContent outputs content with optional pager support.
@@ -1026,162 +1038,6 @@ func outputExplainContent(w io.Writer, content string, noPager bool) {
 	} else {
 		outputWithPager(w, content)
 	}
-}
-
-// runExplainSession explains a specific session.
-func runExplainSession(w io.Writer, sessionID string, noPager bool) error {
-	strat := GetStrategy()
-
-	// Get session details
-	session, err := strategy.GetSession(sessionID)
-	if err != nil {
-		if errors.Is(err, strategy.ErrNoSession) {
-			return fmt.Errorf("session not found: %s", sessionID)
-		}
-		return fmt.Errorf("failed to get session: %w", err)
-	}
-
-	// Get source ref (metadata branch + commit) for this session
-	sourceRef := strat.GetSessionMetadataRef(session.ID)
-
-	// Gather checkpoint details
-	checkpointDetails := gatherCheckpointDetails(strat, session)
-
-	// For strategies like shadow where active sessions may not have checkpoints,
-	// try to get the current session transcript directly
-	if len(checkpointDetails) == 0 && len(session.Checkpoints) == 0 {
-		checkpointDetails = gatherCurrentSessionDetails(strat, session)
-	}
-
-	// Format output
-	output := formatSessionInfo(session, sourceRef, checkpointDetails)
-
-	// Output with pager if appropriate
-	if noPager {
-		fmt.Fprint(w, output)
-	} else {
-		outputWithPager(w, output)
-	}
-
-	return nil
-}
-
-// gatherCurrentSessionDetails attempts to get transcript info for sessions without checkpoints.
-// This handles strategies like shadow where active sessions may not have checkpoint commits.
-func gatherCurrentSessionDetails(strat strategy.Strategy, session *strategy.Session) []checkpointDetail {
-	// Try to get transcript via GetSessionContext which reads from metadata branch
-	// For shadow, we can read the transcript from the same location pattern
-	contextContent := strat.GetSessionContext(session.ID)
-	if contextContent == "" {
-		return nil
-	}
-
-	// Parse the context.md to extract the last prompt/summary
-	// Context.md typically has sections like "# Prompt\n...\n## Summary\n..."
-	detail := checkpointDetail{
-		Index:     1,
-		Timestamp: session.StartTime,
-		Message:   "Current session",
-	}
-
-	// Try to extract prompt and summary from context.md
-	lines := strings.Split(contextContent, "\n")
-	var inPrompt, inSummary bool
-	var promptLines, summaryLines []string
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "# ") && strings.Contains(strings.ToLower(trimmed), "prompt") {
-			inPrompt = true
-			inSummary = false
-			continue
-		}
-		if strings.HasPrefix(trimmed, "## ") && strings.Contains(strings.ToLower(trimmed), "summary") {
-			inPrompt = false
-			inSummary = true
-			continue
-		}
-		if strings.HasPrefix(trimmed, "## ") || strings.HasPrefix(trimmed, "# ") {
-			inPrompt = false
-			inSummary = false
-			continue
-		}
-
-		if inPrompt {
-			promptLines = append(promptLines, line)
-		} else if inSummary {
-			summaryLines = append(summaryLines, line)
-		}
-	}
-
-	var inter interaction
-	if len(promptLines) > 0 {
-		inter.Prompt = strings.TrimSpace(strings.Join(promptLines, "\n"))
-	}
-	if len(summaryLines) > 0 {
-		inter.Responses = []string{strings.TrimSpace(strings.Join(summaryLines, "\n"))}
-	}
-
-	// If we couldn't parse structured content, show the raw context
-	if inter.Prompt == "" && len(inter.Responses) == 0 {
-		inter.Responses = []string{contextContent}
-	}
-
-	if inter.Prompt != "" || len(inter.Responses) > 0 {
-		detail.Interactions = []interaction{inter}
-	}
-
-	return []checkpointDetail{detail}
-}
-
-// gatherCheckpointDetails extracts detailed information for each checkpoint.
-// Checkpoints come in newest-first order, but we number them oldest=1, newest=N.
-func gatherCheckpointDetails(strat strategy.Strategy, session *strategy.Session) []checkpointDetail {
-	details := make([]checkpointDetail, 0, len(session.Checkpoints))
-	total := len(session.Checkpoints)
-
-	for i, cp := range session.Checkpoints {
-		detail := checkpointDetail{
-			Index:            total - i, // Reverse numbering: oldest=1, newest=N
-			Timestamp:        cp.Timestamp,
-			IsTaskCheckpoint: cp.IsTaskCheckpoint,
-			Message:          cp.Message,
-		}
-
-		// Use checkpoint ID for display (truncate long IDs)
-		detail.ShortID = cp.CheckpointID.String()
-		if len(detail.ShortID) > 12 {
-			detail.ShortID = detail.ShortID[:12]
-		}
-
-		// Try to get transcript for this checkpoint
-		transcriptContent, err := strat.GetCheckpointLog(cp)
-		if err == nil {
-			transcript, parseErr := parseTranscriptFromBytes(transcriptContent)
-			if parseErr == nil {
-				// Extract all prompt/response pairs from the transcript
-				pairs := ExtractAllPromptResponses(transcript)
-				for _, pair := range pairs {
-					detail.Interactions = append(detail.Interactions, interaction(pair))
-				}
-
-				// Aggregate all files for the checkpoint
-				fileSet := make(map[string]bool)
-				for _, pair := range pairs {
-					for _, f := range pair.Files {
-						if !fileSet[f] {
-							fileSet[f] = true
-							detail.Files = append(detail.Files, f)
-						}
-					}
-				}
-			}
-		}
-
-		details = append(details, detail)
-	}
-
-	return details
 }
 
 // runExplainCommit looks up the checkpoint associated with a commit.
@@ -1351,14 +1207,29 @@ const (
 
 // formatBranchCheckpoints formats checkpoint information for a branch.
 // Groups commits by checkpoint ID and shows the prompt for each checkpoint.
-func formatBranchCheckpoints(branchName string, points []strategy.RewindPoint) string {
+// If sessionFilter is non-empty, only shows checkpoints matching that session ID (or prefix).
+func formatBranchCheckpoints(branchName string, points []strategy.RewindPoint, sessionFilter string) string {
 	var sb strings.Builder
 
 	// Branch header
 	fmt.Fprintf(&sb, "Branch: %s\n", branchName)
 
+	// Filter by session if specified
+	if sessionFilter != "" {
+		var filtered []strategy.RewindPoint
+		for _, p := range points {
+			if p.SessionID == sessionFilter || strings.HasPrefix(p.SessionID, sessionFilter) {
+				filtered = append(filtered, p)
+			}
+		}
+		points = filtered
+	}
+
 	if len(points) == 0 {
 		sb.WriteString("Checkpoints: 0\n")
+		if sessionFilter != "" {
+			fmt.Fprintf(&sb, "Filtered by session: %s\n", sessionFilter)
+		}
 		sb.WriteString("\nNo checkpoints found on this branch.\n")
 		sb.WriteString("Checkpoints will appear here after you save changes during a Claude session.\n")
 		return sb.String()
@@ -1368,6 +1239,9 @@ func formatBranchCheckpoints(branchName string, points []strategy.RewindPoint) s
 	groups := groupByCheckpointID(points)
 
 	fmt.Fprintf(&sb, "Checkpoints: %d\n", len(groups))
+	if sessionFilter != "" {
+		fmt.Fprintf(&sb, "Filtered by session: %s\n", sessionFilter)
+	}
 	sb.WriteString("\n")
 
 	// Output each checkpoint group
