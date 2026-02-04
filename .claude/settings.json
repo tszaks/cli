@@ -11,6 +11,17 @@
         ]
       }
     ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "go run ${CLAUDE_PROJECT_DIR}/cmd/entire/main.go hooks claude-code session-end"
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "matcher": "",
