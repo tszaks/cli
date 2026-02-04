@@ -358,11 +358,7 @@ func findTranscriptForSession(sessionID, repoRoot string) (string, error) {
 			return "", fmt.Errorf("failed to get agent for type %q: %w", sessionState.AgentType, err)
 		}
 	} else {
-		// Fall back to auto-detection if no session state
-		ag, err = GetAgent()
-		if err != nil {
-			return "", fmt.Errorf("failed to get agent: %w", err)
-		}
+		return "", fmt.Errorf("failed to get agent from sessionID: %s", sessionID)
 	}
 
 	// Get the session directory for this agent

@@ -49,7 +49,7 @@ func (s *ManualCommitStrategy) GetSessionInfo() (*SessionInfo, error) {
 
 	// Return info for most recent session
 	state := sessions[0]
-	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit)
+	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 
 	info := &SessionInfo{
@@ -174,7 +174,7 @@ func (s *ManualCommitStrategy) GetAdditionalSessions() ([]*Session, error) {
 		}
 
 		// Try to get description from shadow branch
-		if description := s.getDescriptionFromShadowBranch(state.SessionID, state.BaseCommit); description != "" {
+		if description := s.getDescriptionFromShadowBranch(state.SessionID, state.BaseCommit, state.WorktreeID); description != "" {
 			session.Description = description
 		}
 
@@ -186,13 +186,13 @@ func (s *ManualCommitStrategy) GetAdditionalSessions() ([]*Session, error) {
 
 // getDescriptionFromShadowBranch reads the session description from the shadow branch.
 // sessionID is expected to be an Entire session ID (already date-prefixed like "2026-01-12-abc123").
-func (s *ManualCommitStrategy) getDescriptionFromShadowBranch(sessionID, baseCommit string) string {
+func (s *ManualCommitStrategy) getDescriptionFromShadowBranch(sessionID, baseCommit, worktreeID string) string {
 	repo, err := OpenRepository()
 	if err != nil {
 		return ""
 	}
 
-	shadowBranchName := getShadowBranchNameForCommit(baseCommit)
+	shadowBranchName := getShadowBranchNameForCommit(baseCommit, worktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	ref, err := repo.Reference(refName, true)
 	if err != nil {
@@ -209,9 +209,8 @@ func (s *ManualCommitStrategy) getDescriptionFromShadowBranch(sessionID, baseCom
 		return ""
 	}
 
-	// Use SessionMetadataDirFromEntireID since sessionID is already an Entire session ID
-	// (with date prefix like "2026-01-12-abc123")
-	metadataDir := paths.SessionMetadataDirFromEntireID(sessionID)
+	// Use the session ID directly as the metadata directory name
+	metadataDir := paths.SessionMetadataDirFromSessionID(sessionID)
 	return getSessionDescriptionFromTree(tree, metadataDir)
 }
 

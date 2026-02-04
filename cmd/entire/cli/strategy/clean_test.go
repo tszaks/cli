@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"entire.io/cli/cmd/entire/cli/checkpoint"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 )
@@ -14,17 +16,23 @@ func TestIsShadowBranch(t *testing.T) {
 		branchName string
 		want       bool
 	}{
-		// Valid shadow branches (7+ hex chars)
-		{"7 hex chars", "entire/abc1234", true},
-		{"7 hex chars numeric", "entire/1234567", true},
-		{"full commit hash", "entire/abcdef0123456789abcdef0123456789abcdef01", true},
-		{"mixed case hex", "entire/AbCdEf1", true},
+		// Valid shadow branches - old format (7+ hex chars)
+		{"old format: 7 hex chars", "entire/abc1234", true},
+		{"old format: 7 hex chars numeric", "entire/1234567", true},
+		{"old format: full commit hash", "entire/abcdef0123456789abcdef0123456789abcdef01", true},
+		{"old format: mixed case hex", "entire/AbCdEf1", true},
+
+		// Valid shadow branches - new format with worktree hash (7 hex + dash + 6 hex)
+		{"new format: standard", "entire/abc1234-e3b0c4", true},
+		{"new format: numeric worktree hash", "entire/1234567-123456", true},
+		{"new format: full commit with worktree", "entire/abcdef0123456789-fedcba", true},
+		{"new format: mixed case", "entire/AbCdEf1-AbCdEf", true},
 
 		// Invalid patterns
 		{"empty after prefix", "entire/", false},
-		{"too short (6 chars)", "entire/abc123", false},
-		{"too short (1 char)", "entire/a", false},
-		{"non-hex chars", "entire/ghijklm", false},
+		{"too short commit (6 chars)", "entire/abc123", false},
+		{"too short commit (1 char)", "entire/a", false},
+		{"non-hex chars in commit", "entire/ghijklm", false},
 		{"sessions branch", "entire/sessions", false},
 		{"no prefix", "abc1234", false},
 		{"wrong prefix", "feature/abc1234", false},
@@ -33,6 +41,10 @@ func TestIsShadowBranch(t *testing.T) {
 		{"empty string", "", false},
 		{"just entire", "entire", false},
 		{"entire with slash only", "entire/", false},
+		{"worktree hash too short (5 chars)", "entire/abc1234-e3b0c", false},
+		{"worktree hash too long (7 chars)", "entire/abc1234-e3b0c44", false},
+		{"non-hex in worktree hash", "entire/abc1234-ghijkl", false},
+		{"missing commit hash", "entire/-e3b0c4", false},
 	}
 
 	for _, tt := range tests {
@@ -353,19 +365,13 @@ func TestListOrphanedSessionStates_RecentSessionNotOrphaned(t *testing.T) {
 	}
 }
 
-// TestListOrphanedSessionStates_HashLengthMismatch tests that session states are correctly
-// matched against shadow branches even when hash lengths differ.
+// TestListOrphanedSessionStates_ShadowBranchMatching tests that session states are correctly
+// matched against shadow branches using worktree-specific naming.
 //
-// P1 Bug: Shadow branches use 7-char hashes (e.g., "entire/abc1234") but session states
-// store the full 40-char BaseCommit hash. The current comparison at line 192 does:
-//
-//	shadowBranchSet[state.BaseCommit]
-//
-// where shadowBranchSet has 7-char keys but state.BaseCommit is 40 chars.
-// This comparison always fails, causing valid sessions to be marked as orphaned.
-//
-// This test should FAIL with the current implementation, demonstrating the bug.
-func TestListOrphanedSessionStates_HashLengthMismatch(t *testing.T) {
+// Shadow branches use the format "entire/<commit[:7]>-<worktreeHash[:6]>" and session states
+// store both the full BaseCommit and WorktreeID. The comparison constructs the expected
+// branch name from these fields and checks if it exists.
+func TestListOrphanedSessionStates_ShadowBranchMatching(t *testing.T) {
 	// Setup: create a temp git repo
 	dir := t.TempDir()
 	repo, err := git.PlainInit(dir, false)
@@ -392,21 +398,22 @@ func TestListOrphanedSessionStates_HashLengthMismatch(t *testing.T) {
 		t.Fatalf("failed to set master: %v", err)
 	}
 
-	// Create a shadow branch using the 7-char hash (matching real behavior)
-	// Real code: shadowBranch := "entire/" + baseHead[:7]
-	shortHash := commitHash.String()[:7]
-	shadowBranchName := "entire/" + shortHash
+	// Create a shadow branch using worktree-specific naming (matching real behavior)
+	// Real code: shadowBranch := checkpoint.ShadowBranchNameForCommit(baseCommit, worktreeID)
+	fullHash := commitHash.String()
+	worktreeID := "" // Main worktree
+	shadowBranchName := checkpoint.ShadowBranchNameForCommit(fullHash, worktreeID)
 	shadowRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(shadowBranchName), commitHash)
 	if err := repo.Storer.SetReference(shadowRef); err != nil {
 		t.Fatalf("failed to create shadow branch: %v", err)
 	}
 
-	// Create a session state with the FULL 40-char hash (matching real behavior)
-	// Real code: state.BaseCommit = head.Hash().String()
-	fullHash := commitHash.String()
+	// Create a session state with the FULL 40-char hash and WorktreeID (matching real behavior)
+	// Real code: state.BaseCommit = head.Hash().String(), state.WorktreeID = worktreeID
 	state := &SessionState{
 		SessionID:       "session-with-shadow-branch",
-		BaseCommit:      fullHash, // Full 40-char hash!
+		BaseCommit:      fullHash, // Full 40-char hash
+		WorktreeID:      worktreeID,
 		StartedAt:       time.Now().Add(-1 * time.Hour),
 		CheckpointCount: 1,
 	}
@@ -414,7 +421,7 @@ func TestListOrphanedSessionStates_HashLengthMismatch(t *testing.T) {
 		t.Fatalf("SaveSessionState() error = %v", err)
 	}
 
-	// Verify the shadow branch exists and uses short hash
+	// Verify the shadow branch exists with worktree-specific name
 	shadowBranches, err := ListShadowBranches()
 	if err != nil {
 		t.Fatalf("ListShadowBranches() error = %v", err)
@@ -423,10 +430,10 @@ func TestListOrphanedSessionStates_HashLengthMismatch(t *testing.T) {
 		t.Fatalf("Expected shadow branch %q, got %v", shadowBranchName, shadowBranches)
 	}
 
-	// Verify the hash length mismatch exists
-	t.Logf("Shadow branch hash (7 chars): %q", shortHash)
+	// Log info about the branch naming
+	t.Logf("Shadow branch name: %q", shadowBranchName)
 	t.Logf("Session BaseCommit (40 chars): %q", fullHash)
-	t.Logf("Are they equal? %v (they should match by prefix)", shortHash == fullHash)
+	t.Logf("Session WorktreeID: %q", worktreeID)
 
 	// List orphaned session states
 	orphaned, err := ListOrphanedSessionStates()
@@ -435,19 +442,18 @@ func TestListOrphanedSessionStates_HashLengthMismatch(t *testing.T) {
 	}
 
 	// The session should NOT be marked as orphaned because it HAS a shadow branch!
-	// The shadow branch exists (entire/<7-char-hash>), but the current code compares
-	// the 7-char hash against the 40-char BaseCommit, which always fails.
+	// With worktree-specific naming, the expected branch name is constructed from
+	// BaseCommit and WorktreeID, which should match the actual shadow branch.
 	for _, item := range orphaned {
 		if item.ID == "session-with-shadow-branch" {
-			t.Errorf("ListOrphanedSessionStates() incorrectly marked session as orphaned due to hash length mismatch.\n"+
-				"Shadow branch exists: %q (uses 7-char hash: %q)\n"+
-				"Session BaseCommit: %q (40-char hash)\n"+
-				"The comparison shadowBranchSet[state.BaseCommit] fails because:\n"+
-				"  - shadowBranchSet contains key %q (7 chars)\n"+
-				"  - state.BaseCommit is %q (40 chars)\n"+
-				"Expected: session to be recognized as having a shadow branch.\n"+
+			t.Errorf("ListOrphanedSessionStates() incorrectly marked session as orphaned.\n"+
+				"Shadow branch exists: %q\n"+
+				"Session BaseCommit: %q\n"+
+				"Session WorktreeID: %q\n"+
+				"Expected branch: %q\n"+
 				"Got: session marked as orphaned with reason: %q",
-				shadowBranchName, shortHash, fullHash, shortHash, fullHash, item.Reason)
+				shadowBranchName, fullHash, worktreeID,
+				checkpoint.ShadowBranchNameForCommit(fullHash, worktreeID), item.Reason)
 		}
 	}
 }

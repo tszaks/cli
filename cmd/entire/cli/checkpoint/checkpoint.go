@@ -73,8 +73,9 @@ type Store interface {
 
 	// ReadTemporary reads the latest checkpoint from a shadow branch.
 	// baseCommit is the commit hash the session is based on.
+	// worktreeID is the internal git worktree identifier (empty for main worktree).
 	// Returns nil, nil if the shadow branch doesn't exist.
-	ReadTemporary(ctx context.Context, baseCommit string) (*ReadTemporaryResult, error)
+	ReadTemporary(ctx context.Context, baseCommit, worktreeID string) (*ReadTemporaryResult, error)
 
 	// ListTemporary lists all shadow branches with their checkpoint info.
 	ListTemporary(ctx context.Context) ([]TemporaryInfo, error)
@@ -108,6 +109,10 @@ type WriteTemporaryOptions struct {
 
 	// BaseCommit is the commit hash this session is based on
 	BaseCommit string
+
+	// WorktreeID is the internal git worktree identifier (empty for main worktree)
+	// Used to create worktree-specific shadow branch names
+	WorktreeID string
 
 	// ModifiedFiles are files that have been modified (relative paths)
 	ModifiedFiles []string
@@ -249,6 +254,14 @@ type WriteCommittedOptions struct {
 	// InitialAttribution is line-level attribution calculated at commit time
 	// comparing checkpoint tree (agent work) to committed tree (may include human edits)
 	InitialAttribution *InitialAttribution
+
+	// Summary is an optional AI-generated summary for this checkpoint.
+	// This field may be nil when:
+	//   - summarization is disabled in settings
+	//   - summary generation failed (non-blocking, logged as warning)
+	//   - the transcript was empty or too short to summarize
+	//   - the checkpoint predates the summarization feature
+	Summary *Summary
 }
 
 // ReadCommittedResult contains the result of reading a committed checkpoint.
@@ -348,8 +361,35 @@ type CommittedMetadata struct {
 	// Token usage for this checkpoint
 	TokenUsage *agent.TokenUsage `json:"token_usage,omitempty"`
 
+	// AI-generated summary of the checkpoint
+	Summary *Summary `json:"summary,omitempty"`
+
 	// InitialAttribution is line-level attribution calculated at commit time
 	InitialAttribution *InitialAttribution `json:"initial_attribution,omitempty"`
+}
+
+// Summary contains AI-generated summary of a checkpoint.
+type Summary struct {
+	Intent    string           `json:"intent"`     // What user wanted to accomplish
+	Outcome   string           `json:"outcome"`    // What was achieved
+	Learnings LearningsSummary `json:"learnings"`  // Categorized learnings
+	Friction  []string         `json:"friction"`   // Problems/annoyances encountered
+	OpenItems []string         `json:"open_items"` // Tech debt, unfinished work
+}
+
+// LearningsSummary contains learnings grouped by scope.
+type LearningsSummary struct {
+	Repo     []string       `json:"repo"`     // Codebase-specific patterns/conventions
+	Code     []CodeLearning `json:"code"`     // File/module specific findings
+	Workflow []string       `json:"workflow"` // General dev practices
+}
+
+// CodeLearning captures a learning tied to a specific code location.
+type CodeLearning struct {
+	Path    string `json:"path"`               // File path
+	Line    int    `json:"line,omitempty"`     // Start line number
+	EndLine int    `json:"end_line,omitempty"` // End line for ranges (optional)
+	Finding string `json:"finding"`            // What was learned
 }
 
 // InitialAttribution captures line-level attribution metrics at commit time.
@@ -404,6 +444,10 @@ type WriteTemporaryTaskOptions struct {
 
 	// BaseCommit is the commit hash this session is based on
 	BaseCommit string
+
+	// WorktreeID is the internal git worktree identifier (empty for main worktree)
+	// Used to create worktree-specific shadow branch names
+	WorktreeID string
 
 	// ToolUseID is the unique identifier for this Task tool invocation
 	ToolUseID string

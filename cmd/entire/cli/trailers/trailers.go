@@ -67,7 +67,7 @@ var (
 func ParseStrategy(commitMessage string) (string, bool) {
 	matches := strategyTrailerRegex.FindStringSubmatch(commitMessage)
 	if len(matches) > 1 {
-		return NormalizeStrategyName(strings.TrimSpace(matches[1])), true
+		return strings.TrimSpace(matches[1]), true
 	}
 	return "", false
 }
@@ -162,20 +162,6 @@ func ParseAllSessions(commitMessage string) []string {
 	return sessionIDs
 }
 
-// NormalizeStrategyName maps legacy strategy names to current names.
-// These are the strategy names used during initial development and are kept for backwards
-// compatibility.
-func NormalizeStrategyName(name string) string {
-	switch name {
-	case "dual":
-		return "auto-commit"
-	case "shadow":
-		return "manual-commit"
-	default:
-		return name
-	}
-}
-
 // FormatStrategy creates a commit message with just the strategy trailer.
 func FormatStrategy(message, strategy string) string {
 	return fmt.Sprintf("%s\n\n%s: %s\n", message, StrategyTrailerKey, strategy)
@@ -233,4 +219,10 @@ func FormatShadowTaskCommit(message, taskMetadataDir, sessionID string) string {
 	sb.WriteString(fmt.Sprintf("%s: %s\n", SessionTrailerKey, sessionID))
 	sb.WriteString(fmt.Sprintf("%s: %s\n", StrategyTrailerKey, "manual-commit"))
 	return sb.String()
+}
+
+// FormatCheckpoint creates a commit message with a checkpoint trailer.
+// This links user commits to their checkpoint metadata on entire/sessions branch.
+func FormatCheckpoint(message string, cpID checkpointID.CheckpointID) string {
+	return fmt.Sprintf("%s\n\n%s: %s\n", message, CheckpointTrailerKey, cpID.String())
 }

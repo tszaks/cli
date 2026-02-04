@@ -13,7 +13,10 @@ import (
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/settings"
+	"entire.io/cli/cmd/entire/cli/summarize"
 	"entire.io/cli/cmd/entire/cli/textutil"
+	"entire.io/cli/cmd/entire/cli/transcript"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -102,7 +105,7 @@ func (s *ManualCommitStrategy) getCheckpointLog(checkpointID id.CheckpointID) ([
 // Uses checkpoint.GitStore.WriteCommitted for the git operations.
 func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointID id.CheckpointID, state *SessionState) (*CondenseResult, error) {
 	// Get shadow branch
-	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit)
+	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	ref, err := repo.Reference(refName, true)
 	if err != nil {
@@ -216,6 +219,28 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		}
 	}
 
+	// Generate summary if enabled
+	var summary *cpkg.Summary
+	if settings.IsSummarizeEnabled() && len(sessionData.Transcript) > 0 {
+		summarizeCtx := logging.WithComponent(logCtx, "summarize")
+
+		// Scope transcript to this checkpoint's portion
+		scopedTranscript := transcript.SliceFromLine(sessionData.Transcript, state.TranscriptLinesAtStart)
+		if len(scopedTranscript) > 0 {
+			var err error
+			summary, err = summarize.GenerateFromTranscript(summarizeCtx, scopedTranscript, sessionData.FilesTouched, nil)
+			if err != nil {
+				logging.Warn(summarizeCtx, "summary generation failed",
+					slog.String("session_id", state.SessionID),
+					slog.String("error", err.Error()))
+				// Continue without summary - non-blocking
+			} else {
+				logging.Info(summarizeCtx, "summary generated",
+					slog.String("session_id", state.SessionID))
+			}
+		}
+	}
+
 	// Write checkpoint metadata using the checkpoint store
 	if err := store.WriteCommitted(context.Background(), cpkg.WriteCommittedOptions{
 		CheckpointID:                checkpointID,
@@ -235,6 +260,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		TranscriptLinesAtStart:      state.TranscriptLinesAtStart,
 		TokenUsage:                  sessionData.TokenUsage,
 		InitialAttribution:          attribution,
+		Summary:                     summary,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to write checkpoint metadata: %w", err)
 	}
@@ -264,7 +290,7 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 
 	data := &ExtractedSessionData{}
 	// sessionID is already an "entire session ID" (with date prefix)
-	metadataDir := paths.SessionMetadataDirFromEntireID(sessionID)
+	metadataDir := paths.SessionMetadataDirFromSessionID(sessionID)
 
 	// Extract transcript
 	var fullTranscript string

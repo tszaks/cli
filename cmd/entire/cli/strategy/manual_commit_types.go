@@ -20,12 +20,13 @@ type SessionState struct {
 	SessionID                string          `json:"session_id"`
 	BaseCommit               string          `json:"base_commit"`
 	WorktreePath             string          `json:"worktree_path,omitempty"` // Absolute path to the worktree root
+	WorktreeID               string          `json:"worktree_id,omitempty"`   // Internal git worktree identifier (empty for main worktree)
 	StartedAt                time.Time       `json:"started_at"`
+	EndedAt                  *time.Time      `json:"ended_at,omitempty"` // When the session was explicitly closed (nil = active or unclean exit)
 	CheckpointCount          int             `json:"checkpoint_count"`
 	CondensedTranscriptLines int             `json:"condensed_transcript_lines,omitempty"` // Lines already included in previous condensation
 	UntrackedFilesAtStart    []string        `json:"untracked_files_at_start,omitempty"`   // Files that existed at session start (to preserve during rewind)
 	FilesTouched             []string        `json:"files_touched,omitempty"`              // Files modified/created/deleted during this session
-	ConcurrentWarningShown   bool            `json:"concurrent_warning_shown,omitempty"`   // True if user was warned about concurrent sessions
 	LastCheckpointID         id.CheckpointID `json:"last_checkpoint_id,omitempty"`         // Checkpoint ID from last condensation, reused for subsequent commits without new content
 	AgentType                agent.AgentType `json:"agent_type,omitempty"`                 // Agent type identifier (e.g., "Claude Code", "Cursor")
 	TranscriptPath           string          `json:"transcript_path,omitempty"`            // Path to the live transcript file (for mid-session commit detection)

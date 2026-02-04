@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"entire.io/cli/cmd/entire/cli/agent"
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/trailers"
@@ -163,7 +164,8 @@ func TestShadowStrategy_ListAllSessionStates(t *testing.T) {
 	}
 
 	// Create shadow branch for base commit "abc1234" (needs 7 chars for prefix)
-	shadowBranch := getShadowBranchNameForCommit("abc1234")
+	// Use empty worktreeID since this is simulating the main worktree
+	shadowBranch := getShadowBranchNameForCommit("abc1234", "")
 	refName := plumbing.NewBranchReferenceName(shadowBranch)
 	ref := plumbing.NewHashReference(refName, dummyCommitHash)
 	if err := repo.Storer.SetReference(ref); err != nil {
@@ -221,8 +223,9 @@ func TestShadowStrategy_FindSessionsForCommit(t *testing.T) {
 	}
 
 	// Create shadow branches for base commits "abc1234" and "xyz7890" (7 chars)
+	// Use empty worktreeID since this is simulating the main worktree
 	for _, baseCommit := range []string{"abc1234", "xyz7890"} {
-		shadowBranch := getShadowBranchNameForCommit(baseCommit)
+		shadowBranch := getShadowBranchNameForCommit(baseCommit, "")
 		refName := plumbing.NewBranchReferenceName(shadowBranch)
 		ref := plumbing.NewHashReference(refName, dummyCommitHash)
 		if err := repo.Storer.SetReference(ref); err != nil {
@@ -603,33 +606,46 @@ func TestShadowStrategy_GetTaskCheckpointTranscript_NotTaskCheckpoint(t *testing
 }
 
 func TestGetShadowBranchNameForCommit(t *testing.T) {
+	// Hash of empty worktreeID (main worktree) is "e3b0c4"
+	mainWorktreeHash := "e3b0c4"
+
 	tests := []struct {
 		name       string
 		baseCommit string
+		worktreeID string
 		want       string
 	}{
 		{
-			name:       "short commit",
+			name:       "short commit main worktree",
 			baseCommit: "abc",
-			want:       "entire/abc",
+			worktreeID: "",
+			want:       "entire/abc-" + mainWorktreeHash,
 		},
 		{
-			name:       "7 char commit",
+			name:       "7 char commit main worktree",
 			baseCommit: "abc1234",
-			want:       "entire/abc1234",
+			worktreeID: "",
+			want:       "entire/abc1234-" + mainWorktreeHash,
 		},
 		{
-			name:       "long commit",
+			name:       "long commit main worktree",
 			baseCommit: "abc1234567890",
-			want:       "entire/abc1234",
+			worktreeID: "",
+			want:       "entire/abc1234-" + mainWorktreeHash,
+		},
+		{
+			name:       "with linked worktree",
+			baseCommit: "abc1234",
+			worktreeID: "feature-branch",
+			want:       "entire/abc1234-" + checkpoint.HashWorktreeID("feature-branch"),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getShadowBranchNameForCommit(tt.baseCommit)
+			got := getShadowBranchNameForCommit(tt.baseCommit, tt.worktreeID)
 			if got != tt.want {
-				t.Errorf("getShadowBranchNameForCommit(%q) = %q, want %q", tt.baseCommit, got, tt.want)
+				t.Errorf("getShadowBranchNameForCommit(%q, %q) = %q, want %q", tt.baseCommit, tt.worktreeID, got, tt.want)
 			}
 		})
 	}
@@ -1400,7 +1416,7 @@ func TestShadowStrategy_CondenseSession_EphemeralBranchTrailer(t *testing.T) {
 	}
 
 	// Verify the commit message contains the Ephemeral-branch trailer
-	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit)
+	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	expectedTrailer := "Ephemeral-branch: " + shadowBranchName
 	if !strings.Contains(sessionsCommit.Message, expectedTrailer) {
 		t.Errorf("sessions branch commit should contain %q trailer, got message:\n%s", expectedTrailer, sessionsCommit.Message)
@@ -1444,10 +1460,9 @@ func TestSaveChanges_EmptyBaseCommit_Recovery(t *testing.T) {
 	// Create a partial session state with empty BaseCommit
 	// (simulates what checkConcurrentSessions used to create)
 	partialState := &SessionState{
-		SessionID:              sessionID,
-		BaseCommit:             "", // Empty! This is the bug scenario
-		ConcurrentWarningShown: true,
-		StartedAt:              time.Now(),
+		SessionID:  sessionID,
+		BaseCommit: "", // Empty! This is the bug scenario
+		StartedAt:  time.Now(),
 	}
 	if err := s.saveSessionState(partialState); err != nil {
 		t.Fatalf("failed to save partial state: %v", err)

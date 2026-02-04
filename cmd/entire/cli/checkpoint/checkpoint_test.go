@@ -3,6 +3,8 @@ package checkpoint
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"entire.io/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -696,4 +699,272 @@ func TestWriteCommitted_BranchField(t *testing.T) {
 
 		verifyBranchInMetadata(t, repo, checkpointID, "", true)
 	})
+}
+
+// TestUpdateSummary verifies that UpdateSummary correctly updates the summary
+// field in an existing checkpoint's metadata.
+func TestUpdateSummary(t *testing.T) {
+	repo, _ := setupBranchTestRepo(t)
+	store := NewGitStore(repo)
+	checkpointID := id.MustCheckpointID("f1e2d3c4b5a6")
+
+	// First, create a checkpoint without a summary
+	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		CheckpointID: checkpointID,
+		SessionID:    "test-session-summary",
+		Strategy:     "manual-commit",
+		Transcript:   []byte("test transcript content"),
+		FilesTouched: []string{"file1.go", "file2.go"},
+		AuthorName:   "Test Author",
+		AuthorEmail:  "test@example.com",
+	})
+	if err != nil {
+		t.Fatalf("WriteCommitted() error = %v", err)
+	}
+
+	// Verify no summary initially
+	metadata := readCheckpointMetadata(t, repo, checkpointID)
+	if metadata.Summary != nil {
+		t.Error("initial checkpoint should not have a summary")
+	}
+
+	// Update with a summary
+	summary := &Summary{
+		Intent:  "Test intent",
+		Outcome: "Test outcome",
+		Learnings: LearningsSummary{
+			Repo:     []string{"Repo learning 1"},
+			Code:     []CodeLearning{{Path: "file1.go", Line: 10, Finding: "Code finding"}},
+			Workflow: []string{"Workflow learning"},
+		},
+		Friction:  []string{"Some friction"},
+		OpenItems: []string{"Open item 1"},
+	}
+
+	err = store.UpdateSummary(context.Background(), checkpointID, summary)
+	if err != nil {
+		t.Fatalf("UpdateSummary() error = %v", err)
+	}
+
+	// Verify summary was saved
+	updatedMetadata := readCheckpointMetadata(t, repo, checkpointID)
+	if updatedMetadata.Summary == nil {
+		t.Fatal("updated checkpoint should have a summary")
+	}
+	if updatedMetadata.Summary.Intent != "Test intent" {
+		t.Errorf("summary.Intent = %q, want %q", updatedMetadata.Summary.Intent, "Test intent")
+	}
+	if updatedMetadata.Summary.Outcome != "Test outcome" {
+		t.Errorf("summary.Outcome = %q, want %q", updatedMetadata.Summary.Outcome, "Test outcome")
+	}
+	if len(updatedMetadata.Summary.Learnings.Repo) != 1 {
+		t.Errorf("summary.Learnings.Repo length = %d, want 1", len(updatedMetadata.Summary.Learnings.Repo))
+	}
+	if len(updatedMetadata.Summary.Friction) != 1 {
+		t.Errorf("summary.Friction length = %d, want 1", len(updatedMetadata.Summary.Friction))
+	}
+
+	// Verify other metadata fields are preserved
+	if updatedMetadata.SessionID != "test-session-summary" {
+		t.Errorf("metadata.SessionID = %q, want %q", updatedMetadata.SessionID, "test-session-summary")
+	}
+	if len(updatedMetadata.FilesTouched) != 2 {
+		t.Errorf("metadata.FilesTouched length = %d, want 2", len(updatedMetadata.FilesTouched))
+	}
+}
+
+// TestUpdateSummary_NotFound verifies that UpdateSummary returns an error
+// when the checkpoint doesn't exist.
+func TestUpdateSummary_NotFound(t *testing.T) {
+	repo, _ := setupBranchTestRepo(t)
+	store := NewGitStore(repo)
+
+	// Ensure sessions branch exists
+	err := store.ensureSessionsBranch()
+	if err != nil {
+		t.Fatalf("ensureSessionsBranch() error = %v", err)
+	}
+
+	// Try to update a non-existent checkpoint (ID must be 12 hex chars)
+	checkpointID := id.MustCheckpointID("000000000000")
+	summary := &Summary{Intent: "Test", Outcome: "Test"}
+
+	err = store.UpdateSummary(context.Background(), checkpointID, summary)
+	if err == nil {
+		t.Error("UpdateSummary() should return error for non-existent checkpoint")
+	}
+	if !errors.Is(err, ErrCheckpointNotFound) {
+		t.Errorf("UpdateSummary() error = %v, want ErrCheckpointNotFound", err)
+	}
+}
+
+// TestListCommitted_FallsBackToRemote verifies that ListCommitted can find
+// checkpoints when only origin/entire/sessions exists (simulating post-clone state).
+func TestListCommitted_FallsBackToRemote(t *testing.T) {
+	// Create "remote" repo (non-bare, so we can make commits)
+	remoteDir := t.TempDir()
+	remoteRepo, err := git.PlainInit(remoteDir, false)
+	if err != nil {
+		t.Fatalf("failed to init remote repo: %v", err)
+	}
+
+	// Create an initial commit on main branch (required for cloning)
+	remoteWorktree, err := remoteRepo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get remote worktree: %v", err)
+	}
+	readmeFile := filepath.Join(remoteDir, "README.md")
+	if err := os.WriteFile(readmeFile, []byte("# Test"), 0o644); err != nil {
+		t.Fatalf("failed to write README: %v", err)
+	}
+	if _, err := remoteWorktree.Add("README.md"); err != nil {
+		t.Fatalf("failed to add README: %v", err)
+	}
+	if _, err := remoteWorktree.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com"},
+	}); err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create entire/sessions branch on the remote with a checkpoint
+	remoteStore := NewGitStore(remoteRepo)
+	cpID := id.MustCheckpointID("abcdef123456")
+	err = remoteStore.WriteCommitted(context.Background(), WriteCommittedOptions{
+		CheckpointID: cpID,
+		SessionID:    "test-session-id",
+		Strategy:     "manual-commit",
+		Transcript:   []byte(`{"test": true}`),
+		AuthorName:   "Test",
+		AuthorEmail:  "test@test.com",
+	})
+	if err != nil {
+		t.Fatalf("failed to write checkpoint to remote: %v", err)
+	}
+
+	// Clone the repo (this clones main, but not entire/sessions by default)
+	localDir := t.TempDir()
+	localRepo, err := git.PlainClone(localDir, false, &git.CloneOptions{
+		URL: remoteDir,
+	})
+	if err != nil {
+		t.Fatalf("failed to clone repo: %v", err)
+	}
+
+	// Fetch the entire/sessions branch to origin/entire/sessions
+	// (but don't create local branch - simulating post-clone state)
+	refSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", paths.MetadataBranchName, paths.MetadataBranchName)
+	err = localRepo.Fetch(&git.FetchOptions{
+		RemoteName: "origin",
+		RefSpecs:   []config.RefSpec{config.RefSpec(refSpec)},
+	})
+	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+		t.Fatalf("failed to fetch entire/sessions: %v", err)
+	}
+
+	// Verify local branch doesn't exist
+	_, err = localRepo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	if err == nil {
+		t.Fatal("local entire/sessions branch should not exist")
+	}
+
+	// Verify remote-tracking branch exists
+	_, err = localRepo.Reference(plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName), true)
+	if err != nil {
+		t.Fatalf("origin/entire/sessions should exist: %v", err)
+	}
+
+	// ListCommitted should find the checkpoint by falling back to remote
+	localStore := NewGitStore(localRepo)
+	checkpoints, err := localStore.ListCommitted(context.Background())
+	if err != nil {
+		t.Fatalf("ListCommitted() error = %v", err)
+	}
+	if len(checkpoints) != 1 {
+		t.Errorf("ListCommitted() returned %d checkpoints, want 1", len(checkpoints))
+	}
+	if len(checkpoints) > 0 && checkpoints[0].CheckpointID.String() != cpID.String() {
+		t.Errorf("ListCommitted() checkpoint ID = %q, want %q", checkpoints[0].CheckpointID, cpID)
+	}
+}
+
+// TestGetCheckpointAuthor verifies that GetCheckpointAuthor retrieves the
+// author of the commit that created the checkpoint on the entire/sessions branch.
+func TestGetCheckpointAuthor(t *testing.T) {
+	repo, _ := setupBranchTestRepo(t)
+	store := NewGitStore(repo)
+	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
+
+	// Create a checkpoint with specific author info
+	authorName := "Alice Developer"
+	authorEmail := "alice@example.com"
+
+	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		CheckpointID: checkpointID,
+		SessionID:    "test-session-author",
+		Strategy:     "manual-commit",
+		Transcript:   []byte("test transcript"),
+		FilesTouched: []string{"main.go"},
+		AuthorName:   authorName,
+		AuthorEmail:  authorEmail,
+	})
+	if err != nil {
+		t.Fatalf("WriteCommitted() error = %v", err)
+	}
+
+	// Retrieve the author
+	author, err := store.GetCheckpointAuthor(context.Background(), checkpointID)
+	if err != nil {
+		t.Fatalf("GetCheckpointAuthor() error = %v", err)
+	}
+
+	if author.Name != authorName {
+		t.Errorf("author.Name = %q, want %q", author.Name, authorName)
+	}
+	if author.Email != authorEmail {
+		t.Errorf("author.Email = %q, want %q", author.Email, authorEmail)
+	}
+}
+
+// TestGetCheckpointAuthor_NotFound verifies that GetCheckpointAuthor returns
+// empty author when the checkpoint doesn't exist.
+func TestGetCheckpointAuthor_NotFound(t *testing.T) {
+	repo, _ := setupBranchTestRepo(t)
+	store := NewGitStore(repo)
+
+	// Query for a non-existent checkpoint (must be valid hex)
+	checkpointID := id.MustCheckpointID("ffffffffffff")
+
+	author, err := store.GetCheckpointAuthor(context.Background(), checkpointID)
+	if err != nil {
+		t.Fatalf("GetCheckpointAuthor() error = %v", err)
+	}
+
+	// Should return empty author (no error)
+	if author.Name != "" || author.Email != "" {
+		t.Errorf("expected empty author for non-existent checkpoint, got Name=%q, Email=%q", author.Name, author.Email)
+	}
+}
+
+// TestGetCheckpointAuthor_NoSessionsBranch verifies that GetCheckpointAuthor
+// returns empty author when the entire/sessions branch doesn't exist.
+func TestGetCheckpointAuthor_NoSessionsBranch(t *testing.T) {
+	// Create a fresh repo without sessions branch
+	tempDir := t.TempDir()
+	repo, err := git.PlainInit(tempDir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	store := NewGitStore(repo)
+	checkpointID := id.MustCheckpointID("aabbccddeeff")
+
+	author, err := store.GetCheckpointAuthor(context.Background(), checkpointID)
+	if err != nil {
+		t.Fatalf("GetCheckpointAuthor() error = %v", err)
+	}
+
+	// Should return empty author (no error)
+	if author.Name != "" || author.Email != "" {
+		t.Errorf("expected empty author when sessions branch doesn't exist, got Name=%q, Email=%q", author.Name, author.Email)
+	}
 }

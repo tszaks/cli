@@ -4,14 +4,12 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/agent/geminicli"
@@ -22,145 +20,6 @@ import (
 
 // ErrSessionSkipped is returned when a session should be skipped (e.g., due to concurrent warning).
 var ErrSessionSkipped = errors.New("session skipped")
-
-// geminiBlockingResponse represents a JSON response for Gemini CLI hooks.
-// When decision is "block", Gemini CLI will block the current operation and show the reason to the user.
-type geminiBlockingResponse struct {
-	Decision      string `json:"decision"`
-	Reason        string `json:"reason"`
-	SystemMessage string `json:"systemMessage,omitempty"`
-}
-
-// outputGeminiBlockingResponse outputs a blocking JSON response to stdout for Gemini CLI hooks
-// and exits with code 0. For BeforeAgent hooks, the JSON response with decision "block" tells
-// Gemini CLI to block the operation - exit code 0 is required for the JSON to be parsed.
-// This function does not return - it calls os.Exit(0) after outputting the response.
-func outputGeminiBlockingResponse(reason string) {
-	resp := geminiBlockingResponse{
-		Decision:      "block",
-		Reason:        reason,
-		SystemMessage: "⚠️ Session blocked: " + reason,
-	}
-	// Output to stdout (Gemini reads hook output from stdout with exit code 0)
-	if err := json.NewEncoder(os.Stdout).Encode(resp); err != nil {
-		fmt.Fprintf(os.Stderr, "Error encoding blocking response: %v\n", err)
-	}
-	os.Exit(0)
-}
-
-// checkConcurrentSessionsGemini checks for concurrent session conflicts for Gemini CLI.
-// If a conflict is found (first time), it outputs a Gemini-format blocking response and exits (via os.Exit).
-// If the warning was already shown, subsequent calls proceed normally (both sessions create interleaved checkpoints).
-// Note: This function may call os.Exit(0) and not return if a blocking response is needed on first conflict.
-func checkConcurrentSessionsGemini(entireSessionID string) {
-	// Check if warnings are disabled via settings
-	if IsMultiSessionWarningDisabled() {
-		return
-	}
-
-	// Always use the Gemini agent for resume commands in Gemini hooks
-	// (don't use GetAgent() which may return Claude based on settings)
-	geminiAgent, err := agent.Get("gemini")
-	if err != nil {
-		// Fall back to default if Gemini agent not found (shouldn't happen)
-		geminiAgent = agent.Default()
-	}
-	strat := GetStrategy()
-
-	concurrentChecker, ok := strat.(strategy.ConcurrentSessionChecker)
-	if !ok {
-		return // Strategy doesn't support concurrent checks
-	}
-
-	// Check if this session already acknowledged the warning
-	existingState, loadErr := strategy.LoadSessionState(entireSessionID)
-	warningAlreadyShown := loadErr == nil && existingState != nil && existingState.ConcurrentWarningShown
-
-	// Check for other active sessions with checkpoints (on current HEAD)
-	otherSession, checkErr := concurrentChecker.HasOtherActiveSessionsWithCheckpoints(entireSessionID)
-	hasConflict := checkErr == nil && otherSession != nil
-
-	if warningAlreadyShown {
-		// Warning was already shown to user - don't show it again, just proceed normally
-		// Both sessions will create interleaved checkpoints as promised in the warning message
-		if !hasConflict {
-			// Conflict resolved (e.g., user committed) - clear the flag
-			if existingState != nil {
-				existingState.ConcurrentWarningShown = false
-				if saveErr := strategy.SaveSessionState(existingState); saveErr != nil {
-					fmt.Fprintf(os.Stderr, "Warning: failed to clear concurrent warning flag: %v\n", saveErr)
-				}
-			}
-		}
-		return // Proceed normally
-	}
-
-	if hasConflict {
-		// First time seeing conflict - show warning
-		// Include BaseCommit and WorktreePath so session state is complete if conflict later resolves
-		repo, err := strategy.OpenRepository()
-		if err != nil {
-			// Output user-friendly error message via blocking response
-			outputGeminiBlockingResponse(fmt.Sprintf("Failed to open git repository: %v\n\nPlease ensure you're in a git repository and try again.", err))
-			// outputGeminiBlockingResponse calls os.Exit(0), never returns
-		}
-		head, err := repo.Head()
-		if err != nil {
-			// Output user-friendly error message via blocking response
-			outputGeminiBlockingResponse(fmt.Sprintf("Failed to get git HEAD: %v\n\nPlease ensure the repository has at least one commit.", err))
-			// outputGeminiBlockingResponse calls os.Exit(0), never returns
-		}
-		worktreePath, err := strategy.GetWorktreePath()
-		if err != nil {
-			// Non-fatal: proceed without worktree path
-			worktreePath = ""
-		}
-
-		agentType := geminiAgent.Type()
-		newState := &strategy.SessionState{
-			SessionID:              entireSessionID,
-			BaseCommit:             head.Hash().String(),
-			WorktreePath:           worktreePath,
-			ConcurrentWarningShown: true,
-			StartedAt:              time.Now(),
-			AgentType:              agentType,
-		}
-		if saveErr := strategy.SaveSessionState(newState); saveErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to save session state: %v\n", saveErr)
-		}
-
-		// Get resume command for the other session using the CONFLICTING session's agent type.
-		// If the conflicting session is from a different agent (e.g., Claude when we're Gemini),
-		// use that agent's resume command format. Otherwise, use our own format.
-		var resumeCmd string
-		if otherSession.AgentType != "" && otherSession.AgentType != agentType {
-			// Different agent type - look up the conflicting agent
-			if conflictingAgent, agentErr := agent.GetByAgentType(otherSession.AgentType); agentErr == nil {
-				resumeCmd = conflictingAgent.FormatResumeCommand(conflictingAgent.ExtractAgentSessionID(otherSession.SessionID))
-			}
-		}
-		// Fall back to Gemini agent if same type or couldn't get the conflicting agent
-		if resumeCmd == "" {
-			resumeCmd = geminiAgent.FormatResumeCommand(geminiAgent.ExtractAgentSessionID(otherSession.SessionID))
-		}
-
-		// Try to read the other session's initial prompt
-		otherPrompt := strategy.ReadSessionPromptFromShadow(repo, otherSession.BaseCommit, otherSession.SessionID)
-
-		// Build message - matches Claude Code format but with Gemini-specific instructions
-		var message string
-		suppressHint := "\n\nTo suppress this warning in future sessions, run:\n  entire enable --disable-multisession-warning"
-		if otherPrompt != "" {
-			message = fmt.Sprintf("Another session is active: \"%s\"\n\nYou can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, exit Gemini CLI and run: %s%s\n\nPress the up arrow key to get your prompt back.", otherPrompt, resumeCmd, suppressHint)
-		} else {
-			message = "Another session is active with uncommitted changes. You can continue here, but checkpoints from both sessions will be interleaved.\n\nTo resume the other session instead, exit Gemini CLI and run: " + resumeCmd + suppressHint + "\n\nPress the up arrow key to get your prompt back."
-		}
-
-		// Output blocking JSON response and exit
-		outputGeminiBlockingResponse(message)
-		// outputGeminiBlockingResponse calls os.Exit(0), never returns
-	}
-}
 
 // handleGeminiSessionStart handles the SessionStart hook for Gemini CLI.
 func handleGeminiSessionStart() error {
@@ -173,23 +32,49 @@ func handleGeminiSessionStart() error {
 // SessionEnd serves as a cleanup/fallback - it will commit any uncommitted changes that
 // weren't captured by AfterAgent (e.g., if the user exits mid-response).
 func handleGeminiSessionEnd() error {
-	// Note: Don't parse stdin here - commitWithMetadataGemini() does its own parsing
-	// and stdin can only be read once. Logging happens inside parseGeminiSessionEnd().
-	return commitWithMetadataGemini()
+	// Set up logging context
+	ag, err := GetCurrentHookAgent()
+	if err != nil {
+		return fmt.Errorf("failed to get agent: %w", err)
+	}
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
+
+	// Commit any uncommitted changes (consumes stdin)
+	if err := commitWithMetadataGemini(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to commit metadata: %v\n", err)
+	}
+
+	// Mark session as ended (use persisted session ID since stdin consumed)
+	entireSessionID, err := paths.ReadCurrentSession()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to read current session: %v\n", err)
+	}
+	if entireSessionID != "" {
+		logging.Info(logCtx, "session-end-mark",
+			slog.String("hook", "session-end"),
+			slog.String("hook_type", "agent"),
+			slog.String("entire_session_id", entireSessionID),
+		)
+
+		if err := markSessionEnded(entireSessionID); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to mark session ended: %v\n", err)
+		}
+	}
+
+	return nil
 }
 
 // geminiSessionContext holds parsed session data for Gemini commits.
 type geminiSessionContext struct {
-	entireSessionID string
-	modelSessionID  string
-	transcriptPath  string
-	sessionDir      string
-	sessionDirAbs   string
-	transcriptData  []byte
-	allPrompts      []string
-	summary         string
-	modifiedFiles   []string
-	commitMessage   string
+	sessionID      string
+	transcriptPath string
+	sessionDir     string
+	sessionDirAbs  string
+	transcriptData []byte
+	allPrompts     []string
+	summary        string
+	modifiedFiles  []string
+	commitMessage  string
 }
 
 // parseGeminiSessionEnd parses the session-end hook input and validates transcript.
@@ -199,25 +84,23 @@ func parseGeminiSessionEnd() (*geminiSessionContext, error) {
 		return nil, fmt.Errorf("failed to get agent: %w", err)
 	}
 
-	input, err := ag.ParseHookInput(agent.HookStop, os.Stdin)
+	input, err := ag.ParseHookInput(agent.HookSessionEnd, os.Stdin)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse hook input: %w", err)
 	}
 
 	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "hooks"), ag.Name())
-	logging.Info(logCtx, "stop",
-		slog.String("hook", "stop"),
+	logging.Info(logCtx, "session-end",
+		slog.String("hook", "session-end"),
 		slog.String("hook_type", "agent"),
 		slog.String("model_session_id", input.SessionID),
 		slog.String("transcript_path", input.SessionRef),
 	)
 
-	modelSessionID := input.SessionID
-	if modelSessionID == "" {
-		modelSessionID = "unknown"
+	sessionID := input.SessionID
+	if sessionID == "" {
+		sessionID = unknownSessionID
 	}
-
-	entireSessionID := currentSessionIDWithFallback(modelSessionID)
 
 	transcriptPath := input.SessionRef
 	if transcriptPath == "" || !fileExists(transcriptPath) {
@@ -225,15 +108,14 @@ func parseGeminiSessionEnd() (*geminiSessionContext, error) {
 	}
 
 	return &geminiSessionContext{
-		entireSessionID: entireSessionID,
-		modelSessionID:  modelSessionID,
-		transcriptPath:  transcriptPath,
+		sessionID:      sessionID,
+		transcriptPath: transcriptPath,
 	}, nil
 }
 
 // setupGeminiSessionDir creates session directory and copies transcript.
 func setupGeminiSessionDir(ctx *geminiSessionContext) error {
-	ctx.sessionDir = paths.SessionMetadataDirFromEntireID(ctx.entireSessionID)
+	ctx.sessionDir = paths.SessionMetadataDirFromSessionID(ctx.sessionID)
 	sessionDirAbs, err := paths.AbsPath(ctx.sessionDir)
 	if err != nil {
 		sessionDirAbs = ctx.sessionDir
@@ -309,7 +191,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 		return fmt.Errorf("failed to get repo root: %w", err)
 	}
 
-	preState, err := LoadPrePromptState(ctx.entireSessionID)
+	preState, err := LoadPrePromptState(ctx.sessionID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load pre-prompt state: %v\n", err)
 	}
@@ -354,7 +236,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 	if totalChanges == 0 {
 		fmt.Fprintf(os.Stderr, "No files were modified during this session\n")
 		fmt.Fprintf(os.Stderr, "Skipping commit\n")
-		if cleanupErr := CleanupPrePromptState(ctx.entireSessionID); cleanupErr != nil {
+		if cleanupErr := CleanupPrePromptState(ctx.sessionID); cleanupErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to cleanup pre-prompt state: %v\n", cleanupErr)
 		}
 		return nil
@@ -363,7 +245,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 	logFileChanges(relModifiedFiles, relNewFiles, relDeletedFiles)
 
 	contextFile := filepath.Join(ctx.sessionDirAbs, paths.ContextFileName)
-	if err := createContextFileForGemini(contextFile, ctx.commitMessage, ctx.entireSessionID, ctx.allPrompts, ctx.summary); err != nil {
+	if err := createContextFileForGemini(contextFile, ctx.commitMessage, ctx.sessionID, ctx.allPrompts, ctx.summary); err != nil {
 		return fmt.Errorf("failed to create context file: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "Created context file: %s\n", ctx.sessionDir+"/"+paths.ContextFileName)
@@ -393,7 +275,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 	}
 
 	saveCtx := strategy.SaveContext{
-		SessionID:                   ctx.entireSessionID,
+		SessionID:                   ctx.sessionID,
 		ModifiedFiles:               relModifiedFiles,
 		NewFiles:                    relNewFiles,
 		DeletedFiles:                relDeletedFiles,
@@ -413,7 +295,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 		return fmt.Errorf("failed to save session: %w", err)
 	}
 
-	if cleanupErr := CleanupPrePromptState(ctx.entireSessionID); cleanupErr != nil {
+	if cleanupErr := CleanupPrePromptState(ctx.sessionID); cleanupErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup pre-prompt state: %v\n", cleanupErr)
 	}
 
@@ -592,18 +474,10 @@ func handleGeminiBeforeAgent() error {
 		return errors.New("no session_id in input")
 	}
 
-	// Get the entire session ID, handling legacy date-prefixed format
-	entireSessionID := currentSessionIDWithFallback(input.SessionID)
-
-	// Check for concurrent sessions before proceeding
-	// This will output a blocking response and exit if there's a conflict (first time only)
-	// On subsequent prompts, it proceeds normally (both sessions create interleaved checkpoints)
-	checkConcurrentSessionsGemini(entireSessionID)
-
 	// Capture pre-prompt state with transcript position (Gemini-specific)
 	// This captures both untracked files and the current transcript message count
 	// so we can calculate token usage for just this prompt/response cycle
-	if err := CaptureGeminiPrePromptState(entireSessionID, input.SessionRef); err != nil {
+	if err := CaptureGeminiPrePromptState(input.SessionID, input.SessionRef); err != nil {
 		return fmt.Errorf("failed to capture pre-prompt state: %w", err)
 	}
 
@@ -611,10 +485,8 @@ func handleGeminiBeforeAgent() error {
 	strat := GetStrategy()
 	if initializer, ok := strat.(strategy.SessionInitializer); ok {
 		agentType := ag.Type()
-		if initErr := initializer.InitializeSession(entireSessionID, agentType, input.SessionRef); initErr != nil {
-			if handleErr := handleSessionInitErrors(ag, initErr); handleErr != nil {
-				return handleErr
-			}
+		if err := initializer.InitializeSession(input.SessionID, agentType, input.SessionRef); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize session state: %v\n", err)
 		}
 	}
 
@@ -654,12 +526,10 @@ func handleGeminiAfterAgent() error {
 		slog.String("transcript_path", input.SessionRef),
 	)
 
-	modelSessionID := input.SessionID
-	if modelSessionID == "" {
-		modelSessionID = "unknown"
+	sessionID := input.SessionID
+	if sessionID == "" {
+		sessionID = unknownSessionID
 	}
-
-	entireSessionID := currentSessionIDWithFallback(modelSessionID)
 
 	transcriptPath := input.SessionRef
 	if transcriptPath == "" || !fileExists(transcriptPath) {
@@ -668,9 +538,8 @@ func handleGeminiAfterAgent() error {
 
 	// Create session context and commit
 	ctx := &geminiSessionContext{
-		entireSessionID: entireSessionID,
-		modelSessionID:  modelSessionID,
-		transcriptPath:  transcriptPath,
+		sessionID:      sessionID,
+		transcriptPath: transcriptPath,
 	}
 
 	if err := setupGeminiSessionDir(ctx); err != nil {

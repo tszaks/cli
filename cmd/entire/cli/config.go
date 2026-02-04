@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"entire.io/cli/cmd/entire/cli/agent"
 	"entire.io/cli/cmd/entire/cli/jsonutil"
@@ -30,14 +31,6 @@ type EntireSettings struct {
 	// Strategy is the name of the git strategy to use
 	Strategy string `json:"strategy"`
 
-	// Agent is the name of the coding agent (e.g., "claude-code", "cursor")
-	// When empty, auto-detection is used
-	Agent string `json:"agent,omitempty"`
-
-	// AgentAutoDetect controls whether to auto-detect the agent when not explicitly set
-	// Defaults to true for backwards compatibility
-	AgentAutoDetect *bool `json:"agent_auto_detect,omitempty"`
-
 	// Enabled indicates whether Entire is active. When false, CLI commands
 	// show a disabled message and hooks exit silently. Defaults to true.
 	Enabled bool `json:"enabled"`
@@ -53,10 +46,6 @@ type EntireSettings struct {
 
 	// StrategyOptions contains strategy-specific configuration
 	StrategyOptions map[string]interface{} `json:"strategy_options,omitempty"`
-
-	// AgentOptions contains agent-specific configuration
-	// Keyed by agent name, e.g., {"claude-code": {"ignore_untracked": false}}
-	AgentOptions map[string]interface{} `json:"agent_options,omitempty"`
 
 	// Telemetry controls anonymous usage analytics.
 	// nil = not asked yet (show prompt), true = opted in, false = opted out
@@ -166,41 +155,6 @@ func mergeSettingsJSON(settings *EntireSettings, data []byte) error {
 		}
 	}
 
-	// Override agent if present and non-empty
-	if agentRaw, ok := raw["agent"]; ok {
-		var a string
-		if err := json.Unmarshal(agentRaw, &a); err != nil {
-			return fmt.Errorf("parsing agent field: %w", err)
-		}
-		if a != "" {
-			settings.Agent = a
-		}
-	}
-
-	// Override agent_auto_detect if present
-	if autoDetectRaw, ok := raw["agent_auto_detect"]; ok {
-		var ad bool
-		if err := json.Unmarshal(autoDetectRaw, &ad); err != nil {
-			return fmt.Errorf("parsing agent_auto_detect field: %w", err)
-		}
-		settings.AgentAutoDetect = &ad
-	}
-
-	// Merge agent_options if present
-	if agentOptsRaw, ok := raw["agent_options"]; ok {
-		var opts map[string]interface{}
-		if err := json.Unmarshal(agentOptsRaw, &opts); err != nil {
-			return fmt.Errorf("parsing agent_options field: %w", err)
-		}
-		if settings.AgentOptions == nil {
-			settings.AgentOptions = opts
-		} else {
-			for k, v := range opts {
-				settings.AgentOptions[k] = v
-			}
-		}
-	}
-
 	// Override telemetry if present
 	if telemetryRaw, ok := raw["telemetry"]; ok {
 		var t bool
@@ -252,7 +206,6 @@ func applyDefaultStrategy(settings *EntireSettings) {
 	if settings.Strategy == "" {
 		settings.Strategy = strategy.DefaultStrategyName
 	}
-	settings.Strategy = strategy.NormalizeStrategyName(settings.Strategy)
 }
 
 func saveSettingsToFile(settings *EntireSettings, filePath string) error {
@@ -315,64 +268,6 @@ func GetStrategy() strategy.Strategy {
 	return s
 }
 
-// GetAgent returns the configured or detected agent.
-// Resolution order:
-// 1. Explicit agent in settings
-// 2. Auto-detect if enabled (default)
-// 3. Fall back to default agent
-//
-
-func GetAgent() (agent.Agent, error) {
-	settings, err := LoadEntireSettings()
-	if err != nil {
-		// No settings file, try auto-detect then default
-		if ag, detectErr := agent.Detect(); detectErr == nil {
-			return ag, nil
-		}
-		return agent.Default(), nil
-	}
-
-	// Explicit agent configured
-	if settings.Agent != "" {
-		ag, err := agent.Get(agent.AgentName(settings.Agent))
-		if err != nil {
-			return nil, fmt.Errorf("getting configured agent: %w", err)
-		}
-		return ag, nil
-	}
-
-	// Auto-detect if enabled (default true for backwards compat)
-	autoDetect := settings.AgentAutoDetect == nil || *settings.AgentAutoDetect
-	if autoDetect {
-		if ag, detectErr := agent.Detect(); detectErr == nil {
-			return ag, nil
-		}
-	}
-
-	// Fall back to default
-	return agent.Default(), nil
-}
-
-// GetAgentOptions returns options for a specific agent.
-// Returns nil if the agent has no options configured.
-func GetAgentOptions(agentName string) map[string]interface{} {
-	settings, err := LoadEntireSettings()
-	if err != nil {
-		return nil
-	}
-
-	if settings.AgentOptions == nil {
-		return nil
-	}
-
-	if opts, ok := settings.AgentOptions[agentName]; ok {
-		if m, ok := opts.(map[string]interface{}); ok {
-			return m
-		}
-	}
-	return nil
-}
-
 // GetLogLevel returns the configured log level from settings.
 // Returns empty string if not configured (caller should use default).
 // Note: ENTIRE_LOG_LEVEL env var takes precedence; check it first.
@@ -398,4 +293,28 @@ func IsMultiSessionWarningDisabled() bool {
 		return disabled
 	}
 	return false
+}
+
+// GetAgentsWithHooksInstalled returns names of agents that have hooks installed.
+func GetAgentsWithHooksInstalled() []agent.AgentName {
+	var installed []agent.AgentName
+	for _, name := range agent.List() {
+		ag, err := agent.Get(name)
+		if err != nil {
+			continue
+		}
+		if hs, ok := ag.(agent.HookSupport); ok && hs.AreHooksInstalled() {
+			installed = append(installed, name)
+		}
+	}
+	return installed
+}
+
+// JoinAgentNames joins agent names into a comma-separated string.
+func JoinAgentNames(names []agent.AgentName) string {
+	strs := make([]string, len(names))
+	for i, n := range names {
+		strs[i] = string(n)
+	}
+	return strings.Join(strs, ",")
 }

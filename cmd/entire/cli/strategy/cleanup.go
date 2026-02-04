@@ -23,10 +23,6 @@ const (
 	// considered orphaned. This protects active sessions that haven't created
 	// their first checkpoint yet.
 	sessionGracePeriod = 10 * time.Minute
-
-	// shadowBranchHashLength is the number of hex characters used in shadow branch names.
-	// Shadow branches are named "entire/<hash[:7]>" using a 7-char prefix of the commit hash.
-	shadowBranchHashLength = 7
 )
 
 // CleanupType identifies the type of orphaned item.
@@ -55,13 +51,18 @@ type CleanupResult struct {
 	FailedCheckpoints []string // Checkpoints that failed to delete
 }
 
-// shadowBranchPattern matches shadow branch names: entire/<7+ hex chars>
-// The pattern requires at least 7 hex characters after "entire/"
-var shadowBranchPattern = regexp.MustCompile(`^entire/[0-9a-fA-F]{7,}$`)
+// shadowBranchPattern matches shadow branch names in both old and new formats:
+//   - Old format: entire/<commit[:7+]>
+//   - New format: entire/<commit[:7+]>-<worktreeHash[:6]>
+//
+// The pattern requires at least 7 hex characters for the commit, optionally followed
+// by a dash and exactly 6 hex characters for the worktree hash.
+var shadowBranchPattern = regexp.MustCompile(`^entire/[0-9a-fA-F]{7,}(-[0-9a-fA-F]{6})?$`)
 
 // IsShadowBranch returns true if the branch name matches the shadow branch pattern.
-// Shadow branches have the format "entire/<commit-hash>" where the commit hash
-// is at least 7 hex characters. The "entire/sessions" branch is NOT a shadow branch.
+// Shadow branches have the format "entire/<commit-hash>-<worktree-hash>" where the
+// commit hash is at least 7 hex characters and worktree hash is 6 hex characters.
+// The "entire/sessions" branch is NOT a shadow branch.
 func IsShadowBranch(branchName string) bool {
 	// Explicitly exclude entire/sessions
 	if branchName == "entire/sessions" {
@@ -187,15 +188,11 @@ func ListOrphanedSessionStates() ([]CleanupItem, error) {
 		}
 	}
 
-	// Get all shadow branches
+	// Get all shadow branches as a set for quick lookup
 	shadowBranches, _ := ListShadowBranches() //nolint:errcheck // Best effort
 	shadowBranchSet := make(map[string]bool)
 	for _, branch := range shadowBranches {
-		// Extract commit hash from branch name (entire/<hash>)
-		if strings.HasPrefix(branch, "entire/") {
-			hash := strings.TrimPrefix(branch, "entire/")
-			shadowBranchSet[hash] = true
-		}
+		shadowBranchSet[branch] = true
 	}
 
 	var orphaned []CleanupItem
@@ -211,12 +208,10 @@ func ListOrphanedSessionStates() ([]CleanupItem, error) {
 		// Check if session has checkpoints on entire/sessions
 		hasCheckpoints := sessionsWithCheckpoints[state.SessionID]
 
-		// Check if shadow branch exists for base commit
-		// Shadow branches use 7-char hash prefixes, so we need to match by prefix
-		hasShadowBranch := false
-		if len(state.BaseCommit) >= shadowBranchHashLength {
-			hasShadowBranch = shadowBranchSet[state.BaseCommit[:shadowBranchHashLength]]
-		}
+		// Check if shadow branch exists for this session's base commit and worktree
+		// Shadow branches are now worktree-specific: entire/<commit[:7]>-<worktreeHash[:6]>
+		expectedBranch := checkpoint.ShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+		hasShadowBranch := shadowBranchSet[expectedBranch]
 
 		// Session is orphaned if it has no checkpoints AND no shadow branch
 		if !hasCheckpoints && !hasShadowBranch {
@@ -361,11 +356,6 @@ func ListAllCleanupItems() ([]CleanupItem, error) {
 
 	// Iterate over all registered strategies
 	for _, name := range List() {
-		// Skip legacy names to avoid duplicates
-		if IsLegacyStrategyName(name) {
-			continue
-		}
-
 		strat, err := Get(name)
 		if err != nil {
 			if firstErr == nil {

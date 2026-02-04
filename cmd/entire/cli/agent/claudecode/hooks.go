@@ -22,6 +22,7 @@ var (
 // Claude Code hook names - these become subcommands under `entire hooks claude-code`
 const (
 	HookNameSessionStart     = "session-start"
+	HookNameSessionEnd       = "session-end"
 	HookNameStop             = "stop"
 	HookNameUserPromptSubmit = "user-prompt-submit"
 	HookNamePreTask          = "pre-task"
@@ -41,6 +42,7 @@ const metadataDenyRule = "Read(./.entire/metadata/**)"
 func (c *ClaudeCodeAgent) GetHookNames() []string {
 	return []string{
 		HookNameSessionStart,
+		HookNameSessionEnd,
 		HookNameStop,
 		HookNameUserPromptSubmit,
 		HookNamePreTask,
@@ -105,6 +107,7 @@ func (c *ClaudeCodeAgent) InstallHooks(localDev bool, force bool) (int, error) {
 	// If force is true, remove all existing Entire hooks first
 	if force {
 		settings.Hooks.SessionStart = removeEntireHooks(settings.Hooks.SessionStart)
+		settings.Hooks.SessionEnd = removeEntireHooks(settings.Hooks.SessionEnd)
 		settings.Hooks.Stop = removeEntireHooks(settings.Hooks.Stop)
 		settings.Hooks.UserPromptSubmit = removeEntireHooks(settings.Hooks.UserPromptSubmit)
 		settings.Hooks.PreToolUse = removeEntireHooksFromMatchers(settings.Hooks.PreToolUse)
@@ -112,9 +115,10 @@ func (c *ClaudeCodeAgent) InstallHooks(localDev bool, force bool) (int, error) {
 	}
 
 	// Define hook commands
-	var sessionStartCmd, stopCmd, userPromptSubmitCmd, preTaskCmd, postTaskCmd, postTodoCmd string
+	var sessionStartCmd, sessionEndCmd, stopCmd, userPromptSubmitCmd, preTaskCmd, postTaskCmd, postTodoCmd string
 	if localDev {
 		sessionStartCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/entire/main.go hooks claude-code session-start"
+		sessionEndCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/entire/main.go hooks claude-code session-end"
 		stopCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/entire/main.go hooks claude-code stop"
 		userPromptSubmitCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/entire/main.go hooks claude-code user-prompt-submit"
 		preTaskCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/entire/main.go hooks claude-code pre-task"
@@ -122,6 +126,7 @@ func (c *ClaudeCodeAgent) InstallHooks(localDev bool, force bool) (int, error) {
 		postTodoCmd = "go run ${CLAUDE_PROJECT_DIR}/cmd/entire/main.go hooks claude-code post-todo"
 	} else {
 		sessionStartCmd = "entire hooks claude-code session-start"
+		sessionEndCmd = "entire hooks claude-code session-end"
 		stopCmd = "entire hooks claude-code stop"
 		userPromptSubmitCmd = "entire hooks claude-code user-prompt-submit"
 		preTaskCmd = "entire hooks claude-code pre-task"
@@ -134,6 +139,10 @@ func (c *ClaudeCodeAgent) InstallHooks(localDev bool, force bool) (int, error) {
 	// Add hooks if they don't exist
 	if !hookCommandExists(settings.Hooks.SessionStart, sessionStartCmd) {
 		settings.Hooks.SessionStart = addHookToMatcher(settings.Hooks.SessionStart, "", sessionStartCmd)
+		count++
+	}
+	if !hookCommandExists(settings.Hooks.SessionEnd, sessionEndCmd) {
+		settings.Hooks.SessionEnd = addHookToMatcher(settings.Hooks.SessionEnd, "", sessionEndCmd)
 		count++
 	}
 	if !hookCommandExists(settings.Hooks.Stop, stopCmd) {
@@ -237,6 +246,7 @@ func (c *ClaudeCodeAgent) UninstallHooks() error {
 
 	// Remove Entire hooks from all hook types
 	settings.Hooks.SessionStart = removeEntireHooks(settings.Hooks.SessionStart)
+	settings.Hooks.SessionEnd = removeEntireHooks(settings.Hooks.SessionEnd)
 	settings.Hooks.Stop = removeEntireHooks(settings.Hooks.Stop)
 	settings.Hooks.UserPromptSubmit = removeEntireHooks(settings.Hooks.UserPromptSubmit)
 	settings.Hooks.PreToolUse = removeEntireHooksFromMatchers(settings.Hooks.PreToolUse)
@@ -335,6 +345,7 @@ func (c *ClaudeCodeAgent) AreHooksInstalled() bool {
 func (c *ClaudeCodeAgent) GetSupportedHooks() []agent.HookType {
 	return []agent.HookType{
 		agent.HookSessionStart,
+		agent.HookSessionEnd,
 		agent.HookUserPromptSubmit,
 		agent.HookStop,
 		agent.HookPreToolUse,

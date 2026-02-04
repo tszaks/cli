@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -51,6 +52,14 @@ func init() {
 			return nil
 		}
 		return handleClaudeCodeSessionStart()
+	})
+
+	RegisterHookHandler(agent.AgentNameClaudeCode, claudecode.HookNameSessionEnd, func() error {
+		enabled, err := IsEnabled()
+		if err == nil && !enabled {
+			return nil
+		}
+		return handleClaudeCodeSessionEnd()
 	})
 
 	RegisterHookHandler(agent.AgentNameClaudeCode, claudecode.HookNameStop, func() error {
@@ -199,15 +208,15 @@ var currentHookAgentName agent.AgentName
 //
 
 func GetCurrentHookAgent() (agent.Agent, error) {
-	if currentHookAgentName != "" {
-		ag, err := agent.Get(currentHookAgentName)
-		if err != nil {
-			return nil, fmt.Errorf("getting hook agent %q: %w", currentHookAgentName, err)
-		}
-		return ag, nil
+	if currentHookAgentName == "" {
+		return nil, errors.New("not in a hook context: agent name not set")
 	}
-	// Fallback for non-hook contexts
-	return GetAgent()
+
+	ag, err := agent.Get(currentHookAgentName)
+	if err != nil {
+		return nil, fmt.Errorf("getting hook agent %q: %w", currentHookAgentName, err)
+	}
+	return ag, nil
 }
 
 // newAgentHooksCmd creates a hooks subcommand for an agent that implements HookHandler.

@@ -468,11 +468,14 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		return nil
 	}
 
-	// Track shadow branches to clean up after successful condensation
+	// Track shadow branch names to clean up after successful condensation
 	shadowBranchesToDelete := make(map[string]struct{})
 
 	// Condense sessions that have new content
 	for _, state := range sessionsWithContent {
+		// Compute shadow branch name BEFORE condensation modifies state.BaseCommit
+		shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+
 		result, err := s.CondenseSession(repo, checkpointID, state)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[entire] Warning: condensation failed for session %s: %v\n",
@@ -481,7 +484,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		}
 
 		// Track this shadow branch for cleanup
-		shadowBranchesToDelete[state.BaseCommit] = struct{}{}
+		shadowBranchesToDelete[shadowBranchName] = struct{}{}
 
 		// Update session state for the new base commit
 		// After condensation, the session continues from the NEW commit (HEAD), so we:
@@ -529,8 +532,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 
 	// Clean up shadow branches after successful condensation
 	// Data is now preserved on entire/sessions, so shadow branches are no longer needed
-	for baseCommit := range shadowBranchesToDelete {
-		shadowBranchName := getShadowBranchNameForCommit(baseCommit)
+	for shadowBranchName := range shadowBranchesToDelete {
 		if err := deleteShadowBranch(repo, shadowBranchName); err != nil {
 			fmt.Fprintf(os.Stderr, "[entire] Warning: failed to clean up %s: %v\n", shadowBranchName, err)
 		} else {
@@ -572,7 +574,7 @@ func (s *ManualCommitStrategy) filterSessionsWithNewContent(repo *git.Repository
 // beyond what was already condensed.
 func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state *SessionState) (bool, error) {
 	// Get shadow branch
-	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit)
+	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	ref, err := repo.Reference(refName, true)
 	if err != nil {
@@ -776,8 +778,8 @@ func addCheckpointTrailerWithComment(message string, checkpointID id.CheckpointI
 // If the session already exists and HEAD has moved (e.g., user committed), updates
 // BaseCommit to the new HEAD so future checkpoints go to the correct shadow branch.
 //
-// If there's an existing shadow branch with activity from a different worktree,
-// returns a ShadowBranchConflictError to allow the caller to inform the user.
+// If there's an existing shadow branch with commits from a different session ID,
+// returns a SessionIDConflictError to prevent orphaning existing session work.
 //
 // agentType is the human-readable name of the agent (e.g., "Claude Code").
 // transcriptPath is the path to the live transcript file (for mid-session commit detection).
@@ -797,47 +799,6 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 	state, err := s.loadSessionState(sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to check session state: %w", err)
-	}
-
-	// Check for shadow branch conflict before proceeding
-	// This must happen even if session state exists but has no checkpoints yet
-	// (e.g., state was created by concurrent warning but conflict later resolved)
-	baseCommitHash := head.Hash().String()
-	if state == nil || state.CheckpointCount == 0 {
-		shadowBranch := getShadowBranchNameForCommit(baseCommitHash)
-		refName := plumbing.NewBranchReferenceName(shadowBranch)
-
-		ref, refErr := repo.Reference(refName, true)
-		if refErr == nil {
-			// Shadow branch exists - check if it has commits from a different session
-			tipCommit, commitErr := repo.CommitObject(ref.Hash())
-			if commitErr == nil {
-				existingSessionID, found := trailers.ParseSession(tipCommit.Message)
-				if found && existingSessionID != sessionID {
-					// Check if the existing session has a state file
-					// existingSessionID is the full Entire session ID (YYYY-MM-DD-uuid) from the trailer
-					// We intentionally ignore load errors - treat them as "no state" (orphaned branch)
-					existingState, _ := s.loadSessionState(existingSessionID) //nolint:errcheck // error means no state
-					if existingState == nil {
-						// Orphaned shadow branch - no state file for the existing session
-						// Reset the branch so the new session can proceed
-						fmt.Fprintf(os.Stderr, "Resetting orphaned shadow branch '%s' (previous session %s has no state)\n",
-							shadowBranch, existingSessionID)
-						if err := deleteShadowBranch(repo, shadowBranch); err != nil {
-							return fmt.Errorf("failed to reset orphaned shadow branch: %w", err)
-						}
-					} else {
-						// Existing session has state - this is a real conflict
-						// (e.g., different worktree at same commit)
-						return &SessionIDConflictError{
-							ExistingSession: existingSessionID,
-							NewSession:      sessionID,
-							ShadowBranch:    shadowBranch,
-						}
-					}
-				}
-			}
-		}
 	}
 
 	if state != nil && state.BaseCommit != "" {
@@ -880,11 +841,11 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 
 			// Check if old shadow branch exists - if so, user did NOT commit (would have been deleted)
 			// This happens when user does: stash → pull → stash apply, or rebase, etc.
-			oldShadowBranch := getShadowBranchNameForCommit(oldBaseCommit)
+			oldShadowBranch := getShadowBranchNameForCommit(oldBaseCommit, state.WorktreeID)
 			oldRefName := plumbing.NewBranchReferenceName(oldShadowBranch)
 			if oldRef, err := repo.Reference(oldRefName, true); err == nil {
 				// Old shadow branch exists - move it to new base commit
-				newShadowBranch := getShadowBranchNameForCommit(newBaseCommit)
+				newShadowBranch := getShadowBranchNameForCommit(newBaseCommit, state.WorktreeID)
 				newRefName := plumbing.NewBranchReferenceName(newShadowBranch)
 
 				// Create new reference pointing to same commit
@@ -917,36 +878,6 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 	}
 	// If state exists but BaseCommit is empty, it's a partial state from concurrent warning
 	// Continue below to properly initialize it
-
-	currentWorktree, err := GetWorktreePath()
-	if err != nil {
-		return fmt.Errorf("failed to get worktree path: %w", err)
-	}
-
-	// Check for existing sessions on the same base commit from different worktrees
-	existingSessions, err := s.findSessionsForCommit(head.Hash().String())
-	if err != nil {
-		// Log but continue - conflict detection is best-effort
-		fmt.Fprintf(os.Stderr, "Warning: failed to check for existing sessions: %v\n", err)
-	} else {
-		for _, existingState := range existingSessions {
-			// Skip sessions from the same worktree
-			if existingState.WorktreePath == currentWorktree {
-				continue
-			}
-
-			// Found a session from a different worktree on the same base commit
-			shadowBranch := getShadowBranchNameForCommit(head.Hash().String())
-			return &ShadowBranchConflictError{
-				Branch:           shadowBranch,
-				ExistingSession:  existingState.SessionID,
-				ExistingWorktree: existingState.WorktreePath,
-				LastActivity:     existingState.StartedAt,
-				CurrentSession:   sessionID,
-				CurrentWorktree:  currentWorktree,
-			}
-		}
-	}
 
 	// Initialize new session
 	state, err = s.initializeSession(repo, sessionID, agentType, transcriptPath)
@@ -986,7 +917,7 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 	// For the first checkpoint, no shadow branch exists yet - this is fine,
 	// CalculatePromptAttribution will use baseTree as the reference instead.
 	var lastCheckpointTree *object.Tree
-	shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit)
+	shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	ref, err := repo.Reference(refName, true)
 	if err != nil {
@@ -1103,7 +1034,7 @@ func getStagedFiles(repo *git.Repository) []string {
 // getLastPrompt retrieves the most recent user prompt from a session's shadow branch.
 // Returns empty string if no prompt can be retrieved.
 func (s *ManualCommitStrategy) getLastPrompt(repo *git.Repository, state *SessionState) string {
-	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit)
+	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
 	ref, err := repo.Reference(refName, true)
 	if err != nil {

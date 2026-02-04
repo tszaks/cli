@@ -29,14 +29,16 @@ import (
 // unknownSessionID is the fallback session ID used when no session ID is provided.
 const unknownSessionID = "unknown"
 
-// getAgentWithFallback returns an agent by type, falling back to detection if type is empty or unknown.
-func getAgentWithFallback(agentType agentpkg.AgentType) (agentpkg.Agent, error) {
-	if agentType != "" {
-		if agent, err := agentpkg.GetByAgentType(agentType); err == nil {
-			return agent, nil
-		}
+// getAgent returns an agent by type
+func getAgent(agentType agentpkg.AgentType) (agentpkg.Agent, error) {
+	if agentType == "" {
+		return nil, errors.New("agent type cannot be empty")
 	}
-	return GetAgent()
+	ag, err := agentpkg.GetByAgentType(agentType)
+	if err != nil {
+		return nil, fmt.Errorf("getting agent: %w", err)
+	}
+	return ag, nil
 }
 
 func newRewindCmd() *cobra.Command {
@@ -236,7 +238,7 @@ func runRewindInteractive() error {
 	}
 
 	// Resolve agent once for use throughout
-	agent, err := getAgentWithFallback(selectedPoint.Agent)
+	agent, err := getAgent(selectedPoint.Agent)
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -447,7 +449,7 @@ func runRewindToInternal(commitID string, logsOnly bool, reset bool) error {
 	}
 
 	// Resolve agent once for use throughout
-	agent, err := getAgentWithFallback(selectedPoint.Agent)
+	agent, err := getAgent(selectedPoint.Agent)
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -538,7 +540,7 @@ func runRewindToInternal(commitID string, logsOnly bool, reset bool) error {
 // Defaults to restoring logs only (no checkout) for safety.
 func handleLogsOnlyRewindNonInteractive(start strategy.Strategy, point strategy.RewindPoint) error {
 	// Resolve agent once for use throughout
-	agent, err := getAgentWithFallback(point.Agent)
+	agent, err := getAgent(point.Agent)
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -580,7 +582,7 @@ func handleLogsOnlyRewindNonInteractive(start strategy.Strategy, point strategy.
 // This performs a git reset --hard to the target commit.
 func handleLogsOnlyResetNonInteractive(start strategy.Strategy, point strategy.RewindPoint) error {
 	// Resolve agent once for use throughout
-	agent, err := getAgentWithFallback(point.Agent)
+	agent, err := getAgent(point.Agent)
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -883,7 +885,7 @@ func handleLogsOnlyRewindInteractive(start strategy.Strategy, point strategy.Rew
 // handleLogsOnlyRestore restores only the session logs without changing files.
 func handleLogsOnlyRestore(start strategy.Strategy, point strategy.RewindPoint) error {
 	// Resolve agent once for use throughout
-	agent, err := getAgentWithFallback(point.Agent)
+	agent, err := getAgent(point.Agent)
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -925,7 +927,7 @@ func handleLogsOnlyRestore(start strategy.Strategy, point strategy.RewindPoint) 
 // handleLogsOnlyCheckout restores logs and checks out the commit (detached HEAD).
 func handleLogsOnlyCheckout(start strategy.Strategy, point strategy.RewindPoint, shortID string) error {
 	// Resolve agent once for use throughout
-	agent, err := getAgentWithFallback(point.Agent)
+	agent, err := getAgent(point.Agent)
 	if err != nil {
 		return fmt.Errorf("failed to get agent: %w", err)
 	}
@@ -995,7 +997,7 @@ func handleLogsOnlyCheckout(start strategy.Strategy, point strategy.RewindPoint,
 // handleLogsOnlyReset restores logs and resets the branch to the commit (destructive).
 func handleLogsOnlyReset(start strategy.Strategy, point strategy.RewindPoint, shortID string) error {
 	// Resolve agent once for use throughout
-	agent, agentErr := getAgentWithFallback(point.Agent)
+	agent, agentErr := getAgent(point.Agent)
 	if agentErr != nil {
 		return fmt.Errorf("failed to get agent: %w", agentErr)
 	}

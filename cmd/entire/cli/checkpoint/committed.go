@@ -28,6 +28,9 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
+// errStopIteration is used to stop commit iteration early in GetCheckpointAuthor.
+var errStopIteration = errors.New("stop iteration")
+
 // WriteCommitted writes a committed checkpoint to the entire/sessions branch.
 // Checkpoints are stored at sharded paths: <id[:2]>/<id[2:]>/
 //
@@ -341,6 +344,7 @@ func (s *GitStore) writeMetadataJSON(opts WriteCommittedOptions, basePath string
 		TranscriptLinesAtStart:      opts.TranscriptLinesAtStart,
 		TokenUsage:                  opts.TokenUsage,
 		InitialAttribution:          opts.InitialAttribution,
+		Summary:                     opts.Summary,
 	}
 
 	// Merge with existing metadata if present (multi-session checkpoint)
@@ -638,7 +642,6 @@ func (s *GitStore) ReadCommitted(ctx context.Context, checkpointID id.Checkpoint
 		if content, contentErr := metadataFile.Contents(); contentErr == nil {
 			//nolint:errcheck,gosec // Best-effort parsing, defaults are fine
 			json.Unmarshal([]byte(content), &result.Metadata)
-			result.Metadata.Strategy = trailers.NormalizeStrategyName(result.Metadata.Strategy)
 		}
 	}
 
@@ -798,6 +801,76 @@ func LookupSessionLog(cpID id.CheckpointID) ([]byte, string, error) {
 	return store.GetSessionLog(cpID)
 }
 
+// UpdateSummary updates the summary field in an existing checkpoint's metadata.
+// Returns ErrCheckpointNotFound if the checkpoint doesn't exist.
+func (s *GitStore) UpdateSummary(ctx context.Context, checkpointID id.CheckpointID, summary *Summary) error {
+	_ = ctx // Reserved for future use
+
+	// Ensure sessions branch exists
+	if err := s.ensureSessionsBranch(); err != nil {
+		return fmt.Errorf("failed to ensure sessions branch: %w", err)
+	}
+
+	// Get current branch tip and flatten tree
+	ref, entries, err := s.getSessionsBranchEntries()
+	if err != nil {
+		return err
+	}
+
+	// Read existing metadata
+	basePath := checkpointID.Path() + "/"
+	metadataPath := basePath + paths.MetadataFileName
+	entry, exists := entries[metadataPath]
+	if !exists {
+		return ErrCheckpointNotFound
+	}
+
+	// Read and parse existing metadata
+	existingMetadata, err := s.readMetadataFromBlob(entry.Hash)
+	if err != nil {
+		return fmt.Errorf("failed to read existing metadata: %w", err)
+	}
+
+	// Update the summary
+	existingMetadata.Summary = summary
+
+	// Write updated metadata
+	metadataJSON, err := jsonutil.MarshalIndentWithNewline(existingMetadata, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+	metadataHash, err := CreateBlobFromContent(s.repo, metadataJSON)
+	if err != nil {
+		return fmt.Errorf("failed to create metadata blob: %w", err)
+	}
+	entries[metadataPath] = object.TreeEntry{
+		Name: metadataPath,
+		Mode: filemode.Regular,
+		Hash: metadataHash,
+	}
+
+	// Build and commit
+	newTreeHash, err := BuildTreeFromEntries(s.repo, entries)
+	if err != nil {
+		return err
+	}
+
+	authorName, authorEmail := getGitAuthorFromRepo(s.repo)
+	commitMsg := fmt.Sprintf("Update summary for checkpoint %s (session: %s)", checkpointID, existingMetadata.SessionID)
+	newCommitHash, err := s.createCommit(newTreeHash, ref.Hash(), commitMsg, authorName, authorEmail)
+	if err != nil {
+		return err
+	}
+
+	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
+	newRef := plumbing.NewHashReference(refName, newCommitHash)
+	if err := s.repo.Storer.SetReference(newRef); err != nil {
+		return fmt.Errorf("failed to set branch reference: %w", err)
+	}
+
+	return nil
+}
+
 // ensureSessionsBranch ensures the entire/sessions branch exists.
 func (s *GitStore) ensureSessionsBranch() error {
 	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
@@ -826,11 +899,17 @@ func (s *GitStore) ensureSessionsBranch() error {
 }
 
 // getSessionsBranchTree returns the tree object for the entire/sessions branch.
+// Falls back to origin/entire/sessions if the local branch doesn't exist.
 func (s *GitStore) getSessionsBranchTree() (*object.Tree, error) {
 	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
 	ref, err := s.repo.Reference(refName, true)
 	if err != nil {
-		return nil, fmt.Errorf("sessions branch not found: %w", err)
+		// Local branch doesn't exist, try remote-tracking branch
+		remoteRefName := plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName)
+		ref, err = s.repo.Reference(remoteRefName, true)
+		if err != nil {
+			return nil, fmt.Errorf("sessions branch not found: %w", err)
+		}
 	}
 
 	commit, err := s.repo.CommitObject(ref.Hash())
@@ -1023,4 +1102,70 @@ func readTranscriptFromTree(tree *object.Tree, agentType agent.AgentType) ([]byt
 	}
 
 	return nil, nil
+}
+
+// Author contains author information for a checkpoint.
+type Author struct {
+	Name  string
+	Email string
+}
+
+// GetCheckpointAuthor retrieves the author of a checkpoint from the entire/sessions commit history.
+// Returns the author of the commit that introduced this checkpoint's metadata.json file.
+// Returns empty Author if the checkpoint is not found or the sessions branch doesn't exist.
+func (s *GitStore) GetCheckpointAuthor(ctx context.Context, checkpointID id.CheckpointID) (Author, error) {
+	_ = ctx // Reserved for future use
+
+	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
+	ref, err := s.repo.Reference(refName, true)
+	if err != nil {
+		return Author{}, nil
+	}
+
+	// Path to the checkpoint's metadata file
+	metadataPath := checkpointID.Path() + "/" + paths.MetadataFileName
+
+	// Walk commit history looking for the commit that introduced this file
+	iter, err := s.repo.Log(&git.LogOptions{
+		From:  ref.Hash(),
+		Order: git.LogOrderCommitterTime,
+	})
+	if err != nil {
+		return Author{}, nil
+	}
+	defer iter.Close()
+
+	var author Author
+	var foundCommit *object.Commit
+
+	err = iter.ForEach(func(c *object.Commit) error {
+		tree, treeErr := c.Tree()
+		if treeErr != nil {
+			return nil //nolint:nilerr // Skip commits we can't read, continue searching
+		}
+
+		_, fileErr := tree.File(metadataPath)
+		if fileErr != nil {
+			// File doesn't exist in this commit - we've gone past the creation point
+			if foundCommit != nil {
+				return errStopIteration
+			}
+			return nil
+		}
+
+		// File exists - track it (oldest one with file is the creator)
+		foundCommit = c
+		author = Author{
+			Name:  c.Author.Name,
+			Email: c.Author.Email,
+		}
+		return nil
+	})
+
+	// Ignore errStopIteration - it's just for early exit
+	if err != nil && !errors.Is(err, errStopIteration) {
+		return Author{}, nil
+	}
+
+	return author, nil
 }

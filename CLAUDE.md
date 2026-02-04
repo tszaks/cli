@@ -47,6 +47,23 @@ Integration tests use the `//go:build integration` build tag and are located in 
 mise run fmt && mise run lint
 ```
 
+### Before Every Commit (REQUIRED)
+
+**CI will fail if you skip these steps:**
+
+```bash
+mise run fmt      # Format code (CI enforces gofmt)
+mise run lint     # Lint check (CI enforces golangci-lint)
+mise run test:ci  # Run all tests (unit + integration)
+```
+
+Or combined: `mise run fmt && mise run lint && mise run test:ci`
+
+**Common CI failures from skipping this:**
+- `gofmt` formatting differences → run `mise run fmt`
+- Lint errors → run `mise run lint` and fix issues
+- Test failures → run `mise run test` and fix
+
 ### Code Duplication Prevention
 
 Before implementing Go code, use `/go:discover-related` to find existing utilities and patterns that might be reusable.
@@ -103,6 +120,41 @@ return fmt.Errorf("unknown strategy: %s", name)
 - `errors.go` - Defines `SilentError` type and `NewSilentError()` constructor
 - `root.go` - Sets `SilenceErrors: true` on root command
 - `main.go` - Checks for `SilentError` before printing
+
+### Settings
+
+All settings access should go through the `settings` package (`cmd/entire/cli/settings/`).
+
+**Why a separate package:**
+The `settings` package exists to avoid import cycles. The `cli` package imports `strategy`, so `strategy` cannot import `cli`. The `settings` package provides shared settings loading that both can use.
+
+**Usage:**
+```go
+import "entire.io/cli/cmd/entire/cli/settings"
+
+// Load full settings object
+s, err := settings.Load()
+if err != nil {
+    // handle error
+}
+if s.Enabled {
+    // ...
+}
+
+// Or use convenience functions
+if settings.IsSummarizeEnabled() {
+    // ...
+}
+```
+
+**Do NOT:**
+- Read `.entire/settings.json` or `.entire/settings.local.json` directly with `os.ReadFile`
+- Duplicate settings parsing logic in other packages
+- Create new settings helpers without adding them to the `settings` package
+
+**Key files:**
+- `settings/settings.go` - `EntireSettings` struct, `Load()`, and helper methods
+- `config.go` - Higher-level config functions that use settings (for `cli` package consumers)
 
 ### Logging vs User Output
 
@@ -189,17 +241,16 @@ All strategies implement:
 
 | Strategy | Main Branch | Metadata Storage | Use Case |
 |----------|-------------|------------------|----------|
-| **manual-commit** (default) | Unchanged (no commits) | `entire/<HEAD-hash>` branches + `entire/sessions` | Recommended for most workflows |
+| **manual-commit** (default) | Unchanged (no commits) | `entire/<HEAD-hash>-<worktreeHash>` branches + `entire/sessions` | Recommended for most workflows |
 | **auto-commit** | Creates clean commits | Orphan `entire/sessions` branch | Teams that want code commits from sessions |
-
-Legacy names `shadow` and `dual` are only recognized when reading settings or checkpoint metadata.
 
 #### Strategy Details
 
 **Manual-Commit Strategy** (`manual_commit*.go`) - Default
 - **Does not modify** the active branch - no commits created on the working branch
-- Creates shadow branch `entire/<HEAD-commit-hash[:7]>` per base commit for checkpoints
-- **Supports multiple concurrent sessions** - checkpoints from different sessions interleave on the same shadow branch
+- Creates shadow branch `entire/<HEAD-commit-hash[:7]>-<worktreeHash[:6]>` per base commit + worktree
+- **Worktree-specific branches** - each git worktree gets its own shadow branch namespace, preventing conflicts
+- **Supports multiple concurrent sessions** - checkpoints from different sessions in the same directory interleave on the same shadow branch
 - Session logs are condensed to permanent `entire/sessions` branch on user commits
 - Builds git trees in-memory using go-git plumbing APIs
 - Rewind restores files from shadow branch commit tree (does not use `git reset`)
@@ -250,7 +301,7 @@ Legacy names `shadow` and `dual` are only recognized when reading settings or ch
 
 #### Metadata Structure
 
-**Shadow Strategy** - Shadow branches (`entire/<commit-hash>`):
+**Shadow Strategy** - Shadow branches (`entire/<commit-hash[:7]>-<worktreeHash[:6]>`):
 ```
 .entire/metadata/<session-id>/
 ├── full.jsonl               # Session transcript
@@ -364,7 +415,7 @@ entire/sessions commit:
   - Auto-commit: Always added when creating commits
   - Manual-commit: Added by hook; user can remove to skip linking
 
-**On shadow branch commits (`entire/<commit-hash>`) - manual-commit only:**
+**On shadow branch commits (`entire/<commit-hash[:7]>-<worktreeHash[:6]>`) - manual-commit only:**
 - `Entire-Session: <session-id>` - Session identifier
 - `Entire-Metadata: <path>` - Path to metadata directory within the tree
 - `Entire-Task-Metadata: <path>` - Path to task metadata directory (for task checkpoints)
@@ -386,22 +437,23 @@ Trailers:
 #### Multi-Session Behavior
 
 **Concurrent Sessions:**
-- When a second session starts while another has uncommitted checkpoints, a warning is shown
+- When a second session starts in the same directory while another has uncommitted checkpoints, a warning is shown
 - Both sessions can proceed - their checkpoints interleave on the same shadow branch
 - Each session's `RewindPoint` includes `SessionID` and `SessionPrompt` to help identify which checkpoint belongs to which session
 - On commit, all sessions are condensed together with archived sessions in numbered subfolders
+- Note: Different git worktrees have separate shadow branches (worktree-specific naming), so concurrent sessions in different worktrees do not conflict
 
 **Orphaned Shadow Branches:**
 - A shadow branch is "orphaned" if it exists but has no corresponding session state file
 - This can happen if the state file is manually deleted or lost
 - When a new session starts with an orphaned branch, the branch is automatically reset
-- If the existing session DOES have a state file (e.g., cross-worktree conflict), a `SessionIDConflictError` is returned
+- If the existing session DOES have a state file (concurrent session in same directory), a `SessionIDConflictError` is returned
 
 **Shadow Branch Migration (Pull/Rebase):**
 - If user does stash → pull → apply (or rebase), HEAD changes but work isn't committed
 - The shadow branch would be orphaned at the old commit
 - Detection: base commit changed AND old shadow branch still exists (would be deleted if user committed)
-- Action: shadow branch is renamed from `entire/<old-hash>` to `entire/<new-hash>`
+- Action: shadow branch is renamed from `entire/<old-hash>-<worktreeHash>` to `entire/<new-hash>-<worktreeHash>`
 - Session continues seamlessly with checkpoints preserved
 
 #### When Modifying Strategies
@@ -412,9 +464,8 @@ Trailers:
 
 # Important Notes
 
-- Tests: always run `mise run test` before committing changes
+- **Before committing:** Follow the "Before Every Commit (REQUIRED)" checklist above - CI will fail without it
 - Integration tests: run `mise run test:integration` when changing integration test code
-- Formatting and linting: always run `mise run fmt && mise run lint` before committing changes
 - When adding new features, ensure they are well-tested and documented.
 - Always check for code duplication and refactor as needed.
 

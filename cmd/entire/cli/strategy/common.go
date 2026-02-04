@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"entire.io/cli/cmd/entire/cli/agent"
+	"entire.io/cli/cmd/entire/cli/checkpoint"
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/paths"
 	"entire.io/cli/cmd/entire/cli/trailers"
@@ -24,11 +25,48 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
+// Common branch name constants for default branch detection.
+const (
+	branchMain   = "main"
+	branchMaster = "master"
+)
+
 // errStop is a sentinel error used to break out of git log iteration.
 // Shared across strategies that iterate through git commits.
 // NOTE: A similar sentinel exists in checkpoint/temporary.go - this is intentional.
 // Each package needs its own package-scoped sentinel for git log iteration patterns.
 var errStop = errors.New("stop iteration")
+
+// IsAncestorOf checks if commit is an ancestor of (or equal to) target.
+// Returns true if target can reach commit by following parent links.
+// Limits search to 1000 commits to avoid excessive traversal.
+func IsAncestorOf(repo *git.Repository, commit, target plumbing.Hash) bool {
+	if commit == target {
+		return true
+	}
+
+	iter, err := repo.Log(&git.LogOptions{From: target})
+	if err != nil {
+		return false
+	}
+	defer iter.Close()
+
+	found := false
+	count := 0
+	_ = iter.ForEach(func(c *object.Commit) error { //nolint:errcheck // Best-effort search, errors are non-fatal
+		count++
+		if count > 1000 {
+			return errStop
+		}
+		if c.Hash == commit {
+			found = true
+			return errStop
+		}
+		return nil
+	})
+
+	return found
+}
 
 // ListCheckpoints returns all checkpoints from the entire/sessions branch.
 // Scans sharded paths: <id[:2]>/<id[2:]>/ directories containing metadata.json.
@@ -313,21 +351,12 @@ func ReadAllSessionPromptsFromTree(tree *object.Tree, checkpointPath string, ses
 
 // ReadSessionPromptFromShadow reads the first prompt for a session from the shadow branch.
 // Returns an empty string if the prompt cannot be read.
-func ReadSessionPromptFromShadow(repo *git.Repository, baseCommit, sessionID string) string {
-	// Get shadow branch for this base commit (try full hash first, then shortened)
-	shadowBranchName := shadowBranchPrefix + baseCommit
+func ReadSessionPromptFromShadow(repo *git.Repository, baseCommit, worktreeID, sessionID string) string {
+	// Get shadow branch for this base commit using worktree-specific naming
+	shadowBranchName := checkpoint.ShadowBranchNameForCommit(baseCommit, worktreeID)
 	ref, err := repo.Reference(plumbing.NewBranchReferenceName(shadowBranchName), true)
 	if err != nil {
-		// Try shortened hash (7 chars)
-		if len(baseCommit) > 7 {
-			shadowBranchName = shadowBranchPrefix + baseCommit[:7]
-			ref, err = repo.Reference(plumbing.NewBranchReferenceName(shadowBranchName), true)
-			if err != nil {
-				return ""
-			}
-		} else {
-			return ""
-		}
+		return ""
 	}
 
 	commit, err := repo.CommitObject(ref.Hash())
@@ -1243,7 +1272,7 @@ func GetCurrentBranchName(repo *git.Repository) string {
 // Returns ZeroHash if no main branch is found.
 func GetMainBranchHash(repo *git.Repository) plumbing.Hash {
 	// Try common main branch names
-	for _, branchName := range []string{"main", "master"} {
+	for _, branchName := range []string{branchMain, branchMaster} {
 		// Try local branch first
 		ref, err := repo.Reference(plumbing.NewBranchReferenceName(branchName), true)
 		if err == nil {
@@ -1256,4 +1285,59 @@ func GetMainBranchHash(repo *git.Repository) plumbing.Hash {
 		}
 	}
 	return plumbing.ZeroHash
+}
+
+// GetDefaultBranchName returns the name of the default branch.
+// First checks origin/HEAD, then falls back to checking if main/master exists.
+// Returns empty string if unable to determine.
+// NOTE: Duplicated from cli/git_operations.go - see ENT-129 for consolidation.
+func GetDefaultBranchName(repo *git.Repository) string {
+	// Try to get the symbolic reference for origin/HEAD
+	// Use resolved=false to get the symbolic ref itself, then extract its target
+	ref, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", "HEAD"), false)
+	if err == nil && ref != nil && ref.Type() == plumbing.SymbolicReference {
+		target := ref.Target().String()
+		if branchName, found := strings.CutPrefix(target, "refs/remotes/origin/"); found {
+			return branchName
+		}
+	}
+
+	// Fallback: check if origin/main or origin/master exists
+	if _, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", branchMain), true); err == nil {
+		return branchMain
+	}
+	if _, err := repo.Reference(plumbing.NewRemoteReferenceName("origin", branchMaster), true); err == nil {
+		return branchMaster
+	}
+
+	// Final fallback: check local branches
+	if _, err := repo.Reference(plumbing.NewBranchReferenceName(branchMain), true); err == nil {
+		return branchMain
+	}
+	if _, err := repo.Reference(plumbing.NewBranchReferenceName(branchMaster), true); err == nil {
+		return branchMaster
+	}
+
+	return ""
+}
+
+// IsOnDefaultBranch checks if the repository HEAD is on the default branch.
+// Returns (isOnDefault, currentBranchName).
+// NOTE: Duplicated from cli/git_operations.go - see ENT-129 for consolidation.
+func IsOnDefaultBranch(repo *git.Repository) (bool, string) {
+	currentBranch := GetCurrentBranchName(repo)
+	if currentBranch == "" {
+		return false, ""
+	}
+
+	defaultBranch := GetDefaultBranchName(repo)
+	if defaultBranch == "" {
+		// Can't determine default, check common names
+		if currentBranch == branchMain || currentBranch == branchMaster {
+			return true, currentBranch
+		}
+		return false, currentBranch
+	}
+
+	return currentBranch == defaultBranch, currentBranch
 }

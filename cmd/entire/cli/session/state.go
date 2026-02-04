@@ -33,8 +33,16 @@ type State struct {
 	// WorktreePath is the absolute path to the worktree root
 	WorktreePath string `json:"worktree_path,omitempty"`
 
+	// WorktreeID is the internal git worktree identifier (empty for main worktree)
+	// Derived from .git/worktrees/<name>/, stable across git worktree move
+	WorktreeID string `json:"worktree_id,omitempty"`
+
 	// StartedAt is when the session was started
 	StartedAt time.Time `json:"started_at"`
+
+	// EndedAt is when the session was explicitly closed by the user.
+	// nil means the session is still active or was not cleanly closed.
+	EndedAt *time.Time `json:"ended_at,omitempty"`
 
 	// CheckpointCount is the number of checkpoints created in this session
 	CheckpointCount int `json:"checkpoint_count"`
@@ -47,9 +55,6 @@ type State struct {
 
 	// FilesTouched tracks files modified/created/deleted during this session
 	FilesTouched []string `json:"files_touched,omitempty"`
-
-	// ConcurrentWarningShown is true if user was warned about concurrent sessions
-	ConcurrentWarningShown bool `json:"concurrent_warning_shown,omitempty"`
 
 	// LastCheckpointID is the checkpoint ID from last condensation, reused for subsequent commits without new content
 	LastCheckpointID id.CheckpointID `json:"last_checkpoint_id,omitempty"`

@@ -67,8 +67,8 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 	}
 
 	// Check if shadow branch exists to report whether we created it
-	shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit)
-	branchExisted := store.ShadowBranchExists(state.BaseCommit)
+	shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	branchExisted := store.ShadowBranchExists(state.BaseCommit, state.WorktreeID)
 
 	// Use the pending attribution calculated at prompt start (in InitializeSession)
 	// This was calculated BEFORE the agent made changes, so it accurately captures user edits
@@ -96,6 +96,7 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 	result, err := store.WriteTemporary(context.Background(), checkpoint.WriteTemporaryOptions{
 		SessionID:         sessionID,
 		BaseCommit:        state.BaseCommit,
+		WorktreeID:        state.WorktreeID,
 		ModifiedFiles:     ctx.ModifiedFiles,
 		NewFiles:          ctx.NewFiles,
 		DeletedFiles:      ctx.DeletedFiles,
@@ -211,11 +212,11 @@ func (s *ManualCommitStrategy) SaveTaskCheckpoint(ctx TaskCheckpointContext) err
 	}
 
 	// Check if shadow branch exists to report whether we created it
-	shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit)
-	branchExisted := store.ShadowBranchExists(state.BaseCommit)
+	shadowBranchName := checkpoint.ShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	branchExisted := store.ShadowBranchExists(state.BaseCommit, state.WorktreeID)
 
 	// Compute metadata paths for commit message
-	sessionMetadataDir := paths.SessionMetadataDirFromEntireID(ctx.SessionID)
+	sessionMetadataDir := paths.SessionMetadataDirFromSessionID(ctx.SessionID)
 	taskMetadataDir := TaskMetadataDir(sessionMetadataDir, ctx.ToolUseID)
 
 	// Generate commit message
@@ -247,6 +248,7 @@ func (s *ManualCommitStrategy) SaveTaskCheckpoint(ctx TaskCheckpointContext) err
 	_, err = store.WriteTemporaryTask(context.Background(), checkpoint.WriteTemporaryTaskOptions{
 		SessionID:              ctx.SessionID,
 		BaseCommit:             state.BaseCommit,
+		WorktreeID:             state.WorktreeID,
 		ToolUseID:              ctx.ToolUseID,
 		AgentID:                ctx.AgentID,
 		ModifiedFiles:          ctx.ModifiedFiles,
