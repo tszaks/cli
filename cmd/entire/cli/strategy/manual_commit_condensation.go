@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 
 	"entire.io/cli/cmd/entire/cli/agent"
@@ -14,6 +13,7 @@ import (
 	"entire.io/cli/cmd/entire/cli/checkpoint/id"
 	"entire.io/cli/cmd/entire/cli/logging"
 	"entire.io/cli/cmd/entire/cli/paths"
+	"entire.io/cli/cmd/entire/cli/settings"
 	"entire.io/cli/cmd/entire/cli/summarize"
 	"entire.io/cli/cmd/entire/cli/textutil"
 	"entire.io/cli/cmd/entire/cli/transcript"
@@ -221,7 +221,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 
 	// Generate summary if enabled
 	var summary *cpkg.Summary
-	if isSummarizeEnabled() && len(sessionData.Transcript) > 0 {
+	if settings.IsSummarizeEnabled() && len(sessionData.Transcript) > 0 {
 		summarizeCtx := logging.WithComponent(logCtx, "summarize")
 
 		// Scope transcript to this checkpoint's portion
@@ -478,63 +478,4 @@ func generateContextFromPrompts(prompts []string) []byte {
 	}
 
 	return []byte(buf.String())
-}
-
-// isSummarizeEnabled checks if auto-summarize is enabled in settings.
-// Reads the settings file directly to avoid import cycles with the cli package.
-// Checks settings.local.json first, then settings.json.
-func isSummarizeEnabled() bool {
-	// Try local settings first (user preference, not committed)
-	localSettingsPath, err := paths.AbsPath(".entire/settings.local.json")
-	if err != nil {
-		localSettingsPath = ".entire/settings.local.json"
-	}
-	if enabled, found := readSummarizeEnabledFromFile(localSettingsPath); found {
-		return enabled
-	}
-
-	// Fall back to shared settings
-	sharedSettingsPath, err := paths.AbsPath(".entire/settings.json")
-	if err != nil {
-		sharedSettingsPath = ".entire/settings.json"
-	}
-	if enabled, found := readSummarizeEnabledFromFile(sharedSettingsPath); found {
-		return enabled
-	}
-
-	// Default: summarize is disabled
-	return false
-}
-
-// readSummarizeEnabledFromFile reads summarize.enabled from a specific settings file.
-// Returns (enabled, found). If not found, returns (false, false).
-func readSummarizeEnabledFromFile(settingsPath string) (bool, bool) {
-	//nolint:gosec // G304: settingsPath is always a hardcoded constant from this package
-	data, err := os.ReadFile(settingsPath)
-	if err != nil {
-		return false, false
-	}
-
-	var settings struct {
-		StrategyOptions map[string]interface{} `json:"strategy_options"`
-	}
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return false, false
-	}
-
-	if settings.StrategyOptions == nil {
-		return false, false
-	}
-
-	summarizeOpts, ok := settings.StrategyOptions["summarize"].(map[string]interface{})
-	if !ok {
-		return false, false
-	}
-
-	enabled, ok := summarizeOpts["enabled"].(bool)
-	if !ok {
-		return false, false
-	}
-
-	return enabled, true
 }
