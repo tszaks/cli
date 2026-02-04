@@ -97,6 +97,14 @@ Summary generation (for --checkpoint):
   --generate    Generate an AI summary for the checkpoint
   --force       Regenerate even if a summary already exists (requires --generate)
 
+Performance options:
+  --search-all  Remove branch/depth limits when searching for commits (may be slow)
+
+Checkpoint detail view shows:
+  - Author who created the checkpoint
+  - Associated git commits that reference the checkpoint
+  - Prompts and responses from the session
+
 Note: --session filters the list view; --commit and --checkpoint are mutually exclusive.`,
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) > 0 {
