@@ -506,48 +506,6 @@ func (s *GitStore) readMetadataFromBlob(hash plumbing.Hash) (*CommittedMetadata,
 	return readJSONFromBlob[CommittedMetadata](s.repo, hash)
 }
 
-// archiveExistingSession moves existing session files to a numbered subfolder.
-// The subfolder number is based on the current session count (so first archived session goes to "1/").
-func (s *GitStore) archiveExistingSession(basePath string, sessionCount int, entries map[string]object.TreeEntry) {
-	archivePath := fmt.Sprintf("%s%d/", basePath, sessionCount)
-
-	// Files to archive (standard checkpoint files at basePath, excluding tasks/ subfolder)
-	filesToArchive := []string{
-		paths.MetadataFileName,
-		paths.TranscriptFileName,
-		paths.PromptFileName,
-		paths.ContextFileName,
-		paths.ContentHashFileName,
-	}
-
-	// Also include transcript chunk files (full.jsonl.001, full.jsonl.002, etc.)
-	chunkPrefix := basePath + paths.TranscriptFileName + "."
-	for srcPath := range entries {
-		if strings.HasPrefix(srcPath, chunkPrefix) {
-			chunkSuffix := strings.TrimPrefix(srcPath, basePath+paths.TranscriptFileName)
-			if idx := agent.ParseChunkIndex(paths.TranscriptFileName+chunkSuffix, paths.TranscriptFileName); idx > 0 {
-				filesToArchive = append(filesToArchive, paths.TranscriptFileName+chunkSuffix)
-			}
-		}
-	}
-
-	// Move each file to archive folder
-	for _, filename := range filesToArchive {
-		srcPath := basePath + filename
-		if entry, exists := entries[srcPath]; exists {
-			// Add to archive location
-			dstPath := archivePath + filename
-			entries[dstPath] = object.TreeEntry{
-				Name: dstPath,
-				Mode: entry.Mode,
-				Hash: entry.Hash,
-			}
-			// Remove from original location (will be overwritten by new session)
-			delete(entries, srcPath)
-		}
-	}
-}
-
 // buildCommitMessage constructs the commit message with proper trailers.
 // The commit subject is always "Checkpoint: <id>" for consistency.
 // If CommitSubject is provided (e.g., for task checkpoints), it's included in the body.
