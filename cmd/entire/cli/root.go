@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
-	"entire.io/cli/cmd/entire/cli/telemetry"
+	"github.com/entireio/cli/cmd/entire/cli/telemetry"
 	"github.com/spf13/cobra"
 )
 

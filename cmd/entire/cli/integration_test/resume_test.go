@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/agent"
-	"entire.io/cli/cmd/entire/cli/agent/claudecode"
-	"entire.io/cli/cmd/entire/cli/agent/geminicli"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/agent/claudecode"
+	"github.com/entireio/cli/cmd/entire/cli/agent/geminicli"
 )
 
 // TestAgentDetection verifies agent detection and default behavior.

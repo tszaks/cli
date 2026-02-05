@@ -31,8 +31,8 @@ import (
 	"sync"
 	"time"
 
-	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/validation"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/validation"
 )
 
 // LogLevelEnvVar is the environment variable that controls log level.

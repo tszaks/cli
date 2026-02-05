@@ -9,14 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"entire.io/cli/cmd/entire/cli/agent"
-	"entire.io/cli/cmd/entire/cli/jsonutil"
-	"entire.io/cli/cmd/entire/cli/logging"
-	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
+	"github.com/entireio/cli/cmd/entire/cli/logging"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 
 	// Import claudecode to register the agent
-	_ "entire.io/cli/cmd/entire/cli/agent/claudecode"
+	_ "github.com/entireio/cli/cmd/entire/cli/agent/claudecode"
 )
 
 const (

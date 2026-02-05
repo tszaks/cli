@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"entire.io/cli/cmd/entire/cli/agent"
-	"entire.io/cli/cmd/entire/cli/checkpoint/id"
-	"entire.io/cli/cmd/entire/cli/jsonutil"
-	"entire.io/cli/cmd/entire/cli/validation"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
+	"github.com/entireio/cli/cmd/entire/cli/validation"
 )
 
 const (

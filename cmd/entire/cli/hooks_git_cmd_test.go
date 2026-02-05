@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
 func TestInitHookLogging(t *testing.T) {

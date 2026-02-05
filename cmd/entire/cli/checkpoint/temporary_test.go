@@ -3,7 +3,7 @@ package checkpoint
 import (
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
 func TestHashWorktreeID(t *testing.T) {

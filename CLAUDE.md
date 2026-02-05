@@ -130,7 +130,7 @@ The `settings` package exists to avoid import cycles. The `cli` package imports 
 
 **Usage:**
 ```go
-import "entire.io/cli/cmd/entire/cli/settings"
+import "github.com/entireio/cli/cmd/entire/cli/settings"
 
 // Load full settings object
 s, err := settings.Load()

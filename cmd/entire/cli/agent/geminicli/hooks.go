@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"entire.io/cli/cmd/entire/cli/agent"
-	"entire.io/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
 // Ensure GeminiCLIAgent implements HookSupport and HookHandler

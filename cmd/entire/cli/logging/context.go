@@ -3,7 +3,7 @@ package logging
 import (
 	"context"
 
-	"entire.io/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
 )
 
 // Context keys for logging values.

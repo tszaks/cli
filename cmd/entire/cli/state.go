@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"entire.io/cli/cmd/entire/cli/jsonutil"
-	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 
 	"github.com/go-git/go-git/v5"
 )

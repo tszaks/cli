@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/sessionid"
+	"github.com/entireio/cli/cmd/entire/cli/sessionid"
 )
 
 // TestSubdirectory_EntireDirCreatedAtRepoRoot verifies that when the CLI is run

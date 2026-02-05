@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"entire.io/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
 // DefaultStrategyName is the default strategy when none is configured.

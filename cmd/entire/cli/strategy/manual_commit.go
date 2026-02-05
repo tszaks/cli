@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint"
-	"entire.io/cli/cmd/entire/cli/session"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
+	"github.com/entireio/cli/cmd/entire/cli/session"
 )
 
 // ManualCommitStrategy implements the manual-commit strategy for session management.

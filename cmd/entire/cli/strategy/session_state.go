@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"entire.io/cli/cmd/entire/cli/jsonutil"
-	"entire.io/cli/cmd/entire/cli/validation"
+	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
+	"github.com/entireio/cli/cmd/entire/cli/validation"
 )
 
 // Session state management functions shared across all strategies.

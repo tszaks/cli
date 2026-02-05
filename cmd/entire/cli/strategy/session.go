@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint"
-	"entire.io/cli/cmd/entire/cli/checkpoint/id"
-	"entire.io/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 
 	"github.com/go-git/go-git/v5"
 )

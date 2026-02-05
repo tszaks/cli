@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"entire.io/cli/cmd/entire/cli/jsonutil"
-	"entire.io/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
 // TaskCheckpoint contains the checkpoint information for a task

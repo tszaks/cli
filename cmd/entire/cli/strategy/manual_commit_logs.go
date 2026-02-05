@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint"
-	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/trailers"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5/plumbing"
 )

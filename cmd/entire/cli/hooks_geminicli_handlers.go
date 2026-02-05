@@ -11,11 +11,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"entire.io/cli/cmd/entire/cli/agent"
-	"entire.io/cli/cmd/entire/cli/agent/geminicli"
-	"entire.io/cli/cmd/entire/cli/logging"
-	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/agent/geminicli"
+	"github.com/entireio/cli/cmd/entire/cli/logging"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
 // ErrSessionSkipped is returned when a session should be skipped (e.g., due to concurrent warning).

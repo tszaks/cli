@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/agent/geminicli"
+	"github.com/entireio/cli/cmd/entire/cli/agent/geminicli"
 )
 
 // Use the real Gemini types from the geminicli package to avoid schema drift.

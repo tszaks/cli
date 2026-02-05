@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
 )
 
 // Test constants

@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"sort"
 
-	"entire.io/cli/cmd/entire/cli/agent"
-	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/spf13/cobra"

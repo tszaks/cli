@@ -9,8 +9,8 @@ import (
 	"os/exec"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
 // TestShadowStrategy_MidSessionCommit_FromTranscript tests that when Claude commits

@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
 )
 
 // summarizationPromptTemplate is the prompt used to generate summaries via the Claude CLI.
