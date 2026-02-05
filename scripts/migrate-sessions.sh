@@ -52,6 +52,7 @@ set -e
 #   - jq (JSON processor) must be installed
 #   - Clean working tree (no uncommitted changes)
 #   - The entire/sessions branch must exist
+#   - DISABLE ALL YOUR ENTIRE GIT HOOKS FIRST (e.g., pre-commit, pre-push) to avoid issues during migration
 #
 # EXAMPLES:
 #   # Preview what would be migrated (dry-run)
@@ -205,12 +206,6 @@ migrate_checkpoint() {
 
     if [[ ! -f "$CHECKPOINT_PATH/metadata.json" ]]; then
         echo "    Skipping: no metadata.json"
-        return 1
-    fi
-
-    # Check if already migrated to target branch
-    if checkpoint_exists_on_target "$CHECKPOINT_DIR"; then
-        echo "    Skipping: already exists on $TARGET_BRANCH"
         return 1
     fi
 
@@ -536,6 +531,29 @@ fi
 # Process each commit
 for COMMIT in $COMMITS; do
     COMMIT_MSG=$(git log -1 --format="%s" "$COMMIT")
+
+    # Find checkpoint directories in this commit (without creating worktree)
+    CHECKPOINT_DIRS=$(git ls-tree -d --name-only -r "$COMMIT" | grep -E '^[0-9a-f]{2}/[0-9a-f]+$' || true)
+
+    if [[ -z "$CHECKPOINT_DIRS" ]]; then
+        echo -e "${YELLOW}Skipping commit (no checkpoints): $COMMIT_MSG${NC}"
+        continue
+    fi
+
+    # Check if any checkpoints need migration
+    NEEDS_MIGRATION=false
+    for CHECKPOINT_DIR in $CHECKPOINT_DIRS; do
+        if ! checkpoint_exists_on_target "$CHECKPOINT_DIR"; then
+            NEEDS_MIGRATION=true
+            break
+        fi
+    done
+
+    if [[ "$NEEDS_MIGRATION" == "false" ]]; then
+        echo -e "${YELLOW}Skipping commit (all migrated): $COMMIT_MSG${NC}"
+        continue
+    fi
+
     echo -e "${GREEN}Processing commit: $COMMIT_MSG${NC}"
 
     # Checkout source commit in temp worktree
@@ -548,21 +566,15 @@ for COMMIT in $COMMITS; do
     # Track which checkpoint directories we process
     PROCESSED_DIRS=""
 
-    # Find all checkpoint directories (pattern: XX/YYYYYYYY/)
-    cd "$TEMP_DIR"
-    CHECKPOINT_DIRS=$(find . -maxdepth 2 -mindepth 2 -type d | grep -E '^\./[0-9a-f]{2}/[0-9a-f]+$' || true)
-
-    for CHECKPOINT_PATH in $CHECKPOINT_DIRS; do
-        CHECKPOINT_DIR="${CHECKPOINT_PATH#./}"
+    # Process checkpoints
+    for CHECKPOINT_DIR in $CHECKPOINT_DIRS; do
         echo "  Processing checkpoint: $CHECKPOINT_DIR"
 
-        # Track this directory for git add later
-        PROCESSED_DIRS="$PROCESSED_DIRS $CHECKPOINT_DIR"
-
-        migrate_checkpoint "$CHECKPOINT_DIR" "$TEMP_DIR" "$OLDPWD"
+        if migrate_checkpoint "$CHECKPOINT_DIR" "$TEMP_DIR" "$(pwd)"; then
+            # Track this directory for git add later
+            PROCESSED_DIRS="$PROCESSED_DIRS $CHECKPOINT_DIR"
+        fi
     done
-
-    cd "$OLDPWD"
 
     # Cleanup worktree
     git worktree remove "$TEMP_DIR" --force 2>/dev/null || rm -rf "$TEMP_DIR"
