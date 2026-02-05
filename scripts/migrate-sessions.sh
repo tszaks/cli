@@ -90,7 +90,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-SOURCE_BRANCH="entire/sessions"
+SOURCE_BRANCH="entire/sessions-legacy"
 TARGET_BRANCH="entire/sessions/v1"
 
 # Parse arguments
