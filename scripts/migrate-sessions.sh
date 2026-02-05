@@ -577,15 +577,15 @@ fi
 for COMMIT in $COMMITS; do
     COMMIT_MSG=$(git log -1 --format="%s" "$COMMIT")
 
-    # Find checkpoint directories in this commit (without creating worktree)
-    CHECKPOINT_DIRS=$(git ls-tree -d --name-only -r "$COMMIT" | grep -E '^[0-9a-f]{2}/[0-9a-f]+$' || true)
+    # Find checkpoint directories MODIFIED in this commit (not all checkpoints in tree)
+    CHECKPOINT_DIRS=$(git diff-tree --no-commit-id --name-only -r "$COMMIT" | grep -E '^[0-9a-f]{2}/[0-9a-f]+/' | cut -d'/' -f1-2 | sort -u || true)
 
     if [[ -z "$CHECKPOINT_DIRS" ]]; then
-        echo -e "${YELLOW}Skipping commit (no checkpoints): $COMMIT_MSG${NC}"
+        echo -e "${YELLOW}Skipping commit (no checkpoint changes): $COMMIT_MSG${NC}"
         continue
     fi
 
-    # Check if any checkpoints need migration (compare source commits)
+    # Check if any of the modified checkpoints need migration
     NEEDS_MIGRATION=false
     for CHECKPOINT_DIR in $CHECKPOINT_DIRS; do
         if ! checkpoint_up_to_date_on_target "$CHECKPOINT_DIR" "$COMMIT"; then
@@ -595,7 +595,7 @@ for COMMIT in $COMMITS; do
     done
 
     if [[ "$NEEDS_MIGRATION" == "false" ]]; then
-        echo -e "${YELLOW}Skipping commit (all migrated): $COMMIT_MSG${NC}"
+        echo -e "${YELLOW}Skipping commit (all up-to-date): $COMMIT_MSG${NC}"
         continue
     fi
 
