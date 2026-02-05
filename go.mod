@@ -1,4 +1,4 @@
-module entire.io/cli
+module github.com/entireio/cli
 
 go 1.25.6
 

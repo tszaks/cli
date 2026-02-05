@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 )
 
 // Directory constants

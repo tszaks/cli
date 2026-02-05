@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/agent/claudecode"
+	"github.com/entireio/cli/cmd/entire/cli/agent/claudecode"
 )
 
 // ClaudeSettings mirrors the settings structure for testing

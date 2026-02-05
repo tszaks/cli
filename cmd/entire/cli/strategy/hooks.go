@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"entire.io/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
 // Hook marker used to identify Entire CLI hooks

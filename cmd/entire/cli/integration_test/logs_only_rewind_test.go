@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
 // TestLogsOnlyRewind_AppearsInRewindList verifies that after user commits with

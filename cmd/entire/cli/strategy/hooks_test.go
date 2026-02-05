@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
 func TestGetGitDirInPath_RegularRepo(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/transcript"
+	"github.com/entireio/cli/cmd/entire/cli/transcript"
 )
 
 func TestBuildCondensedTranscript_UserPrompts(t *testing.T) {

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/sessionid"
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/sessionid"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
 // TestDualStrategy_NoCheckpointForNoChanges verifies that the auto-commit strategy

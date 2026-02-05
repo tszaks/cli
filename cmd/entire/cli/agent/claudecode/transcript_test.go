@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/transcript"
+	"github.com/entireio/cli/cmd/entire/cli/transcript"
 )
 
 func TestParseTranscript(t *testing.T) {

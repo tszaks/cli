@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/sessionid"
+	"github.com/entireio/cli/cmd/entire/cli/sessionid"
 )
 
 func TestIsInfrastructurePath(t *testing.T) {

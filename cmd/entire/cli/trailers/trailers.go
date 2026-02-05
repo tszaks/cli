@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	checkpointID "entire.io/cli/cmd/entire/cli/checkpoint/id"
+	checkpointID "github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 )
 
 // Trailer key constants used in commit messages.

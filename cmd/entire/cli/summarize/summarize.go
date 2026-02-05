@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint"
-	"entire.io/cli/cmd/entire/cli/transcript"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
+	"github.com/entireio/cli/cmd/entire/cli/transcript"
 )
 
 // GenerateFromTranscript generates a summary from raw transcript bytes.

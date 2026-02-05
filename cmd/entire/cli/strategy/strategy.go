@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"entire.io/cli/cmd/entire/cli/agent"
-	"entire.io/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 )
 
 // ErrNoMetadata is returned when a commit does not have an Entire metadata trailer.

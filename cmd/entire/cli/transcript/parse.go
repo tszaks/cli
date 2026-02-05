@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"entire.io/cli/cmd/entire/cli/textutil"
+	"github.com/entireio/cli/cmd/entire/cli/textutil"
 )
 
 // ParseFromBytes parses transcript content from a byte slice.

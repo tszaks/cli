@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"entire.io/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
 )
 
 // Transcript parsing types - Gemini CLI uses JSON format for session storage

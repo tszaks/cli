@@ -1,10 +1,10 @@
 package cli
 
 import (
-	"entire.io/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
 	// Import agents to ensure they are registered before we iterate
-	_ "entire.io/cli/cmd/entire/cli/agent/claudecode"
-	_ "entire.io/cli/cmd/entire/cli/agent/geminicli"
+	_ "github.com/entireio/cli/cmd/entire/cli/agent/claudecode"
+	_ "github.com/entireio/cli/cmd/entire/cli/agent/geminicli"
 
 	"github.com/spf13/cobra"
 )

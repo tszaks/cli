@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
 func TestHookLogging_WritesToSessionLogFile(t *testing.T) {

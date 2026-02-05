@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/jsonutil"
-	"entire.io/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
 // RunEnableWithAccessibleMode runs `entire enable` without --strategy flag in accessible mode.
