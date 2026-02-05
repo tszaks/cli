@@ -119,7 +119,7 @@ func TestRunClean_PreviewMode(t *testing.T) {
 		t.Errorf("Expected 'entire/def5678' in output, got: %s", output)
 	}
 
-	// Should NOT list entire/sessions/v1
+	// Should NOT list entire/checkpoints/v1
 	if strings.Contains(output, paths.MetadataBranchName) {
 		t.Errorf("Should not list '%s', got: %s", paths.MetadataBranchName, output)
 	}
