@@ -173,10 +173,12 @@ checkpoint_to_path() {
     echo "${id:0:2}/${id:2}"
 }
 
-# Check if a checkpoint already exists on target branch and is in v1 format
-# Returns 0 if exists and valid, 1 otherwise
-checkpoint_exists_on_target() {
+# Check if a checkpoint is up-to-date on target branch (same source commit)
+# Args: $1 = checkpoint path, $2 = source commit hash
+# Returns 0 if exists and up-to-date, 1 otherwise
+checkpoint_up_to_date_on_target() {
     local checkpoint_path="$1"
+    local source_commit="$2"
 
     if ! git show-ref --verify --quiet "refs/heads/$TARGET_BRANCH"; then
         return 1
@@ -187,8 +189,11 @@ checkpoint_exists_on_target() {
         return 1
     fi
 
-    # Check if it has sessions array (v1 format indicator)
-    if git show "$TARGET_BRANCH:$checkpoint_path/metadata.json" | jq -e '.sessions' &>/dev/null; then
+    # Check if same source commit (up-to-date)
+    local target_source_commit
+    target_source_commit=$(git show "$TARGET_BRANCH:$checkpoint_path/metadata.json" 2>/dev/null | jq -r '.migration_source_commit // ""')
+
+    if [[ -n "$target_source_commit" && "$target_source_commit" == "$source_commit" ]]; then
         return 0
     fi
 
@@ -196,12 +201,13 @@ checkpoint_exists_on_target() {
 }
 
 # Migrate a single checkpoint directory
-# Args: $1 = checkpoint path (e.g., "a1/b2c3d4e5f6"), $2 = source dir, $3 = target dir
+# Args: $1 = checkpoint path (e.g., "a1/b2c3d4e5f6"), $2 = source dir, $3 = target dir, $4 = source commit
 # Returns: 0 if migrated, 1 if skipped
 migrate_checkpoint() {
     local CHECKPOINT_DIR="$1"
     local SOURCE_DIR="$2"
     local TARGET_DIR="$3"
+    local SOURCE_COMMIT="$4"
     local CHECKPOINT_PATH="$SOURCE_DIR/$CHECKPOINT_DIR"
 
     if [[ ! -f "$CHECKPOINT_PATH/metadata.json" ]]; then
@@ -214,10 +220,10 @@ migrate_checkpoint() {
     # Check if this is session metadata (has session_id) or already aggregated
     if jq -e '.session_id' "$ROOT_META" > /dev/null 2>&1; then
         # This is session metadata at root - needs migration
-        migrate_old_format "$CHECKPOINT_DIR" "$CHECKPOINT_PATH" "$TARGET_DIR"
+        migrate_old_format "$CHECKPOINT_DIR" "$CHECKPOINT_PATH" "$TARGET_DIR" "$SOURCE_COMMIT"
     else
         # Already aggregated format - copy but still transform session metadata
-        migrate_new_format "$CHECKPOINT_DIR" "$CHECKPOINT_PATH" "$TARGET_DIR"
+        migrate_new_format "$CHECKPOINT_DIR" "$CHECKPOINT_PATH" "$TARGET_DIR" "$SOURCE_COMMIT"
     fi
     return 0
 }
@@ -227,6 +233,7 @@ migrate_old_format() {
     local CHECKPOINT_DIR="$1"
     local CHECKPOINT_PATH="$2"
     local TARGET_DIR="$3"
+    local SOURCE_COMMIT="$4"
     local ROOT_META="$CHECKPOINT_PATH/metadata.json"
 
     # Find existing numbered subdirs
@@ -336,6 +343,7 @@ migrate_old_format() {
         --arg checkpoint_id "$CHECKPOINT_ID" \
         --arg strategy "$STRATEGY" \
         --arg branch "$BRANCH" \
+        --arg migration_source_commit "$SOURCE_COMMIT" \
         --argjson checkpoints_count "$CHECKPOINTS_COUNT" \
         --argjson files_touched "$FILES_TOUCHED" \
         --argjson sessions "$SESSIONS_JSON" \
@@ -348,6 +356,7 @@ migrate_old_format() {
             checkpoint_id: $checkpoint_id,
             strategy: $strategy,
             branch: $branch,
+            migration_source_commit: $migration_source_commit,
             checkpoints_count: $checkpoints_count,
             files_touched: $files_touched,
             sessions: $sessions,
@@ -368,12 +377,13 @@ migrate_new_format() {
     local CHECKPOINT_DIR="$1"
     local CHECKPOINT_PATH="$2"
     local TARGET_DIR="$3"
+    local SOURCE_COMMIT="$4"
 
     mkdir -p "$TARGET_DIR/$CHECKPOINT_DIR"
 
-    # Transform root metadata.json to have absolute paths in sessions array
-    jq --arg prefix "/$CHECKPOINT_DIR" \
-        '.sessions = [.sessions[] | {
+    # Transform root metadata.json to have absolute paths in sessions array and add source commit
+    jq --arg prefix "/$CHECKPOINT_DIR" --arg source_commit "$SOURCE_COMMIT" \
+        '.migration_source_commit = $source_commit | .sessions = [.sessions[] | {
             metadata: ($prefix + "/" + (.metadata | ltrimstr("/"))),
             transcript: ($prefix + "/" + (.transcript | ltrimstr("/"))),
             context: ($prefix + "/" + (.context | ltrimstr("/"))),
@@ -409,9 +419,18 @@ if [[ -n "$CHECKPOINT_FILTER" ]]; then
     echo -e "${GREEN}Migrating single checkpoint: $CHECKPOINT_FILTER${NC}"
     echo "  Path: $CHECKPOINT_PATH"
 
+    # Find the most recent commit that modified this checkpoint
+    SOURCE_COMMIT=$(git log -1 --format="%H" "$SOURCE_BRANCH" -- "$CHECKPOINT_PATH")
+    if [[ -z "$SOURCE_COMMIT" ]]; then
+        echo -e "${RED}Error: Checkpoint $CHECKPOINT_FILTER not found on $SOURCE_BRANCH${NC}" >&2
+        exit 1
+    fi
+    COMMIT_AUTHOR=$(git log -1 --format="%an <%ae>" "$SOURCE_COMMIT")
+    echo "  Source commit: ${SOURCE_COMMIT:0:7} (by $COMMIT_AUTHOR)"
+
     # Create temp dir and checkout source
     TEMP_DIR=$(mktemp -d)
-    git worktree add --detach "$TEMP_DIR" "$SOURCE_BRANCH" 2>/dev/null
+    git worktree add --detach "$TEMP_DIR" "$SOURCE_COMMIT" 2>/dev/null
 
     if [[ ! -d "$TEMP_DIR/$CHECKPOINT_PATH" ]]; then
         git worktree remove "$TEMP_DIR" --force 2>/dev/null || rm -rf "$TEMP_DIR"
@@ -419,10 +438,10 @@ if [[ -n "$CHECKPOINT_FILTER" ]]; then
         exit 1
     fi
 
-    # Check if already migrated
-    if checkpoint_exists_on_target "$CHECKPOINT_PATH"; then
+    # Check if already up-to-date
+    if checkpoint_up_to_date_on_target "$CHECKPOINT_PATH" "$SOURCE_COMMIT"; then
         git worktree remove "$TEMP_DIR" --force 2>/dev/null || rm -rf "$TEMP_DIR"
-        echo -e "  ${YELLOW}Already migrated to $TARGET_BRANCH - skipping${NC}"
+        echo -e "  ${YELLOW}Already up-to-date on $TARGET_BRANCH - skipping${NC}"
         exit 0
     fi
 
@@ -455,16 +474,16 @@ if [[ -n "$CHECKPOINT_FILTER" ]]; then
     git checkout "$TARGET_BRANCH"
 
     # Migrate the checkpoint
-    migrate_checkpoint "$CHECKPOINT_PATH" "$TEMP_DIR" "$(pwd)"
+    migrate_checkpoint "$CHECKPOINT_PATH" "$TEMP_DIR" "$(pwd)" "$SOURCE_COMMIT"
 
     # Cleanup
     git worktree remove "$TEMP_DIR" --force 2>/dev/null || rm -rf "$TEMP_DIR"
 
-    # Commit
+    # Commit with original author
     git add "$CHECKPOINT_PATH"
     if ! git diff --cached --quiet; then
-        git commit -m "Migrate checkpoint: $CHECKPOINT_FILTER"
-        echo -e "${GREEN}Committed${NC}"
+        git commit --author="$COMMIT_AUTHOR" -m "Migrate checkpoint: $CHECKPOINT_FILTER"
+        echo -e "${GREEN}Committed (author: $COMMIT_AUTHOR)${NC}"
     else
         echo -e "${YELLOW}No changes${NC}"
     fi
@@ -498,8 +517,10 @@ if [[ "$DRY_RUN" == "true" ]]; then
     for CHECKPOINT_PATH in $CHECKPOINT_DIRS; do
         CHECKPOINT_DIR="${CHECKPOINT_PATH#./}"
         if [[ -f "$CHECKPOINT_PATH/metadata.json" ]]; then
-            if checkpoint_exists_on_target "$CHECKPOINT_DIR"; then
-                echo -e "  $CHECKPOINT_DIR ${GREEN}(already migrated)${NC}"
+            # Get the source commit for this checkpoint
+            SOURCE_COMMIT=$(git log -1 --format="%H" "$SOURCE_BRANCH" -- "$CHECKPOINT_DIR")
+            if checkpoint_up_to_date_on_target "$CHECKPOINT_DIR" "$SOURCE_COMMIT"; then
+                echo -e "  $CHECKPOINT_DIR ${GREEN}(up-to-date)${NC}"
             elif jq -e '.session_id' "$CHECKPOINT_PATH/metadata.json" > /dev/null 2>&1; then
                 echo "  $CHECKPOINT_DIR (old format -> will migrate)"
             else
@@ -540,10 +561,10 @@ for COMMIT in $COMMITS; do
         continue
     fi
 
-    # Check if any checkpoints need migration
+    # Check if any checkpoints need migration (compare source commits)
     NEEDS_MIGRATION=false
     for CHECKPOINT_DIR in $CHECKPOINT_DIRS; do
-        if ! checkpoint_exists_on_target "$CHECKPOINT_DIR"; then
+        if ! checkpoint_up_to_date_on_target "$CHECKPOINT_DIR" "$COMMIT"; then
             NEEDS_MIGRATION=true
             break
         fi
@@ -555,6 +576,9 @@ for COMMIT in $COMMITS; do
     fi
 
     echo -e "${GREEN}Processing commit: $COMMIT_MSG${NC}"
+
+    # Get original author for preserving authorship
+    COMMIT_AUTHOR=$(git log -1 --format="%an <%ae>" "$COMMIT")
 
     # Checkout source commit in temp worktree
     TEMP_DIR=$(mktemp -d)
@@ -568,9 +592,15 @@ for COMMIT in $COMMITS; do
 
     # Process checkpoints
     for CHECKPOINT_DIR in $CHECKPOINT_DIRS; do
+        # Skip if already up-to-date on target
+        if checkpoint_up_to_date_on_target "$CHECKPOINT_DIR" "$COMMIT"; then
+            echo "  Skipping checkpoint (up-to-date): $CHECKPOINT_DIR"
+            continue
+        fi
+
         echo "  Processing checkpoint: $CHECKPOINT_DIR"
 
-        if migrate_checkpoint "$CHECKPOINT_DIR" "$TEMP_DIR" "$(pwd)"; then
+        if migrate_checkpoint "$CHECKPOINT_DIR" "$TEMP_DIR" "$(pwd)" "$COMMIT"; then
             # Track this directory for git add later
             PROCESSED_DIRS="$PROCESSED_DIRS $CHECKPOINT_DIR"
         fi
@@ -584,10 +614,10 @@ for COMMIT in $COMMITS; do
         git add "$DIR"
     done
 
-    # Commit changes
+    # Commit changes with original author
     if ! git diff --cached --quiet; then
-        git commit -m "$COMMIT_MSG"
-        echo -e "  ${GREEN}Committed${NC}"
+        git commit --author="$COMMIT_AUTHOR" -m "$COMMIT_MSG"
+        echo -e "  ${GREEN}Committed (author: $COMMIT_AUTHOR)${NC}"
     else
         echo -e "  ${YELLOW}No changes${NC}"
     fi
