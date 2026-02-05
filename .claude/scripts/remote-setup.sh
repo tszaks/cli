@@ -30,10 +30,17 @@ cd "$CLAUDE_PROJECT_DIR"
 mise trust
 mise install
 
-# 4. Persist mise activation for subsequent commands
-# Capture environment changes from mise activation and write exports to CLAUDE_ENV_FILE
+# 4. Persist mise activation and CLAUDE_PROJECT_DIR for subsequent commands
+# Write exports to CLAUDE_ENV_FILE so they're available for later hooks
 if [ -n "$CLAUDE_ENV_FILE" ]; then
   echo "Persisting mise environment..."
+
+  # Export CLAUDE_PROJECT_DIR for entire hooks that need it
+  # Use printf %q to safely escape the value for shell sourcing
+  if [ -n "$CLAUDE_PROJECT_DIR" ]; then
+    printf 'export CLAUDE_PROJECT_DIR=%q\n' "$CLAUDE_PROJECT_DIR" >> "$CLAUDE_ENV_FILE"
+  fi
+
   # Capture exports before and after mise activation, then write only the diff
   ENV_BEFORE=$(export -p | sort)
   eval "$(mise activate bash)"
