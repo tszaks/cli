@@ -90,8 +90,8 @@ func (g *GeminiCLIAgent) InstallHooks(localDev bool, force bool) (int, error) {
 				return 0, fmt.Errorf("failed to parse hooks in settings.json: %w", err)
 			}
 		}
-		if toolsRaw, ok := rawSettings["hooksConfig"]; ok {
-			if err := json.Unmarshal(toolsRaw, &settings.HooksConfig); err != nil {
+		if hooksConfig, ok := rawSettings["hooksConfig"]; ok {
+			if err := json.Unmarshal(hooksConfig, &settings.HooksConfig); err != nil {
 				return 0, fmt.Errorf("failed to parse hooksConfig in settings.json: %w", err)
 			}
 		}
