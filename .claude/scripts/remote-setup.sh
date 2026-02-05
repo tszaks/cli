@@ -36,8 +36,9 @@ if [ -n "$CLAUDE_ENV_FILE" ]; then
   echo "Persisting mise environment..."
 
   # Export CLAUDE_PROJECT_DIR for entire hooks that need it
+  # Use printf %q to safely escape the value for shell sourcing
   if [ -n "$CLAUDE_PROJECT_DIR" ]; then
-    echo "export CLAUDE_PROJECT_DIR=\"$CLAUDE_PROJECT_DIR\"" >> "$CLAUDE_ENV_FILE"
+    printf 'export CLAUDE_PROJECT_DIR=%q\n' "$CLAUDE_PROJECT_DIR" >> "$CLAUDE_ENV_FILE"
   fi
 
   # Capture exports before and after mise activation, then write only the diff
