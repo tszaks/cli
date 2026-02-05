@@ -26,6 +26,9 @@ set -e
 #   By default, runs in dry-run mode showing what would be migrated.
 #   Use --apply to actually perform the migration.
 #
+#   The script is idempotent - checkpoints already migrated to v1 are skipped.
+#   This allows running migration incrementally as new checkpoints are added.
+#
 # OLD FORMAT:
 #   <checkpoint-id[:2]>/<checkpoint-id[2:]>/
 #   ├── metadata.json      # Session metadata (has session_id)
@@ -169,8 +172,31 @@ checkpoint_to_path() {
     echo "${id:0:2}/${id:2}"
 }
 
+# Check if a checkpoint already exists on target branch and is in v1 format
+# Returns 0 if exists and valid, 1 otherwise
+checkpoint_exists_on_target() {
+    local checkpoint_path="$1"
+
+    if ! git show-ref --verify --quiet "refs/heads/$TARGET_BRANCH"; then
+        return 1
+    fi
+
+    # Check if metadata.json exists on target
+    if ! git show "$TARGET_BRANCH:$checkpoint_path/metadata.json" &>/dev/null; then
+        return 1
+    fi
+
+    # Check if it has sessions array (v1 format indicator)
+    if git show "$TARGET_BRANCH:$checkpoint_path/metadata.json" | jq -e '.sessions' &>/dev/null; then
+        return 0
+    fi
+
+    return 1
+}
+
 # Migrate a single checkpoint directory
 # Args: $1 = checkpoint path (e.g., "a1/b2c3d4e5f6"), $2 = source dir, $3 = target dir
+# Returns: 0 if migrated, 1 if skipped
 migrate_checkpoint() {
     local CHECKPOINT_DIR="$1"
     local SOURCE_DIR="$2"
@@ -179,7 +205,13 @@ migrate_checkpoint() {
 
     if [[ ! -f "$CHECKPOINT_PATH/metadata.json" ]]; then
         echo "    Skipping: no metadata.json"
-        return
+        return 1
+    fi
+
+    # Check if already migrated to target branch
+    if checkpoint_exists_on_target "$CHECKPOINT_DIR"; then
+        echo "    Skipping: already exists on $TARGET_BRANCH"
+        return 1
     fi
 
     local ROOT_META="$CHECKPOINT_PATH/metadata.json"
@@ -192,6 +224,7 @@ migrate_checkpoint() {
         # Already aggregated format - copy but still transform session metadata
         migrate_new_format "$CHECKPOINT_DIR" "$CHECKPOINT_PATH" "$TARGET_DIR"
     fi
+    return 0
 }
 
 # Migrate checkpoint from old format (session files at root)
@@ -391,6 +424,13 @@ if [[ -n "$CHECKPOINT_FILTER" ]]; then
         exit 1
     fi
 
+    # Check if already migrated
+    if checkpoint_exists_on_target "$CHECKPOINT_PATH"; then
+        git worktree remove "$TEMP_DIR" --force 2>/dev/null || rm -rf "$TEMP_DIR"
+        echo -e "  ${YELLOW}Already migrated to $TARGET_BRANCH - skipping${NC}"
+        exit 0
+    fi
+
     # Show checkpoint info
     if jq -e '.session_id' "$TEMP_DIR/$CHECKPOINT_PATH/metadata.json" > /dev/null 2>&1; then
         echo "  Format: old (session files at root) -> needs migration"
@@ -463,10 +503,12 @@ if [[ "$DRY_RUN" == "true" ]]; then
     for CHECKPOINT_PATH in $CHECKPOINT_DIRS; do
         CHECKPOINT_DIR="${CHECKPOINT_PATH#./}"
         if [[ -f "$CHECKPOINT_PATH/metadata.json" ]]; then
-            if jq -e '.session_id' "$CHECKPOINT_PATH/metadata.json" > /dev/null 2>&1; then
-                echo "  $CHECKPOINT_DIR (old format)"
+            if checkpoint_exists_on_target "$CHECKPOINT_DIR"; then
+                echo -e "  $CHECKPOINT_DIR ${GREEN}(already migrated)${NC}"
+            elif jq -e '.session_id' "$CHECKPOINT_PATH/metadata.json" > /dev/null 2>&1; then
+                echo "  $CHECKPOINT_DIR (old format -> will migrate)"
             else
-                echo "  $CHECKPOINT_DIR (new format)"
+                echo "  $CHECKPOINT_DIR (new format -> will migrate)"
             fi
         fi
     done
@@ -479,13 +521,17 @@ if [[ "$DRY_RUN" == "true" ]]; then
     exit 0
 fi
 
-# Create orphan target branch from init commit
-echo -e "${GREEN}Creating target branch $TARGET_BRANCH...${NC}"
-git checkout "$SOURCE_BRANCH"
-git checkout "$INIT_COMMIT"
-git checkout --orphan "$TARGET_BRANCH"
-git commit --allow-empty -m "Initialize metadata branch (v1)"
-git checkout "$SOURCE_BRANCH"
+# Create orphan target branch if it doesn't exist
+if git show-ref --verify --quiet "refs/heads/$TARGET_BRANCH"; then
+    echo -e "${YELLOW}Target branch $TARGET_BRANCH already exists - will skip existing checkpoints${NC}"
+else
+    echo -e "${GREEN}Creating target branch $TARGET_BRANCH...${NC}"
+    git checkout "$SOURCE_BRANCH"
+    git checkout "$INIT_COMMIT"
+    git checkout --orphan "$TARGET_BRANCH"
+    git commit --allow-empty -m "Initialize metadata branch (v1)"
+    git checkout "$SOURCE_BRANCH"
+fi
 
 # Process each commit
 for COMMIT in $COMMITS; do
