@@ -20,7 +20,7 @@ set -e
 #   sessions in numbered folders 1/, 2/, etc.) to the new v1 format (all sessions
 #   in 0-indexed folders 0/, 1/, 2/, with a CheckpointSummary at the root).
 #
-#   The script reads from 'entire/sessions-legacy' and writes to 'entire/sessions/v1',
+#   The script reads from 'entire/sessions-legacy' and writes to 'entire/checkpoints/v1',
 #   leaving the original branch untouched as a backup.
 #
 #   By default, runs in dry-run mode showing what would be migrated.
@@ -73,15 +73,15 @@ set -e
 #
 # AFTER MIGRATION:
 #   1. Verify the migration:
-#      git log entire/sessions/v1
-#      git show entire/sessions/v1:<checkpoint_path>/metadata.json
+#      git log entire/checkpoints/v1
+#      git show entire/checkpoints/v1:<checkpoint_path>/metadata.json
 #
 #   2. Rename remote entire/sessions to avoid conflict:
 #      git push origin entire/sessions:entire/sessions-old
 #      git push origin --delete entire/sessions
 #
 #   3. Push new v1 branch to remote:
-#      git push origin entire/sessions/v1
+#      git push origin entire/checkpoints/v1
 #
 #   4. (Optional) Delete local legacy branch:
 #      git branch -D entire/sessions-legacy
@@ -89,7 +89,7 @@ set -e
 # ROLLBACK:
 #   The original branch is preserved as entire/sessions-legacy locally.
 #   If migration fails, delete the v1 branch and rename back:
-#      git branch -D entire/sessions/v1
+#      git branch -D entire/checkpoints/v1
 #      git branch -m entire/sessions-legacy entire/sessions
 #
 
@@ -100,7 +100,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 SOURCE_BRANCH="entire/sessions-legacy"
-TARGET_BRANCH="entire/sessions/v1"
+TARGET_BRANCH="entire/checkpoints/v1"
 
 # Parse arguments
 DRY_RUN=true
