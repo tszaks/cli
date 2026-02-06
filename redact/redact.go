@@ -3,6 +3,7 @@ package redact
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"math"
 	"regexp"
 	"strings"
@@ -46,19 +47,22 @@ func Bytes(b []byte) []byte {
 }
 
 // JSONLBytes is a convenience wrapper around JSONLContent for []byte content.
-func JSONLBytes(b []byte) []byte {
+func JSONLBytes(b []byte) ([]byte, error) {
 	s := string(b)
-	redacted := JSONLContent(s)
-	if redacted == s {
-		return b
+	redacted, err := JSONLContent(s)
+	if err != nil {
+		return nil, err
 	}
-	return []byte(redacted)
+	if redacted == s {
+		return b, nil
+	}
+	return []byte(redacted), nil
 }
 
 // JSONLContent parses each line as JSON to determine which string values
 // need redaction, then performs targeted replacements on the raw JSON bytes.
 // Lines with no secrets are returned unchanged, preserving original formatting.
-func JSONLContent(content string) string {
+func JSONLContent(content string) (string, error) {
 	lines := strings.Split(content, "\n")
 	var b strings.Builder
 	for i, line := range lines {
@@ -82,13 +86,19 @@ func JSONLContent(content string) string {
 		}
 		result := line
 		for _, r := range repls {
-			origJSON := jsonEncodeString(r[0])
-			replJSON := jsonEncodeString(r[1])
+			origJSON, err := jsonEncodeString(r[0])
+			if err != nil {
+				return "", err
+			}
+			replJSON, err := jsonEncodeString(r[1])
+			if err != nil {
+				return "", err
+			}
 			result = strings.ReplaceAll(result, origJSON, replJSON)
 		}
 		b.WriteString(result)
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 // collectJSONLReplacements walks a parsed JSON value and collects unique
@@ -164,12 +174,12 @@ func shannonEntropy(s string) float64 {
 }
 
 // jsonEncodeString returns the JSON encoding of s without HTML escaping.
-func jsonEncodeString(s string) string {
+func jsonEncodeString(s string) (string, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(s); err != nil {
-		return ""
+		return "", fmt.Errorf("json encode string: %w", err)
 	}
-	return strings.TrimSuffix(buf.String(), "\n")
+	return strings.TrimSuffix(buf.String(), "\n"), nil
 }

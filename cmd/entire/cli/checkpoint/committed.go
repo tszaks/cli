@@ -198,7 +198,9 @@ func (s *GitStore) writeFinalTaskCheckpoint(opts WriteCommittedOptions, taskPath
 	if opts.SubagentTranscriptPath != "" && opts.AgentID != "" {
 		agentContent, readErr := os.ReadFile(opts.SubagentTranscriptPath)
 		if readErr == nil {
-			agentContent = redact.JSONLBytes(agentContent)
+			agentContent, readErr = redact.JSONLBytes(agentContent)
+		}
+		if readErr == nil {
 			agentBlobHash, agentBlobErr := CreateBlobFromContent(s.repo, agentContent)
 			if agentBlobErr == nil {
 				agentPath := taskPath + "agent-" + opts.AgentID + ".jsonl"
@@ -449,7 +451,10 @@ func (s *GitStore) writeTranscript(opts WriteCommittedOptions, basePath string, 
 	}
 
 	// Redact secrets before chunking so content hash reflects redacted content
-	transcript = redact.JSONLBytes(transcript)
+	transcript, err := redact.JSONLBytes(transcript)
+	if err != nil {
+		return fmt.Errorf("failed to redact transcript secrets: %w", err)
+	}
 
 	// Chunk the transcript if it's too large
 	chunks, err := agent.ChunkTranscript(transcript, opts.Agent)
@@ -1083,7 +1088,10 @@ func createRedactedBlobFromFile(repo *git.Repository, filePath, treePath string)
 	}
 
 	if strings.HasSuffix(treePath, ".jsonl") {
-		content = redact.JSONLBytes(content)
+		content, err = redact.JSONLBytes(content)
+		if err != nil {
+			return plumbing.ZeroHash, 0, fmt.Errorf("failed to redact secrets: %w", err)
+		}
 	} else {
 		content = redact.Bytes(content)
 	}

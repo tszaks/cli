@@ -33,7 +33,10 @@ func TestBytes_WithSecret(t *testing.T) {
 
 func TestJSONLBytes_NoSecrets(t *testing.T) {
 	input := []byte(`{"type":"text","content":"hello"}`)
-	result := JSONLBytes(input)
+	result, err := JSONLBytes(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if string(result) != string(input) {
 		t.Errorf("expected unchanged input, got %q", result)
 	}
@@ -44,7 +47,10 @@ func TestJSONLBytes_NoSecrets(t *testing.T) {
 
 func TestJSONLBytes_WithSecret(t *testing.T) {
 	input := []byte(`{"type":"text","content":"key=` + highEntropySecret + `"}`)
-	result := JSONLBytes(input)
+	result, err := JSONLBytes(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if strings.Contains(string(result), highEntropySecret) {
 		t.Error("expected secret to be redacted in JSONL content")
 	}
