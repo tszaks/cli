@@ -99,3 +99,121 @@ func TestCollectJSONLReplacements_UsesExportedString(t *testing.T) {
 		t.Errorf("expected replacement to contain [REDACTED], got %q", repls[0][1])
 	}
 }
+
+func TestShouldSkipJSONLField(t *testing.T) {
+	tests := []struct {
+		key  string
+		want bool
+	}{
+		// Fields ending in "id" should be skipped.
+		{"id", true},
+		{"session_id", true},
+		{"sessionId", true},
+		{"checkpoint_id", true},
+		{"checkpointID", true},
+		{"userId", true},
+		// Fields ending in "ids" should be skipped.
+		{"ids", true},
+		{"session_ids", true},
+		{"userIds", true},
+		// Exact match "signature" should be skipped.
+		{"signature", true},
+		// Fields that should NOT be skipped.
+		{"content", false},
+		{"type", false},
+		{"name", false},
+		{"video", false},         // ends in "o", not "id"
+		{"identify", false},      // ends in "ify", not "id"
+		{"signatures", false},    // not exact match "signature"
+		{"signal_data", false},   // contains "id" but doesn't end with it
+		{"consideration", false}, // contains "id" but doesn't end with it
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			got := shouldSkipJSONLField(tt.key)
+			if got != tt.want {
+				t.Errorf("shouldSkipJSONLField(%q) = %v, want %v", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShouldSkipJSONLField_RedactionBehavior(t *testing.T) {
+	// Verify that secrets in skipped fields are preserved (not redacted).
+	obj := map[string]any{
+		"session_id": highEntropySecret,
+		"content":    highEntropySecret,
+	}
+	repls := collectJSONLReplacements(obj)
+	// Only "content" should produce a replacement; "session_id" should be skipped.
+	if len(repls) != 1 {
+		t.Fatalf("expected 1 replacement, got %d", len(repls))
+	}
+	if repls[0][0] != highEntropySecret {
+		t.Errorf("expected replacement for secret in content field, got %q", repls[0][0])
+	}
+}
+
+func TestShouldSkipJSONLObject(t *testing.T) {
+	tests := []struct {
+		name string
+		obj  map[string]any
+		want bool
+	}{
+		{
+			name: "image type is skipped",
+			obj:  map[string]any{"type": "image", "data": "base64data"},
+			want: true,
+		},
+		{
+			name: "text type is not skipped",
+			obj:  map[string]any{"type": "text", "content": "hello"},
+			want: false,
+		},
+		{
+			name: "no type field is not skipped",
+			obj:  map[string]any{"content": "hello"},
+			want: false,
+		},
+		{
+			name: "non-string type is not skipped",
+			obj:  map[string]any{"type": 42},
+			want: false,
+		},
+		{
+			name: "image_url type is not skipped",
+			obj:  map[string]any{"type": "image_url"},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldSkipJSONLObject(tt.obj)
+			if got != tt.want {
+				t.Errorf("shouldSkipJSONLObject(%v) = %v, want %v", tt.obj, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShouldSkipJSONLObject_RedactionBehavior(t *testing.T) {
+	// Verify that secrets inside image objects are NOT redacted.
+	obj := map[string]any{
+		"type": "image",
+		"data": highEntropySecret,
+	}
+	repls := collectJSONLReplacements(obj)
+	if len(repls) != 0 {
+		t.Errorf("expected no replacements for image object, got %d", len(repls))
+	}
+
+	// Verify that secrets inside non-image objects ARE redacted.
+	obj2 := map[string]any{
+		"type":    "text",
+		"content": highEntropySecret,
+	}
+	repls2 := collectJSONLReplacements(obj2)
+	if len(repls2) == 0 {
+		t.Error("expected replacements for text object with secret")
+	}
+}
