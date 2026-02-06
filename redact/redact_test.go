@@ -85,15 +85,13 @@ func TestJSONLContent_TopLevelArrayNoSecrets(t *testing.T) {
 	}
 }
 
-func TestCollectJSONLReplacements_UsesExportedString(t *testing.T) {
-	// This test verifies the fix for the compiler error where
-	// collectJSONLReplacements called redactString (unexported) instead of String.
+func TestCollectJSONLReplacements_Succeeds(t *testing.T) {
 	obj := map[string]any{
 		"content": "token=" + highEntropySecret,
 	}
 	repls := collectJSONLReplacements(obj)
-	if len(repls) == 0 {
-		t.Fatal("expected at least one replacement for high-entropy secret")
+	if len(repls) != 1 {
+		t.Fatal("expected one replacement for high-entropy secret")
 	}
 	if !strings.Contains(repls[0][1], "[REDACTED]") {
 		t.Errorf("expected replacement to contain [REDACTED], got %q", repls[0][1])
