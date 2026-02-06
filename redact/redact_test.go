@@ -125,7 +125,7 @@ func TestShouldSkipJSONLField(t *testing.T) {
 		{"video", false},         // ends in "o", not "id"
 		{"identify", false},      // ends in "ify", not "id"
 		{"signatures", false},    // not exact match "signature"
-		{"signal_data", false},   // contains "id" but doesn't end with it
+		{"signal_data", false},
 		{"consideration", false}, // contains "id" but doesn't end with it
 	}
 	for _, tt := range tests {
