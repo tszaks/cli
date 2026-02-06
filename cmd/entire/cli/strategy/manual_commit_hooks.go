@@ -799,8 +799,8 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 		// Session is fully initialized
 		needSave := false
 
-		// Backfill AgentType if empty (for sessions created before the agent_type field was added)
-		if state.AgentType == "" && agentType != "" {
+		// Backfill AgentType if empty or set to the generic default "Agent"
+		if !isSpecificAgentType(state.AgentType) && agentType != "" {
 			state.AgentType = agentType
 			needSave = true
 		}
