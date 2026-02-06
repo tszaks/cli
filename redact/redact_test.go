@@ -3,6 +3,7 @@ package redact
 import (
 	"bytes"
 	"strings"
+	"slices"
 	"testing"
 )
 
@@ -196,8 +197,9 @@ func TestShouldSkipJSONLObject_RedactionBehavior(t *testing.T) {
 		"data": highEntropySecret,
 	}
 	repls := collectJSONLReplacements(obj)
-	if len(repls) != 0 {
-		t.Errorf("expected no replacements for image object, got %d", len(repls))
+	var wantRepls [][2]string
+	if !slices.Equal(repls, wantRepls) {
+		t.Errorf("got %q, want %q", repls, wantRepls)
 	}
 
 	// Verify that secrets inside non-image objects ARE redacted.
@@ -206,7 +208,8 @@ func TestShouldSkipJSONLObject_RedactionBehavior(t *testing.T) {
 		"content": highEntropySecret,
 	}
 	repls2 := collectJSONLReplacements(obj2)
-	if len(repls2) != 1 {
-		t.Fatalf("got %d replacements, want 1", len(repls2))
+	wantRepls2 := [][2]string{{highEntropySecret, "[REDACTED]"}}
+	if !slices.Equal(repls2, wantRepls2) {
+		t.Errorf("got %q, want %q", repls2, wantRepls2)
 	}
 }
