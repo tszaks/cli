@@ -274,7 +274,7 @@ func handleSessionStartCommon() error {
 	}
 
 	// Output informational message using agent-specific format
-	if err := outputSessionStartMessage(ag, message); err != nil {
+	if err := outputHookResponse(message); err != nil {
 		return err
 	}
 
@@ -286,31 +286,19 @@ func handleSessionStartCommon() error {
 	return nil
 }
 
-// outputSessionStartMessage outputs a session start informational message using the appropriate format for the agent.
-func outputSessionStartMessage(ag agent.Agent, message string) error {
-	//nolint:exhaustive // default case handles all other agent types
-	switch ag.Type() {
-	case agent.AgentTypeGemini:
-		return outputGeminiHookResponse(message)
-	default:
-		return outputHookResponse(message)
-	}
-}
-
-// geminiWarningResponse represents a JSON response for Gemini CLI session-start warnings.
-// Unlike blocking responses, this just injects a system message without blocking the session.
-type geminiWarningResponse struct {
+// hookResponse represents a JSON response.
+// Used to control whether Agent continues processing the prompt.
+type hookResponse struct {
 	SystemMessage string `json:"systemMessage,omitempty"`
 }
 
-// outputGeminiHookResponse outputs a warning JSON response to stdout for Gemini CLI hooks.
-// This injects a system message into the conversation without blocking the session.
-func outputGeminiHookResponse(message string) error {
-	resp := geminiWarningResponse{
-		SystemMessage: message,
+// outputHookResponse outputs a JSON response to stdout
+func outputHookResponse(reason string) error {
+	resp := hookResponse{
+		SystemMessage: reason,
 	}
 	if err := json.NewEncoder(os.Stdout).Encode(resp); err != nil {
-		return fmt.Errorf("failed to encode gemini warning response: %w", err)
+		return fmt.Errorf("failed to encode hook response: %w", err)
 	}
 	return nil
 }
