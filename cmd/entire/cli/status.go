@@ -269,18 +269,8 @@ func writeActiveSessions(w io.Writer) {
 
 			age := "started " + timeAgo(st.StartedAt)
 
-			checkpoints := fmt.Sprintf("%d checkpoint", st.CheckpointCount)
-			if st.CheckpointCount != 1 {
-				checkpoints += "s"
-			}
-
-			uncheckpointed := ""
-			if st.PendingPromptAttribution != nil {
-				uncheckpointed = " (uncheckpointed changes)"
-			}
-
-			fmt.Fprintf(w, "    [%s] %-9s \"%s\"  %s  %s%s\n",
-				agentLabel, shortID, prompt, age, checkpoints, uncheckpointed)
+			fmt.Fprintf(w, "    [%s] %-9s \"%s\"  %s\n",
+				agentLabel, shortID, prompt, age)
 		}
 
 		// Blank line between groups, but not after the last one

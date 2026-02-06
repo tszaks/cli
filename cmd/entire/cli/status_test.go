@@ -216,32 +216,23 @@ func TestWriteActiveSessions(t *testing.T) {
 	// Create active sessions
 	states := []*session.State{
 		{
-			SessionID:       "abc-1234-session",
-			WorktreePath:    "/Users/test/repo",
-			StartedAt:       now.Add(-2 * time.Minute),
-			CheckpointCount: 3,
-			FirstPrompt:     "Fix auth bug in login flow",
-			AgentType:       agent.AgentType("Claude Code"),
+			SessionID:    "abc-1234-session",
+			WorktreePath: "/Users/test/repo",
+			StartedAt:    now.Add(-2 * time.Minute),
+			FirstPrompt:  "Fix auth bug in login flow",
+			AgentType:    agent.AgentType("Claude Code"),
 		},
 		{
-			SessionID:       "def-5678-session",
-			WorktreePath:    "/Users/test/repo",
-			StartedAt:       now.Add(-15 * time.Minute),
-			CheckpointCount: 1,
-			FirstPrompt:     "Add dark mode support for the entire application and all components",
-			AgentType:       agent.AgentType("Cursor"),
-			PendingPromptAttribution: &session.PromptAttribution{
-				CheckpointNumber: 2,
-			},
+			SessionID:    "def-5678-session",
+			WorktreePath: "/Users/test/repo",
+			StartedAt:    now.Add(-15 * time.Minute),
+			FirstPrompt:  "Add dark mode support for the entire application and all components",
+			AgentType:    agent.AgentType("Cursor"),
 		},
 		{
-			SessionID:       "ghi-9012-session",
-			WorktreePath:    "/Users/test/repo/.worktrees/3",
-			StartedAt:       now.Add(-5 * time.Minute),
-			CheckpointCount: 0,
-			PendingPromptAttribution: &session.PromptAttribution{
-				CheckpointNumber: 1,
-			},
+			SessionID:    "ghi-9012-session",
+			WorktreePath: "/Users/test/repo/.worktrees/3",
+			StartedAt:    now.Add(-5 * time.Minute),
 		},
 	}
 
@@ -289,20 +280,6 @@ func TestWriteActiveSessions(t *testing.T) {
 	// Should contain first prompts
 	if !strings.Contains(output, "Fix auth bug in login flow") {
 		t.Errorf("Expected first prompt text, got: %s", output)
-	}
-
-	// Should show checkpoint counts (singular and plural)
-	if !strings.Contains(output, "3 checkpoints") {
-		t.Errorf("Expected '3 checkpoints', got: %s", output)
-	}
-	// Use "1 checkpoint " (with trailing space) to avoid matching "1 checkpoints"
-	if !strings.Contains(output, "1 checkpoint ") {
-		t.Errorf("Expected '1 checkpoint ' (singular), got: %s", output)
-	}
-
-	// Should show uncheckpointed changes indicator
-	if !strings.Contains(output, "(uncheckpointed changes)") {
-		t.Errorf("Expected '(uncheckpointed changes)', got: %s", output)
 	}
 
 	// Should show "(unknown)" for session without FirstPrompt (in quotes as prompt)
