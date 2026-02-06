@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -34,8 +34,8 @@ func (s *ManualCommitStrategy) migrateShadowBranchIfNeeded(repo *git.Repository,
 	}
 
 	// HEAD changed - check if old shadow branch exists and migrate it
-	oldShadowBranch := checkpoint.ShadowBranchNameForCommit(state.BaseCommit)
-	newShadowBranch := checkpoint.ShadowBranchNameForCommit(currentHead)
+	oldShadowBranch := checkpoint.ShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	newShadowBranch := checkpoint.ShadowBranchNameForCommit(currentHead, state.WorktreeID)
 
 	oldRefName := plumbing.NewBranchReferenceName(oldShadowBranch)
 	oldRef, err := repo.Reference(oldRefName, true)
