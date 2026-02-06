@@ -798,16 +798,13 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 
 	if state != nil && state.BaseCommit != "" {
 		// Session is fully initialized
-		needSave := false
 
 		// Backfill AgentType if empty (for sessions created before the agent_type field was added)
 		if state.AgentType == "" && agentType != "" {
 			state.AgentType = agentType
-			needSave = true
 		}
 
-		// Backfill FirstPrompt if empty (for sessions created before the first_prompt field was added).
-		// Note: needSave not set here — attribution calculation below unconditionally sets it.
+		// Backfill FirstPrompt if empty (for sessions created before the first_prompt field was added)
 		if state.FirstPrompt == "" && userPrompt != "" {
 			state.FirstPrompt = truncatePromptForStorage(userPrompt)
 		}
@@ -815,7 +812,6 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 		// Update transcript path if provided (may change on session resume)
 		if transcriptPath != "" && state.TranscriptPath != transcriptPath {
 			state.TranscriptPath = transcriptPath
-			needSave = true
 		}
 
 		// Clear LastCheckpointID on every new prompt
@@ -823,7 +819,6 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 		// cleared when the user enters a new prompt (starting fresh work)
 		if state.LastCheckpointID != "" {
 			state.LastCheckpointID = ""
-			needSave = true
 		}
 
 		// Calculate attribution at prompt start (BEFORE agent makes any changes)
@@ -833,22 +828,15 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 		// nil lastCheckpointTree by falling back to baseTree.
 		promptAttr := s.calculatePromptAttributionAtStart(repo, state)
 		state.PendingPromptAttribution = &promptAttr
-		needSave = true
 
 		// Check if HEAD has moved (user pulled/rebased or committed)
 		// migrateShadowBranchIfNeeded handles renaming the shadow branch and updating state.BaseCommit
-		migrated, err := s.migrateShadowBranchIfNeeded(repo, state)
-		if err != nil {
+		if _, err := s.migrateShadowBranchIfNeeded(repo, state); err != nil {
 			return fmt.Errorf("failed to check/migrate shadow branch: %w", err)
 		}
-		if migrated {
-			needSave = true
-		}
 
-		if needSave {
-			if err := s.saveSessionState(state); err != nil {
-				return fmt.Errorf("failed to update session state: %w", err)
-			}
+		if err := s.saveSessionState(state); err != nil {
+			return fmt.Errorf("failed to update session state: %w", err)
 		}
 		return nil
 	}
