@@ -133,9 +133,9 @@ func TestParseShadowBranchName(t *testing.T) {
 			wantOK:       false,
 		},
 		{
-			name:         "entire/sessions/v1 is not a shadow branch",
+			name:         "entire/checkpoints/v1 is not a shadow branch",
 			branchName:   paths.MetadataBranchName,
-			wantCommit:   "sessions/v1",
+			wantCommit:   "checkpoints/v1",
 			wantWorktree: "",
 			wantOK:       true, // Parser doesn't validate content, just extracts
 		},
