@@ -4,7 +4,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -729,23 +728,6 @@ func markSessionEnded(sessionID string) error {
 
 	if err := strategy.SaveSessionState(state); err != nil {
 		return fmt.Errorf("failed to save session state: %w", err)
-	}
-	return nil
-}
-
-// hookResponse represents a JSON response for Claude Code hooks.
-// Used to control whether Claude continues processing the prompt.
-type hookResponse struct {
-	SystemMessage string `json:"systemMessage,omitempty"`
-}
-
-// outputHookResponse outputs a JSON response to stdout for Claude Code hooks.
-func outputHookResponse(reason string) error {
-	resp := hookResponse{
-		SystemMessage: reason,
-	}
-	if err := json.NewEncoder(os.Stdout).Encode(resp); err != nil {
-		return fmt.Errorf("failed to encode hook response: %w", err)
 	}
 	return nil
 }

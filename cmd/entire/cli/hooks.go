@@ -262,10 +262,19 @@ func handleSessionStartCommon() error {
 		return errors.New("no session_id in input")
 	}
 
-	if IsMultiSessionWarningDisabled() {
-		return nil
+	// Build informational message
+	message := "\n\nPowered by Entire:\n  This conversation will be linked to your next commit."
+
+	// Check for concurrent sessions and append count if any
+	strat := GetStrategy()
+	if concurrentChecker, ok := strat.(strategy.ConcurrentSessionChecker); ok {
+		if count, err := concurrentChecker.CountOtherActiveSessionsWithCheckpoints(input.SessionID); err == nil && count > 0 {
+			message += fmt.Sprintf("\n  %d other active conversation(s) in this workspace will also be included.\n  Use 'entire status' for more information.", count)
+		}
 	}
-	if err := checkConcurrentSessions(ag, input.SessionID); err != nil {
+
+	// Output informational message using agent-specific format
+	if err := outputHookResponse(message); err != nil {
 		return err
 	}
 
@@ -277,87 +286,19 @@ func handleSessionStartCommon() error {
 	return nil
 }
 
-// checkConcurrentSessions checks for concurrent session conflicts and shows warnings if needed.
-// Returns a non-nil error if the hook should be skipped due to an unresolved conflict or if a check fails; otherwise returns nil.
-func checkConcurrentSessions(ag agent.Agent, sessionID string) error {
-	strat := GetStrategy()
-
-	concurrentChecker, ok := strat.(strategy.ConcurrentSessionChecker)
-	if !ok {
-		return nil // Strategy doesn't support concurrent checks
-	}
-
-	// Check for other active sessions with checkpoints (on current HEAD)
-	existingSessionState, checkErr := concurrentChecker.HasOtherActiveSessionsWithCheckpoints(sessionID)
-	hasConflict := checkErr == nil && existingSessionState != nil
-
-	if hasConflict {
-		// Try to get the conflicting session's agent type from its state file
-		// If it's a different agent type, use that agent's resume command format
-		var resumeCmd string
-		if existingSessionState != nil && existingSessionState.AgentType != "" {
-			if conflictingAgent, agentErr := agent.GetByAgentType(existingSessionState.AgentType); agentErr == nil {
-				resumeCmd = conflictingAgent.FormatResumeCommand(existingSessionState.SessionID)
-			}
-		}
-		// Fall back to current agent if we couldn't get the conflicting agent
-		if resumeCmd == "" {
-			resumeCmd = ag.FormatResumeCommand(existingSessionState.SessionID)
-		}
-
-		// Get CLI command name for fresh start (e.g., "claude" or "gemini")
-		cliCmd := "claude"
-		if ag.Type() == agent.AgentTypeGemini {
-			cliCmd = "gemini"
-		}
-
-		message := fmt.Sprintf(
-			"\nYou have an existing session running (%s).\n"+
-				"Do you want to continue with this new session (%s)?\n\n"+
-				"Yes: Ignore this warning\n"+
-				"No: Type /exit, then either:\n"+
-				"  • Resume the other session: %s\n"+
-				"  • Reset and start fresh: entire reset --force && %s\n\n"+
-				"To hide this notice in the future: entire enable --disable-multisession-warning",
-			existingSessionState.SessionID,
-			sessionID,
-			resumeCmd,
-			cliCmd,
-		)
-		// Output warning JSON response using agent-specific format
-		if err := outputConflictWarning(ag, message); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// outputConflictWarning outputs a conflict warning message using the appropriate format for the agent.
-func outputConflictWarning(ag agent.Agent, message string) error {
-	//nolint:exhaustive // default case handles all other agent types
-	switch ag.Type() {
-	case agent.AgentTypeGemini:
-		return outputGeminiWarningResponse(message)
-	default:
-		return outputHookResponse(message)
-	}
-}
-
-// geminiWarningResponse represents a JSON response for Gemini CLI session-start warnings.
-// Unlike blocking responses, this just injects a system message without blocking the session.
-type geminiWarningResponse struct {
+// hookResponse represents a JSON response.
+// Used to control whether Agent continues processing the prompt.
+type hookResponse struct {
 	SystemMessage string `json:"systemMessage,omitempty"`
 }
 
-// outputGeminiWarningResponse outputs a warning JSON response to stdout for Gemini CLI hooks.
-// This injects a system message into the conversation without blocking the session.
-func outputGeminiWarningResponse(message string) error {
-	resp := geminiWarningResponse{
-		SystemMessage: message,
+// outputHookResponse outputs a JSON response to stdout
+func outputHookResponse(reason string) error {
+	resp := hookResponse{
+		SystemMessage: reason,
 	}
 	if err := json.NewEncoder(os.Stdout).Encode(resp); err != nil {
-		return fmt.Errorf("failed to encode gemini warning response: %w", err)
+		return fmt.Errorf("failed to encode hook response: %w", err)
 	}
 	return nil
 }
