@@ -242,9 +242,29 @@ func isOutdated(current, latest string) bool {
 	return semver.Compare(current, latest) < 0
 }
 
+// updateCommand returns the appropriate update instruction based on how the binary was installed.
+func updateCommand() string {
+	execPath, err := os.Executable()
+	if err != nil {
+		return "curl -fsSL https://dl.entire.io/install.sh | bash"
+	}
+
+	// Resolve symlinks to find the real path (Homebrew symlinks from bin/ to Cellar/)
+	realPath, err := filepath.EvalSymlinks(execPath)
+	if err != nil {
+		realPath = execPath
+	}
+
+	if strings.Contains(realPath, "/Cellar/") || strings.Contains(realPath, "/homebrew/") {
+		return "brew upgrade entire"
+	}
+
+	return "curl -fsSL https://dl.entire.io/install.sh | bash"
+}
+
 // printNotification prints the version update notification to the user.
 func printNotification(cmd *cobra.Command, current, latest string) {
-	msg := fmt.Sprintf("\nA newer version of Entire CLI is available: %s (current: %s)\nRun 'brew upgrade entire' to update.\n",
-		latest, current)
+	msg := fmt.Sprintf("\nA newer version of Entire CLI is available: %s (current: %s)\nRun '%s' to update.\n",
+		latest, current, updateCommand())
 	fmt.Fprint(cmd.OutOrStdout(), msg)
 }

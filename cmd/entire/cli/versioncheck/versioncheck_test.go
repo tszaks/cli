@@ -162,3 +162,17 @@ func TestFetchLatestVersionWithMockServer(t *testing.T) {
 		t.Errorf("parseGitHubRelease() = %q, want v1.2.3", version)
 	}
 }
+
+func TestUpdateCommand(t *testing.T) {
+	// updateCommand should return one of the two valid update commands
+	cmd := updateCommand()
+
+	validCommands := map[string]bool{
+		"brew upgrade entire":                              true,
+		"curl -fsSL https://dl.entire.io/install.sh | bash": true,
+	}
+
+	if !validCommands[cmd] {
+		t.Errorf("updateCommand() = %q, want one of %v", cmd, validCommands)
+	}
+}
