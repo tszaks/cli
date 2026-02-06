@@ -2,7 +2,6 @@ package redact
 
 import (
 	"bytes"
-	"strings"
 	"slices"
 	"testing"
 )
@@ -86,11 +85,10 @@ func TestCollectJSONLReplacements_Succeeds(t *testing.T) {
 		"content": "token=" + highEntropySecret,
 	}
 	repls := collectJSONLReplacements(obj)
-	if len(repls) != 1 {
-		t.Fatal("expected one replacement for high-entropy secret")
-	}
-	if !strings.Contains(repls[0][1], "[REDACTED]") {
-		t.Errorf("expected replacement to contain [REDACTED], got %q", repls[0][1])
+	// expect one replacement for high-entropy secret
+	want := [][2]string{{"token=" + highEntropySecret, "[REDACTED]"}}
+	if !slices.Equal(repls, want) {
+		t.Errorf("got %q, want %q", repls, want)
 	}
 }
 
