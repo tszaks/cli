@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 )
 
@@ -220,6 +221,7 @@ func TestWriteActiveSessions(t *testing.T) {
 			StartedAt:       now.Add(-2 * time.Minute),
 			CheckpointCount: 3,
 			FirstPrompt:     "Fix auth bug in login flow",
+			AgentType:       agent.AgentType("Claude Code"),
 		},
 		{
 			SessionID:       "def-5678-session",
@@ -227,6 +229,7 @@ func TestWriteActiveSessions(t *testing.T) {
 			StartedAt:       now.Add(-15 * time.Minute),
 			CheckpointCount: 1,
 			FirstPrompt:     "Add dark mode support for the entire application and all components",
+			AgentType:       agent.AgentType("Cursor"),
 			PendingPromptAttribution: &session.PromptAttribution{
 				CheckpointNumber: 2,
 			},
@@ -266,6 +269,18 @@ func TestWriteActiveSessions(t *testing.T) {
 		t.Errorf("Expected worktree path '/Users/test/repo/.worktrees/3', got: %s", output)
 	}
 
+	// Should contain agent labels
+	if !strings.Contains(output, "[Claude Code]") {
+		t.Errorf("Expected agent label '[Claude Code]', got: %s", output)
+	}
+	if !strings.Contains(output, "[Cursor]") {
+		t.Errorf("Expected agent label '[Cursor]', got: %s", output)
+	}
+	// Session without AgentType should show unknown placeholder
+	if !strings.Contains(output, "[(unknown)]") {
+		t.Errorf("Expected '[(unknown)]' for missing agent type, got: %s", output)
+	}
+
 	// Should contain truncated session IDs
 	if !strings.Contains(output, "abc-123") {
 		t.Errorf("Expected truncated session ID 'abc-123', got: %s", output)
@@ -290,9 +305,9 @@ func TestWriteActiveSessions(t *testing.T) {
 		t.Errorf("Expected '(uncheckpointed changes)', got: %s", output)
 	}
 
-	// Should show "(unknown)" for session without FirstPrompt
-	if !strings.Contains(output, "(unknown)") {
-		t.Errorf("Expected '(unknown)' for missing first prompt, got: %s", output)
+	// Should show "(unknown)" for session without FirstPrompt (in quotes as prompt)
+	if !strings.Contains(output, "\"(unknown)\"") {
+		t.Errorf("Expected '\"(unknown)\"' for missing first prompt, got: %s", output)
 	}
 }
 

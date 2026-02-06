@@ -247,6 +247,11 @@ func writeActiveSessions(w io.Writer) {
 		fmt.Fprintf(w, "  %s\n", header)
 
 		for _, st := range g.sessions {
+			agentLabel := string(st.AgentType)
+			if agentLabel == "" {
+				agentLabel = unknownPlaceholder
+			}
+
 			shortID := st.SessionID
 			if len(shortID) > 7 {
 				shortID = shortID[:7]
@@ -270,8 +275,8 @@ func writeActiveSessions(w io.Writer) {
 				uncheckpointed = " (uncheckpointed changes)"
 			}
 
-			fmt.Fprintf(w, "    %-9s \"%s\"  %s  %s%s\n",
-				shortID, prompt, age, checkpoints, uncheckpointed)
+			fmt.Fprintf(w, "    [%s] %-9s \"%s\"  %s  %s%s\n",
+				agentLabel, shortID, prompt, age, checkpoints, uncheckpointed)
 		}
 
 		// Blank line between groups, but not after the last one
