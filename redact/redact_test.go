@@ -59,6 +59,32 @@ func TestJSONLBytes_WithSecret(t *testing.T) {
 	}
 }
 
+func TestJSONLContent_TopLevelArray(t *testing.T) {
+	// Top-level JSON arrays are valid JSONL and should be redacted.
+	input := `["` + highEntropySecret + `","normal text"]`
+	result, err := JSONLContent(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(result, highEntropySecret) {
+		t.Error("expected secret in top-level array to be redacted")
+	}
+	if !strings.Contains(result, "[REDACTED]") {
+		t.Error("expected [REDACTED] placeholder in top-level array")
+	}
+}
+
+func TestJSONLContent_TopLevelArrayNoSecrets(t *testing.T) {
+	input := `["hello","world"]`
+	result, err := JSONLContent(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != input {
+		t.Errorf("expected unchanged input, got %q", result)
+	}
+}
+
 func TestCollectJSONLReplacements_UsesExportedString(t *testing.T) {
 	// This test verifies the fix for the compiler error where
 	// collectJSONLReplacements called redactString (unexported) instead of String.

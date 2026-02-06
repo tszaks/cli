@@ -74,12 +74,12 @@ func JSONLContent(content string) (string, error) {
 			b.WriteString(line)
 			continue
 		}
-		var obj map[string]any
-		if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
+		var parsed any
+		if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
 			b.WriteString(line)
 			continue
 		}
-		repls := collectJSONLReplacements(obj)
+		repls := collectJSONLReplacements(parsed)
 		if len(repls) == 0 {
 			b.WriteString(line)
 			continue
