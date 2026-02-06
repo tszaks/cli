@@ -12,6 +12,10 @@ import (
 // secretPattern matches high-entropy strings that may be secrets.
 var secretPattern = regexp.MustCompile(`[A-Za-z0-9/+_=-]{10,}`)
 
+// entropyThreshold is the minimum Shannon entropy for a string to be considered
+// a secret. 4.5 was chosen through trial and error: high enough to avoid false
+// positives on common words and identifiers, low enough to catch typical API keys
+// and tokens which tend to have entropy well above 5.0.
 const entropyThreshold = 4.5
 
 // String replaces high-entropy strings matching secretPattern with [REDACTED].
