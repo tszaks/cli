@@ -69,7 +69,7 @@ func TestJSONLContent_TopLevelArray(t *testing.T) {
 	if strings.Contains(result, highEntropySecret) {
 		t.Error("expected secret in top-level array to be redacted")
 	}
-	if !strings.Contains(result, "[REDACTED]") {
+	if result != `["[REDACTED]","normal text"]` {
 		t.Error("expected [REDACTED] placeholder in top-level array")
 	}
 }
