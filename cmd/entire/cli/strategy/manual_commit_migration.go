@@ -37,6 +37,13 @@ func (s *ManualCommitStrategy) migrateShadowBranchIfNeeded(repo *git.Repository,
 	oldShadowBranch := checkpoint.ShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	newShadowBranch := checkpoint.ShadowBranchNameForCommit(currentHead, state.WorktreeID)
 
+	// Guard against hash prefix collision: if both commits produce the same
+	// shadow branch name (same 7-char prefix), just update state - no ref rename needed
+	if oldShadowBranch == newShadowBranch {
+		state.BaseCommit = currentHead
+		return true, nil
+	}
+
 	oldRefName := plumbing.NewBranchReferenceName(oldShadowBranch)
 	oldRef, err := repo.Reference(oldRefName, true)
 	if err != nil {
@@ -68,4 +75,19 @@ func (s *ManualCommitStrategy) migrateShadowBranchIfNeeded(repo *git.Repository,
 	// Update state with new base commit
 	state.BaseCommit = currentHead
 	return true, nil
+}
+
+// migrateAndPersistIfNeeded checks for HEAD changes, migrates the shadow branch if needed,
+// and persists the updated session state. Used by SaveChanges and SaveTaskCheckpoint.
+func (s *ManualCommitStrategy) migrateAndPersistIfNeeded(repo *git.Repository, state *SessionState) error {
+	migrated, err := s.migrateShadowBranchIfNeeded(repo, state)
+	if err != nil {
+		return fmt.Errorf("failed to check/migrate shadow branch: %w", err)
+	}
+	if migrated {
+		if err := s.saveSessionState(state); err != nil {
+			return fmt.Errorf("failed to save session state after migration: %w", err)
+		}
+	}
+	return nil
 }

@@ -6,7 +6,8 @@ import (
 	"os/exec"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
 // TestShadow_MidSessionRebaseMigration tests that when Claude performs a rebase
@@ -23,6 +24,7 @@ import (
 // - Checkpoints after rebase go to the new (migrated) shadow branch
 // - The session state's BaseCommit is updated correctly
 func TestShadow_MidSessionRebaseMigration(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -81,7 +83,7 @@ func TestShadow_MidSessionRebaseMigration(t *testing.T) {
 	}
 
 	// Verify shadow branch exists at original commit
-	originalShadowBranch := "entire/" + initialFeatureHead[:7]
+	originalShadowBranch := env.GetShadowBranchNameForCommit(initialFeatureHead)
 	if !env.BranchExists(originalShadowBranch) {
 		t.Fatalf("Shadow branch %s should exist after first checkpoint", originalShadowBranch)
 	}
@@ -145,7 +147,7 @@ func TestShadow_MidSessionRebaseMigration(t *testing.T) {
 	t.Log("Phase 5: Verifying shadow branch migration")
 
 	// The new shadow branch should exist (based on rebased HEAD)
-	newShadowBranch := "entire/" + newFeatureHead[:7]
+	newShadowBranch := env.GetShadowBranchNameForCommit(newFeatureHead)
 
 	// Verify the new shadow branch exists
 	if !env.BranchExists(newShadowBranch) {
@@ -246,6 +248,7 @@ func (env *TestEnv) gitCheckout(ref string) {
 // This verifies there's no race condition between shadow branch cleanup
 // (from condensation) and the migration logic in SaveChanges.
 func TestShadow_CommitThenRebaseMidSession(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -297,7 +300,7 @@ func TestShadow_CommitThenRebaseMidSession(t *testing.T) {
 	}
 
 	// Verify shadow branch exists
-	originalShadowBranch := "entire/" + initialFeatureHead[:7]
+	originalShadowBranch := env.GetShadowBranchNameForCommit(initialFeatureHead)
 	if !env.BranchExists(originalShadowBranch) {
 		t.Fatalf("Shadow branch %s should exist after first checkpoint", originalShadowBranch)
 	}
@@ -323,9 +326,9 @@ func TestShadow_CommitThenRebaseMidSession(t *testing.T) {
 		t.Logf("✓ Shadow branch %s was deleted by condensation", originalShadowBranch)
 	}
 
-	// Verify data was condensed to entire/sessions
-	if !env.BranchExists("entire/sessions") {
-		t.Fatal("entire/sessions branch should exist after condensation")
+	// Verify data was condensed to metadata branch
+	if !env.BranchExists(paths.MetadataBranchName) {
+		t.Fatalf("%s branch should exist after condensation", paths.MetadataBranchName)
 	}
 
 	// ========================================
@@ -382,7 +385,7 @@ func TestShadow_CommitThenRebaseMidSession(t *testing.T) {
 	t.Log("Phase 6: Verifying correct behavior")
 
 	// New shadow branch should exist (based on rebased HEAD)
-	newShadowBranch := "entire/" + postRebaseHead[:7]
+	newShadowBranch := env.GetShadowBranchNameForCommit(postRebaseHead)
 	if !env.BranchExists(newShadowBranch) {
 		t.Errorf("New shadow branch %s should exist", newShadowBranch)
 		t.Logf("Available branches: %v", env.ListBranchesWithPrefix("entire/"))

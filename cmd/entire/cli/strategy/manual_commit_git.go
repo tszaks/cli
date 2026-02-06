@@ -48,16 +48,8 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 	}
 
 	// Check if HEAD has changed (e.g., Claude did a rebase via tool call) and migrate if needed
-	// This is critical because rebases can happen mid-session without a new prompt
-	migrated, err := s.migrateShadowBranchIfNeeded(repo, state)
-	if err != nil {
-		return fmt.Errorf("failed to check/migrate shadow branch: %w", err)
-	}
-	if migrated {
-		// Save state immediately so BaseCommit update is persisted
-		if err := s.saveSessionState(state); err != nil {
-			return fmt.Errorf("failed to save session state after migration: %w", err)
-		}
+	if err := s.migrateAndPersistIfNeeded(repo, state); err != nil {
+		return err
 	}
 
 	// Get checkpoint store
@@ -195,14 +187,8 @@ func (s *ManualCommitStrategy) SaveTaskCheckpoint(ctx TaskCheckpointContext) err
 	}
 
 	// Check if HEAD has changed (e.g., Claude did a rebase via tool call) and migrate if needed
-	migrated, err := s.migrateShadowBranchIfNeeded(repo, state)
-	if err != nil {
-		return fmt.Errorf("failed to check/migrate shadow branch: %w", err)
-	}
-	if migrated {
-		if err := s.saveSessionState(state); err != nil {
-			return fmt.Errorf("failed to save session state after migration: %w", err)
-		}
+	if err := s.migrateAndPersistIfNeeded(repo, state); err != nil {
+		return err
 	}
 
 	// Get checkpoint store
