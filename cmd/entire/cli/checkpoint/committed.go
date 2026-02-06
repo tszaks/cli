@@ -1,6 +1,7 @@
 package checkpoint
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -27,6 +28,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/utils/binary"
 )
 
 // errStopIteration is used to stop commit iteration early in GetCheckpointAuthor.
@@ -1085,6 +1087,17 @@ func createRedactedBlobFromFile(repo *git.Repository, filePath, treePath string)
 	content, err := os.ReadFile(filePath) //nolint:gosec // filePath comes from walking the metadata directory
 	if err != nil {
 		return plumbing.ZeroHash, 0, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	// Skip redaction for binary files — they can't contain text secrets and
+	// running string replacement on them would corrupt the data.
+	isBin, binErr := binary.IsBinary(bytes.NewReader(content))
+	if binErr != nil || isBin {
+		hash, err := CreateBlobFromContent(repo, content)
+		if err != nil {
+			return plumbing.ZeroHash, 0, fmt.Errorf("failed to create blob: %w", err)
+		}
+		return hash, mode, nil
 	}
 
 	if strings.HasSuffix(treePath, ".jsonl") {
