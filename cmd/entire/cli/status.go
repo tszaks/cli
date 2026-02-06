@@ -118,6 +118,10 @@ func runStatusDetailed(w io.Writer, settingsPath, localSettingsPath string, proj
 		fmt.Fprintln(w, formatSettingsStatus("Local", localSettings))
 	}
 
+	if settings.Enabled {
+		writeActiveSessions(w)
+	}
+
 	return nil
 }
 
