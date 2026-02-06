@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -54,7 +55,7 @@ func TestJSONLBytes_WithSecret(t *testing.T) {
 	if strings.Contains(string(result), highEntropySecret) {
 		t.Error("expected secret to be redacted in JSONL content")
 	}
-	if !strings.Contains(string(result), "[REDACTED]") {
+	if !bytes.Equal(result, []byte(`{"type":"text","content":"[REDACTED]"}`)) {
 		t.Error("expected [REDACTED] placeholder in JSONL content")
 	}
 }
