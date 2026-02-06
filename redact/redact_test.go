@@ -24,11 +24,9 @@ func TestBytes_NoSecrets(t *testing.T) {
 func TestBytes_WithSecret(t *testing.T) {
 	input := []byte("my key is " + highEntropySecret + " ok")
 	result := Bytes(input)
-	if strings.Contains(string(result), highEntropySecret) {
-		t.Error("expected secret to be redacted")
-	}
-	if !strings.Contains(string(result), "[REDACTED]") {
-		t.Error("expected [REDACTED] placeholder")
+	expected := []byte("my key is [REDACTED] ok")
+	if !bytes.Equal(result, expected) {
+		t.Errorf("got %q, want %q", result, expected)
 	}
 }
 
@@ -52,11 +50,9 @@ func TestJSONLBytes_WithSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if strings.Contains(string(result), highEntropySecret) {
-		t.Error("expected secret to be redacted in JSONL content")
-	}
-	if !bytes.Equal(result, []byte(`{"type":"text","content":"[REDACTED]"}`)) {
-		t.Error("expected [REDACTED] placeholder in JSONL content")
+	expected := []byte(`{"type":"text","content":"[REDACTED]"}`)
+	if !bytes.Equal(result, expected) {
+		t.Errorf("got %q, want %q", result, expected)
 	}
 }
 
@@ -67,11 +63,9 @@ func TestJSONLContent_TopLevelArray(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if strings.Contains(result, highEntropySecret) {
-		t.Error("expected secret in top-level array to be redacted")
-	}
-	if result != `["[REDACTED]","normal text"]` {
-		t.Error("expected [REDACTED] placeholder in top-level array")
+	expected := `["[REDACTED]","normal text"]`
+	if result != expected {
+		t.Errorf("got %q, want %q", result, expected)
 	}
 }
 
@@ -212,7 +206,7 @@ func TestShouldSkipJSONLObject_RedactionBehavior(t *testing.T) {
 		"content": highEntropySecret,
 	}
 	repls2 := collectJSONLReplacements(obj2)
-	if len(repls2) == 0 {
-		t.Error("expected replacements for text object with secret")
+	if len(repls2) != 1 {
+		t.Fatalf("got %d replacements, want 1", len(repls2))
 	}
 }
