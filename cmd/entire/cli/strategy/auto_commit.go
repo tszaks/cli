@@ -903,7 +903,8 @@ func (s *AutoCommitStrategy) GetCheckpointLog(cp Checkpoint) ([]byte, error) {
 // to track CondensedTranscriptLines (transcript offset) across checkpoints.
 // agentType is the human-readable name of the agent (e.g., "Claude Code").
 // transcriptPath is the path to the live transcript file (for mid-session commit detection).
-func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType agent.AgentType, transcriptPath string) error {
+// userPrompt is the user's prompt text (stored truncated as FirstPrompt for display).
+func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType agent.AgentType, transcriptPath string, userPrompt string) error {
 	repo, err := OpenRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
@@ -923,7 +924,14 @@ func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType agent
 		return fmt.Errorf("failed to check existing session state: %w", err)
 	}
 	if existing != nil {
-		// Session already initialized, nothing to do
+		// Session already initialized — backfill FirstPrompt if empty (for sessions
+		// created before the first_prompt field was added, or resumed sessions)
+		if existing.FirstPrompt == "" && userPrompt != "" {
+			existing.FirstPrompt = truncatePromptForStorage(userPrompt)
+			if err := SaveSessionState(existing); err != nil {
+				return fmt.Errorf("failed to update session state: %w", err)
+			}
+		}
 		return nil
 	}
 
@@ -937,6 +945,7 @@ func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType agent
 		FilesTouched:             []string{},
 		AgentType:                agentType,
 		TranscriptPath:           transcriptPath,
+		FirstPrompt:              truncatePromptForStorage(userPrompt),
 	}
 
 	if err := SaveSessionState(state); err != nil {

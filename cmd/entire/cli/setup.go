@@ -7,14 +7,18 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/settings"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/stringutil"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -474,6 +478,11 @@ func runStatus(w io.Writer, detailed bool) error {
 	}
 
 	fmt.Fprintln(w, formatSettingsStatusShort(settings))
+
+	if settings.Enabled {
+		writeActiveSessions(w)
+	}
+
 	return nil
 }
 
@@ -1231,4 +1240,146 @@ func removeAllShadowBranches() (int, error) {
 	}
 	deleted, _, err := strategy.DeleteShadowBranches(branches)
 	return len(deleted), err
+}
+
+// timeAgo formats a time as a human-readable relative duration.
+func timeAgo(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		m := int(d.Minutes())
+		return fmt.Sprintf("%dm ago", m)
+	case d < 24*time.Hour:
+		h := int(d.Hours())
+		return fmt.Sprintf("%dh ago", h)
+	default:
+		days := int(d.Hours() / 24)
+		return fmt.Sprintf("%dd ago", days)
+	}
+}
+
+// worktreeGroup groups sessions by worktree path for display.
+type worktreeGroup struct {
+	path     string
+	branch   string
+	sessions []*session.State
+}
+
+const unknownPlaceholder = "(unknown)"
+
+// writeActiveSessions writes active session information grouped by worktree.
+func writeActiveSessions(w io.Writer) {
+	store, err := session.NewStateStore()
+	if err != nil {
+		return
+	}
+
+	states, err := store.List(context.Background())
+	if err != nil || len(states) == 0 {
+		return
+	}
+
+	// Filter to active sessions only
+	var active []*session.State
+	for _, s := range states {
+		if s.EndedAt == nil {
+			active = append(active, s)
+		}
+	}
+	if len(active) == 0 {
+		return
+	}
+
+	// Group by worktree path
+	groups := make(map[string]*worktreeGroup)
+	for _, s := range active {
+		wp := s.WorktreePath
+		if wp == "" {
+			wp = unknownPlaceholder
+		}
+		g, ok := groups[wp]
+		if !ok {
+			g = &worktreeGroup{path: wp}
+			groups[wp] = g
+		}
+		g.sessions = append(g.sessions, s)
+	}
+
+	// Resolve branch names for each worktree (skip for unknown paths)
+	for _, g := range groups {
+		if g.path != unknownPlaceholder {
+			g.branch = resolveWorktreeBranch(g.path)
+		}
+	}
+
+	// Sort groups: alphabetical by path
+	sortedGroups := make([]*worktreeGroup, 0, len(groups))
+	for _, g := range groups {
+		sortedGroups = append(sortedGroups, g)
+	}
+	sort.Slice(sortedGroups, func(i, j int) bool {
+		return sortedGroups[i].path < sortedGroups[j].path
+	})
+
+	// Sort sessions within each group by StartedAt (newest first)
+	for _, g := range sortedGroups {
+		sort.Slice(g.sessions, func(i, j int) bool {
+			return g.sessions[i].StartedAt.After(g.sessions[j].StartedAt)
+		})
+	}
+
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Active Sessions:")
+	for i, g := range sortedGroups {
+		header := g.path
+		if g.branch != "" {
+			header += " (" + g.branch + ")"
+		}
+		fmt.Fprintf(w, "  %s\n", header)
+
+		for _, st := range g.sessions {
+			shortID := st.SessionID
+			if len(shortID) > 7 {
+				shortID = shortID[:7]
+			}
+
+			prompt := st.FirstPrompt
+			if prompt == "" {
+				prompt = unknownPlaceholder
+			}
+			prompt = stringutil.TruncateRunes(prompt, 40, "...")
+
+			age := timeAgo(st.StartedAt)
+
+			checkpoints := fmt.Sprintf("%d checkpoint", st.CheckpointCount)
+			if st.CheckpointCount != 1 {
+				checkpoints += "s"
+			}
+
+			uncheckpointed := ""
+			if st.PendingPromptAttribution != nil {
+				uncheckpointed = " (uncheckpointed changes)"
+			}
+
+			fmt.Fprintf(w, "    %-9s \"%s\"  %s  %s%s\n",
+				shortID, prompt, age, checkpoints, uncheckpointed)
+		}
+
+		// Blank line between groups, but not after the last one
+		if i < len(sortedGroups)-1 {
+			fmt.Fprintln(w)
+		}
+	}
+}
+
+// resolveWorktreeBranch resolves the current branch for a worktree path.
+func resolveWorktreeBranch(worktreePath string) string {
+	cmd := exec.CommandContext(context.Background(), "git", "-C", worktreePath, "rev-parse", "--abbrev-ref", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
 }

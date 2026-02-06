@@ -2,12 +2,15 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
 	"github.com/go-git/go-git/v5"
 )
@@ -755,5 +758,169 @@ func TestRemoveEntireDirectory_NotExists(t *testing.T) {
 	// Should not error when directory doesn't exist
 	if err := removeEntireDirectory(); err != nil {
 		t.Fatalf("removeEntireDirectory() should not error when directory doesn't exist: %v", err)
+	}
+}
+
+func TestTimeAgo(t *testing.T) {
+	tests := []struct {
+		name     string
+		duration time.Duration
+		want     string
+	}{
+		{"just now", 10 * time.Second, "just now"},
+		{"30 seconds", 30 * time.Second, "just now"},
+		{"1 minute", 1 * time.Minute, "1m ago"},
+		{"5 minutes", 5 * time.Minute, "5m ago"},
+		{"59 minutes", 59 * time.Minute, "59m ago"},
+		{"1 hour", 1 * time.Hour, "1h ago"},
+		{"3 hours", 3 * time.Hour, "3h ago"},
+		{"23 hours", 23 * time.Hour, "23h ago"},
+		{"1 day", 24 * time.Hour, "1d ago"},
+		{"7 days", 7 * 24 * time.Hour, "7d ago"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := timeAgo(time.Now().Add(-tt.duration))
+			if got != tt.want {
+				t.Errorf("timeAgo(%v ago) = %q, want %q", tt.duration, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWriteActiveSessions(t *testing.T) {
+	setupTestRepo(t)
+
+	// Create a state store with test data
+	store, err := session.NewStateStore()
+	if err != nil {
+		t.Fatalf("NewStateStore() error = %v", err)
+	}
+
+	now := time.Now()
+
+	// Create active sessions
+	states := []*session.State{
+		{
+			SessionID:       "abc-1234-session",
+			WorktreePath:    "/Users/test/repo",
+			StartedAt:       now.Add(-2 * time.Minute),
+			CheckpointCount: 3,
+			FirstPrompt:     "Fix auth bug in login flow",
+		},
+		{
+			SessionID:       "def-5678-session",
+			WorktreePath:    "/Users/test/repo",
+			StartedAt:       now.Add(-15 * time.Minute),
+			CheckpointCount: 1,
+			FirstPrompt:     "Add dark mode support for the entire application and all components",
+			PendingPromptAttribution: &session.PromptAttribution{
+				CheckpointNumber: 2,
+			},
+		},
+		{
+			SessionID:       "ghi-9012-session",
+			WorktreePath:    "/Users/test/repo/.worktrees/3",
+			StartedAt:       now.Add(-5 * time.Minute),
+			CheckpointCount: 0,
+			PendingPromptAttribution: &session.PromptAttribution{
+				CheckpointNumber: 1,
+			},
+		},
+	}
+
+	for _, s := range states {
+		if err := store.Save(context.Background(), s); err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+	}
+
+	var buf bytes.Buffer
+	writeActiveSessions(&buf)
+
+	output := buf.String()
+
+	// Should contain "Active Sessions:" header
+	if !strings.Contains(output, "Active Sessions:") {
+		t.Errorf("Expected 'Active Sessions:' header, got: %s", output)
+	}
+
+	// Should contain worktree paths
+	if !strings.Contains(output, "/Users/test/repo") {
+		t.Errorf("Expected worktree path '/Users/test/repo', got: %s", output)
+	}
+	if !strings.Contains(output, "/Users/test/repo/.worktrees/3") {
+		t.Errorf("Expected worktree path '/Users/test/repo/.worktrees/3', got: %s", output)
+	}
+
+	// Should contain truncated session IDs
+	if !strings.Contains(output, "abc-123") {
+		t.Errorf("Expected truncated session ID 'abc-123', got: %s", output)
+	}
+
+	// Should contain first prompts
+	if !strings.Contains(output, "Fix auth bug in login flow") {
+		t.Errorf("Expected first prompt text, got: %s", output)
+	}
+
+	// Should show checkpoint counts (singular and plural)
+	if !strings.Contains(output, "3 checkpoints") {
+		t.Errorf("Expected '3 checkpoints', got: %s", output)
+	}
+	// Use "1 checkpoint " (with trailing space) to avoid matching "1 checkpoints"
+	if !strings.Contains(output, "1 checkpoint ") {
+		t.Errorf("Expected '1 checkpoint ' (singular), got: %s", output)
+	}
+
+	// Should show uncheckpointed changes indicator
+	if !strings.Contains(output, "(uncheckpointed changes)") {
+		t.Errorf("Expected '(uncheckpointed changes)', got: %s", output)
+	}
+
+	// Should show "(unknown)" for session without FirstPrompt
+	if !strings.Contains(output, "(unknown)") {
+		t.Errorf("Expected '(unknown)' for missing first prompt, got: %s", output)
+	}
+}
+
+func TestWriteActiveSessions_NoSessions(t *testing.T) {
+	setupTestRepo(t)
+
+	var buf bytes.Buffer
+	writeActiveSessions(&buf)
+
+	// Should produce no output when there are no sessions
+	if buf.Len() != 0 {
+		t.Errorf("Expected empty output with no sessions, got: %s", buf.String())
+	}
+}
+
+func TestWriteActiveSessions_EndedSessionsExcluded(t *testing.T) {
+	setupTestRepo(t)
+
+	store, err := session.NewStateStore()
+	if err != nil {
+		t.Fatalf("NewStateStore() error = %v", err)
+	}
+
+	endedAt := time.Now()
+	state := &session.State{
+		SessionID:    "ended-session",
+		WorktreePath: "/Users/test/repo",
+		StartedAt:    time.Now().Add(-10 * time.Minute),
+		EndedAt:      &endedAt,
+	}
+
+	if err := store.Save(context.Background(), state); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	writeActiveSessions(&buf)
+
+	// Should produce no output when all sessions are ended
+	if buf.Len() != 0 {
+		t.Errorf("Expected empty output with only ended sessions, got: %s", buf.String())
 	}
 }
