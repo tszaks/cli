@@ -195,6 +195,8 @@ func TestShouldSkipJSONLObject_RedactionBehavior(t *testing.T) {
 		"data": highEntropySecret,
 	}
 	repls := collectJSONLReplacements(obj)
+
+	// expect no replacements, it's an image which is skipped.
 	var wantRepls [][2]string
 	if !slices.Equal(repls, wantRepls) {
 		t.Errorf("got %q, want %q", repls, wantRepls)
