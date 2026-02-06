@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 	"github.com/spf13/cobra"
 )
 

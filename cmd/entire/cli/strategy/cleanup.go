@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint"
-	"entire.io/cli/cmd/entire/cli/checkpoint/id"
-	"entire.io/cli/cmd/entire/cli/logging"
-	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/session"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/logging"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/session"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -62,10 +62,10 @@ var shadowBranchPattern = regexp.MustCompile(`^entire/[0-9a-fA-F]{7,}(-[0-9a-fA-
 // IsShadowBranch returns true if the branch name matches the shadow branch pattern.
 // Shadow branches have the format "entire/<commit-hash>-<worktree-hash>" where the
 // commit hash is at least 7 hex characters and worktree hash is 6 hex characters.
-// The "entire/sessions" branch is NOT a shadow branch.
+// The "entire/checkpoints/v1" branch is NOT a shadow branch.
 func IsShadowBranch(branchName string) bool {
 	// Explicitly exclude entire/sessions
-	if branchName == "entire/sessions" {
+	if branchName == paths.MetadataBranchName {
 		return false
 	}
 	return shadowBranchPattern.MatchString(branchName)
@@ -73,7 +73,7 @@ func IsShadowBranch(branchName string) bool {
 
 // ListShadowBranches returns all shadow branches in the repository.
 // Shadow branches match the pattern "entire/<commit-hash>" (7+ hex chars).
-// The "entire/sessions" branch is excluded as it stores permanent metadata.
+// The "entire/checkpoints/v1" branch is excluded as it stores permanent metadata.
 // Returns an empty slice (not nil) if no shadow branches exist.
 func ListShadowBranches() ([]string, error) {
 	repo, err := OpenRepository()

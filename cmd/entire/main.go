@@ -9,7 +9,7 @@ import (
 	"strings"
 	"syscall"
 
-	"entire.io/cli/cmd/entire/cli"
+	"github.com/entireio/cli/cmd/entire/cli"
 	"github.com/spf13/cobra"
 )
 

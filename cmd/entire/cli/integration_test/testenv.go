@@ -13,16 +13,17 @@ import (
 	"testing"
 	"time"
 
-	"entire.io/cli/cmd/entire/cli/agent"
-	"entire.io/cli/cmd/entire/cli/checkpoint"
-	"entire.io/cli/cmd/entire/cli/checkpoint/id"
-	"entire.io/cli/cmd/entire/cli/jsonutil"
-	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/strategy"
-	"entire.io/cli/cmd/entire/cli/trailers"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/format/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
@@ -261,6 +262,13 @@ func (env *TestEnv) InitRepo() {
 	}
 	cfg.User.Name = "Test User"
 	cfg.User.Email = "test@example.com"
+
+	// Disable GPG signing for test commits (prevents failures if user has commit.gpgsign=true globally)
+	if cfg.Raw == nil {
+		cfg.Raw = config.New()
+	}
+	cfg.Raw.Section("commit").SetOption("gpgsign", "false")
+
 	if err := repo.SetConfig(cfg); err != nil {
 		env.T.Fatalf("failed to set repo config: %v", err)
 	}
@@ -1196,6 +1204,23 @@ func (env *TestEnv) GetLatestCheckpointIDFromHistory() string {
 // Delegates to id.CheckpointID.Path() for consistency.
 func ShardedCheckpointPath(checkpointID string) string {
 	return id.CheckpointID(checkpointID).Path()
+}
+
+// SessionFilePath returns the path to a session file within a checkpoint.
+// Session files are stored in numbered subdirectories using 0-based indexing (e.g., 0/full.jsonl).
+// This function constructs the path for the first (default) session.
+func SessionFilePath(checkpointID string, fileName string) string {
+	return id.CheckpointID(checkpointID).Path() + "/0/" + fileName
+}
+
+// CheckpointSummaryPath returns the path to the root metadata.json (CheckpointSummary) for a checkpoint.
+func CheckpointSummaryPath(checkpointID string) string {
+	return id.CheckpointID(checkpointID).Path() + "/" + paths.MetadataFileName
+}
+
+// SessionMetadataPath returns the path to the session-level metadata.json for a checkpoint.
+func SessionMetadataPath(checkpointID string) string {
+	return SessionFilePath(checkpointID, paths.MetadataFileName)
 }
 
 func findModuleRoot() string {

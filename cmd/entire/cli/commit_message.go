@@ -3,7 +3,7 @@ package cli
 import (
 	"strings"
 
-	"entire.io/cli/cmd/entire/cli/stringutil"
+	"github.com/entireio/cli/cmd/entire/cli/stringutil"
 )
 
 // generateCommitMessage creates a commit message from the user's original prompt

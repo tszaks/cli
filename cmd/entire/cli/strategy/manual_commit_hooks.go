@@ -10,13 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"entire.io/cli/cmd/entire/cli/agent"
-	"entire.io/cli/cmd/entire/cli/checkpoint"
-	"entire.io/cli/cmd/entire/cli/checkpoint/id"
-	"entire.io/cli/cmd/entire/cli/logging"
-	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/stringutil"
-	"entire.io/cli/cmd/entire/cli/trailers"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/logging"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/stringutil"
+	"github.com/entireio/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -680,7 +680,7 @@ func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(repo *git.
 	// Check if any modified files overlap with currently staged files
 	// This ensures we only add checkpoint trailers to commits that include
 	// files the agent actually modified
-	stagedFiles := getStagedFiles(repo)
+	stagedFiles := getStagedFiles(repo) // TODO: does it work? Do we have staged files if this is called at post-commit hook ?
 	if !hasOverlappingFiles(stagedFiles, modifiedFiles) {
 		return false, nil // No overlap - staged files are unrelated to agent's work
 	}

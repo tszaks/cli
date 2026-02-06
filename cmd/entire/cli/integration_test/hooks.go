@@ -10,8 +10,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"entire.io/cli/cmd/entire/cli/sessionid"
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/sessionid"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
 // HookRunner executes CLI hooks in the test environment.

@@ -32,7 +32,7 @@ description = "Build the CLI"
 run = """
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-go build -ldflags "-X entire.io/cli/cmd/entire/cli.Version=${VERSION} -X entire.io/cli/cmd/entire/cli.Commit=${COMMIT}" -o entire ./cmd/entire
+go build -ldflags "-X github.com/entireio/cli/cmd/entire/cli.Version=${VERSION} -X github.com/entireio/cli/cmd/entire/cli.Commit=${COMMIT}" -o entire ./cmd/entire
 """
 
 [tasks."build:all"]

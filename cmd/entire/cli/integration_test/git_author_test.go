@@ -56,6 +56,13 @@ func TestGetGitAuthorFallbackToGitCommand(t *testing.T) {
 		t.Fatalf("git init failed: %v", err)
 	}
 
+	// Disable GPG signing for test commits
+	configCmd := exec.Command("git", "config", "commit.gpgsign", "false")
+	configCmd.Dir = env.RepoDir
+	if err := configCmd.Run(); err != nil {
+		t.Fatalf("git config commit.gpgsign failed: %v", err)
+	}
+
 	// The repo now has no local user config. We'll use GIT_AUTHOR_* and GIT_COMMITTER_*
 	// env vars for commits, simulating global config that go-git can't see but git command can.
 
@@ -129,6 +136,18 @@ func TestGetGitAuthorNoConfigReturnsDefaults(t *testing.T) {
 	}
 	if err := initCmd.Run(); err != nil {
 		t.Fatalf("git init failed: %v", err)
+	}
+
+	// Disable GPG signing for test commits
+	configCmd := exec.Command("git", "config", "commit.gpgsign", "false")
+	configCmd.Dir = env.RepoDir
+	configCmd.Env = []string{
+		"HOME=" + fakeHome,
+		"PATH=" + os.Getenv("PATH"),
+		"GIT_CONFIG_NOSYSTEM=1",
+	}
+	if err := configCmd.Run(); err != nil {
+		t.Fatalf("git config commit.gpgsign failed: %v", err)
 	}
 
 	env.InitEntire("manual-commit")

@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"entire.io/cli/cmd/entire/cli/agent/claudecode"
-	"entire.io/cli/cmd/entire/cli/textutil"
-	"entire.io/cli/cmd/entire/cli/transcript"
+	"github.com/entireio/cli/cmd/entire/cli/agent/claudecode"
+	"github.com/entireio/cli/cmd/entire/cli/textutil"
+	"github.com/entireio/cli/cmd/entire/cli/transcript"
 )
 
 // Transcript message type constants - aliases to transcript package for local use.

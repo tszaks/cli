@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/agent/geminicli"
+	"github.com/entireio/cli/cmd/entire/cli/agent/geminicli"
 )
 
 // Use the real Gemini types from the geminicli package to avoid schema drift.
@@ -36,14 +36,9 @@ func TestSetupGeminiHooks_AddsAllRequiredHooks(t *testing.T) {
 	// Read the generated settings.json
 	settings := readGeminiSettingsFile(t, env)
 
-	// Verify enableHooks is set
-	if !settings.Tools.EnableHooks {
-		t.Error("tools.enableHooks should be true")
-	}
-
-	// Verify hooks.enabled is also set (both are required for hooks to run)
-	if !settings.Hooks.Enabled {
-		t.Error("hooks.enabled should be true")
+	// Verify HooksConfig.Enabled is set
+	if !settings.HooksConfig.Enabled {
+		t.Error("hooksConfig.enabled should be true")
 	}
 
 	// Verify all hooks exist (12 total, but SessionEnd has 2 matchers)

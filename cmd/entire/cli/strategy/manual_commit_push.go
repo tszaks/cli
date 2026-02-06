@@ -1,6 +1,6 @@
 package strategy
 
-import "entire.io/cli/cmd/entire/cli/paths"
+import "github.com/entireio/cli/cmd/entire/cli/paths"
 
 // PrePush is called by the git pre-push hook before pushing to a remote.
 // It pushes the entire/sessions branch alongside the user's push.

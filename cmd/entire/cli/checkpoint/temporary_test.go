@@ -1,6 +1,10 @@
 package checkpoint
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+)
 
 func TestHashWorktreeID(t *testing.T) {
 	tests := []struct {
@@ -129,9 +133,9 @@ func TestParseShadowBranchName(t *testing.T) {
 			wantOK:       false,
 		},
 		{
-			name:         "entire/sessions is not a shadow branch",
-			branchName:   "entire/sessions",
-			wantCommit:   "sessions",
+			name:         "entire/checkpoints/v1 is not a shadow branch",
+			branchName:   paths.MetadataBranchName,
+			wantCommit:   "checkpoints/v1",
 			wantWorktree: "",
 			wantOK:       true, // Parser doesn't validate content, just extracts
 		},

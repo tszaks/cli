@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"entire.io/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 )
 
 // Directory constants
@@ -35,7 +35,7 @@ const (
 )
 
 // MetadataBranchName is the orphan branch used by auto-commit and manual-commit strategies to store metadata
-const MetadataBranchName = "entire/sessions"
+const MetadataBranchName = "entire/checkpoints/v1"
 
 // CheckpointPath returns the sharded storage path for a checkpoint ID.
 // Uses first 2 characters as shard (256 buckets), remaining as folder name.

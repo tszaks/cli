@@ -9,8 +9,8 @@ import (
 	"os/exec"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/paths"
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
 // TestShadowStrategy_MidSessionCommit_FromTranscript tests that when Claude commits
@@ -71,7 +71,7 @@ func TestShadowStrategy_MidSessionCommit_FromTranscript(t *testing.T) {
 	shadowBranches := env.ListBranchesWithPrefix("entire/")
 	hasShadowBranch := false
 	for _, b := range shadowBranches {
-		if b != paths.MetadataBranchName && b != "entire/sessions" {
+		if b != paths.MetadataBranchName {
 			hasShadowBranch = true
 			break
 		}

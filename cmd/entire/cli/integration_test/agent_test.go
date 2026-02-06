@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/agent"
-	"entire.io/cli/cmd/entire/cli/agent/claudecode"
-	"entire.io/cli/cmd/entire/cli/agent/geminicli"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/agent/claudecode"
+	"github.com/entireio/cli/cmd/entire/cli/agent/geminicli"
 )
 
 // TestAgentDetection verifies agent detection and default behavior.
+// Not parallel - contains subtests that use os.Chdir which is process-global.
 func TestAgentDetection(t *testing.T) {
-	t.Parallel()
 
 	t.Run("defaults to claude-code when nothing configured", func(t *testing.T) {
 		t.Parallel()
@@ -33,7 +33,7 @@ func TestAgentDetection(t *testing.T) {
 	})
 
 	t.Run("claude-code detects presence when .claude exists", func(t *testing.T) {
-		t.Parallel()
+		// Not parallel - uses os.Chdir which is process-global
 		env := NewTestEnv(t)
 		env.InitRepo()
 
@@ -436,8 +436,8 @@ func TestClaudeCodeHelperMethods(t *testing.T) {
 }
 
 // TestGeminiCLIAgentDetection verifies Gemini CLI agent detection.
+// Not parallel - contains subtests that use os.Chdir which is process-global.
 func TestGeminiCLIAgentDetection(t *testing.T) {
-	t.Parallel()
 
 	t.Run("gemini agent is registered", func(t *testing.T) {
 		t.Parallel()
@@ -456,7 +456,7 @@ func TestGeminiCLIAgentDetection(t *testing.T) {
 	})
 
 	t.Run("gemini detects presence when .gemini exists", func(t *testing.T) {
-		t.Parallel()
+		// Not parallel - uses os.Chdir which is process-global
 		env := NewTestEnv(t)
 		env.InitRepo()
 
@@ -583,9 +583,9 @@ func TestGeminiCLIHookInstallation(t *testing.T) {
 			t.Error("settings.json should contain Notification hook")
 		}
 
-		// Verify enableHooks is set
-		if !strings.Contains(content, "enableHooks") {
-			t.Error("settings.json should contain tools.enableHooks")
+		// Verify hooksConfig is set
+		if !strings.Contains(content, "hooksConfig") {
+			t.Error("settings.json should contain hooksConfig.enabled")
 		}
 	})
 

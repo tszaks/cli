@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"entire.io/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
 // TestShadow_UntrackedFilePreservation tests that untracked files present at session start
