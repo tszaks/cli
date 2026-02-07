@@ -186,9 +186,14 @@ func TestShouldSkipJSONLObject(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "image_url type is not skipped",
+			name: "image_url type is skipped",
 			obj:  map[string]any{"type": "image_url"},
-			want: false,
+			want: true,
+		},
+		{
+			name: "base64 type is skipped",
+			obj:  map[string]any{"type": "base64"},
+			want: true,
 		},
 	}
 	for _, tt := range tests {

@@ -149,10 +149,10 @@ func shouldSkipJSONLField(key string) bool {
 	return strings.HasSuffix(lower, "id") || strings.HasSuffix(lower, "ids")
 }
 
-// shouldSkipJSONLObject returns true if the object has "type":"image".
+// shouldSkipJSONLObject returns true if the object has "type":"image" or "type":"image_url".
 func shouldSkipJSONLObject(obj map[string]any) bool {
 	t, ok := obj["type"].(string)
-	return ok && t == "image"
+	return ok && strings.HasPrefix(t, "image") || t == "base64"
 }
 
 // isSecret returns true if match is a high-entropy string that looks like a secret.
