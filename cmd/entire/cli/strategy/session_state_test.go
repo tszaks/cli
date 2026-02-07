@@ -19,11 +19,11 @@ func TestLoadSessionState_PackageLevel(t *testing.T) {
 
 	// Create and save a session state using the package-level function
 	state := &SessionState{
-		SessionID:                "test-session-pkg-123",
-		BaseCommit:               "abc123def456",
-		StartedAt:                time.Now(),
-		CheckpointCount:          3,
-		CondensedTranscriptLines: 150,
+		SessionID:                 "test-session-pkg-123",
+		BaseCommit:                "abc123def456",
+		StartedAt:                 time.Now(),
+		StepCount:                 3,
+		CheckpointTranscriptStart: 150,
 	}
 
 	// Save using package-level function
@@ -54,11 +54,11 @@ func verifySessionState(t *testing.T, loaded, expected *SessionState) {
 	if loaded.BaseCommit != expected.BaseCommit {
 		t.Errorf("BaseCommit = %q, want %q", loaded.BaseCommit, expected.BaseCommit)
 	}
-	if loaded.CheckpointCount != expected.CheckpointCount {
-		t.Errorf("CheckpointCount = %d, want %d", loaded.CheckpointCount, expected.CheckpointCount)
+	if loaded.StepCount != expected.StepCount {
+		t.Errorf("StepCount = %d, want %d", loaded.StepCount, expected.StepCount)
 	}
-	if loaded.CondensedTranscriptLines != expected.CondensedTranscriptLines {
-		t.Errorf("CondensedTranscriptLines = %d, want %d", loaded.CondensedTranscriptLines, expected.CondensedTranscriptLines)
+	if loaded.CheckpointTranscriptStart != expected.CheckpointTranscriptStart {
+		t.Errorf("CheckpointTranscriptStart = %d, want %d", loaded.CheckpointTranscriptStart, expected.CheckpointTranscriptStart)
 	}
 }
 
@@ -75,11 +75,11 @@ func TestLoadSessionState_WithEndedAt(t *testing.T) {
 	// Test with EndedAt set
 	endedAt := time.Now().Add(-time.Hour) // 1 hour ago
 	state := &SessionState{
-		SessionID:       "test-session-ended",
-		BaseCommit:      "abc123def456",
-		StartedAt:       time.Now().Add(-2 * time.Hour),
-		EndedAt:         &endedAt,
-		CheckpointCount: 5,
+		SessionID:  "test-session-ended",
+		BaseCommit: "abc123def456",
+		StartedAt:  time.Now().Add(-2 * time.Hour),
+		EndedAt:    &endedAt,
+		StepCount:  5,
 	}
 
 	err = SaveSessionState(state)
@@ -105,11 +105,11 @@ func TestLoadSessionState_WithEndedAt(t *testing.T) {
 
 	// Test with EndedAt nil (active session)
 	stateActive := &SessionState{
-		SessionID:       "test-session-active",
-		BaseCommit:      "xyz789",
-		StartedAt:       time.Now(),
-		EndedAt:         nil,
-		CheckpointCount: 1,
+		SessionID:  "test-session-active",
+		BaseCommit: "xyz789",
+		StartedAt:  time.Now(),
+		EndedAt:    nil,
+		StepCount:  1,
 	}
 
 	err = SaveSessionState(stateActive)
@@ -163,10 +163,10 @@ func TestManualCommitStrategy_SessionState_UsesPackageFunctions(t *testing.T) {
 
 	// Save using package-level function
 	state := &SessionState{
-		SessionID:       "cross-usage-test",
-		BaseCommit:      "xyz789",
-		StartedAt:       time.Now(),
-		CheckpointCount: 2,
+		SessionID:  "cross-usage-test",
+		BaseCommit: "xyz789",
+		StartedAt:  time.Now(),
+		StepCount:  2,
 	}
 	if err := SaveSessionState(state); err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)
@@ -190,10 +190,10 @@ func TestManualCommitStrategy_SessionState_UsesPackageFunctions(t *testing.T) {
 
 	// Save using ManualCommitStrategy method
 	state2 := &SessionState{
-		SessionID:       "cross-usage-test-2",
-		BaseCommit:      "abc123",
-		StartedAt:       time.Now(),
-		CheckpointCount: 1,
+		SessionID:  "cross-usage-test-2",
+		BaseCommit: "abc123",
+		StartedAt:  time.Now(),
+		StepCount:  1,
 	}
 	if err := s.saveSessionState(state2); err != nil {
 		t.Fatalf("ManualCommitStrategy.saveSessionState() error = %v", err)

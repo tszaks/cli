@@ -555,8 +555,8 @@ func TestShadow_ShadowBranchMigrationOnPull(t *testing.T) {
 	if state.BaseCommit != newHead {
 		t.Errorf("Session base commit should be %s, got %s", newHead[:7], state.BaseCommit[:7])
 	}
-	if state.CheckpointCount != 2 {
-		t.Errorf("Expected 2 checkpoints after migration, got %d", state.CheckpointCount)
+	if state.StepCount != 2 {
+		t.Errorf("Expected 2 checkpoints after migration, got %d", state.StepCount)
 	}
 	// Verify agent_type is preserved across checkpoints and migration
 	expectedAgentType := agent.AgentTypeClaudeCode

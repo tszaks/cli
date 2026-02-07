@@ -178,9 +178,9 @@ type SaveContext struct {
 	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
 	AgentType agent.AgentType
 
-	// Transcript position at checkpoint start - tracks what was added during this checkpoint
-	TranscriptIdentifierAtStart string // Last identifier when checkpoint started (UUID for Claude, message ID for Gemini)
-	TranscriptLinesAtStart      int    // Line count when checkpoint started
+	// Transcript position at step/turn start - tracks what was added during this step
+	StepTranscriptIdentifier string // Last identifier when step started (UUID for Claude, message ID for Gemini)
+	StepTranscriptStart      int    // Transcript line count when this step/turn started
 
 	// TokenUsage contains the token usage for this checkpoint
 	TokenUsage *agent.TokenUsage

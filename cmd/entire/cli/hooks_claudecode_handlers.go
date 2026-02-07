@@ -141,16 +141,30 @@ func commitWithMetadata() error {
 	}
 	fmt.Fprintf(os.Stderr, "Copied transcript to: %s\n", sessionDir+"/"+paths.TranscriptFileName)
 
-	// Load session state to get transcript offset (for strategies that track it)
-	// This is used to only parse NEW transcript lines since the last checkpoint
-	var transcriptOffset int
-	sessionState, loadErr := strategy.LoadSessionState(sessionID)
-	if loadErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to load session state: %v\n", loadErr)
+	// Load pre-prompt state (captured on UserPromptSubmit)
+	// Needed for transcript offset and file change detection
+	preState, err := LoadPrePromptState(sessionID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load pre-prompt state: %v\n", err)
 	}
-	if sessionState != nil {
-		transcriptOffset = sessionState.CondensedTranscriptLines
-		fmt.Fprintf(os.Stderr, "Session state found: parsing transcript from line %d\n", transcriptOffset)
+
+	// Determine transcript offset: prefer pre-prompt state, fall back to session state.
+	// Pre-prompt state has the offset when the transcript path was available at prompt time.
+	// Session state has the offset updated after each successful checkpoint save (auto-commit).
+	var transcriptOffset int
+	if preState != nil && preState.StepTranscriptStart > 0 {
+		transcriptOffset = preState.StepTranscriptStart
+		fmt.Fprintf(os.Stderr, "Pre-prompt state found: parsing transcript from line %d\n", transcriptOffset)
+	} else {
+		// Fall back to session state (e.g., auto-commit strategy updates it after each save)
+		sessionState, loadErr := strategy.LoadSessionState(sessionID)
+		if loadErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load session state: %v\n", loadErr)
+		}
+		if sessionState != nil && sessionState.CheckpointTranscriptStart > 0 {
+			transcriptOffset = sessionState.CheckpointTranscriptStart
+			fmt.Fprintf(os.Stderr, "Session state found: parsing transcript from line %d\n", transcriptOffset)
+		}
 	}
 
 	// Parse transcript (optionally from offset for strategies that track transcript position)
@@ -208,13 +222,8 @@ func commitWithMetadata() error {
 		return fmt.Errorf("failed to get repo root: %w", err)
 	}
 
-	// Load pre-prompt state (captured on UserPromptSubmit)
-	preState, err := LoadPrePromptState(sessionID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to load pre-prompt state: %v\n", err)
-	}
 	if preState != nil {
-		fmt.Fprintf(os.Stderr, "Loaded pre-prompt state: %d pre-existing untracked files\n", len(preState.UntrackedFiles))
+		fmt.Fprintf(os.Stderr, "Pre-prompt state: %d pre-existing untracked files\n", len(preState.UntrackedFiles))
 	}
 
 	// Compute new and deleted files (single git status call)
@@ -284,12 +293,12 @@ func commitWithMetadata() error {
 		agentType = hookAgent.Type()
 	}
 
-	// Get transcript position from pre-prompt state (captured at checkpoint start)
+	// Get transcript position from pre-prompt state (captured at step/turn start)
 	var transcriptIdentifierAtStart string
 	var transcriptLinesAtStart int
 	if preState != nil {
 		transcriptIdentifierAtStart = preState.LastTranscriptIdentifier
-		transcriptLinesAtStart = preState.LastTranscriptLineCount
+		transcriptLinesAtStart = preState.StepTranscriptStart
 	}
 
 	// Calculate token usage for this checkpoint (Claude Code specific)
@@ -307,20 +316,20 @@ func commitWithMetadata() error {
 
 	// Build fully-populated save context and delegate to strategy
 	ctx := strategy.SaveContext{
-		SessionID:                   sessionID,
-		ModifiedFiles:               relModifiedFiles,
-		NewFiles:                    relNewFiles,
-		DeletedFiles:                relDeletedFiles,
-		MetadataDir:                 sessionDir,
-		MetadataDirAbs:              sessionDirAbs,
-		CommitMessage:               commitMessage,
-		TranscriptPath:              transcriptPath,
-		AuthorName:                  author.Name,
-		AuthorEmail:                 author.Email,
-		AgentType:                   agentType,
-		TranscriptIdentifierAtStart: transcriptIdentifierAtStart,
-		TranscriptLinesAtStart:      transcriptLinesAtStart,
-		TokenUsage:                  tokenUsage,
+		SessionID:                sessionID,
+		ModifiedFiles:            relModifiedFiles,
+		NewFiles:                 relNewFiles,
+		DeletedFiles:             relDeletedFiles,
+		MetadataDir:              sessionDir,
+		MetadataDirAbs:           sessionDirAbs,
+		CommitMessage:            commitMessage,
+		TranscriptPath:           transcriptPath,
+		AuthorName:               author.Name,
+		AuthorEmail:              author.Email,
+		AgentType:                agentType,
+		StepTranscriptIdentifier: transcriptIdentifierAtStart,
+		StepTranscriptStart:      transcriptLinesAtStart,
+		TokenUsage:               tokenUsage,
 	}
 
 	if err := strat.SaveChanges(ctx); err != nil {
@@ -334,6 +343,11 @@ func commitWithMetadata() error {
 	// checkpoints don't "consume" the transcript in the same way. Shadow should
 	// continue parsing the full transcript to capture all files touched in the session.
 	if strat.Name() == strategy.StrategyNameAutoCommit {
+		// Load session state for updating transcript position
+		sessionState, loadErr := strategy.LoadSessionState(sessionID)
+		if loadErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load session state: %v\n", loadErr)
+		}
 		// Create session state lazily if it doesn't exist (backward compat for resumed sessions
 		// or if InitializeSession was never called/failed)
 		if sessionState == nil {
@@ -341,13 +355,13 @@ func commitWithMetadata() error {
 				SessionID: sessionID,
 			}
 		}
-		sessionState.CondensedTranscriptLines = totalLines
-		sessionState.CheckpointCount++
+		sessionState.CheckpointTranscriptStart = totalLines
+		sessionState.StepCount++
 		if updateErr := strategy.SaveSessionState(sessionState); updateErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to update session state: %v\n", updateErr)
 		} else {
 			fmt.Fprintf(os.Stderr, "Updated session state: transcript position=%d, checkpoint=%d\n",
-				totalLines, sessionState.CheckpointCount)
+				totalLines, sessionState.StepCount)
 		}
 	}
 

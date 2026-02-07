@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
+	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/validation"
 )
 
@@ -20,7 +21,7 @@ func getSessionStateDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(commonDir, sessionStateDirName), nil
+	return filepath.Join(commonDir, session.SessionStateDirName), nil
 }
 
 // sessionStateFile returns the path to a session state file.
@@ -57,6 +58,7 @@ func LoadSessionState(sessionID string) (*SessionState, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal session state: %w", err)
 	}
+	state.NormalizeAfterLoad()
 	return &state, nil
 }
 

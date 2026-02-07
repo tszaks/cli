@@ -332,8 +332,8 @@ func TestPrePromptState_WithTranscriptPosition(t *testing.T) {
 	if state.LastTranscriptIdentifier != expectedUUID {
 		t.Errorf("LastTranscriptIdentifier = %q, want %q", state.LastTranscriptIdentifier, expectedUUID)
 	}
-	if state.LastTranscriptLineCount != 3 {
-		t.Errorf("LastTranscriptLineCount = %d, want 3", state.LastTranscriptLineCount)
+	if state.StepTranscriptStart != 3 {
+		t.Errorf("StepTranscriptStart = %d, want 3", state.StepTranscriptStart)
 	}
 
 	// Cleanup
@@ -366,8 +366,8 @@ func TestPrePromptState_WithEmptyTranscriptPath(t *testing.T) {
 	if state.LastTranscriptIdentifier != "" {
 		t.Errorf("LastTranscriptIdentifier = %q, want empty", state.LastTranscriptIdentifier)
 	}
-	if state.LastTranscriptLineCount != 0 {
-		t.Errorf("LastTranscriptLineCount = %d, want 0", state.LastTranscriptLineCount)
+	if state.StepTranscriptStart != 0 {
+		t.Errorf("StepTranscriptStart = %d, want 0", state.StepTranscriptStart)
 	}
 
 	// Cleanup
@@ -400,8 +400,8 @@ func TestPrePromptState_WithSummaryOnlyTranscript(t *testing.T) {
 	}
 
 	// Line count should be 2, but UUID should be empty (summary rows don't have uuid)
-	if state.LastTranscriptLineCount != 2 {
-		t.Errorf("LastTranscriptLineCount = %d, want 2", state.LastTranscriptLineCount)
+	if state.StepTranscriptStart != 2 {
+		t.Errorf("StepTranscriptStart = %d, want 2", state.StepTranscriptStart)
 	}
 	if state.LastTranscriptIdentifier != "" {
 		t.Errorf("LastTranscriptIdentifier = %q, want empty (summary rows don't have uuid)", state.LastTranscriptIdentifier)

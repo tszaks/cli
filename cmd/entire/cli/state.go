@@ -30,7 +30,7 @@ type PrePromptState struct {
 	// Transcript position at prompt start - tracks what was added during this checkpoint
 	// Used for Claude Code sessions.
 	LastTranscriptIdentifier string `json:"last_transcript_identifier,omitempty"` // Last identifier when prompt started (UUID for Claude, message ID for Gemini)
-	LastTranscriptLineCount  int    `json:"last_transcript_line_count,omitempty"` // Line count when prompt started
+	StepTranscriptStart      int    `json:"step_transcript_start,omitempty"`      // Transcript line count when this step/turn started
 }
 
 // CapturePrePromptState captures current untracked files and transcript position before a prompt
@@ -76,7 +76,7 @@ func CapturePrePromptState(sessionID, transcriptPath string) error {
 		Timestamp:                time.Now().UTC().Format(time.RFC3339),
 		UntrackedFiles:           untrackedFiles,
 		LastTranscriptIdentifier: transcriptPos.LastUUID,
-		LastTranscriptLineCount:  transcriptPos.LineCount,
+		StepTranscriptStart:      transcriptPos.LineCount,
 	}
 
 	data, err := jsonutil.MarshalIndentWithNewline(state, "", "  ")

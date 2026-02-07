@@ -89,10 +89,10 @@ func TestShadowStrategy_SessionState_SaveLoad(t *testing.T) {
 	s := &ManualCommitStrategy{}
 
 	state := &SessionState{
-		SessionID:       "test-session-123",
-		BaseCommit:      "abc123def456",
-		StartedAt:       time.Now(),
-		CheckpointCount: 5,
+		SessionID:  "test-session-123",
+		BaseCommit: "abc123def456",
+		StartedAt:  time.Now(),
+		StepCount:  5,
 	}
 
 	// Save state
@@ -122,8 +122,8 @@ func TestShadowStrategy_SessionState_SaveLoad(t *testing.T) {
 	if loaded.BaseCommit != state.BaseCommit {
 		t.Errorf("BaseCommit = %q, want %q", loaded.BaseCommit, state.BaseCommit)
 	}
-	if loaded.CheckpointCount != state.CheckpointCount {
-		t.Errorf("CheckpointCount = %d, want %d", loaded.CheckpointCount, state.CheckpointCount)
+	if loaded.StepCount != state.StepCount {
+		t.Errorf("StepCount = %d, want %d", loaded.StepCount, state.StepCount)
 	}
 }
 
@@ -176,16 +176,16 @@ func TestShadowStrategy_ListAllSessionStates(t *testing.T) {
 
 	// Save multiple session states (both with same base commit)
 	state1 := &SessionState{
-		SessionID:       "session-1",
-		BaseCommit:      "abc1234",
-		StartedAt:       time.Now(),
-		CheckpointCount: 1,
+		SessionID:  "session-1",
+		BaseCommit: "abc1234",
+		StartedAt:  time.Now(),
+		StepCount:  1,
 	}
 	state2 := &SessionState{
-		SessionID:       "session-2",
-		BaseCommit:      "abc1234",
-		StartedAt:       time.Now(),
-		CheckpointCount: 2,
+		SessionID:  "session-2",
+		BaseCommit: "abc1234",
+		StartedAt:  time.Now(),
+		StepCount:  2,
 	}
 
 	if err := s.saveSessionState(state1); err != nil {
@@ -237,22 +237,22 @@ func TestShadowStrategy_FindSessionsForCommit(t *testing.T) {
 
 	// Save session states with different base commits
 	state1 := &SessionState{
-		SessionID:       "session-1",
-		BaseCommit:      "abc1234",
-		StartedAt:       time.Now(),
-		CheckpointCount: 1,
+		SessionID:  "session-1",
+		BaseCommit: "abc1234",
+		StartedAt:  time.Now(),
+		StepCount:  1,
 	}
 	state2 := &SessionState{
-		SessionID:       "session-2",
-		BaseCommit:      "abc1234",
-		StartedAt:       time.Now(),
-		CheckpointCount: 2,
+		SessionID:  "session-2",
+		BaseCommit: "abc1234",
+		StartedAt:  time.Now(),
+		StepCount:  2,
 	}
 	state3 := &SessionState{
-		SessionID:       "session-3",
-		BaseCommit:      "xyz7890",
-		StartedAt:       time.Now(),
-		CheckpointCount: 3,
+		SessionID:  "session-3",
+		BaseCommit: "xyz7890",
+		StartedAt:  time.Now(),
+		StepCount:  3,
 	}
 
 	for _, state := range []*SessionState{state1, state2, state3} {
@@ -304,10 +304,10 @@ func TestShadowStrategy_ClearSessionState(t *testing.T) {
 	s := &ManualCommitStrategy{}
 
 	state := &SessionState{
-		SessionID:       "test-session",
-		BaseCommit:      "abc123",
-		StartedAt:       time.Now(),
-		CheckpointCount: 1,
+		SessionID:  "test-session",
+		BaseCommit: "abc123",
+		StartedAt:  time.Now(),
+		StepCount:  1,
 	}
 
 	// Save state
@@ -850,10 +850,10 @@ func TestCheckpointInfo_JSONRoundTrip(t *testing.T) {
 
 func TestSessionState_JSONRoundTrip(t *testing.T) {
 	original := SessionState{
-		SessionID:       "session-123",
-		BaseCommit:      "abc123def456",
-		StartedAt:       time.Date(2025, 12, 2, 10, 0, 0, 0, time.UTC),
-		CheckpointCount: 10,
+		SessionID:  "session-123",
+		BaseCommit: "abc123def456",
+		StartedAt:  time.Date(2025, 12, 2, 10, 0, 0, 0, time.UTC),
+		StepCount:  10,
 	}
 
 	data, err := json.Marshal(original)
@@ -872,8 +872,8 @@ func TestSessionState_JSONRoundTrip(t *testing.T) {
 	if loaded.BaseCommit != original.BaseCommit {
 		t.Errorf("BaseCommit = %q, want %q", loaded.BaseCommit, original.BaseCommit)
 	}
-	if loaded.CheckpointCount != original.CheckpointCount {
-		t.Errorf("CheckpointCount = %d, want %d", loaded.CheckpointCount, original.CheckpointCount)
+	if loaded.StepCount != original.StepCount {
+		t.Errorf("StepCount = %d, want %d", loaded.StepCount, original.StepCount)
 	}
 }
 
@@ -1163,7 +1163,7 @@ func TestSessionState_LastCheckpointID(t *testing.T) {
 		SessionID:        "test-session-123",
 		BaseCommit:       "abc123def456",
 		StartedAt:        time.Now(),
-		CheckpointCount:  5,
+		StepCount:        5,
 		LastCheckpointID: "a1b2c3d4e5f6",
 	}
 
@@ -1206,8 +1206,8 @@ func TestSessionState_TokenUsagePersistence(t *testing.T) {
 		SessionID:                   "test-session-token-usage",
 		BaseCommit:                  "abc123def456",
 		StartedAt:                   time.Now(),
-		CheckpointCount:             5,
-		TranscriptLinesAtStart:      42,
+		StepCount:                   5,
+		CheckpointTranscriptStart:   42,
 		TranscriptIdentifierAtStart: "test-uuid-abc123",
 		TokenUsage: &agent.TokenUsage{
 			InputTokens:         1000,
@@ -1233,9 +1233,9 @@ func TestSessionState_TokenUsagePersistence(t *testing.T) {
 		t.Fatal("loadSessionState() returned nil")
 	}
 
-	// Verify TranscriptLinesAtStart
-	if loaded.TranscriptLinesAtStart != state.TranscriptLinesAtStart {
-		t.Errorf("TranscriptLinesAtStart = %d, want %d", loaded.TranscriptLinesAtStart, state.TranscriptLinesAtStart)
+	// Verify CheckpointTranscriptStart
+	if loaded.CheckpointTranscriptStart != state.CheckpointTranscriptStart {
+		t.Errorf("CheckpointTranscriptStart = %d, want %d", loaded.CheckpointTranscriptStart, state.CheckpointTranscriptStart)
 	}
 
 	// Verify TranscriptIdentifierAtStart
@@ -1299,13 +1299,13 @@ func TestShadowStrategy_PrepareCommitMsg_ReusesLastCheckpointID(t *testing.T) {
 	// Create session state with LastCheckpointID but no new content
 	// (simulating state after first commit with condensation)
 	state := &SessionState{
-		SessionID:                "test-session",
-		BaseCommit:               initialCommit.String(),
-		WorktreePath:             dir,
-		StartedAt:                time.Now(),
-		CheckpointCount:          1,
-		CondensedTranscriptLines: 10, // Already condensed
-		LastCheckpointID:         "abc123def456",
+		SessionID:                 "test-session",
+		BaseCommit:                initialCommit.String(),
+		WorktreePath:              dir,
+		StartedAt:                 time.Now(),
+		StepCount:                 1,
+		CheckpointTranscriptStart: 10, // Already condensed
+		LastCheckpointID:          "abc123def456",
 	}
 	if err := s.saveSessionState(state); err != nil {
 		t.Fatalf("saveSessionState() error = %v", err)
@@ -1503,8 +1503,8 @@ func TestSaveChanges_EmptyBaseCommit_Recovery(t *testing.T) {
 	if loaded.BaseCommit == "" {
 		t.Error("BaseCommit should be populated after recovery")
 	}
-	if loaded.CheckpointCount != 1 {
-		t.Errorf("CheckpointCount = %d, want 1", loaded.CheckpointCount)
+	if loaded.StepCount != 1 {
+		t.Errorf("StepCount = %d, want 1", loaded.StepCount)
 	}
 }
 

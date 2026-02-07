@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	// sessionStateDirName is the directory name for session state files within git common dir.
-	sessionStateDirName = "entire-sessions"
+	// SessionStateDirName is the directory name for session state files within git common dir.
+	SessionStateDirName = "entire-sessions"
 )
 
 // State represents the state of an active session.
@@ -44,10 +44,31 @@ type State struct {
 	// nil means the session is still active or was not cleanly closed.
 	EndedAt *time.Time `json:"ended_at,omitempty"`
 
-	// CheckpointCount is the number of checkpoints created in this session
-	CheckpointCount int `json:"checkpoint_count"`
+	// Phase is the lifecycle stage of this session (see phase.go).
+	// Empty means idle (backward compat with pre-state-machine files).
+	Phase Phase `json:"phase,omitempty"`
 
-	// CondensedTranscriptLines tracks lines already included in previous condensation
+	// PendingCheckpointID is the checkpoint ID for the current commit cycle.
+	// Generated once when first needed, reused across all commits in the session.
+	PendingCheckpointID string `json:"pending_checkpoint_id,omitempty"`
+
+	// LastInteractionTime is updated on every hook invocation.
+	// Used for stale session detection in "entire sessions fix".
+	LastInteractionTime *time.Time `json:"last_interaction_time,omitempty"`
+
+	// StepCount is the number of steps (shadow branch commits) created in this session.
+	// JSON tag kept as "checkpoint_count" for backward compatibility with existing state files.
+	StepCount int `json:"checkpoint_count"`
+
+	// CheckpointTranscriptStart is the transcript line offset where the current
+	// checkpoint cycle began. Set to 0 at session start, updated to current
+	// transcript length after each condensation. Used to scope the transcript
+	// for checkpoint condensation: "everything since last checkpoint".
+	CheckpointTranscriptStart int `json:"checkpoint_transcript_start,omitempty"`
+
+	// Deprecated: CondensedTranscriptLines is replaced by CheckpointTranscriptStart.
+	// Kept for backward compatibility with existing state files.
+	// Use NormalizeAfterLoad() to migrate.
 	CondensedTranscriptLines int `json:"condensed_transcript_lines,omitempty"`
 
 	// UntrackedFilesAtStart tracks files that existed at session start (to preserve during rewind)
@@ -65,8 +86,12 @@ type State struct {
 	// Token usage tracking (accumulated across all checkpoints in this session)
 	TokenUsage *agent.TokenUsage `json:"token_usage,omitempty"`
 
-	// Transcript position when session started (for multi-session checkpoints)
-	TranscriptLinesAtStart      int    `json:"transcript_lines_at_start,omitempty"`
+	// Deprecated: TranscriptLinesAtStart is replaced by CheckpointTranscriptStart.
+	// Kept for backward compatibility with existing state files.
+	TranscriptLinesAtStart int `json:"transcript_lines_at_start,omitempty"`
+
+	// TranscriptIdentifierAtStart is the last transcript identifier when the session started.
+	// Used for identifier-based transcript scoping (UUID for Claude, message ID for Gemini).
 	TranscriptIdentifierAtStart string `json:"transcript_identifier_at_start,omitempty"`
 
 	// TranscriptPath is the path to the live transcript file (for mid-session commit detection)
@@ -108,6 +133,18 @@ type PromptAttribution struct {
 	UserAddedPerFile map[string]int `json:"user_added_per_file,omitempty"`
 }
 
+// NormalizeAfterLoad applies backward-compatible migrations to state loaded from disk.
+// Call this after deserializing a State from JSON.
+func (s *State) NormalizeAfterLoad() {
+	// Migrate transcript fields: CheckpointTranscriptStart replaces CondensedTranscriptLines
+	if s.CheckpointTranscriptStart == 0 && s.CondensedTranscriptLines > 0 {
+		s.CheckpointTranscriptStart = s.CondensedTranscriptLines
+	}
+	// Clear deprecated fields so they aren't re-persisted
+	s.CondensedTranscriptLines = 0
+	s.TranscriptLinesAtStart = 0
+}
+
 // StateStore provides low-level operations for managing session state files.
 //
 // StateStore is a primitive for session state persistence. It is NOT the same as
@@ -129,7 +166,7 @@ func NewStateStore() (*StateStore, error) {
 		return nil, fmt.Errorf("failed to get git common dir: %w", err)
 	}
 	return &StateStore{
-		stateDir: filepath.Join(commonDir, sessionStateDirName),
+		stateDir: filepath.Join(commonDir, SessionStateDirName),
 	}, nil
 }
 
@@ -163,6 +200,7 @@ func (s *StateStore) Load(ctx context.Context, sessionID string) (*State, error)
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal session state: %w", err)
 	}
+	state.NormalizeAfterLoad()
 	return &state, nil
 }
 

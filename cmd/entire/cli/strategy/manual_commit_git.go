@@ -70,7 +70,7 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 		state.PendingPromptAttribution = nil // Clear after use
 	} else {
 		// No pending attribution (e.g., first checkpoint or session initialized without it)
-		promptAttr = PromptAttribution{CheckpointNumber: state.CheckpointCount + 1}
+		promptAttr = PromptAttribution{CheckpointNumber: state.StepCount + 1}
 	}
 
 	// Log the prompt attribution for debugging
@@ -84,7 +84,7 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 		slog.String("session_id", sessionID))
 
 	// Use WriteTemporary to create the checkpoint
-	isFirstCheckpointOfSession := state.CheckpointCount == 0
+	isFirstCheckpointOfSession := state.StepCount == 0
 	result, err := store.WriteTemporary(context.Background(), checkpoint.WriteTemporaryOptions{
 		SessionID:         sessionID,
 		BaseCommit:        state.BaseCommit,
@@ -109,7 +109,7 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 		logging.Info(logCtx, "checkpoint skipped (no changes)",
 			slog.String("strategy", "manual-commit"),
 			slog.String("checkpoint_type", "session"),
-			slog.Int("checkpoint_count", state.CheckpointCount),
+			slog.Int("checkpoint_count", state.StepCount),
 			slog.String("shadow_branch", shadowBranchName),
 		)
 		fmt.Fprintf(os.Stderr, "Skipped checkpoint (no changes since last checkpoint)\n")
@@ -117,7 +117,7 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 	}
 
 	// Update session state
-	state.CheckpointCount++
+	state.StepCount++
 
 	// Store the prompt attribution we calculated before saving
 	state.PromptAttributions = append(state.PromptAttributions, promptAttr)
@@ -125,10 +125,9 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 	// Track touched files (modified, new, and deleted)
 	state.FilesTouched = mergeFilesTouched(state.FilesTouched, ctx.ModifiedFiles, ctx.NewFiles, ctx.DeletedFiles)
 
-	// On first checkpoint, store the initial transcript position
-	if isFirstCheckpointOfSession {
-		state.TranscriptLinesAtStart = ctx.TranscriptLinesAtStart
-		state.TranscriptIdentifierAtStart = ctx.TranscriptIdentifierAtStart
+	// On first checkpoint, record the transcript identifier for this session
+	if state.StepCount == 1 {
+		state.TranscriptIdentifierAtStart = ctx.StepTranscriptIdentifier
 	}
 
 	// Accumulate token usage
@@ -152,7 +151,7 @@ func (s *ManualCommitStrategy) SaveChanges(ctx SaveContext) error {
 	logging.Info(logCtx, "checkpoint saved",
 		slog.String("strategy", "manual-commit"),
 		slog.String("checkpoint_type", "session"),
-		slog.Int("checkpoint_count", state.CheckpointCount),
+		slog.Int("checkpoint_count", state.StepCount),
 		slog.Int("modified_files", len(ctx.ModifiedFiles)),
 		slog.Int("new_files", len(ctx.NewFiles)),
 		slog.Int("deleted_files", len(ctx.DeletedFiles)),

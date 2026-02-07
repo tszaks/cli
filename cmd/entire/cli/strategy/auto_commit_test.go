@@ -716,11 +716,11 @@ func TestAutoCommitStrategy_InitializeSession_CreatesSessionState(t *testing.T) 
 	if state.SessionID != sessionID {
 		t.Errorf("SessionID = %q, want %q", state.SessionID, sessionID)
 	}
-	if state.CheckpointCount != 0 {
-		t.Errorf("CheckpointCount = %d, want 0", state.CheckpointCount)
+	if state.StepCount != 0 {
+		t.Errorf("StepCount = %d, want 0", state.StepCount)
 	}
-	if state.CondensedTranscriptLines != 0 {
-		t.Errorf("CondensedTranscriptLines = %d, want 0", state.CondensedTranscriptLines)
+	if state.CheckpointTranscriptStart != 0 {
+		t.Errorf("CheckpointTranscriptStart = %d, want 0", state.CheckpointTranscriptStart)
 	}
 }
 

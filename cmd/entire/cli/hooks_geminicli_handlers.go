@@ -271,20 +271,20 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 	}
 
 	saveCtx := strategy.SaveContext{
-		SessionID:                   ctx.sessionID,
-		ModifiedFiles:               relModifiedFiles,
-		NewFiles:                    relNewFiles,
-		DeletedFiles:                relDeletedFiles,
-		MetadataDir:                 ctx.sessionDir,
-		MetadataDirAbs:              ctx.sessionDirAbs,
-		CommitMessage:               ctx.commitMessage,
-		TranscriptPath:              ctx.transcriptPath,
-		AuthorName:                  author.Name,
-		AuthorEmail:                 author.Email,
-		AgentType:                   agentType,
-		TranscriptLinesAtStart:      startMessageIndex,
-		TranscriptIdentifierAtStart: transcriptIdentifierAtStart,
-		TokenUsage:                  tokenUsage,
+		SessionID:                ctx.sessionID,
+		ModifiedFiles:            relModifiedFiles,
+		NewFiles:                 relNewFiles,
+		DeletedFiles:             relDeletedFiles,
+		MetadataDir:              ctx.sessionDir,
+		MetadataDirAbs:           ctx.sessionDirAbs,
+		CommitMessage:            ctx.commitMessage,
+		TranscriptPath:           ctx.transcriptPath,
+		AuthorName:               author.Name,
+		AuthorEmail:              author.Email,
+		AgentType:                agentType,
+		StepTranscriptStart:      startMessageIndex,
+		StepTranscriptIdentifier: transcriptIdentifierAtStart,
+		TokenUsage:               tokenUsage,
 	}
 
 	if err := strat.SaveChanges(saveCtx); err != nil {

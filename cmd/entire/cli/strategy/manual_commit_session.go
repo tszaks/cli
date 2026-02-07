@@ -26,7 +26,7 @@ func (s *ManualCommitStrategy) loadSessionState(sessionID string) (*SessionState
 	if err != nil {
 		return nil, fmt.Errorf("failed to load session state: %w", err)
 	}
-	return sessionStateToStrategy(state), nil
+	return state, nil
 }
 
 // saveSessionState saves session state using the StateStore.
@@ -35,7 +35,7 @@ func (s *ManualCommitStrategy) saveSessionState(state *SessionState) error {
 	if err != nil {
 		return err
 	}
-	if err := store.Save(context.Background(), sessionStateFromStrategy(state)); err != nil {
+	if err := store.Save(context.Background(), state); err != nil {
 		return fmt.Errorf("failed to save session state: %w", err)
 	}
 	return nil
@@ -77,10 +77,10 @@ func (s *ManualCommitStrategy) listAllSessionStates() ([]*SessionState, error) {
 
 	var states []*SessionState
 	for _, sessionState := range sessionStates {
-		state := sessionStateToStrategy(sessionState)
+		state := sessionState
 
 		// Skip and cleanup orphaned sessions whose shadow branch no longer exists
-		// Only cleanup if the session has created checkpoints (CheckpointCount > 0)
+		// Only cleanup if the session has created checkpoints (StepCount > 0)
 		// AND has no LastCheckpointID (not recently condensed)
 		// Sessions with LastCheckpointID are valid - they were condensed and the shadow
 		// branch was intentionally deleted. Keep them for LastCheckpointID reuse.
@@ -90,7 +90,7 @@ func (s *ManualCommitStrategy) listAllSessionStates() ([]*SessionState, error) {
 			// Shadow branch doesn't exist
 			// Only cleanup if session has checkpoints AND no LastCheckpointID
 			// Sessions with LastCheckpointID should be kept for checkpoint reuse
-			if state.CheckpointCount > 0 && state.LastCheckpointID == "" {
+			if state.StepCount > 0 && state.LastCheckpointID == "" {
 				// Clear the orphaned session state (best-effort, don't fail listing)
 				//nolint:errcheck,gosec // G104: Cleanup is best-effort, shouldn't fail the list operation
 				store.Clear(context.Background(), state.SessionID)
@@ -182,7 +182,7 @@ func (s *ManualCommitStrategy) CountOtherActiveSessionsWithCheckpoints(currentSe
 		// Sessions from different base commits are independent and shouldn't be counted
 		if state.SessionID != currentSessionID &&
 			state.WorktreePath == currentWorktree &&
-			state.CheckpointCount > 0 &&
+			state.StepCount > 0 &&
 			state.BaseCommit == currentHead {
 			count++
 		}
@@ -224,7 +224,7 @@ func (s *ManualCommitStrategy) initializeSession(repo *git.Repository, sessionID
 		WorktreePath:          worktreePath,
 		WorktreeID:            worktreeID,
 		StartedAt:             time.Now(),
-		CheckpointCount:       0,
+		StepCount:             0,
 		UntrackedFilesAtStart: untrackedFiles,
 		AgentType:             agentType,
 		TranscriptPath:        transcriptPath,

@@ -489,17 +489,17 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		// Update session state for the new base commit
 		// After condensation, the session continues from the NEW commit (HEAD), so we:
 		// 1. Update BaseCommit to new HEAD - session now tracks from new commit
-		// 2. Reset CheckpointCount to 0 - no checkpoints exist on new shadow branch yet
-		// 3. Update CondensedTranscriptLines - track transcript position for detecting new content
+		// 2. Reset StepCount to 0 - no checkpoints exist on new shadow branch yet
+		// 3. Update CheckpointTranscriptStart - track transcript position for detecting new content
 		// 4. Clear PromptAttributions - they were already used in condensation, reset for next cycle
 		//
 		// This is critical: if we don't update BaseCommit, listAllSessionStates will try
-		// to find shadow branch for old commit (which gets deleted), and since CheckpointCount > 0,
+		// to find shadow branch for old commit (which gets deleted), and since StepCount > 0,
 		// it will clean up (delete) the session state file. By updating to new HEAD with
-		// CheckpointCount = 0, the session is preserved even without a shadow branch.
+		// StepCount = 0, the session is preserved even without a shadow branch.
 		state.BaseCommit = head.Hash().String()
-		state.CheckpointCount = 0
-		state.CondensedTranscriptLines = result.TotalTranscriptLines
+		state.StepCount = 0
+		state.CheckpointTranscriptStart = result.TotalTranscriptLines
 
 		// Clear attribution tracking - condensation already used these values
 		// If we don't clear them, they'll be double-counted in the next condensation
@@ -609,7 +609,7 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 	}
 
 	// Has new content if there are more lines than already condensed
-	return transcriptLines > state.CondensedTranscriptLines, nil
+	return transcriptLines > state.CheckpointTranscriptStart, nil
 }
 
 // countTranscriptLines counts lines in a transcript, matching the counting method used
@@ -662,12 +662,12 @@ func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(repo *git.
 	}
 
 	// Check if transcript has grown since last condensation
-	if currentPos <= state.CondensedTranscriptLines {
+	if currentPos <= state.CheckpointTranscriptStart {
 		return false, nil // No new content
 	}
 
 	// Transcript has grown - check if there are file modifications in the new portion
-	modifiedFiles, _, err := analyzer.ExtractModifiedFilesFromOffset(state.TranscriptPath, state.CondensedTranscriptLines)
+	modifiedFiles, _, err := analyzer.ExtractModifiedFilesFromOffset(state.TranscriptPath, state.CheckpointTranscriptStart)
 	if err != nil {
 		return false, nil //nolint:nilerr // Error parsing transcript, fail gracefully
 	}
@@ -879,7 +879,7 @@ func (s *ManualCommitStrategy) calculatePromptAttributionAtStart(
 	state *SessionState,
 ) PromptAttribution {
 	logCtx := logging.WithComponent(context.Background(), "attribution")
-	nextCheckpointNum := state.CheckpointCount + 1
+	nextCheckpointNum := state.StepCount + 1
 	result := PromptAttribution{CheckpointNumber: nextCheckpointNum}
 
 	// Get last checkpoint tree from shadow branch (if it exists)

@@ -139,7 +139,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		summarizeCtx := logging.WithComponent(logCtx, "summarize")
 
 		// Scope transcript to this checkpoint's portion
-		scopedTranscript := transcript.SliceFromLine(sessionData.Transcript, state.TranscriptLinesAtStart)
+		scopedTranscript := transcript.SliceFromLine(sessionData.Transcript, state.CheckpointTranscriptStart)
 		if len(scopedTranscript) > 0 {
 			var err error
 			summary, err = summarize.GenerateFromTranscript(summarizeCtx, scopedTranscript, sessionData.FilesTouched, nil)
@@ -165,13 +165,13 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		Prompts:                     sessionData.Prompts,
 		Context:                     sessionData.Context,
 		FilesTouched:                sessionData.FilesTouched,
-		CheckpointsCount:            state.CheckpointCount,
+		CheckpointsCount:            state.StepCount,
 		EphemeralBranch:             shadowBranchName,
 		AuthorName:                  authorName,
 		AuthorEmail:                 authorEmail,
 		Agent:                       state.AgentType,
 		TranscriptIdentifierAtStart: state.TranscriptIdentifierAtStart,
-		TranscriptLinesAtStart:      state.TranscriptLinesAtStart,
+		CheckpointTranscriptStart:   state.CheckpointTranscriptStart,
 		TokenUsage:                  sessionData.TokenUsage,
 		InitialAttribution:          attribution,
 		Summary:                     summary,
@@ -182,7 +182,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 	return &CondenseResult{
 		CheckpointID:         checkpointID,
 		SessionID:            state.SessionID,
-		CheckpointsCount:     state.CheckpointCount,
+		CheckpointsCount:     state.StepCount,
 		FilesTouched:         sessionData.FilesTouched,
 		TotalTranscriptLines: sessionData.FullTranscriptLines,
 	}, nil
