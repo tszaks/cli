@@ -3,7 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"os"
+	"io"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -124,7 +124,7 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 				}
 			} else {
 				// Discard if we can't condense
-				if err := discardSession(ss, repo); err != nil {
+				if err := discardSession(ss, repo, cmd.ErrOrStderr()); err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to discard session %s: %v\n", ss.State.SessionID, err)
 				} else {
 					fmt.Fprintf(cmd.OutOrStdout(), "  -> Discarded session %s\n\n", ss.State.SessionID)
@@ -154,7 +154,7 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 				fmt.Fprintf(cmd.OutOrStdout(), "  -> Condensed session %s\n\n", ss.State.SessionID)
 			}
 		case "discard":
-			if err := discardSession(ss, repo); err != nil {
+			if err := discardSession(ss, repo, cmd.ErrOrStderr()); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to discard session %s: %v\n", ss.State.SessionID, err)
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "  -> Discarded session %s\n\n", ss.State.SessionID)
@@ -176,10 +176,8 @@ func classifySession(state *strategy.SessionState, repo *git.Repository, now tim
 	_, refErr := repo.Reference(refName, true)
 	hasShadowBranch := refErr == nil
 
-	phase := session.PhaseFromString(string(state.Phase))
-
 	switch {
-	case phase.IsActive():
+	case state.Phase.IsActive():
 		// Active sessions are stuck if no interaction for over the staleness threshold
 		isStale := state.LastInteractionTime == nil || now.Sub(*state.LastInteractionTime) > stalenessThreshold
 		if !isStale {
@@ -202,7 +200,7 @@ func classifySession(state *strategy.SessionState, repo *git.Repository, now tim
 			FilesTouchedCount: len(state.FilesTouched),
 		}
 
-	case phase == session.PhaseEnded:
+	case state.Phase == session.PhaseEnded:
 		// Ended sessions are stuck if they have uncondensed data
 		if state.StepCount <= 0 || !hasShadowBranch {
 			return nil
@@ -276,7 +274,7 @@ func promptSessionAction(ss stuckSession, canCondense bool) (string, error) {
 }
 
 // discardSession removes session state and cleans up the shadow branch.
-func discardSession(ss stuckSession, repo *git.Repository) error {
+func discardSession(ss stuckSession, repo *git.Repository, errW io.Writer) error {
 	// Clear session state file
 	if err := strategy.ClearSessionState(ss.State.SessionID); err != nil {
 		return fmt.Errorf("failed to clear session state: %w", err)
@@ -285,7 +283,7 @@ func discardSession(ss stuckSession, repo *git.Repository) error {
 	// Delete shadow branch if it exists and no other sessions need it
 	if ss.HasShadowBranch {
 		if shouldDelete, err := canDeleteShadowBranch(ss.ShadowBranch, ss.State.SessionID); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not check other sessions for shadow branch: %v\n", err)
+			fmt.Fprintf(errW, "Warning: could not check other sessions for shadow branch: %v\n", err)
 		} else if shouldDelete {
 			refName := plumbing.NewBranchReferenceName(ss.ShadowBranch)
 			ref, refErr := repo.Reference(refName, true)
