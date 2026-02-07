@@ -287,8 +287,8 @@ func transitionFromEnded(event Event, ctx TransitionContext) TransitionResult {
 }
 
 // MermaidDiagram generates a Mermaid state diagram from the transition table.
-// The diagram is derived by calling Transition() for all (phase, event, context)
-// combinations, so it is always in sync with the implementation.
+// The diagram is derived by calling Transition() for representative context
+// variants per phase/event, so it stays in sync with the implementation.
 func MermaidDiagram() string {
 	var b strings.Builder
 	b.WriteString("stateDiagram-v2\n")
