@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -215,7 +216,7 @@ func setupGitRepo(t *testing.T) string {
 	require.NoError(t, err)
 
 	// Create a test file
-	testFile := dir + "/test.txt"
+	testFile := filepath.Join(dir, "test.txt")
 	require.NoError(t, writeTestFile(testFile, "initial content"))
 
 	_, err = wt.Add("test.txt")
