@@ -156,7 +156,10 @@ func (s *GitStore) writeIncrementalTaskCheckpoint(opts WriteCommittedOptions, ta
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal incremental checkpoint: %w", err)
 	}
-	cpData = redact.Bytes(cpData)
+	cpData, err = redact.JSONLBytes(cpData)
+	if err != nil {
+		return "", fmt.Errorf("failed to redact incremental checkpoint: %w", err)
+	}
 	cpBlobHash, err := CreateBlobFromContent(s.repo, cpData)
 	if err != nil {
 		return "", fmt.Errorf("failed to create incremental checkpoint blob: %w", err)
