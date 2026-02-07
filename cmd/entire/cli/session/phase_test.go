@@ -414,8 +414,7 @@ func TestTransition_all_phase_event_combinations_are_defined(t *testing.T) {
 }
 
 func TestMermaidDiagram(t *testing.T) {
-	t.Parallel()
-
+	// Not parallel: writes to a fixed path in the working tree.
 	diagram := MermaidDiagram()
 
 	// Verify the diagram contains expected state declarations.

@@ -310,13 +310,21 @@ func MermaidDiagram() string {
 	for _, phase := range allPhases {
 		for _, event := range allEvents {
 			var variants []contextVariant
-			if event == EventGitCommit {
+			switch {
+			case event == EventGitCommit && phase == PhaseEnded:
+				// HasFilesTouched only affects PhaseEnded transitions;
+				// other phases produce identical edges for both values.
 				variants = []contextVariant{
-					{"[files]", TransitionContext{HasFilesTouched: true, IsRebaseInProgress: false}},
-					{"[no files]", TransitionContext{HasFilesTouched: false, IsRebaseInProgress: false}},
+					{"[files]", TransitionContext{HasFilesTouched: true}},
+					{"[no files]", TransitionContext{HasFilesTouched: false}},
 					{"[rebase]", TransitionContext{IsRebaseInProgress: true}},
 				}
-			} else {
+			case event == EventGitCommit:
+				variants = []contextVariant{
+					{"", TransitionContext{}},
+					{"[rebase]", TransitionContext{IsRebaseInProgress: true}},
+				}
+			default:
 				variants = []contextVariant{
 					{"", TransitionContext{}},
 				}
