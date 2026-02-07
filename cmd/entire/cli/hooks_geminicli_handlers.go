@@ -543,7 +543,14 @@ func handleGeminiAfterAgent() error {
 		return err
 	}
 
-	return commitGeminiSession(ctx)
+	if err := commitGeminiSession(ctx); err != nil {
+		return err
+	}
+
+	// Transition session ACTIVE → IDLE (equivalent to Claude's transitionSessionTurnEnd)
+	transitionSessionTurnEnd(sessionID)
+
+	return nil
 }
 
 // handleGeminiBeforeModel handles the BeforeModel hook for Gemini CLI.
