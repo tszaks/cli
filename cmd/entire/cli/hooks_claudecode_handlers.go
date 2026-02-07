@@ -244,13 +244,7 @@ func commitWithMetadata() error {
 		fmt.Fprintf(os.Stderr, "No files were modified during this session\n")
 		fmt.Fprintf(os.Stderr, "Skipping commit\n")
 		// Still transition phase even when skipping commit — the turn is ending.
-		if turnState, loadErr := strategy.LoadSessionState(sessionID); loadErr == nil && turnState != nil {
-			result := session.Transition(turnState.Phase, session.EventTurnEnd, session.TransitionContext{})
-			session.ApplyCommonActions(turnState, result)
-			if updateErr := strategy.SaveSessionState(turnState); updateErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to update session phase: %v\n", updateErr)
-			}
-		}
+		transitionSessionTurnEnd(sessionID)
 		// Clean up state even when skipping
 		if err := CleanupPrePromptState(sessionID); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to cleanup pre-prompt state: %v\n", err)
@@ -377,13 +371,7 @@ func commitWithMetadata() error {
 	// Fire EventTurnEnd to transition session phase (all strategies).
 	// This moves ACTIVE → IDLE or ACTIVE_COMMITTED → IDLE.
 	// TODO(ENT-221): dispatch ActionCondense for ACTIVE_COMMITTED → IDLE transitions.
-	if turnState, loadErr := strategy.LoadSessionState(sessionID); loadErr == nil && turnState != nil {
-		result := session.Transition(turnState.Phase, session.EventTurnEnd, session.TransitionContext{})
-		session.ApplyCommonActions(turnState, result)
-		if updateErr := strategy.SaveSessionState(turnState); updateErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to update session phase on turn end: %v\n", updateErr)
-		}
-	}
+	transitionSessionTurnEnd(sessionID)
 
 	// Clean up pre-prompt state (CLI responsibility)
 	if err := CleanupPrePromptState(sessionID); err != nil {
@@ -745,6 +733,25 @@ func handleClaudeCodeSessionEnd() error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to mark session ended: %v\n", err)
 	}
 	return nil
+}
+
+// transitionSessionTurnEnd fires EventTurnEnd to move the session from
+// ACTIVE → IDLE (or ACTIVE_COMMITTED → IDLE). Best-effort: logs warnings
+// on failure rather than returning errors.
+func transitionSessionTurnEnd(sessionID string) {
+	turnState, loadErr := strategy.LoadSessionState(sessionID)
+	if loadErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load session state for turn end: %v\n", loadErr)
+		return
+	}
+	if turnState == nil {
+		return
+	}
+	result := session.Transition(turnState.Phase, session.EventTurnEnd, session.TransitionContext{})
+	session.ApplyCommonActions(turnState, result)
+	if updateErr := strategy.SaveSessionState(turnState); updateErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update session phase on turn end: %v\n", updateErr)
+	}
 }
 
 // markSessionEnded transitions the session to ENDED phase via the state machine.
