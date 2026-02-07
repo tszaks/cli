@@ -442,7 +442,11 @@ func TestMermaidDiagram(t *testing.T) {
 	// Path from session/ to repo root: session -> cli -> entire -> cmd -> (repo root)
 	_, thisFile, _, _ := runtime.Caller(0) //nolint:dogsled // runtime.Caller returns 4 values, only file needed
 	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "..")
-	outputPath := filepath.Join(repoRoot, "docs", "plans", "session-phase-state-machine.mmd")
+	outputDir := filepath.Join(repoRoot, "docs", "generated")
+
+	require.NoError(t, os.MkdirAll(outputDir, 0o755), "failed to create output directory")
+
+	outputPath := filepath.Join(outputDir, "session-phase-state-machine.mmd")
 
 	err := os.WriteFile(outputPath, []byte(diagram), 0o644)
 	require.NoError(t, err, "failed to write Mermaid diagram to %s", outputPath)
