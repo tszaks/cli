@@ -1,13 +1,9 @@
 package session
 
 import (
-	"os"
-	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestPhaseFromString(t *testing.T) {
@@ -414,7 +410,8 @@ func TestTransition_all_phase_event_combinations_are_defined(t *testing.T) {
 }
 
 func TestMermaidDiagram(t *testing.T) {
-	// Not parallel: writes to a fixed path in the working tree.
+	t.Parallel()
+
 	diagram := MermaidDiagram()
 
 	// Verify the diagram contains expected state declarations.
@@ -436,31 +433,4 @@ func TestMermaidDiagram(t *testing.T) {
 	assert.Contains(t, diagram, "MigrateShadowBranch")
 	assert.Contains(t, diagram, "ClearEndedAt")
 	assert.Contains(t, diagram, "WarnStaleSession")
-
-	// Write the diagram to a file for reference.
-	_, thisFile, _, ok := runtime.Caller(0) //nolint:dogsled // runtime.Caller returns 4 values, only file needed
-	require.True(t, ok, "runtime.Caller(0) failed")
-	repoRoot := findModuleRoot(t, thisFile)
-	outputDir := filepath.Join(repoRoot, "docs", "generated")
-
-	require.NoError(t, os.MkdirAll(outputDir, 0o755), "failed to create output directory")
-
-	outputPath := filepath.Join(outputDir, "session-phase-state-machine.mmd")
-
-	err := os.WriteFile(outputPath, []byte(diagram), 0o644)
-	require.NoError(t, err, "failed to write Mermaid diagram to %s", outputPath)
-}
-
-// findModuleRoot walks up from startPath to find the directory containing go.mod.
-func findModuleRoot(t *testing.T, startPath string) string {
-	t.Helper()
-	dir := filepath.Dir(startPath)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		require.NotEqual(t, parent, dir, "could not find go.mod starting from %s", startPath)
-		dir = parent
-	}
 }
