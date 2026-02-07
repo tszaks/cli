@@ -31,6 +31,18 @@ type PrePromptState struct {
 	// Used for Claude Code sessions.
 	LastTranscriptIdentifier string `json:"last_transcript_identifier,omitempty"` // Last identifier when prompt started (UUID for Claude, message ID for Gemini)
 	StepTranscriptStart      int    `json:"step_transcript_start,omitempty"`      // Transcript line count when this step/turn started
+
+	// Deprecated: LastTranscriptLineCount is the old name for StepTranscriptStart.
+	// Kept for backward compatibility when reading state files written by older CLI versions.
+	LastTranscriptLineCount int `json:"last_transcript_line_count,omitempty"`
+}
+
+// normalizePrePromptState migrates deprecated fields after loading from JSON.
+func (s *PrePromptState) normalizePrePromptState() {
+	if s.StepTranscriptStart == 0 && s.LastTranscriptLineCount > 0 {
+		s.StepTranscriptStart = s.LastTranscriptLineCount
+	}
+	s.LastTranscriptLineCount = 0
 }
 
 // CapturePrePromptState captures current untracked files and transcript position before a prompt
@@ -181,6 +193,8 @@ func LoadPrePromptState(sessionID string) (*PrePromptState, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal state: %w", err)
 	}
+
+	state.normalizePrePromptState()
 
 	return &state, nil
 }

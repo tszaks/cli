@@ -56,7 +56,7 @@ type State struct {
 	// Used for stale session detection in "entire sessions fix".
 	LastInteractionTime *time.Time `json:"last_interaction_time,omitempty"`
 
-	// StepCount is the number of steps (shadow branch commits) created in this session.
+	// StepCount is the number of checkpoints/steps created in this session.
 	// JSON tag kept as "checkpoint_count" for backward compatibility with existing state files.
 	StepCount int `json:"checkpoint_count"`
 
