@@ -53,8 +53,9 @@ func TestPrepareCommitMsg_AmendPreservesExistingTrailer(t *testing.T) {
 // TestPrepareCommitMsg_AmendRestoresTrailerFromPendingCheckpointID verifies that when
 // a user does `git commit --amend` (without -m) and clears the trailer from the editor,
 // PrepareCommitMsg restores the trailer from PendingCheckpointID in session state.
-// Note: `git commit --amend -m` passes source="message" (not "commit"), so that case
-// goes through the interactive TTY prompt path instead of handleAmendCommitMsg.
+// Note: `git commit --amend -m` passes source="message" (not "commit"), which uses the
+// -m/-F handling path. That path skips the interactive TTY prompt when restoring existing
+// checkpoint IDs (e.g. PendingCheckpointID) via the isRestoringExisting flag.
 func TestPrepareCommitMsg_AmendRestoresTrailerFromPendingCheckpointID(t *testing.T) {
 	dir := setupGitRepo(t)
 	t.Chdir(dir)

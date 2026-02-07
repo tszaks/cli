@@ -57,7 +57,7 @@ Use --force to condense all fixable sessions without prompting.`,
 		},
 	}
 
-	cmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Condense all fixable sessions without prompting")
+	cmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Fix all stuck sessions without prompting (condense if possible, otherwise discard)")
 
 	return cmd
 }
@@ -84,8 +84,8 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 		return nil
 	}
 
-	// Open repository to check shadow branches
-	repo, err := git.PlainOpenWithOptions(".", &git.PlainOpenOptions{DetectDotGit: true})
+	// Open repository to check shadow branches (uses worktree-aware helper)
+	repo, err := openRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open repository: %w", err)
 	}
