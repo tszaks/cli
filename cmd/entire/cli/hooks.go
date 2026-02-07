@@ -12,6 +12,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
@@ -276,6 +277,17 @@ func handleSessionStartCommon() error {
 	// Output informational message using agent-specific format
 	if err := outputHookResponse(message); err != nil {
 		return err
+	}
+
+	// Fire EventSessionStart for the current session (if state exists).
+	// This handles ENDED → IDLE (re-entering a session).
+	// TODO(ENT-221): dispatch ActionWarnStaleSession for ACTIVE/ACTIVE_COMMITTED sessions.
+	if state, loadErr := strategy.LoadSessionState(input.SessionID); loadErr == nil && state != nil {
+		result := session.Transition(state.Phase, session.EventSessionStart, session.TransitionContext{})
+		session.ApplyCommonActions(state, result)
+		if saveErr := strategy.SaveSessionState(state); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to update session state on start: %v\n", saveErr)
+		}
 	}
 
 	// TODO: keep this until we clean up gemini hooks.

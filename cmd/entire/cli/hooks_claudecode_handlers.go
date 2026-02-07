@@ -15,6 +15,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/agent/claudecode"
 	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
@@ -242,6 +243,14 @@ func commitWithMetadata() error {
 	if totalChanges == 0 {
 		fmt.Fprintf(os.Stderr, "No files were modified during this session\n")
 		fmt.Fprintf(os.Stderr, "Skipping commit\n")
+		// Still transition phase even when skipping commit — the turn is ending.
+		if turnState, loadErr := strategy.LoadSessionState(sessionID); loadErr == nil && turnState != nil {
+			result := session.Transition(turnState.Phase, session.EventTurnEnd, session.TransitionContext{})
+			session.ApplyCommonActions(turnState, result)
+			if updateErr := strategy.SaveSessionState(turnState); updateErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to update session phase: %v\n", updateErr)
+			}
+		}
 		// Clean up state even when skipping
 		if err := CleanupPrePromptState(sessionID); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to cleanup pre-prompt state: %v\n", err)
@@ -362,6 +371,17 @@ func commitWithMetadata() error {
 		} else {
 			fmt.Fprintf(os.Stderr, "Updated session state: transcript position=%d, checkpoint=%d\n",
 				totalLines, sessionState.StepCount)
+		}
+	}
+
+	// Fire EventTurnEnd to transition session phase (all strategies).
+	// This moves ACTIVE → IDLE or ACTIVE_COMMITTED → IDLE.
+	// TODO(ENT-221): dispatch ActionCondense for ACTIVE_COMMITTED → IDLE transitions.
+	if turnState, loadErr := strategy.LoadSessionState(sessionID); loadErr == nil && turnState != nil {
+		result := session.Transition(turnState.Phase, session.EventTurnEnd, session.TransitionContext{})
+		session.ApplyCommonActions(turnState, result)
+		if updateErr := strategy.SaveSessionState(turnState); updateErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to update session phase on turn end: %v\n", updateErr)
 		}
 	}
 
@@ -727,7 +747,7 @@ func handleClaudeCodeSessionEnd() error {
 	return nil
 }
 
-// markSessionEnded updates the session state with the current time as EndedAt.
+// markSessionEnded transitions the session to ENDED phase via the state machine.
 func markSessionEnded(sessionID string) error {
 	state, err := strategy.LoadSessionState(sessionID)
 	if err != nil {
@@ -736,6 +756,9 @@ func markSessionEnded(sessionID string) error {
 	if state == nil {
 		return nil // No state file, nothing to update
 	}
+
+	result := session.Transition(state.Phase, session.EventSessionStop, session.TransitionContext{})
+	session.ApplyCommonActions(state, result)
 
 	now := time.Now()
 	state.EndedAt = &now

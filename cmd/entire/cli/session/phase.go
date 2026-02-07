@@ -5,6 +5,7 @@ package session
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Phase represents the lifecycle stage of a session.
@@ -286,6 +287,33 @@ func transitionFromEnded(event Event, ctx TransitionContext) TransitionResult {
 	default:
 		return TransitionResult{NewPhase: PhaseEnded}
 	}
+}
+
+// ApplyCommonActions applies the common (non-strategy-specific) actions from a
+// TransitionResult to the given State. It updates Phase, LastInteractionTime,
+// and EndedAt as indicated by the transition.
+//
+// Returns the subset of actions that require strategy-specific handling
+// (e.g., ActionCondense, ActionMigrateShadowBranch, ActionWarnStaleSession).
+// The caller is responsible for dispatching those.
+func ApplyCommonActions(state *State, result TransitionResult) []Action {
+	state.Phase = result.NewPhase
+
+	var remaining []Action
+	for _, action := range result.Actions {
+		switch action {
+		case ActionUpdateLastInteraction:
+			now := time.Now()
+			state.LastInteractionTime = &now
+		case ActionClearEndedAt:
+			state.EndedAt = nil
+		case ActionCondense, ActionCondenseIfFilesTouched, ActionDiscardIfNoFiles,
+			ActionMigrateShadowBranch, ActionWarnStaleSession:
+			// Strategy-specific actions — pass through to caller.
+			remaining = append(remaining, action)
+		}
+	}
+	return remaining
 }
 
 // MermaidDiagram generates a Mermaid state diagram from the transition table.
