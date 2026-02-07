@@ -40,14 +40,37 @@ func TestState_NormalizeAfterLoad(t *testing.T) {
 		assert.Equal(t, 0, state.CheckpointTranscriptStart)
 	})
 
-	t.Run("clears_deprecated_TranscriptLinesAtStart", func(t *testing.T) {
+	t.Run("migrates_TranscriptLinesAtStart", func(t *testing.T) {
 		t.Parallel()
 		state := &State{
 			TranscriptLinesAtStart: 42,
 		}
 		state.NormalizeAfterLoad()
+		assert.Equal(t, 42, state.CheckpointTranscriptStart)
 		assert.Equal(t, 0, state.TranscriptLinesAtStart)
-		assert.Equal(t, 0, state.CheckpointTranscriptStart)
+	})
+
+	t.Run("CondensedTranscriptLines_takes_precedence_over_TranscriptLinesAtStart", func(t *testing.T) {
+		t.Parallel()
+		state := &State{
+			CondensedTranscriptLines: 150,
+			TranscriptLinesAtStart:   42,
+		}
+		state.NormalizeAfterLoad()
+		assert.Equal(t, 150, state.CheckpointTranscriptStart)
+		assert.Equal(t, 0, state.CondensedTranscriptLines)
+		assert.Equal(t, 0, state.TranscriptLinesAtStart)
+	})
+
+	t.Run("CheckpointTranscriptStart_not_overridden_by_TranscriptLinesAtStart", func(t *testing.T) {
+		t.Parallel()
+		state := &State{
+			CheckpointTranscriptStart: 200,
+			TranscriptLinesAtStart:    42,
+		}
+		state.NormalizeAfterLoad()
+		assert.Equal(t, 200, state.CheckpointTranscriptStart)
+		assert.Equal(t, 0, state.TranscriptLinesAtStart)
 	})
 }
 
@@ -63,6 +86,11 @@ func TestState_NormalizeAfterLoad_JSONRoundTrip(t *testing.T) {
 			json:     `{"session_id":"s1","condensed_transcript_lines":42,"checkpoint_count":5}`,
 			wantCTS:  42,
 			wantStep: 5,
+		},
+		{
+			name:    "migrates old transcript_lines_at_start",
+			json:    `{"session_id":"s1","transcript_lines_at_start":75}`,
+			wantCTS: 75,
 		},
 		{
 			name:    "preserves new field over old",

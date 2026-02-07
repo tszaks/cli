@@ -27,7 +27,7 @@ type PrePromptState struct {
 	// Only set for Gemini sessions. Zero means not set or session just started.
 	StartMessageIndex int `json:"start_message_index,omitempty"`
 
-	// Transcript position at prompt start - tracks what was added during this checkpoint
+	// Transcript position at prompt start - tracks what was added during this step/turn.
 	// Used for Claude Code sessions.
 	LastTranscriptIdentifier string `json:"last_transcript_identifier,omitempty"` // Last identifier when prompt started (UUID for Claude, message ID for Gemini)
 	StepTranscriptStart      int    `json:"step_transcript_start,omitempty"`      // Transcript line count when this step/turn started

@@ -339,9 +339,9 @@ func commitWithMetadata() error {
 	// Update session state with new transcript position for strategies that create
 	// commits on the active branch (auto-commit strategy). This prevents parsing old transcript
 	// lines on subsequent checkpoints.
-	// Note: Shadow strategy doesn't create commits on the active branch, so its
-	// checkpoints don't "consume" the transcript in the same way. Shadow should
-	// continue parsing the full transcript to capture all files touched in the session.
+	// Note: Shadow strategy tracks transcript position per-step via StepTranscriptStart in
+	// pre-prompt state, but doesn't advance CheckpointTranscriptStart in session state because
+	// its checkpoints accumulate all files touched across the entire session.
 	if strat.Name() == strategy.StrategyNameAutoCommit {
 		// Load session state for updating transcript position
 		sessionState, loadErr := strategy.LoadSessionState(sessionID)

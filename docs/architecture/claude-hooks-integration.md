@@ -65,7 +65,7 @@ Fires every time the user submits a prompt. Prepares the repository state tracki
     - Runs `git status` to get a list of all **untracked files** in the repository.
     - Saves this list to `.entire/tmp/pre-prompt-<session-id>.json`.
     - This baseline is compared later (in the `Stop` hook) to determine which files were newly created by Claude.
-    - Records the current transcript line count (`CheckpointTranscriptStart`) for incremental token usage calculation.
+    - Records the current transcript line count (`StepTranscriptStart`) for incremental token usage calculation.
 
 3.  **Initialize Session Strategy**:
     - For strategies that implement `SessionInitializer`, calls `InitializeSession()`.

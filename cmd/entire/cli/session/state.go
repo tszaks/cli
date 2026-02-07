@@ -136,9 +136,14 @@ type PromptAttribution struct {
 // NormalizeAfterLoad applies backward-compatible migrations to state loaded from disk.
 // Call this after deserializing a State from JSON.
 func (s *State) NormalizeAfterLoad() {
-	// Migrate transcript fields: CheckpointTranscriptStart replaces CondensedTranscriptLines
-	if s.CheckpointTranscriptStart == 0 && s.CondensedTranscriptLines > 0 {
-		s.CheckpointTranscriptStart = s.CondensedTranscriptLines
+	// Migrate transcript fields: CheckpointTranscriptStart replaces both
+	// CondensedTranscriptLines and TranscriptLinesAtStart from older state files.
+	if s.CheckpointTranscriptStart == 0 {
+		if s.CondensedTranscriptLines > 0 {
+			s.CheckpointTranscriptStart = s.CondensedTranscriptLines
+		} else if s.TranscriptLinesAtStart > 0 {
+			s.CheckpointTranscriptStart = s.TranscriptLinesAtStart
+		}
 	}
 	// Clear deprecated fields so they aren't re-persisted
 	s.CondensedTranscriptLines = 0

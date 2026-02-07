@@ -259,8 +259,8 @@ type WriteCommittedOptions struct {
 	TranscriptIdentifierAtStart string // Last identifier when checkpoint started (UUID for Claude, message ID for Gemini)
 	CheckpointTranscriptStart   int    // Transcript line offset at start of this checkpoint's data
 
-	// Deprecated: Use CheckpointTranscriptStart instead. Kept for backward compatibility.
-	TranscriptLinesAtStart int
+	// CheckpointTranscriptStart is written to both CommittedMetadata.CheckpointTranscriptStart
+	// and the deprecated CommittedMetadata.TranscriptLinesAtStart for backward compatibility.
 
 	// TokenUsage contains the token usage for this checkpoint
 	TokenUsage *agent.TokenUsage
