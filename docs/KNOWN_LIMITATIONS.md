@@ -31,3 +31,32 @@ When you amend a commit that has an `Entire-Checkpoint` trailer using `git commi
 3. **Re-add after amend**: If you forgot, you can amend again to add the trailer back (if you still have the checkpoint ID from `entire explain` or the reflog)
 
 **Tracked in:** [ENT-161](https://linear.app/entirehq/issue/ENT-161)
+
+### Git GC Can Corrupt Worktree Indexes
+
+When using git worktrees, `git gc --auto` can corrupt a worktree's index by pruning loose objects that the worktree's index cache-tree references. This manifests as:
+
+```
+fatal: unable to read <hash>
+error: invalid sha1 pointer in cache-tree of .git/worktrees/<n>/index
+```
+
+**Root cause:** Checkpoint saves use go-git's `SetEncodedObject` which creates loose objects. When the count exceeds the `gc.auto` threshold (default 6700), any git operation (e.g., VS Code or Sourcetree background fetch) triggers `git gc --auto`. GC doesn't fully account for worktree index references when pruning, so objects get deleted while the worktree index still points to them.
+
+**Impact:**
+- `git status` fails in the affected worktree
+- Staged changes in the worktree are lost
+
+**Recovery:**
+```bash
+# In the affected worktree:
+git read-tree HEAD
+```
+This rebuilds the index from HEAD. Any previously staged changes will need to be re-staged.
+
+**Prevention:** Disable auto-GC and run it manually after commits (when indexes are clean):
+```bash
+git config gc.auto 0
+```
+
+**Tracked in:** [ENT-241](https://linear.app/entirehq/issue/ENT-241)
