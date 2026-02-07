@@ -3,7 +3,6 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/charmbracelet/huh"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
@@ -61,8 +60,17 @@ Without --force, prompts for confirmation before deleting.`,
 
 			// Check for active sessions before bulk reset
 			if !forceFlag {
-				if hasActive, err := hasActiveSessionsOnCurrentHead(); err == nil && hasActive {
-					fmt.Fprintln(cmd.ErrOrStderr(), "Active sessions detected on current HEAD.")
+				activeSessions, err := activeSessionsOnCurrentHead()
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: could not check for active sessions: %v\n", err)
+					fmt.Fprintln(cmd.ErrOrStderr(), "Use --force to override.")
+					return nil
+				}
+				if len(activeSessions) > 0 {
+					fmt.Fprintln(cmd.ErrOrStderr(), "Active sessions detected on current HEAD:")
+					for _, s := range activeSessions {
+						fmt.Fprintf(cmd.ErrOrStderr(), "  %s (phase: %s)\n", s.SessionID, s.Phase)
+					}
 					fmt.Fprintln(cmd.ErrOrStderr(), "Use --force to override or wait for sessions to finish.")
 					return nil
 				}
@@ -152,35 +160,35 @@ func runResetSession(cmd *cobra.Command, resetter strategy.SessionResetter, sess
 	return nil
 }
 
-// hasActiveSessionsOnCurrentHead checks if any sessions on the current HEAD
-// are in an active phase (ACTIVE or ACTIVE_COMMITTED).
-func hasActiveSessionsOnCurrentHead() (bool, error) {
+// activeSessionsOnCurrentHead returns sessions on the current HEAD
+// that are in an active phase (ACTIVE or ACTIVE_COMMITTED).
+func activeSessionsOnCurrentHead() ([]*session.State, error) {
 	repo, err := openRepository()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	head, err := repo.Head()
 	if err != nil {
-		return false, fmt.Errorf("failed to get HEAD: %w", err)
+		return nil, fmt.Errorf("failed to get HEAD: %w", err)
 	}
 	currentHead := head.Hash().String()
 
 	states, err := strategy.ListSessionStates()
 	if err != nil {
-		return false, fmt.Errorf("failed to list session states: %w", err)
+		return nil, fmt.Errorf("failed to list session states: %w", err)
 	}
 
+	var active []*session.State
 	for _, state := range states {
 		if state.BaseCommit != currentHead {
 			continue
 		}
 		phase := session.PhaseFromString(string(state.Phase))
 		if phase.IsActive() {
-			fmt.Fprintf(os.Stderr, "  Active session: %s (phase: %s)\n", state.SessionID, state.Phase)
-			return true, nil
+			active = append(active, state)
 		}
 	}
 
-	return false, nil
+	return active, nil
 }

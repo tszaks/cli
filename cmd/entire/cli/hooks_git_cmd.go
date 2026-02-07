@@ -57,7 +57,7 @@ func (g *gitHookContext) logCompleted(err error, extraAttrs ...any) {
 	logging.LogDuration(g.ctx, slog.LevelDebug, g.hookName+" hook completed", g.start, append(attrs, extraAttrs...)...)
 }
 
-// initHookLogging initializes logging for hooks by finding the most recent active session.
+// initHookLogging initializes logging for hooks by finding the most recent session.
 // Returns a cleanup function that should be deferred.
 func initHookLogging() func() {
 	// Set up log level getter so logging can read from settings
@@ -65,7 +65,7 @@ func initHookLogging() func() {
 
 	sessionID := strategy.FindMostRecentSession()
 	if sessionID == "" {
-		// No active sessions - logging will use stderr fallback
+		// No sessions - logging will use stderr fallback
 		return func() {}
 	}
 	if err := logging.Init(sessionID); err != nil {
