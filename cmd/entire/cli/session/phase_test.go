@@ -379,7 +379,7 @@ func TestTransitionBackwardCompat(t *testing.T) {
 	})
 }
 
-func TestTransition_rebase_always_produces_empty_actions(t *testing.T) {
+func TestTransition_rebase_GitCommit_is_noop_for_all_phases(t *testing.T) {
 	t.Parallel()
 
 	rebaseCtx := TransitionContext{IsRebaseInProgress: true}
@@ -439,9 +439,9 @@ func TestMermaidDiagram(t *testing.T) {
 	assert.Contains(t, diagram, "WarnStaleSession")
 
 	// Write the diagram to a file for reference.
-	// Path from session/ to repo root: session -> cli -> entire -> cmd -> (repo root)
-	_, thisFile, _, _ := runtime.Caller(0) //nolint:dogsled // runtime.Caller returns 4 values, only file needed
-	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "..")
+	_, thisFile, _, ok := runtime.Caller(0) //nolint:dogsled // runtime.Caller returns 4 values, only file needed
+	require.True(t, ok, "runtime.Caller(0) failed")
+	repoRoot := findModuleRoot(t, thisFile)
 	outputDir := filepath.Join(repoRoot, "docs", "generated")
 
 	require.NoError(t, os.MkdirAll(outputDir, 0o755), "failed to create output directory")
@@ -450,4 +450,18 @@ func TestMermaidDiagram(t *testing.T) {
 
 	err := os.WriteFile(outputPath, []byte(diagram), 0o644)
 	require.NoError(t, err, "failed to write Mermaid diagram to %s", outputPath)
+}
+
+// findModuleRoot walks up from startPath to find the directory containing go.mod.
+func findModuleRoot(t *testing.T, startPath string) string {
+	t.Helper()
+	dir := filepath.Dir(startPath)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		require.NotEqual(t, parent, dir, "could not find go.mod starting from %s", startPath)
+		dir = parent
+	}
 }
