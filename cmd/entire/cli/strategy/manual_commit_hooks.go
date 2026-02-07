@@ -547,7 +547,16 @@ func (s *ManualCommitStrategy) PostCommit() error {
 
 	newHead := head.Hash().String()
 
-	// Process each session through the state machine
+	// Two-pass processing: condensation first, migration second.
+	// This prevents a migration from renaming a shadow branch before another
+	// session sharing that branch has had a chance to condense from it.
+	type pendingMigration struct {
+		state *SessionState
+	}
+	var pendingMigrations []pendingMigration
+
+	// Pass 1: Run transitions and dispatch condensation/discard actions.
+	// Defer migration actions to pass 2.
 	for _, state := range sessions {
 		shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 
@@ -570,6 +579,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 
 		// Dispatch strategy-specific actions
 		condensed := false
+		hasPendingMigration := false
 		for _, action := range remaining {
 			switch action {
 			case session.ActionCondense:
@@ -597,19 +607,18 @@ func (s *ManualCommitStrategy) PostCommit() error {
 					)
 				}
 			case session.ActionMigrateShadowBranch:
-				if _, migErr := s.migrateShadowBranchIfNeeded(repo, state); migErr != nil {
-					logging.Warn(logCtx, "post-commit: shadow branch migration failed",
-						slog.String("session_id", state.SessionID),
-						slog.String("error", migErr.Error()),
-					)
-				}
+				// Deferred to pass 2 so condensation reads the old shadow branch first
+				pendingMigrations = append(pendingMigrations, pendingMigration{state: state})
+				hasPendingMigration = true
 			case session.ActionWarnStaleSession, session.ActionClearEndedAt, session.ActionUpdateLastInteraction:
 				// Handled by session.ApplyCommonActions above
 			}
 		}
 
-		// If not condensed, still update BaseCommit for the new HEAD
-		if !condensed {
+		// If not condensed and no pending migration, update BaseCommit for the new HEAD.
+		// Sessions with pending migrations get their BaseCommit updated in pass 2
+		// (migrateShadowBranchIfNeeded needs the old BaseCommit to find the branch to rename).
+		if !condensed && !hasPendingMigration {
 			s.updateBaseCommitIfChanged(logCtx, state, newHead)
 		}
 
@@ -621,6 +630,20 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		// Track whether any session on this shadow branch is still active
 		if state.Phase.IsActive() {
 			activeSessionsOnBranch[shadowBranchName] = true
+		}
+	}
+
+	// Pass 2: Run deferred migrations now that all condensations are complete.
+	for _, pm := range pendingMigrations {
+		if _, migErr := s.migrateShadowBranchIfNeeded(repo, pm.state); migErr != nil {
+			logging.Warn(logCtx, "post-commit: shadow branch migration failed",
+				slog.String("session_id", pm.state.SessionID),
+				slog.String("error", migErr.Error()),
+			)
+		}
+		// Save the migrated state
+		if err := s.saveSessionState(pm.state); err != nil {
+			fmt.Fprintf(os.Stderr, "[entire] Warning: failed to update session state after migration: %v\n", err)
 		}
 	}
 

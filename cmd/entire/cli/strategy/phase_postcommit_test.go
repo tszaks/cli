@@ -225,6 +225,17 @@ func TestPostCommit_ShadowBranch_PreservedWhenActiveSessionExists(t *testing.T) 
 	assert.Equal(t, session.PhaseActiveCommitted, activeState.Phase,
 		"ACTIVE session should transition to ACTIVE_COMMITTED on GitCommit")
 
+	// Verify the IDLE session actually condensed (entire/sessions branch should exist)
+	idleState, err = s.loadSessionState(idleSessionID)
+	require.NoError(t, err)
+	sessionsRef, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	require.NoError(t, err, "entire/sessions branch should exist after IDLE session condensation")
+	require.NotNil(t, sessionsRef)
+
+	// Verify IDLE session's StepCount was reset by condensation
+	assert.Equal(t, 0, idleState.StepCount,
+		"IDLE session StepCount should be reset after condensation")
+
 	// Verify shadow branch is NOT deleted because the ACTIVE session still needs it.
 	// After PostCommit, BaseCommit is updated to new HEAD via migration.
 	newShadowBranch := getShadowBranchNameForCommit(activeState.BaseCommit, activeState.WorktreeID)
