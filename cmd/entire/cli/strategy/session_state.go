@@ -1,12 +1,15 @@
 package strategy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
+	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/validation"
 )
@@ -97,6 +100,83 @@ func SaveSessionState(state *SessionState) error {
 		return fmt.Errorf("failed to rename session state file: %w", err)
 	}
 	return nil
+}
+
+// ListSessionStates returns all session states from the state directory.
+// This is a package-level function that doesn't require a specific strategy instance.
+func ListSessionStates() ([]*SessionState, error) {
+	store, err := session.NewStateStore()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create state store: %w", err)
+	}
+
+	states, err := store.List(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list session states: %w", err)
+	}
+	return states, nil
+}
+
+// FindMostRecentSession returns the session ID of the most recently interacted session
+// (by LastInteractionTime), regardless of phase. Returns empty string if no sessions exist.
+// This replaces paths.ReadCurrentSession() for callers that need "the current session".
+func FindMostRecentSession() string {
+	states, err := ListSessionStates()
+	if err != nil || len(states) == 0 {
+		return ""
+	}
+
+	var best *SessionState
+	for _, s := range states {
+		if s.LastInteractionTime == nil {
+			continue
+		}
+		if best == nil || s.LastInteractionTime.After(*best.LastInteractionTime) {
+			best = s
+		}
+	}
+	if best != nil {
+		return best.SessionID
+	}
+
+	// Fallback: return most recently started session
+	for _, s := range states {
+		if best == nil || s.StartedAt.After(best.StartedAt) {
+			best = s
+		}
+	}
+	if best != nil {
+		return best.SessionID
+	}
+	return ""
+}
+
+// TransitionAndLog runs a session phase transition, applies common actions, logs the
+// transition, and returns any remaining strategy-specific actions.
+// This is the single entry point for all state machine transitions to ensure
+// consistent logging of phase changes.
+func TransitionAndLog(state *SessionState, event session.Event, ctx session.TransitionContext) []session.Action {
+	oldPhase := state.Phase
+	result := session.Transition(oldPhase, event, ctx)
+	remaining := session.ApplyCommonActions(state, result)
+
+	logCtx := logging.WithComponent(context.Background(), "session")
+	if result.NewPhase != oldPhase {
+		logging.Info(logCtx, "phase transition",
+			slog.String("session_id", state.SessionID),
+			slog.String("event", event.String()),
+			slog.String("from", string(oldPhase)),
+			slog.String("to", string(result.NewPhase)),
+		)
+	} else {
+		logging.Debug(logCtx, "phase unchanged",
+			slog.String("session_id", state.SessionID),
+			slog.String("event", event.String()),
+			slog.String("phase", string(result.NewPhase)),
+		)
+	}
+
+	return remaining
 }
 
 // ClearSessionState removes the session state file for the given session ID.

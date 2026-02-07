@@ -13,6 +13,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/settings"
 	"github.com/entireio/cli/cmd/entire/cli/summarize"
 	"github.com/entireio/cli/cmd/entire/cli/textutil"
@@ -485,4 +486,118 @@ func generateContextFromPrompts(prompts []string) []byte {
 	}
 
 	return []byte(buf.String())
+}
+
+// CondenseSessionByID force-condenses a session by its ID and cleans up.
+// This is used by "entire sessions fix" to salvage stuck sessions.
+func (s *ManualCommitStrategy) CondenseSessionByID(sessionID string) error {
+	ctx := logging.WithComponent(context.Background(), "condense-by-id")
+
+	// Load session state
+	state, err := s.loadSessionState(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to load session state: %w", err)
+	}
+	if state == nil {
+		return fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	// Open repository
+	repo, err := OpenRepository()
+	if err != nil {
+		return fmt.Errorf("failed to open repository: %w", err)
+	}
+
+	// Generate a checkpoint ID
+	checkpointID, err := id.Generate()
+	if err != nil {
+		return fmt.Errorf("failed to generate checkpoint ID: %w", err)
+	}
+
+	// Check if shadow branch exists (required for condensation)
+	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	refName := plumbing.NewBranchReferenceName(shadowBranchName)
+	_, refErr := repo.Reference(refName, true)
+	hasShadowBranch := refErr == nil
+
+	if !hasShadowBranch {
+		// No shadow branch means no checkpoint data to condense.
+		// Just clean up the state file.
+		logging.Info(ctx, "no shadow branch for session, clearing state only",
+			slog.String("session_id", sessionID),
+			slog.String("shadow_branch", shadowBranchName),
+		)
+		if err := s.clearSessionState(sessionID); err != nil {
+			return fmt.Errorf("failed to clear session state: %w", err)
+		}
+		return nil
+	}
+
+	// Condense the session
+	result, err := s.CondenseSession(repo, checkpointID, state)
+	if err != nil {
+		return fmt.Errorf("failed to condense session: %w", err)
+	}
+
+	logging.Info(ctx, "session condensed by ID",
+		slog.String("session_id", sessionID),
+		slog.String("checkpoint_id", result.CheckpointID.String()),
+		slog.Int("checkpoints_condensed", result.CheckpointsCount),
+	)
+
+	// Update session state: reset step count and transition to idle
+	state.StepCount = 0
+	state.CheckpointTranscriptStart = result.TotalTranscriptLines
+	state.Phase = session.PhaseIdle
+	state.LastCheckpointID = checkpointID
+	state.PendingCheckpointID = checkpointID.String()
+	state.PromptAttributions = nil
+	state.PendingPromptAttribution = nil
+
+	if err := s.saveSessionState(state); err != nil {
+		return fmt.Errorf("failed to save session state: %w", err)
+	}
+
+	// Clean up shadow branch if no other sessions need it
+	if err := s.cleanupShadowBranchIfUnused(repo, shadowBranchName, sessionID); err != nil {
+		logging.Warn(ctx, "failed to clean up shadow branch",
+			slog.String("shadow_branch", shadowBranchName),
+			slog.String("error", err.Error()),
+		)
+		// Non-fatal: condensation succeeded, shadow branch cleanup is best-effort
+	}
+
+	return nil
+}
+
+// cleanupShadowBranchIfUnused deletes a shadow branch if no other active sessions reference it.
+func (s *ManualCommitStrategy) cleanupShadowBranchIfUnused(repo *git.Repository, shadowBranchName, excludeSessionID string) error {
+	// List all session states to check if any other session uses this shadow branch
+	allStates, err := s.listAllSessionStates()
+	if err != nil {
+		return fmt.Errorf("failed to list session states: %w", err)
+	}
+
+	for _, state := range allStates {
+		if state.SessionID == excludeSessionID {
+			continue
+		}
+		otherShadow := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+		if otherShadow == shadowBranchName && state.StepCount > 0 {
+			// Another session still needs this shadow branch
+			return nil
+		}
+	}
+
+	// No other sessions need it, delete the shadow branch
+	refName := plumbing.NewBranchReferenceName(shadowBranchName)
+	ref, refErr := repo.Reference(refName, true)
+	if refErr != nil {
+		// Branch already gone, nothing to clean up
+		return nil //nolint:nilerr // intentional: missing branch is not an error
+	}
+	if err := repo.Storer.RemoveReference(ref.Name()); err != nil {
+		return fmt.Errorf("failed to remove shadow branch reference: %w", err)
+	}
+	return nil
 }

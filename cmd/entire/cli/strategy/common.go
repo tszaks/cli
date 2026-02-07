@@ -616,7 +616,6 @@ func EnsureEntireGitignore() error {
 		"tmp/",
 		"settings.local.json",
 		"metadata/",
-		"current_session",
 		"logs/",
 	}
 

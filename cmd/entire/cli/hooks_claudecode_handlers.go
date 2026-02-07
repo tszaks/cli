@@ -747,8 +747,7 @@ func transitionSessionTurnEnd(sessionID string) {
 	if turnState == nil {
 		return
 	}
-	result := session.Transition(turnState.Phase, session.EventTurnEnd, session.TransitionContext{})
-	session.ApplyCommonActions(turnState, result)
+	strategy.TransitionAndLog(turnState, session.EventTurnEnd, session.TransitionContext{})
 	if updateErr := strategy.SaveSessionState(turnState); updateErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to update session phase on turn end: %v\n", updateErr)
 	}
@@ -764,8 +763,7 @@ func markSessionEnded(sessionID string) error {
 		return nil // No state file, nothing to update
 	}
 
-	result := session.Transition(state.Phase, session.EventSessionStop, session.TransitionContext{})
-	session.ApplyCommonActions(state, result)
+	strategy.TransitionAndLog(state, session.EventSessionStop, session.TransitionContext{})
 
 	now := time.Now()
 	state.EndedAt = &now

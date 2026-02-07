@@ -50,10 +50,11 @@ func TestPrepareCommitMsg_AmendPreservesExistingTrailer(t *testing.T) {
 		"trailer should preserve the original checkpoint ID")
 }
 
-// TestPrepareCommitMsg_AmendRestoresTrailerFromPendingCheckpointID verifies the amend
-// bug fix: when a user does `git commit --amend -m "new message"`, the Entire-Checkpoint
-// trailer is lost because the new message replaces the old one. PrepareCommitMsg restores
-// the trailer from PendingCheckpointID in session state.
+// TestPrepareCommitMsg_AmendRestoresTrailerFromPendingCheckpointID verifies that when
+// a user does `git commit --amend` (without -m) and clears the trailer from the editor,
+// PrepareCommitMsg restores the trailer from PendingCheckpointID in session state.
+// Note: `git commit --amend -m` passes source="message" (not "commit"), so that case
+// goes through the interactive TTY prompt path instead of handleAmendCommitMsg.
 func TestPrepareCommitMsg_AmendRestoresTrailerFromPendingCheckpointID(t *testing.T) {
 	dir := setupGitRepo(t)
 	t.Chdir(dir)
@@ -72,12 +73,12 @@ func TestPrepareCommitMsg_AmendRestoresTrailerFromPendingCheckpointID(t *testing
 	err = s.saveSessionState(state)
 	require.NoError(t, err)
 
-	// Write a commit message file with NO trailer (user did --amend -m "new message")
+	// Write a commit message file with NO trailer (user cleared it in the editor)
 	commitMsgFile := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
 	newMsg := "New amended message\n"
 	require.NoError(t, os.WriteFile(commitMsgFile, []byte(newMsg), 0o644))
 
-	// Call PrepareCommitMsg with source="commit" (amend)
+	// Call PrepareCommitMsg with source="commit" (git commit --amend without -m)
 	err = s.PrepareCommitMsg(commitMsgFile, "commit")
 	require.NoError(t, err)
 
@@ -133,52 +134,86 @@ func TestPrepareCommitMsg_AmendNoTrailerNoPendingID(t *testing.T) {
 		"commit message should be unchanged when no trailer to restore")
 }
 
-// TestPrepareCommitMsg_NormalCommitUsesPendingCheckpointID verifies that during
-// a normal commit (source=""), if the session is in ACTIVE_COMMITTED phase with
-// a PendingCheckpointID, the pending ID is reused instead of generating a new one.
-// This ensures idempotent checkpoint IDs across prepare-commit-msg invocations.
-func TestPrepareCommitMsg_NormalCommitUsesPendingCheckpointID(t *testing.T) {
+// setupSessionWithPendingCheckpoint creates a session in ACTIVE_COMMITTED phase with
+// a PendingCheckpointID and content on the shadow branch. Returns the strategy instance.
+// This shared setup is used by tests that verify PendingCheckpointID reuse across
+// different source parameters.
+func setupSessionWithPendingCheckpoint(t *testing.T, sessionID, pendingID string) *ManualCommitStrategy {
+	t.Helper()
+
 	dir := setupGitRepo(t)
 	t.Chdir(dir)
 
 	s := &ManualCommitStrategy{}
-
-	sessionID := "test-session-normal-pending"
 	err := s.InitializeSession(sessionID, "Claude Code", "")
 	require.NoError(t, err)
 
-	// Create content on the shadow branch so filterSessionsWithNewContent finds it
 	createShadowBranchWithTranscript(t, dir, sessionID)
 
-	// Set the session to ACTIVE_COMMITTED with a PendingCheckpointID
 	state, err := s.loadSessionState(sessionID)
 	require.NoError(t, err)
 	require.NotNil(t, state)
 	state.Phase = session.PhaseActiveCommitted
-	state.PendingCheckpointID = "fedcba987654"
-	// Ensure StepCount reflects that a checkpoint exists on the shadow branch
+	state.PendingCheckpointID = pendingID
 	state.StepCount = 1
 	err = s.saveSessionState(state)
 	require.NoError(t, err)
 
-	// Write a commit message file with no trailer (normal editor flow)
-	commitMsgFile := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
-	normalMsg := "Feature: add new functionality\n"
-	require.NoError(t, os.WriteFile(commitMsgFile, []byte(normalMsg), 0o644))
+	return s
+}
 
-	// Call PrepareCommitMsg with source="" (normal commit, editor flow)
-	err = s.PrepareCommitMsg(commitMsgFile, "")
-	require.NoError(t, err)
+// TestPrepareCommitMsg_PendingCheckpointIDReuse verifies that when a session has a
+// PendingCheckpointID set (from prior condensation), it is reused regardless of the
+// commit source. This is a table-driven test covering two key paths:
+//
+//   - source="" (editor flow): PendingCheckpointID is reused as an idempotent ID
+//   - source="message" (-m flag): PendingCheckpointID triggers isRestoringExisting=true,
+//     skipping the interactive TTY prompt. This is critical for non-interactive
+//     environments (e.g., Claude doing `git commit --amend -m`) where /dev/tty is
+//     unavailable and askConfirmTTY would silently return false, dropping the trailer.
+func TestPrepareCommitMsg_PendingCheckpointIDReuse(t *testing.T) {
+	tests := []struct {
+		name      string
+		source    string
+		sessionID string
+		pendingID string
+		commitMsg string
+	}{
+		{
+			name:      "editor flow reuses pending ID",
+			source:    "",
+			sessionID: "test-session-normal-pending",
+			pendingID: "fedcba987654",
+			commitMsg: "Feature: add new functionality\n",
+		},
+		{
+			name:      "message source auto-restores without TTY prompt",
+			source:    "message",
+			sessionID: "test-session-message-restore",
+			pendingID: "aabb11223344",
+			commitMsg: "Amended message via -m flag\n",
+		},
+	}
 
-	// Read the file back - trailer should use PendingCheckpointID
-	content, err := os.ReadFile(commitMsgFile)
-	require.NoError(t, err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := setupSessionWithPendingCheckpoint(t, tc.sessionID, tc.pendingID)
 
-	cpID, found := trailers.ParseCheckpoint(string(content))
-	assert.True(t, found,
-		"trailer should be present for normal commit with active session content")
-	assert.Equal(t, "fedcba987654", cpID.String(),
-		"normal commit should reuse PendingCheckpointID instead of generating a new one")
+			commitMsgFile := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
+			require.NoError(t, os.WriteFile(commitMsgFile, []byte(tc.commitMsg), 0o644))
+
+			err := s.PrepareCommitMsg(commitMsgFile, tc.source)
+			require.NoError(t, err)
+
+			content, err := os.ReadFile(commitMsgFile)
+			require.NoError(t, err)
+
+			cpID, found := trailers.ParseCheckpoint(string(content))
+			assert.True(t, found, "trailer should be added for source=%q with PendingCheckpointID", tc.source)
+			assert.Equal(t, tc.pendingID, cpID.String(),
+				"trailer should reuse PendingCheckpointID value")
+		})
+	}
 }
 
 // createShadowBranchWithTranscript creates a shadow branch commit with a minimal
