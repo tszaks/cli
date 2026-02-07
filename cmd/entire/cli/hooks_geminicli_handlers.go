@@ -44,7 +44,7 @@ func handleGeminiSessionEnd() error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to commit metadata: %v\n", err)
 	}
 
-	// Mark session as ended (find most recent active session since stdin consumed)
+	// Mark session as ended (find most recent session since stdin consumed)
 	entireSessionID := strategy.FindMostRecentSession()
 	if entireSessionID != "" {
 		logging.Info(logCtx, "session-end-mark",
