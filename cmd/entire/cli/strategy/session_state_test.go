@@ -131,6 +131,75 @@ func TestLoadSessionState_WithEndedAt(t *testing.T) {
 	}
 }
 
+// TestLoadSessionState_WithLastInteractionTime tests that LastInteractionTime serializes/deserializes correctly.
+func TestLoadSessionState_WithLastInteractionTime(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	// Test with LastInteractionTime set
+	lastInteraction := time.Now().Add(-5 * time.Minute)
+	state := &SessionState{
+		SessionID:           "test-session-interaction",
+		BaseCommit:          "abc123def456",
+		StartedAt:           time.Now().Add(-2 * time.Hour),
+		LastInteractionTime: &lastInteraction,
+		StepCount:           3,
+	}
+
+	err = SaveSessionState(state)
+	if err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	loaded, err := LoadSessionState("test-session-interaction")
+	if err != nil {
+		t.Fatalf("LoadSessionState() error = %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("LoadSessionState() returned nil")
+	}
+
+	// Verify LastInteractionTime was preserved
+	if loaded.LastInteractionTime == nil {
+		t.Fatal("LastInteractionTime was nil after load, expected non-nil")
+	}
+	if !loaded.LastInteractionTime.Equal(lastInteraction) {
+		t.Errorf("LastInteractionTime = %v, want %v", *loaded.LastInteractionTime, lastInteraction)
+	}
+
+	// Test with LastInteractionTime nil (old session without this field)
+	stateOld := &SessionState{
+		SessionID:           "test-session-no-interaction",
+		BaseCommit:          "xyz789",
+		StartedAt:           time.Now(),
+		LastInteractionTime: nil,
+		StepCount:           1,
+	}
+
+	err = SaveSessionState(stateOld)
+	if err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	loadedOld, err := LoadSessionState("test-session-no-interaction")
+	if err != nil {
+		t.Fatalf("LoadSessionState() error = %v", err)
+	}
+	if loadedOld == nil {
+		t.Fatal("LoadSessionState() returned nil")
+	}
+
+	// Verify LastInteractionTime remains nil
+	if loadedOld.LastInteractionTime != nil {
+		t.Errorf("LastInteractionTime = %v, want nil for old session", *loadedOld.LastInteractionTime)
+	}
+}
+
 // TestLoadSessionState_PackageLevel_NonExistent tests loading a non-existent session.
 func TestLoadSessionState_PackageLevel_NonExistent(t *testing.T) {
 	dir := t.TempDir()

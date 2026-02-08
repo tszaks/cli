@@ -1508,6 +1508,191 @@ func TestSaveChanges_EmptyBaseCommit_Recovery(t *testing.T) {
 	}
 }
 
+// TestSaveChanges_UsesCtxAgentType_WhenNoSessionState tests that SaveChanges uses
+// ctx.AgentType instead of DefaultAgentType ("Agent") when no session state exists.
+// This is the primary bug scenario for ENT-207.
+func TestSaveChanges_UsesCtxAgentType_WhenNoSessionState(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	testFile := filepath.Join(dir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if _, err := worktree.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add file: %v", err)
+	}
+	if _, err := worktree.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	}); err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "2026-02-06-agent-type-test"
+
+	// NO session state exists (simulates InitializeSession failure)
+	// SaveChanges should use ctx.AgentType, not DefaultAgentType
+
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
+		t.Fatalf("failed to create metadata dir: %v", err)
+	}
+	transcript := `{"type":"human","message":{"content":"test"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(metadataDirAbs, paths.TranscriptFileName), []byte(transcript), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Test checkpoint",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+		AgentType:      agent.AgentTypeClaudeCode,
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() error = %v", err)
+	}
+
+	loaded, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("failed to load session state: %v", err)
+	}
+	if loaded.AgentType != agent.AgentTypeClaudeCode {
+		t.Errorf("AgentType = %q, want %q", loaded.AgentType, agent.AgentTypeClaudeCode)
+	}
+}
+
+// TestSaveChanges_UsesCtxAgentType_WhenPartialState tests that SaveChanges uses
+// ctx.AgentType when a partial session state exists (empty BaseCommit and AgentType).
+func TestSaveChanges_UsesCtxAgentType_WhenPartialState(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	testFile := filepath.Join(dir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if _, err := worktree.Add("test.txt"); err != nil {
+		t.Fatalf("failed to add file: %v", err)
+	}
+	if _, err := worktree.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	}); err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "2026-02-06-partial-state-agent-test"
+
+	// Create partial session state with empty BaseCommit and no AgentType
+	partialState := &SessionState{
+		SessionID:  sessionID,
+		BaseCommit: "",
+		StartedAt:  time.Now(),
+	}
+	if err := s.saveSessionState(partialState); err != nil {
+		t.Fatalf("failed to save partial state: %v", err)
+	}
+
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
+		t.Fatalf("failed to create metadata dir: %v", err)
+	}
+	transcript := `{"type":"human","message":{"content":"test"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(metadataDirAbs, paths.TranscriptFileName), []byte(transcript), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Test checkpoint",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+		AgentType:      agent.AgentTypeClaudeCode,
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() error = %v", err)
+	}
+
+	loaded, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("failed to load session state: %v", err)
+	}
+	if loaded.AgentType != agent.AgentTypeClaudeCode {
+		t.Errorf("AgentType = %q, want %q", loaded.AgentType, agent.AgentTypeClaudeCode)
+	}
+}
+
+// TestInitializeSession_BackfillsUnknownAgentType tests that InitializeSession
+// replaces the default "Agent" value with the correct agent type on subsequent calls.
+func TestInitializeSession_BackfillsUnknownAgentType(t *testing.T) {
+	dir := t.TempDir()
+	initTestRepo(t, dir)
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "2026-02-06-backfill-agent-type"
+
+	// First call: initialize with correct type
+	if err := s.InitializeSession(sessionID, agent.AgentTypeClaudeCode, "", ""); err != nil {
+		t.Fatalf("InitializeSession() error = %v", err)
+	}
+
+	// Simulate the bug: manually set AgentType to "Agent" (as if session was created with default)
+	state, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("failed to load session state: %v", err)
+	}
+	state.AgentType = agent.AgentTypeUnknown
+	if err := s.saveSessionState(state); err != nil {
+		t.Fatalf("failed to save state: %v", err)
+	}
+
+	// Second call with correct agent type should fix the "Agent" value
+	if err := s.InitializeSession(sessionID, agent.AgentTypeClaudeCode, "", ""); err != nil {
+		t.Fatalf("InitializeSession() second call error = %v", err)
+	}
+
+	loaded, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("failed to load session state: %v", err)
+	}
+	if loaded.AgentType != agent.AgentTypeClaudeCode {
+		t.Errorf("AgentType = %q, want %q (should have been backfilled from %q)",
+			loaded.AgentType, agent.AgentTypeClaudeCode, agent.AgentTypeUnknown)
+	}
+}
+
 // TestIsGeminiJSONTranscript tests detection of Gemini JSON transcript format.
 func TestIsGeminiJSONTranscript(t *testing.T) {
 	tests := []struct {
@@ -1973,7 +2158,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 
 	// === PROMPT 1 START: Initialize session (simulates UserPromptSubmit) ===
 	// This must happen BEFORE agent makes any changes
-	if err := s.InitializeSession(sessionID, "Claude Code", ""); err != nil {
+	if err := s.InitializeSession(sessionID, "Claude Code", "", ""); err != nil {
 		t.Fatalf("InitializeSession() prompt 1 error = %v", err)
 	}
 
@@ -2019,7 +2204,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 
 	// === PROMPT 2 START: Initialize session again (simulates UserPromptSubmit) ===
 	// This captures the user's edits to user.go BEFORE the agent runs
-	if err := s.InitializeSession(sessionID, "Claude Code", ""); err != nil {
+	if err := s.InitializeSession(sessionID, "Claude Code", "", ""); err != nil {
 		t.Fatalf("InitializeSession() prompt 2 error = %v", err)
 	}
 

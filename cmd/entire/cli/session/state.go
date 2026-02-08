@@ -97,6 +97,9 @@ type State struct {
 	// TranscriptPath is the path to the live transcript file (for mid-session commit detection)
 	TranscriptPath string `json:"transcript_path,omitempty"`
 
+	// FirstPrompt is the first user prompt that started this session (truncated for display)
+	FirstPrompt string `json:"first_prompt,omitempty"`
+
 	// PromptAttributions tracks user and agent line changes at each prompt start.
 	// This enables accurate attribution by capturing user edits between checkpoints.
 	PromptAttributions []PromptAttribution `json:"prompt_attributions,omitempty"`
@@ -145,7 +148,11 @@ func (s *State) NormalizeAfterLoad() {
 			s.CheckpointTranscriptStart = s.TranscriptLinesAtStart
 		}
 	}
-	// Clear deprecated fields so they aren't re-persisted
+	// Clear deprecated fields so they aren't re-persisted.
+	// Note: this is a one-way migration. If the state is re-saved, older CLI versions
+	// will see 0 for these fields and fall back to scoping from the transcript start.
+	// This is acceptable since CLI upgrades are monotonic and the worst case is
+	// redundant transcript content in a condensation, not data loss.
 	s.CondensedTranscriptLines = 0
 	s.TranscriptLinesAtStart = 0
 }

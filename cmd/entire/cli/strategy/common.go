@@ -195,6 +195,24 @@ const (
 	DefaultAgentType = agent.AgentTypeUnknown
 )
 
+// isSpecificAgentType returns true if the agent type is a known, specific value
+// (not empty and not the generic "Agent" fallback).
+func isSpecificAgentType(t agent.AgentType) bool {
+	return t != "" && t != DefaultAgentType
+}
+
+// resolveAgentType picks the best agent type from the context and existing state.
+// Priority: existing state (if specific) > context value > default fallback.
+func resolveAgentType(ctxAgentType agent.AgentType, state *SessionState) agent.AgentType {
+	if state != nil && isSpecificAgentType(state.AgentType) {
+		return state.AgentType
+	}
+	if ctxAgentType != "" {
+		return ctxAgentType
+	}
+	return DefaultAgentType
+}
+
 // ensureMetadataBranch creates the orphan entire/sessions branch if it doesn't exist.
 // This branch has no parent and starts with an empty tree.
 func EnsureMetadataBranch(repo *git.Repository) error {

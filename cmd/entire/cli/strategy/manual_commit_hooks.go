@@ -784,7 +784,8 @@ func addCheckpointTrailerWithComment(message string, checkpointID id.CheckpointI
 //
 // agentType is the human-readable name of the agent (e.g., "Claude Code").
 // transcriptPath is the path to the live transcript file (for mid-session commit detection).
-func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType agent.AgentType, transcriptPath string) error {
+// userPrompt is the user's prompt text (stored truncated as FirstPrompt for display).
+func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType agent.AgentType, transcriptPath string, userPrompt string) error {
 	repo, err := OpenRepository()
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
@@ -801,9 +802,14 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 		result := session.Transition(state.Phase, session.EventTurnStart, session.TransitionContext{})
 		session.ApplyCommonActions(state, result)
 
-		// Backfill AgentType if empty (for sessions created before the agent_type field was added)
-		if state.AgentType == "" && agentType != "" {
+		// Backfill AgentType if empty or set to the generic default "Agent"
+		if !isSpecificAgentType(state.AgentType) && agentType != "" {
 			state.AgentType = agentType
+		}
+
+		// Backfill FirstPrompt if empty (for sessions created before the first_prompt field was added)
+		if state.FirstPrompt == "" && userPrompt != "" {
+			state.FirstPrompt = truncatePromptForStorage(userPrompt)
 		}
 
 		// Update transcript path if provided (may change on session resume)
@@ -841,7 +847,7 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 	// Continue below to properly initialize it
 
 	// Initialize new session
-	state, err = s.initializeSession(repo, sessionID, agentType, transcriptPath)
+	state, err = s.initializeSession(repo, sessionID, agentType, transcriptPath, userPrompt)
 	if err != nil {
 		return fmt.Errorf("failed to initialize session: %w", err)
 	}
