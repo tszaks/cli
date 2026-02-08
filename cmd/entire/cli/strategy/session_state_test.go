@@ -144,11 +144,11 @@ func TestLoadSessionState_WithLastInteractionTime(t *testing.T) {
 	// Test with LastInteractionTime set
 	lastInteraction := time.Now().Add(-5 * time.Minute)
 	state := &SessionState{
-		SessionID:         "test-session-interaction",
-		BaseCommit:        "abc123def456",
-		StartedAt:         time.Now().Add(-2 * time.Hour),
+		SessionID:           "test-session-interaction",
+		BaseCommit:          "abc123def456",
+		StartedAt:           time.Now().Add(-2 * time.Hour),
 		LastInteractionTime: &lastInteraction,
-		StepCount:   3,
+		StepCount:           3,
 	}
 
 	err = SaveSessionState(state)
@@ -174,11 +174,11 @@ func TestLoadSessionState_WithLastInteractionTime(t *testing.T) {
 
 	// Test with LastInteractionTime nil (old session without this field)
 	stateOld := &SessionState{
-		SessionID:         "test-session-no-interaction",
-		BaseCommit:        "xyz789",
-		StartedAt:         time.Now(),
+		SessionID:           "test-session-no-interaction",
+		BaseCommit:          "xyz789",
+		StartedAt:           time.Now(),
 		LastInteractionTime: nil,
-		StepCount:   1,
+		StepCount:           1,
 	}
 
 	err = SaveSessionState(stateOld)

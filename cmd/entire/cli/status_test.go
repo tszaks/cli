@@ -217,12 +217,12 @@ func TestWriteActiveSessions(t *testing.T) {
 	// Create active sessions
 	states := []*session.State{
 		{
-			SessionID:         "abc-1234-session",
-			WorktreePath:      "/Users/test/repo",
-			StartedAt:         now.Add(-2 * time.Hour),
+			SessionID:           "abc-1234-session",
+			WorktreePath:        "/Users/test/repo",
+			StartedAt:           now.Add(-2 * time.Hour),
 			LastInteractionTime: &recentInteraction,
-			FirstPrompt:       "Fix auth bug in login flow",
-			AgentType:         agent.AgentType("Claude Code"),
+			FirstPrompt:         "Fix auth bug in login flow",
+			AgentType:           agent.AgentType("Claude Code"),
 		},
 		{
 			SessionID:    "def-5678-session",
@@ -326,12 +326,12 @@ func TestWriteActiveSessions_ActiveTimeOmittedWhenClose(t *testing.T) {
 	lastInteraction := startedAt.Add(30 * time.Second)
 
 	state := &session.State{
-		SessionID:         "close-time-session",
-		WorktreePath:      "/Users/test/repo",
-		StartedAt:         startedAt,
+		SessionID:           "close-time-session",
+		WorktreePath:        "/Users/test/repo",
+		StartedAt:           startedAt,
 		LastInteractionTime: &lastInteraction,
-		FirstPrompt:       "test prompt",
-		AgentType:         agent.AgentType("Claude Code"),
+		FirstPrompt:         "test prompt",
+		AgentType:           agent.AgentType("Claude Code"),
 	}
 
 	if err := store.Save(context.Background(), state); err != nil {

@@ -943,11 +943,11 @@ func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType agent
 	// Create new session state
 	now := time.Now()
 	state := &SessionState{
-		SessionID:       sessionID,
-		BaseCommit:      baseCommit,
-		StartedAt:       now,
+		SessionID:           sessionID,
+		BaseCommit:          baseCommit,
+		StartedAt:           now,
 		LastInteractionTime: &now,
-		StepCount:       0,
+		StepCount:           0,
 		// CheckpointTranscriptStart defaults to 0 (start from beginning of transcript)
 		FilesTouched:   []string{},
 		AgentType:      agentType,
