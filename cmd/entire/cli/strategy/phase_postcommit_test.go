@@ -245,6 +245,430 @@ func TestPostCommit_ShadowBranch_PreservedWhenActiveSessionExists(t *testing.T) 
 		"shadow branch should be preserved when an active session still exists on it")
 }
 
+// TestPostCommit_CondensationFailure_PreservesShadowBranch verifies that when
+// condensation fails (corrupted shadow branch), BaseCommit is NOT updated.
+func TestPostCommit_CondensationFailure_PreservesShadowBranch(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-postcommit-condense-fail-idle"
+
+	// Initialize session and save a checkpoint
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Set phase to IDLE
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	state.Phase = session.PhaseIdle
+	state.LastInteractionTime = nil
+	require.NoError(t, s.saveSessionState(state))
+
+	// Record original BaseCommit and StepCount before corruption
+	originalBaseCommit := state.BaseCommit
+	originalStepCount := state.StepCount
+
+	// Corrupt shadow branch by pointing it at ZeroHash
+	shadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	corruptRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(shadowBranch), plumbing.ZeroHash)
+	require.NoError(t, repo.Storer.SetReference(corruptRef))
+
+	// Create a commit with the checkpoint trailer
+	commitWithCheckpointTrailer(t, repo, dir, "e5f6a1b2c3d4")
+
+	// Run PostCommit
+	err = s.PostCommit()
+	require.NoError(t, err, "PostCommit should not return error even when condensation fails")
+
+	// Verify BaseCommit was NOT updated (condensation failed)
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	assert.Equal(t, originalBaseCommit, state.BaseCommit,
+		"BaseCommit should NOT be updated when condensation fails")
+	assert.Equal(t, originalStepCount, state.StepCount,
+		"StepCount should NOT be reset when condensation fails")
+
+	// Verify entire/sessions branch does NOT exist (condensation failed)
+	_, err = repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	require.Error(t, err,
+		"entire/sessions branch should NOT exist when condensation fails")
+
+	// Phase transition still applies even when condensation fails
+	assert.Equal(t, session.PhaseIdle, state.Phase,
+		"phase should remain IDLE when condensation fails")
+}
+
+// TestPostCommit_IdleSession_NoNewContent_UpdatesBaseCommit verifies that when
+// an IDLE session has no new transcript content since last condensation,
+// PostCommit skips condensation but still updates BaseCommit.
+func TestPostCommit_IdleSession_NoNewContent_UpdatesBaseCommit(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-postcommit-idle-no-content"
+
+	// Initialize session and save a checkpoint
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Set phase to IDLE with CheckpointTranscriptStart matching transcript length (2 lines)
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	state.Phase = session.PhaseIdle
+	state.LastInteractionTime = nil
+	state.CheckpointTranscriptStart = 2 // Transcript has exactly 2 lines
+	require.NoError(t, s.saveSessionState(state))
+
+	// Record shadow branch name
+	shadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	originalStepCount := state.StepCount
+
+	// Create a commit with the checkpoint trailer
+	commitWithCheckpointTrailer(t, repo, dir, "f6a1b2c3d4e5")
+
+	// Get new HEAD hash for comparison
+	head, err := repo.Head()
+	require.NoError(t, err)
+	newHeadHash := head.Hash().String()
+
+	// Run PostCommit
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	// Verify BaseCommit was updated to new HEAD
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	assert.Equal(t, newHeadHash, state.BaseCommit,
+		"BaseCommit should be updated to new HEAD when no new content")
+
+	// Shadow branch should still exist (not deleted, no condensation)
+	refName := plumbing.NewBranchReferenceName(shadowBranch)
+	_, err = repo.Reference(refName, true)
+	require.NoError(t, err,
+		"shadow branch should still exist when no condensation happened")
+
+	// entire/sessions branch should NOT exist (no condensation)
+	_, err = repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	require.Error(t, err,
+		"entire/sessions branch should NOT exist when no condensation happened")
+
+	// StepCount should be unchanged
+	assert.Equal(t, originalStepCount, state.StepCount,
+		"StepCount should be unchanged when no condensation happened")
+}
+
+// TestPostCommit_EndedSession_FilesTouched_Condenses verifies that an ENDED
+// session with files touched and new content condenses on commit.
+func TestPostCommit_EndedSession_FilesTouched_Condenses(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-postcommit-ended-condenses"
+
+	// Initialize session and save a checkpoint
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Set phase to ENDED with files touched
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	now := time.Now()
+	state.Phase = session.PhaseEnded
+	state.EndedAt = &now
+	state.FilesTouched = []string{"test.txt"}
+	require.NoError(t, s.saveSessionState(state))
+
+	// Record shadow branch name
+	shadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+
+	// Create a commit with the checkpoint trailer
+	commitWithCheckpointTrailer(t, repo, dir, "a1b2c3d4e5f7")
+
+	// Run PostCommit
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	// Verify entire/sessions branch exists (condensation happened)
+	sessionsRef, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	require.NoError(t, err, "entire/sessions branch should exist after condensation")
+	assert.NotNil(t, sessionsRef)
+
+	// Verify old shadow branch is deleted after condensation
+	refName := plumbing.NewBranchReferenceName(shadowBranch)
+	_, err = repo.Reference(refName, true)
+	require.Error(t, err,
+		"shadow branch should be deleted after condensation for ENDED session")
+
+	// Verify StepCount was reset by condensation
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, state.StepCount,
+		"StepCount should be reset after condensation")
+
+	// Phase stays ENDED
+	assert.Equal(t, session.PhaseEnded, state.Phase,
+		"ENDED session should stay ENDED after condensation")
+}
+
+// TestPostCommit_EndedSession_FilesTouched_NoNewContent verifies that an ENDED
+// session with files touched but no new transcript content skips condensation
+// and updates BaseCommit via fallthrough.
+func TestPostCommit_EndedSession_FilesTouched_NoNewContent(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-postcommit-ended-no-content"
+
+	// Initialize session and save a checkpoint
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Set phase to ENDED with files touched but no new content
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	now := time.Now()
+	state.Phase = session.PhaseEnded
+	state.EndedAt = &now
+	state.FilesTouched = []string{"test.txt"}
+	state.CheckpointTranscriptStart = 2 // Transcript has exactly 2 lines
+	require.NoError(t, s.saveSessionState(state))
+
+	// Record shadow branch name and original StepCount
+	shadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	originalStepCount := state.StepCount
+
+	// Create a commit with the checkpoint trailer
+	commitWithCheckpointTrailer(t, repo, dir, "b2c3d4e5f6a2")
+
+	// Get new HEAD hash
+	head, err := repo.Head()
+	require.NoError(t, err)
+	newHeadHash := head.Hash().String()
+
+	// Run PostCommit
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	// Verify entire/sessions branch does NOT exist (no condensation)
+	_, err = repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	require.Error(t, err,
+		"entire/sessions branch should NOT exist when no new content")
+
+	// Shadow branch should still exist
+	refName := plumbing.NewBranchReferenceName(shadowBranch)
+	_, err = repo.Reference(refName, true)
+	require.NoError(t, err,
+		"shadow branch should still exist when no condensation happened")
+
+	// BaseCommit should be updated to new HEAD via fallthrough
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	assert.Equal(t, newHeadHash, state.BaseCommit,
+		"BaseCommit should be updated to new HEAD via fallthrough")
+
+	// StepCount unchanged
+	assert.Equal(t, originalStepCount, state.StepCount,
+		"StepCount should be unchanged when no condensation happened")
+}
+
+// TestPostCommit_EndedSession_NoFilesTouched_Discards verifies that an ENDED
+// session with no files touched takes the discard path, updating BaseCommit.
+func TestPostCommit_EndedSession_NoFilesTouched_Discards(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-postcommit-ended-discard"
+
+	// Initialize session and save a checkpoint
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Set phase to ENDED with no files touched
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	now := time.Now()
+	state.Phase = session.PhaseEnded
+	state.EndedAt = &now
+	state.FilesTouched = nil // No files touched
+	require.NoError(t, s.saveSessionState(state))
+
+	// Record original StepCount
+	originalStepCount := state.StepCount
+
+	// Create a commit with the checkpoint trailer
+	commitWithCheckpointTrailer(t, repo, dir, "c3d4e5f6a1b3")
+
+	// Get new HEAD hash
+	head, err := repo.Head()
+	require.NoError(t, err)
+	newHeadHash := head.Hash().String()
+
+	// Run PostCommit
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	// Verify entire/sessions branch does NOT exist (no condensation for discard path)
+	_, err = repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	require.Error(t, err,
+		"entire/sessions branch should NOT exist for discard path")
+
+	// BaseCommit should be updated to new HEAD
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	assert.Equal(t, newHeadHash, state.BaseCommit,
+		"BaseCommit should be updated to new HEAD on discard path")
+
+	// StepCount unchanged
+	assert.Equal(t, originalStepCount, state.StepCount,
+		"StepCount should be unchanged on discard path")
+
+	// Phase stays ENDED
+	assert.Equal(t, session.PhaseEnded, state.Phase,
+		"ENDED session should stay ENDED on discard path")
+}
+
+// TestPostCommit_ActiveCommitted_MigratesShadowBranch verifies that an
+// ACTIVE_COMMITTED session receiving another commit migrates the shadow branch
+// to the new HEAD and stays in ACTIVE_COMMITTED.
+func TestPostCommit_ActiveCommitted_MigratesShadowBranch(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-postcommit-ac-migrate"
+
+	// Initialize session and save a checkpoint
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Set phase to ACTIVE_COMMITTED
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	state.Phase = session.PhaseActiveCommitted
+	require.NoError(t, s.saveSessionState(state))
+
+	// Record original shadow branch name and BaseCommit
+	originalShadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	originalStepCount := state.StepCount
+
+	// Create a commit with the checkpoint trailer
+	commitWithCheckpointTrailer(t, repo, dir, "d4e5f6a1b2c4")
+
+	// Run PostCommit
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	// Verify phase stays ACTIVE_COMMITTED
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	assert.Equal(t, session.PhaseActiveCommitted, state.Phase,
+		"ACTIVE_COMMITTED session should stay ACTIVE_COMMITTED on subsequent commit")
+
+	// Verify BaseCommit updated to new HEAD
+	head, err := repo.Head()
+	require.NoError(t, err)
+	assert.Equal(t, head.Hash().String(), state.BaseCommit,
+		"BaseCommit should be updated to new HEAD after migration")
+
+	// Verify new shadow branch exists at new HEAD hash
+	newShadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	newRefName := plumbing.NewBranchReferenceName(newShadowBranch)
+	_, err = repo.Reference(newRefName, true)
+	require.NoError(t, err,
+		"new shadow branch should exist after migration")
+
+	// Verify original shadow branch no longer exists (was migrated/renamed)
+	oldRefName := plumbing.NewBranchReferenceName(originalShadowBranch)
+	_, err = repo.Reference(oldRefName, true)
+	require.Error(t, err,
+		"original shadow branch should no longer exist after migration")
+
+	// StepCount unchanged (no condensation)
+	assert.Equal(t, originalStepCount, state.StepCount,
+		"StepCount should be unchanged - no condensation for ACTIVE_COMMITTED")
+
+	// entire/sessions branch should NOT exist (no condensation)
+	_, err = repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	require.Error(t, err,
+		"entire/sessions branch should NOT exist - no condensation for ACTIVE_COMMITTED")
+}
+
+// TestPostCommit_CondensationFailure_EndedSession_PreservesShadowBranch verifies
+// that when condensation fails for an ENDED session with files touched,
+// BaseCommit is preserved (not updated).
+func TestPostCommit_CondensationFailure_EndedSession_PreservesShadowBranch(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-postcommit-condense-fail-ended"
+
+	// Initialize session and save a checkpoint
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Set phase to ENDED with files touched
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	now := time.Now()
+	state.Phase = session.PhaseEnded
+	state.EndedAt = &now
+	state.FilesTouched = []string{"test.txt"}
+	require.NoError(t, s.saveSessionState(state))
+
+	// Record original BaseCommit and StepCount
+	originalBaseCommit := state.BaseCommit
+	originalStepCount := state.StepCount
+
+	// Corrupt shadow branch by pointing it at ZeroHash
+	shadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	corruptRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(shadowBranch), plumbing.ZeroHash)
+	require.NoError(t, repo.Storer.SetReference(corruptRef))
+
+	// Create a commit with the checkpoint trailer
+	commitWithCheckpointTrailer(t, repo, dir, "e5f6a1b2c3d5")
+
+	// Run PostCommit
+	err = s.PostCommit()
+	require.NoError(t, err, "PostCommit should not return error even when condensation fails")
+
+	// Verify BaseCommit was NOT updated (condensation failed)
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	assert.Equal(t, originalBaseCommit, state.BaseCommit,
+		"BaseCommit should NOT be updated when condensation fails for ENDED session")
+	assert.Equal(t, originalStepCount, state.StepCount,
+		"StepCount should NOT be reset when condensation fails for ENDED session")
+
+	// Verify entire/sessions branch does NOT exist (condensation failed)
+	_, err = repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	require.Error(t, err,
+		"entire/sessions branch should NOT exist when condensation fails")
+
+	// Phase stays ENDED
+	assert.Equal(t, session.PhaseEnded, state.Phase,
+		"ENDED session should stay ENDED when condensation fails")
+}
+
 // setupSessionWithCheckpoint initializes a session and creates one checkpoint
 // on the shadow branch so there is content available for condensation.
 func setupSessionWithCheckpoint(t *testing.T, s *ManualCommitStrategy, _ *git.Repository, dir, sessionID string) {
