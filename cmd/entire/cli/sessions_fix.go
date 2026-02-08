@@ -47,7 +47,7 @@ A session is considered stuck if:
   - It is in ENDED phase with uncondensed checkpoint data on a shadow branch
 
 For each stuck session, you can choose to:
-  - Condense: Save session data to permanent storage (entire/sessions branch)
+  - Condense: Save session data to permanent storage (entire/checkpoints/v1 branch)
   - Discard: Remove the session state and shadow branch data
   - Skip: Leave the session as-is
 
