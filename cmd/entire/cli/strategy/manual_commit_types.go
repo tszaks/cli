@@ -5,6 +5,7 @@ import (
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/stringutil"
 )
 
 const (
@@ -13,7 +14,16 @@ const (
 
 	// logsOnlyScanLimit is the maximum number of commits to scan for logs-only points.
 	logsOnlyScanLimit = 50
+
+	// maxFirstPromptRunes is the maximum rune length for FirstPrompt stored in session state.
+	maxFirstPromptRunes = 100
 )
+
+// truncatePromptForStorage collapses whitespace and truncates a user prompt
+// for storage in FirstPrompt fields.
+func truncatePromptForStorage(prompt string) string {
+	return stringutil.TruncateRunes(stringutil.CollapseWhitespace(prompt), maxFirstPromptRunes, "...")
+}
 
 // SessionState represents the state of an active session.
 type SessionState struct {
@@ -30,6 +40,7 @@ type SessionState struct {
 	LastCheckpointID         id.CheckpointID `json:"last_checkpoint_id,omitempty"`         // Checkpoint ID from last condensation, reused for subsequent commits without new content
 	AgentType                agent.AgentType `json:"agent_type,omitempty"`                 // Agent type identifier (e.g., "Claude Code", "Cursor")
 	TranscriptPath           string          `json:"transcript_path,omitempty"`            // Path to the live transcript file (for mid-session commit detection)
+	FirstPrompt              string          `json:"first_prompt,omitempty"`               // First user prompt that started this session (truncated for display)
 
 	// Token usage tracking (accumulated across all checkpoints in this session)
 	TokenUsage *agent.TokenUsage `json:"token_usage,omitempty"`

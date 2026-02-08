@@ -1664,7 +1664,7 @@ func TestInitializeSession_BackfillsUnknownAgentType(t *testing.T) {
 	sessionID := "2026-02-06-backfill-agent-type"
 
 	// First call: initialize with correct type
-	if err := s.InitializeSession(sessionID, agent.AgentTypeClaudeCode, ""); err != nil {
+	if err := s.InitializeSession(sessionID, agent.AgentTypeClaudeCode, "", ""); err != nil {
 		t.Fatalf("InitializeSession() error = %v", err)
 	}
 
@@ -1679,7 +1679,7 @@ func TestInitializeSession_BackfillsUnknownAgentType(t *testing.T) {
 	}
 
 	// Second call with correct agent type should fix the "Agent" value
-	if err := s.InitializeSession(sessionID, agent.AgentTypeClaudeCode, ""); err != nil {
+	if err := s.InitializeSession(sessionID, agent.AgentTypeClaudeCode, "", ""); err != nil {
 		t.Fatalf("InitializeSession() second call error = %v", err)
 	}
 
@@ -2158,7 +2158,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 
 	// === PROMPT 1 START: Initialize session (simulates UserPromptSubmit) ===
 	// This must happen BEFORE agent makes any changes
-	if err := s.InitializeSession(sessionID, "Claude Code", ""); err != nil {
+	if err := s.InitializeSession(sessionID, "Claude Code", "", ""); err != nil {
 		t.Fatalf("InitializeSession() prompt 1 error = %v", err)
 	}
 
@@ -2204,7 +2204,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 
 	// === PROMPT 2 START: Initialize session again (simulates UserPromptSubmit) ===
 	// This captures the user's edits to user.go BEFORE the agent runs
-	if err := s.InitializeSession(sessionID, "Claude Code", ""); err != nil {
+	if err := s.InitializeSession(sessionID, "Claude Code", "", ""); err != nil {
 		t.Fatalf("InitializeSession() prompt 2 error = %v", err)
 	}
 

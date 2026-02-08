@@ -77,6 +77,7 @@ func sessionStateToStrategy(state *session.State) *SessionState {
 		TranscriptLinesAtStart:      state.TranscriptLinesAtStart,
 		TranscriptIdentifierAtStart: state.TranscriptIdentifierAtStart,
 		TranscriptPath:              state.TranscriptPath,
+		FirstPrompt:                 state.FirstPrompt,
 	}
 	// Convert PromptAttributions
 	for _, pa := range state.PromptAttributions {
@@ -125,6 +126,7 @@ func sessionStateFromStrategy(state *SessionState) *session.State {
 		TranscriptLinesAtStart:      state.TranscriptLinesAtStart,
 		TranscriptIdentifierAtStart: state.TranscriptIdentifierAtStart,
 		TranscriptPath:              state.TranscriptPath,
+		FirstPrompt:                 state.FirstPrompt,
 	}
 	// Convert PromptAttributions
 	for _, pa := range state.PromptAttributions {
