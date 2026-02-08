@@ -165,7 +165,7 @@ func saveCache(cache *VersionCache) error {
 }
 
 // fetchLatestVersion fetches the latest version from the GitHub API.
-// Returns a timeout-safe version check with a 1-second timeout.
+// Returns a timeout-safe version check using the configured HTTP timeout.
 func fetchLatestVersion() (string, error) {
 	// Create a context with timeout for the HTTP request
 	ctx, cancel := context.WithTimeout(context.Background(), httpTimeout)
