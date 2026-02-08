@@ -669,6 +669,183 @@ func TestPostCommit_CondensationFailure_EndedSession_PreservesShadowBranch(t *te
 		"ENDED session should stay ENDED when condensation fails")
 }
 
+// TestTurnEnd_ActiveCommitted_CondensesSession verifies that HandleTurnEnd
+// with ActionCondense (from ACTIVE_COMMITTED → IDLE) condenses the session
+// to entire/sessions and cleans up the shadow branch.
+func TestTurnEnd_ActiveCommitted_CondensesSession(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-turnend-condenses"
+
+	// Initialize session and save a checkpoint so there is shadow branch content
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Simulate PostCommit: create a commit with trailer and transition to ACTIVE_COMMITTED
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	state.Phase = session.PhaseActive
+	require.NoError(t, s.saveSessionState(state))
+
+	commitWithCheckpointTrailer(t, repo, dir, "a1b2c3d4e5f6")
+
+	// Run PostCommit so phase transitions to ACTIVE_COMMITTED and PendingCheckpointID is set
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	require.Equal(t, session.PhaseActiveCommitted, state.Phase)
+
+	// Now simulate the TurnEnd transition that the handler dispatches
+	result := session.Transition(state.Phase, session.EventTurnEnd, session.TransitionContext{})
+	remaining := session.ApplyCommonActions(state, result)
+
+	// Verify the state machine emits ActionCondense
+	require.Contains(t, remaining, session.ActionCondense,
+		"ACTIVE_COMMITTED + TurnEnd should emit ActionCondense")
+
+	// Record shadow branch name BEFORE HandleTurnEnd (BaseCommit may change)
+	shadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+
+	// Call HandleTurnEnd with the remaining actions
+	err = s.HandleTurnEnd(state, remaining)
+	require.NoError(t, err)
+
+	// Verify condensation happened: entire/sessions branch should exist
+	sessionsRef, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	require.NoError(t, err, "entire/sessions branch should exist after turn-end condensation")
+	assert.NotNil(t, sessionsRef)
+
+	// Verify shadow branch IS deleted after condensation
+	refName := plumbing.NewBranchReferenceName(shadowBranch)
+	_, err = repo.Reference(refName, true)
+	require.Error(t, err,
+		"shadow branch should be deleted after turn-end condensation")
+
+	// Verify StepCount was reset by condensation
+	assert.Equal(t, 0, state.StepCount,
+		"StepCount should be reset after condensation")
+
+	// Verify phase is IDLE (set by ApplyCommonActions above)
+	assert.Equal(t, session.PhaseIdle, state.Phase,
+		"phase should be IDLE after TurnEnd")
+}
+
+// TestTurnEnd_ActiveCommitted_CondensationFailure_PreservesShadowBranch verifies
+// that when HandleTurnEnd condensation fails, BaseCommit is NOT updated and
+// the shadow branch is preserved.
+func TestTurnEnd_ActiveCommitted_CondensationFailure_PreservesShadowBranch(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-turnend-condense-fail"
+
+	// Initialize session and save a checkpoint
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Simulate PostCommit: transition to ACTIVE_COMMITTED
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	state.Phase = session.PhaseActive
+	require.NoError(t, s.saveSessionState(state))
+
+	commitWithCheckpointTrailer(t, repo, dir, "b2c3d4e5f6a1")
+
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	require.Equal(t, session.PhaseActiveCommitted, state.Phase)
+
+	// Record original BaseCommit before corruption
+	originalBaseCommit := state.BaseCommit
+	originalStepCount := state.StepCount
+
+	// Corrupt shadow branch by pointing it at ZeroHash
+	shadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	corruptRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(shadowBranch), plumbing.ZeroHash)
+	require.NoError(t, repo.Storer.SetReference(corruptRef))
+
+	// Run the transition
+	result := session.Transition(state.Phase, session.EventTurnEnd, session.TransitionContext{})
+	remaining := session.ApplyCommonActions(state, result)
+
+	// Call HandleTurnEnd — condensation should fail silently
+	err = s.HandleTurnEnd(state, remaining)
+	require.NoError(t, err, "HandleTurnEnd should not return error even when condensation fails")
+
+	// BaseCommit should NOT be updated (condensation failed)
+	assert.Equal(t, originalBaseCommit, state.BaseCommit,
+		"BaseCommit should NOT be updated when condensation fails")
+	assert.Equal(t, originalStepCount, state.StepCount,
+		"StepCount should NOT be reset when condensation fails")
+
+	// entire/sessions branch should NOT exist (condensation failed)
+	_, err = repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	assert.Error(t, err,
+		"entire/sessions branch should NOT exist when condensation fails")
+}
+
+// TestTurnEnd_Active_NoActions verifies that HandleTurnEnd with no actions
+// is a no-op (normal ACTIVE → IDLE transition has no strategy-specific actions).
+func TestTurnEnd_Active_NoActions(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-turnend-no-actions"
+
+	// Initialize session and save a checkpoint
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Set phase to ACTIVE (normal turn, no commit during turn)
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	state.Phase = session.PhaseActive
+	require.NoError(t, s.saveSessionState(state))
+
+	originalBaseCommit := state.BaseCommit
+	originalStepCount := state.StepCount
+
+	// ACTIVE + TurnEnd → IDLE with no strategy-specific actions
+	result := session.Transition(state.Phase, session.EventTurnEnd, session.TransitionContext{})
+	remaining := session.ApplyCommonActions(state, result)
+
+	// Verify no strategy-specific actions for ACTIVE → IDLE
+	assert.Empty(t, remaining,
+		"ACTIVE + TurnEnd should not emit strategy-specific actions")
+
+	// Call HandleTurnEnd with empty actions — should be a no-op
+	err = s.HandleTurnEnd(state, remaining)
+	require.NoError(t, err)
+
+	// Verify state is unchanged
+	assert.Equal(t, originalBaseCommit, state.BaseCommit,
+		"BaseCommit should be unchanged for no-op turn end")
+	assert.Equal(t, originalStepCount, state.StepCount,
+		"StepCount should be unchanged for no-op turn end")
+
+	// Shadow branch should still exist (not cleaned up)
+	shadowBranch := getShadowBranchNameForCommit(originalBaseCommit, state.WorktreeID)
+	refName := plumbing.NewBranchReferenceName(shadowBranch)
+	_, err = repo.Reference(refName, true)
+	assert.NoError(t, err,
+		"shadow branch should still exist after no-op turn end")
+}
+
 // setupSessionWithCheckpoint initializes a session and creates one checkpoint
 // on the shadow branch so there is content available for condensation.
 func setupSessionWithCheckpoint(t *testing.T, s *ManualCommitStrategy, _ *git.Repository, dir, sessionID string) {

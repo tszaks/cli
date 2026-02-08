@@ -748,7 +748,18 @@ func transitionSessionTurnEnd(sessionID string) {
 		return
 	}
 	result := session.Transition(turnState.Phase, session.EventTurnEnd, session.TransitionContext{})
-	session.ApplyCommonActions(turnState, result)
+	remaining := session.ApplyCommonActions(turnState, result)
+
+	// Dispatch strategy-specific actions (e.g., ActionCondense for ACTIVE_COMMITTED → IDLE)
+	if len(remaining) > 0 {
+		strat := GetStrategy()
+		if handler, ok := strat.(strategy.TurnEndHandler); ok {
+			if err := handler.HandleTurnEnd(turnState, remaining); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: turn-end action dispatch failed: %v\n", err)
+			}
+		}
+	}
+
 	if updateErr := strategy.SaveSessionState(turnState); updateErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to update session phase on turn end: %v\n", updateErr)
 	}

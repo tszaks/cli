@@ -1208,6 +1208,105 @@ func (s *ManualCommitStrategy) getLastPrompt(repo *git.Repository, state *Sessio
 	return sessionData.Prompts[len(sessionData.Prompts)-1]
 }
 
+// HandleTurnEnd dispatches strategy-specific actions emitted when an agent turn ends.
+// This handles the ACTIVE_COMMITTED → IDLE transition where ActionCondense is deferred
+// from PostCommit (agent was still active during the commit).
+//
+//nolint:unparam // error return required by interface but hooks must return nil
+func (s *ManualCommitStrategy) HandleTurnEnd(state *SessionState, actions []session.Action) error {
+	if len(actions) == 0 {
+		return nil
+	}
+
+	logCtx := logging.WithComponent(context.Background(), "checkpoint")
+
+	for _, action := range actions {
+		switch action {
+		case session.ActionCondense:
+			s.handleTurnEndCondense(logCtx, state)
+		case session.ActionCondenseIfFilesTouched, session.ActionDiscardIfNoFiles,
+			session.ActionMigrateShadowBranch, session.ActionWarnStaleSession:
+			// Not expected at turn-end; log for diagnostics.
+			logging.Debug(logCtx, "turn-end: unexpected action",
+				slog.String("action", action.String()),
+				slog.String("session_id", state.SessionID),
+			)
+		case session.ActionClearEndedAt, session.ActionUpdateLastInteraction:
+			// Handled by session.ApplyCommonActions before this is called.
+		}
+	}
+	return nil
+}
+
+// handleTurnEndCondense performs deferred condensation at turn end.
+func (s *ManualCommitStrategy) handleTurnEndCondense(logCtx context.Context, state *SessionState) {
+	repo, err := OpenRepository()
+	if err != nil {
+		logging.Warn(logCtx, "turn-end condense: failed to open repo",
+			slog.String("error", err.Error()))
+		return
+	}
+
+	head, err := repo.Head()
+	if err != nil {
+		logging.Warn(logCtx, "turn-end condense: failed to get HEAD",
+			slog.String("error", err.Error()))
+		return
+	}
+
+	// Derive checkpoint ID from PendingCheckpointID (set during PostCommit),
+	// or generate a new one if not set.
+	var checkpointID id.CheckpointID
+	if state.PendingCheckpointID != "" {
+		if cpID, parseErr := id.NewCheckpointID(state.PendingCheckpointID); parseErr == nil {
+			checkpointID = cpID
+		}
+	}
+	if checkpointID.IsEmpty() {
+		cpID, genErr := id.Generate()
+		if genErr != nil {
+			logging.Warn(logCtx, "turn-end condense: failed to generate checkpoint ID",
+				slog.String("error", genErr.Error()))
+			return
+		}
+		checkpointID = cpID
+	}
+
+	// Check if there is actually new content to condense.
+	// Fail-open: if content check errors, assume new content so we don't silently skip.
+	hasNew, contentErr := s.sessionHasNewContent(repo, state)
+	if contentErr != nil {
+		hasNew = true
+		logging.Debug(logCtx, "turn-end condense: error checking content, assuming new",
+			slog.String("session_id", state.SessionID),
+			slog.String("error", contentErr.Error()))
+	}
+
+	if !hasNew {
+		logging.Debug(logCtx, "turn-end condense: no new content",
+			slog.String("session_id", state.SessionID))
+		return
+	}
+
+	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
+	shadowBranchesToDelete := map[string]struct{}{}
+
+	s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete)
+
+	// Delete shadow branches after condensation
+	for branchName := range shadowBranchesToDelete {
+		if err := deleteShadowBranch(repo, branchName); err != nil {
+			fmt.Fprintf(os.Stderr, "[entire] Warning: failed to clean up %s: %v\n", branchName, err)
+		} else {
+			fmt.Fprintf(os.Stderr, "[entire] Cleaned up shadow branch: %s\n", branchName)
+			logging.Info(logCtx, "shadow branch deleted (turn-end)",
+				slog.String("strategy", "manual-commit"),
+				slog.String("shadow_branch", branchName),
+			)
+		}
+	}
+}
+
 // hasOverlappingFiles checks if any file in stagedFiles appears in filesTouched.
 func hasOverlappingFiles(stagedFiles, filesTouched []string) bool {
 	touchedSet := make(map[string]bool)
