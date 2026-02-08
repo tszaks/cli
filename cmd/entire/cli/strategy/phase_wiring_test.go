@@ -21,7 +21,7 @@ func TestInitializeSession_SetsPhaseActive(t *testing.T) {
 
 	s := &ManualCommitStrategy{}
 
-	err := s.InitializeSession("test-session-phase-1", "Claude Code", "")
+	err := s.InitializeSession("test-session-phase-1", "Claude Code", "", "")
 	require.NoError(t, err)
 
 	state, err := s.loadSessionState("test-session-phase-1")
@@ -43,7 +43,7 @@ func TestInitializeSession_IdleToActive(t *testing.T) {
 	s := &ManualCommitStrategy{}
 
 	// First call initializes
-	err := s.InitializeSession("test-session-idle", "Claude Code", "")
+	err := s.InitializeSession("test-session-idle", "Claude Code", "", "")
 	require.NoError(t, err)
 
 	// Manually set to IDLE (simulating post-Stop state)
@@ -55,7 +55,7 @@ func TestInitializeSession_IdleToActive(t *testing.T) {
 	require.NoError(t, err)
 
 	// Second call should transition IDLE → ACTIVE
-	err = s.InitializeSession("test-session-idle", "Claude Code", "")
+	err = s.InitializeSession("test-session-idle", "Claude Code", "", "")
 	require.NoError(t, err)
 
 	state, err = s.loadSessionState("test-session-idle")
@@ -73,7 +73,7 @@ func TestInitializeSession_ActiveToActive_CtrlCRecovery(t *testing.T) {
 	s := &ManualCommitStrategy{}
 
 	// First call
-	err := s.InitializeSession("test-session-ctrlc", "Claude Code", "")
+	err := s.InitializeSession("test-session-ctrlc", "Claude Code", "", "")
 	require.NoError(t, err)
 
 	state, err := s.loadSessionState("test-session-ctrlc")
@@ -88,7 +88,7 @@ func TestInitializeSession_ActiveToActive_CtrlCRecovery(t *testing.T) {
 	time.Sleep(time.Millisecond)
 
 	// Second call (Ctrl-C recovery) - should stay ACTIVE with updated time
-	err = s.InitializeSession("test-session-ctrlc", "Claude Code", "")
+	err = s.InitializeSession("test-session-ctrlc", "Claude Code", "", "")
 	require.NoError(t, err)
 
 	state, err = s.loadSessionState("test-session-ctrlc")
@@ -110,7 +110,7 @@ func TestInitializeSession_EndedToActive(t *testing.T) {
 	s := &ManualCommitStrategy{}
 
 	// First call initializes
-	err := s.InitializeSession("test-session-ended-reenter", "Claude Code", "")
+	err := s.InitializeSession("test-session-ended-reenter", "Claude Code", "", "")
 	require.NoError(t, err)
 
 	// Manually set to ENDED
@@ -123,7 +123,7 @@ func TestInitializeSession_EndedToActive(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call InitializeSession again - should transition ENDED → ACTIVE
-	err = s.InitializeSession("test-session-ended-reenter", "Claude Code", "")
+	err = s.InitializeSession("test-session-ended-reenter", "Claude Code", "", "")
 	require.NoError(t, err)
 
 	state, err = s.loadSessionState("test-session-ended-reenter")
@@ -144,7 +144,7 @@ func TestInitializeSession_ActiveCommittedToActive(t *testing.T) {
 	s := &ManualCommitStrategy{}
 
 	// First call initializes
-	err := s.InitializeSession("test-session-ac-recovery", "Claude Code", "")
+	err := s.InitializeSession("test-session-ac-recovery", "Claude Code", "", "")
 	require.NoError(t, err)
 
 	// Manually set to ACTIVE_COMMITTED
@@ -155,7 +155,7 @@ func TestInitializeSession_ActiveCommittedToActive(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call InitializeSession again - should transition ACTIVE_COMMITTED → ACTIVE
-	err = s.InitializeSession("test-session-ac-recovery", "Claude Code", "")
+	err = s.InitializeSession("test-session-ac-recovery", "Claude Code", "", "")
 	require.NoError(t, err)
 
 	state, err = s.loadSessionState("test-session-ac-recovery")
@@ -173,7 +173,7 @@ func TestInitializeSession_EmptyPhaseBackwardCompat(t *testing.T) {
 	s := &ManualCommitStrategy{}
 
 	// First call initializes
-	err := s.InitializeSession("test-session-empty-phase", "Claude Code", "")
+	err := s.InitializeSession("test-session-empty-phase", "Claude Code", "", "")
 	require.NoError(t, err)
 
 	// Manually clear the phase (simulating pre-state-machine file)
@@ -184,7 +184,7 @@ func TestInitializeSession_EmptyPhaseBackwardCompat(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call again - empty phase treated as IDLE → should go to ACTIVE
-	err = s.InitializeSession("test-session-empty-phase", "Claude Code", "")
+	err = s.InitializeSession("test-session-empty-phase", "Claude Code", "", "")
 	require.NoError(t, err)
 
 	state, err = s.loadSessionState("test-session-empty-phase")
