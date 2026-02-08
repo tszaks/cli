@@ -747,8 +747,7 @@ func transitionSessionTurnEnd(sessionID string) {
 	if turnState == nil {
 		return
 	}
-	result := session.Transition(turnState.Phase, session.EventTurnEnd, session.TransitionContext{})
-	remaining := session.ApplyCommonActions(turnState, result)
+	remaining := strategy.TransitionAndLog(turnState, session.EventTurnEnd, session.TransitionContext{})
 
 	// Dispatch strategy-specific actions (e.g., ActionCondense for ACTIVE_COMMITTED → IDLE)
 	if len(remaining) > 0 {
@@ -775,8 +774,7 @@ func markSessionEnded(sessionID string) error {
 		return nil // No state file, nothing to update
 	}
 
-	result := session.Transition(state.Phase, session.EventSessionStop, session.TransitionContext{})
-	session.ApplyCommonActions(state, result)
+	strategy.TransitionAndLog(state, session.EventSessionStop, session.TransitionContext{})
 
 	now := time.Now()
 	state.EndedAt = &now
