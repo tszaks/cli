@@ -118,12 +118,28 @@ func ListSessionStates() ([]*SessionState, error) {
 }
 
 // FindMostRecentSession returns the session ID of the most recently interacted session
-// (by LastInteractionTime), regardless of phase. Returns empty string if no sessions exist.
-// This replaces paths.ReadCurrentSession() for callers that need "the current session".
+// (by LastInteractionTime) in the current worktree. Returns empty string if no sessions exist.
+// Scoping to the current worktree prevents cross-worktree pollution in log routing.
+// Falls back to unfiltered search if the worktree path can't be determined.
 func FindMostRecentSession() string {
 	states, err := ListSessionStates()
 	if err != nil || len(states) == 0 {
 		return ""
+	}
+
+	// Scope to current worktree to prevent cross-worktree pollution.
+	worktreePath, wpErr := GetWorktreePath()
+	if wpErr == nil && worktreePath != "" {
+		var filtered []*SessionState
+		for _, s := range states {
+			if s.WorktreePath == worktreePath {
+				filtered = append(filtered, s)
+			}
+		}
+		if len(filtered) > 0 {
+			states = filtered
+		}
+		// If no sessions match the worktree, fall back to all sessions
 	}
 
 	var best *SessionState
