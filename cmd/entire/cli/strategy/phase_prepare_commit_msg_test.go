@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/session"
@@ -28,7 +29,7 @@ func TestPrepareCommitMsg_AmendPreservesExistingTrailer(t *testing.T) {
 	s := &ManualCommitStrategy{}
 
 	sessionID := "test-session-amend-preserve"
-	err := s.InitializeSession(sessionID, "Claude Code", "")
+	err := s.InitializeSession(sessionID, agent.AgentTypeClaudeCode, "/tmp/transcript.jsonl", "")
 	require.NoError(t, err)
 
 	// Write a commit message file that already has the trailer
@@ -63,7 +64,7 @@ func TestPrepareCommitMsg_AmendRestoresTrailerFromPendingCheckpointID(t *testing
 	s := &ManualCommitStrategy{}
 
 	sessionID := "test-session-amend-restore"
-	err := s.InitializeSession(sessionID, "Claude Code", "")
+	err := s.InitializeSession(sessionID, agent.AgentTypeClaudeCode, "/tmp/transcript.jsonl", "")
 	require.NoError(t, err)
 
 	// Simulate state after condensation: PendingCheckpointID is set
@@ -104,7 +105,7 @@ func TestPrepareCommitMsg_AmendNoTrailerNoPendingID(t *testing.T) {
 	s := &ManualCommitStrategy{}
 
 	sessionID := "test-session-amend-no-id"
-	err := s.InitializeSession(sessionID, "Claude Code", "")
+	err := s.InitializeSession(sessionID, agent.AgentTypeClaudeCode, "/tmp/transcript.jsonl", "")
 	require.NoError(t, err)
 
 	// Verify PendingCheckpointID is empty (default)
@@ -146,7 +147,7 @@ func setupSessionWithPendingCheckpoint(t *testing.T, sessionID, pendingID string
 	t.Chdir(dir)
 
 	s := &ManualCommitStrategy{}
-	err := s.InitializeSession(sessionID, "Claude Code", "")
+	err := s.InitializeSession(sessionID, agent.AgentTypeClaudeCode, "/tmp/transcript.jsonl", "")
 	require.NoError(t, err)
 
 	createShadowBranchWithTranscript(t, dir, sessionID)
