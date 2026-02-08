@@ -1384,6 +1384,49 @@ func TestWriteCommitted_SessionWithNoPrompts(t *testing.T) {
 	}
 }
 
+// TestWriteCommitted_SessionWithSummary verifies that a non-nil Summary
+// in WriteCommittedOptions is persisted in the session-level metadata.json.
+// Regression test for ENT-243 where Summary was omitted from the struct literal.
+func TestWriteCommitted_SessionWithSummary(t *testing.T) {
+	repo, _ := setupBranchTestRepo(t)
+	store := NewGitStore(repo)
+	checkpointID := id.MustCheckpointID("aabbccddeeff")
+
+	summary := &Summary{
+		Intent:  "User wanted to fix a bug",
+		Outcome: "Bug was fixed",
+	}
+
+	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		CheckpointID:     checkpointID,
+		SessionID:        "summary-session",
+		Strategy:         "manual-commit",
+		Transcript:       []byte(`{"test": true}`),
+		CheckpointsCount: 1,
+		AuthorName:       "Test Author",
+		AuthorEmail:      "test@example.com",
+		Summary:          summary,
+	})
+	if err != nil {
+		t.Fatalf("WriteCommitted() error = %v", err)
+	}
+
+	content, err := store.ReadSessionContent(context.Background(), checkpointID, 0)
+	if err != nil {
+		t.Fatalf("ReadSessionContent() error = %v", err)
+	}
+
+	if content.Metadata.Summary == nil {
+		t.Fatal("Summary should not be nil")
+	}
+	if content.Metadata.Summary.Intent != "User wanted to fix a bug" {
+		t.Errorf("Summary.Intent = %q, want %q", content.Metadata.Summary.Intent, "User wanted to fix a bug")
+	}
+	if content.Metadata.Summary.Outcome != "Bug was fixed" {
+		t.Errorf("Summary.Outcome = %q, want %q", content.Metadata.Summary.Outcome, "Bug was fixed")
+	}
+}
+
 // TestWriteCommitted_SessionWithNoContext verifies that a session can be
 // written without context and still be read correctly.
 func TestWriteCommitted_SessionWithNoContext(t *testing.T) {
