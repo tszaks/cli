@@ -598,16 +598,18 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		// Run the state machine transition
 		remaining := TransitionAndLog(state, session.EventGitCommit, transitionCtx)
 
-		// Dispatch strategy-specific actions
-		condensed := false
-		hasPendingMigration := false
+		// Dispatch strategy-specific actions.
+		// Each branch handles its own BaseCommit update so there is no
+		// fallthrough conditional at the end. On condensation failure,
+		// BaseCommit is intentionally NOT updated to preserve access to
+		// the shadow branch (which is named after the old BaseCommit).
 		for _, action := range remaining {
 			switch action {
 			case session.ActionCondense:
 				if hasNew {
-					if s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete) {
-						condensed = true
-					}
+					s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete)
+					// condenseAndUpdateState updates BaseCommit on success.
+					// On failure, BaseCommit is preserved so the shadow branch remains accessible.
 				} else {
 					// No new content to condense — just update BaseCommit
 					s.updateBaseCommitIfChanged(logCtx, state, newHead)
@@ -617,9 +619,10 @@ func (s *ManualCommitStrategy) PostCommit() error {
 				// but hasNew is an additional content-level check (transcript has
 				// new content beyond what was previously condensed).
 				if len(state.FilesTouched) > 0 && hasNew {
-					if s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete) {
-						condensed = true
-					}
+					s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete)
+					// On failure, BaseCommit is preserved (same as ActionCondense).
+				} else {
+					s.updateBaseCommitIfChanged(logCtx, state, newHead)
 				}
 			case session.ActionDiscardIfNoFiles:
 				if len(state.FilesTouched) == 0 {
@@ -627,20 +630,14 @@ func (s *ManualCommitStrategy) PostCommit() error {
 						slog.String("session_id", state.SessionID),
 					)
 				}
+				s.updateBaseCommitIfChanged(logCtx, state, newHead)
 			case session.ActionMigrateShadowBranch:
-				// Deferred to pass 2 so condensation reads the old shadow branch first
+				// Deferred to pass 2 so condensation reads the old shadow branch first.
+				// Migration updates BaseCommit as part of the rename.
 				pendingMigrations = append(pendingMigrations, pendingMigration{state: state})
-				hasPendingMigration = true
 			case session.ActionWarnStaleSession, session.ActionClearEndedAt, session.ActionUpdateLastInteraction:
 				// Handled by session.ApplyCommonActions above
 			}
-		}
-
-		// If not condensed and no pending migration, update BaseCommit for the new HEAD.
-		// Sessions with pending migrations get their BaseCommit updated in pass 2
-		// (migrateShadowBranchIfNeeded needs the old BaseCommit to find the branch to rename).
-		if !condensed && !hasPendingMigration {
-			s.updateBaseCommitIfChanged(logCtx, state, newHead)
 		}
 
 		// Save the updated state
@@ -700,12 +697,16 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 	head *plumbing.Reference,
 	shadowBranchName string,
 	shadowBranchesToDelete map[string]struct{},
-) bool {
+) {
 	result, err := s.CondenseSession(repo, checkpointID, state)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[entire] Warning: condensation failed for session %s: %v\n",
 			state.SessionID, err)
-		return false
+		logging.Warn(logCtx, "post-commit: condensation failed",
+			slog.String("session_id", state.SessionID),
+			slog.String("error", err.Error()),
+		)
+		return
 	}
 
 	// Track this shadow branch for cleanup
@@ -738,8 +739,6 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 		slog.Int("checkpoints_condensed", result.CheckpointsCount),
 		slog.Int("transcript_lines", result.TotalTranscriptLines),
 	)
-
-	return true
 }
 
 // updateBaseCommitIfChanged updates BaseCommit to newHead if it changed.
