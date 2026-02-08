@@ -45,7 +45,7 @@ func NewRootCmd() *cobra.Command {
 		},
 		PersistentPostRun: func(cmd *cobra.Command, _ []string) {
 			// Skip for hidden commands
-			if cmd.Name() == "__send_analytics" {
+			if cmd.Hidden() {
 				return
 			}
 
