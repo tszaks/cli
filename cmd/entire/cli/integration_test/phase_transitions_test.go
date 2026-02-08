@@ -19,11 +19,12 @@ import (
 // When the user commits while the agent is in the ACTIVE phase (between
 // SimulateUserPromptSubmit and SimulateStop), the session should transition to
 // ACTIVE_COMMITTED. This defers condensation because the agent is still working.
-// When the agent finishes its turn (SimulateStop), the session transitions to IDLE.
+// When the agent finishes its turn (SimulateStop), the deferred condensation fires
+// and the session transitions to IDLE with metadata persisted to entire/sessions.
 //
 // State machine transitions tested:
 //   - ACTIVE + GitCommit -> ACTIVE_COMMITTED (defer condensation, migrate shadow branch)
-//   - ACTIVE_COMMITTED + TurnEnd -> IDLE
+//   - ACTIVE_COMMITTED + TurnEnd -> IDLE + ActionCondense (deferred condensation fires)
 func TestShadow_CommitBeforeStop(t *testing.T) {
 	t.Parallel()
 
@@ -190,41 +191,14 @@ func TestShadow_CommitBeforeStop(t *testing.T) {
 	}
 	t.Logf("Session phase after stop: %s (StepCount: %d)", state.Phase, state.StepCount)
 
-	// ========================================
-	// Phase 5: Verify condensation eventually happens on next commit
-	// ========================================
-	t.Log("Phase 5: Verify condensation on next commit cycle")
-
-	// Start a new turn so the session has content for next commit
-	submitWithTranscriptPath(sess.ID, sess.TranscriptPath)
-
-	env.WriteFile("extra.go", "package main\n\nfunc Extra() {}\n")
-	sess.TranscriptBuilder = NewTranscriptBuilder()
-	sess.CreateTranscript("Create extra", []FileChange{
-		{Path: "extra.go", Content: "package main\n\nfunc Extra() {}\n"},
-	})
-	if err := env.SimulateStop(sess.ID, sess.TranscriptPath); err != nil {
-		t.Fatalf("SimulateStop (second round) failed: %v", err)
-	}
-
-	// Now commit -- this should trigger condensation (IDLE + GitCommit -> condense)
-	env.GitCommitWithShadowHooks("Add extra function", "extra.go")
-
-	// Verify condensation happened
-	state, err = env.GetSessionState(sess.ID)
-	if err != nil {
-		t.Fatalf("GetSessionState failed: %v", err)
-	}
-	if state == nil {
-		t.Fatal("Session state should exist")
-	}
+	// Deferred condensation should have fired during TurnEnd (ACTIVE_COMMITTED → IDLE).
+	// Verify StepCount was reset and metadata was persisted to entire/sessions.
 	if state.StepCount != 0 {
-		t.Errorf("StepCount should be 0 after condensation, got %d", state.StepCount)
+		t.Errorf("StepCount should be 0 after TurnEnd condensation, got %d", state.StepCount)
 	}
 
-	// Verify data exists on entire/sessions branch
 	if !env.BranchExists(paths.MetadataBranchName) {
-		t.Error("entire/sessions branch should exist after condensation")
+		t.Fatal("entire/sessions branch should exist after TurnEnd condensation")
 	}
 	latestCheckpointID := env.TryGetLatestCheckpointID()
 	if latestCheckpointID != "" {
