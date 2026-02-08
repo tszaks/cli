@@ -747,7 +747,19 @@ func transitionSessionTurnEnd(sessionID string) {
 	if turnState == nil {
 		return
 	}
-	strategy.TransitionAndLog(turnState, session.EventTurnEnd, session.TransitionContext{})
+	result := session.Transition(turnState.Phase, session.EventTurnEnd, session.TransitionContext{})
+	remaining := session.ApplyCommonActions(turnState, result)
+
+	// Dispatch strategy-specific actions (e.g., ActionCondense for ACTIVE_COMMITTED → IDLE)
+	if len(remaining) > 0 {
+		strat := GetStrategy()
+		if handler, ok := strat.(strategy.TurnEndHandler); ok {
+			if err := handler.HandleTurnEnd(turnState, remaining); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: turn-end action dispatch failed: %v\n", err)
+			}
+		}
+	}
+
 	if updateErr := strategy.SaveSessionState(turnState); updateErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to update session phase on turn end: %v\n", updateErr)
 	}
@@ -763,7 +775,8 @@ func markSessionEnded(sessionID string) error {
 		return nil // No state file, nothing to update
 	}
 
-	strategy.TransitionAndLog(state, session.EventSessionStop, session.TransitionContext{})
+	result := session.Transition(state.Phase, session.EventSessionStop, session.TransitionContext{})
+	session.ApplyCommonActions(state, result)
 
 	now := time.Now()
 	state.EndedAt = &now

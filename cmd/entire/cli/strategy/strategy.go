@@ -11,6 +11,7 @@ import (
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/session"
 )
 
 // ErrNoMetadata is returned when a commit does not have an Entire metadata trailer.
@@ -458,6 +459,18 @@ type PrePushHandler interface {
 	// The remote parameter is the name of the remote being pushed to.
 	// Should return nil on errors to not block pushes (log warnings to stderr).
 	PrePush(remote string) error
+}
+
+// TurnEndHandler is an optional interface for strategies that need to
+// handle deferred actions when an agent turn ends.
+// For example, manual-commit strategy uses this to condense session data
+// that was deferred during ACTIVE_COMMITTED → IDLE transitions.
+type TurnEndHandler interface {
+	// HandleTurnEnd dispatches strategy-specific actions emitted by the
+	// ACTIVE_COMMITTED → IDLE (or other) turn-end transition.
+	// The state has already been updated by ApplyCommonActions; the caller
+	// saves it after this method returns.
+	HandleTurnEnd(state *session.State, actions []session.Action) error
 }
 
 // LogsOnlyRestorer is an optional interface for strategies that support
