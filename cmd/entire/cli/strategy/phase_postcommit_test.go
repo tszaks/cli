@@ -669,6 +669,171 @@ func TestPostCommit_CondensationFailure_EndedSession_PreservesShadowBranch(t *te
 		"ENDED session should stay ENDED when condensation fails")
 }
 
+// TestPostCommit_ActiveSession_SetsPendingCheckpointID verifies that PostCommit
+// stores PendingCheckpointID when transitioning ACTIVE → ACTIVE_COMMITTED.
+// This ensures HandleTurnEnd can reuse the same checkpoint ID that's in the
+// commit trailer, rather than generating a mismatched one.
+func TestPostCommit_ActiveSession_SetsPendingCheckpointID(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-postcommit-pending-cpid"
+
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Set phase to ACTIVE (agent mid-turn)
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	state.Phase = session.PhaseActive
+	state.PendingCheckpointID = "" // Ensure it starts empty
+	require.NoError(t, s.saveSessionState(state))
+
+	// Create a commit with a known checkpoint ID
+	commitWithCheckpointTrailer(t, repo, dir, "a1b2c3d4e5f6")
+
+	// Run PostCommit
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	// Verify phase transitioned to ACTIVE_COMMITTED
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	require.Equal(t, session.PhaseActiveCommitted, state.Phase)
+
+	// Verify PendingCheckpointID was stored from the commit trailer
+	assert.Equal(t, "a1b2c3d4e5f6", state.PendingCheckpointID,
+		"PendingCheckpointID should be set to the commit's checkpoint ID for deferred condensation")
+}
+
+// TestTurnEnd_ActiveCommitted_ReusesCheckpointID verifies that HandleTurnEnd
+// uses PendingCheckpointID (set by PostCommit) rather than generating a new one.
+// This ensures the condensed metadata matches the commit trailer.
+func TestTurnEnd_ActiveCommitted_ReusesCheckpointID(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-turnend-reuses-cpid"
+
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Simulate PostCommit: transition to ACTIVE_COMMITTED with PendingCheckpointID
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	state.Phase = session.PhaseActive
+	require.NoError(t, s.saveSessionState(state))
+
+	commitWithCheckpointTrailer(t, repo, dir, "d4e5f6a1b2c3")
+
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	require.Equal(t, "d4e5f6a1b2c3", state.PendingCheckpointID)
+
+	// Run TurnEnd
+	result := session.Transition(state.Phase, session.EventTurnEnd, session.TransitionContext{})
+	remaining := session.ApplyCommonActions(state, result)
+
+	err = s.HandleTurnEnd(state, remaining)
+	require.NoError(t, err)
+
+	// Verify the condensed checkpoint ID matches the commit trailer
+	// The LastCheckpointID is set by condenseAndUpdateState on success
+	assert.Equal(t, id.CheckpointID("d4e5f6a1b2c3"), state.LastCheckpointID,
+		"condensation should use PendingCheckpointID, not generate a new one")
+}
+
+// TestTurnEnd_ConcurrentSession_PreservesShadowBranch verifies that
+// HandleTurnEnd does NOT delete the shadow branch when another active
+// session shares it.
+func TestTurnEnd_ConcurrentSession_PreservesShadowBranch(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID1 := "test-turnend-concurrent-1"
+	sessionID2 := "test-turnend-concurrent-2"
+
+	// Initialize first session and save a checkpoint
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID1)
+
+	// Get worktree info from first session
+	state1, err := s.loadSessionState(sessionID1)
+	require.NoError(t, err)
+	worktreePath := state1.WorktreePath
+	baseCommit := state1.BaseCommit
+	worktreeID := state1.WorktreeID
+
+	// Transition first session through PostCommit to ACTIVE_COMMITTED
+	state1.Phase = session.PhaseActive
+	require.NoError(t, s.saveSessionState(state1))
+
+	commitWithCheckpointTrailer(t, repo, dir, "e5f6a1b2c3d4")
+
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	state1, err = s.loadSessionState(sessionID1)
+	require.NoError(t, err)
+	require.Equal(t, session.PhaseActiveCommitted, state1.Phase)
+
+	// Create a second session with the SAME base commit and worktree (concurrent)
+	now := time.Now()
+	state2 := &SessionState{
+		SessionID:           sessionID2,
+		BaseCommit:          state1.BaseCommit, // Same base commit (post-migration)
+		WorktreePath:        worktreePath,
+		WorktreeID:          worktreeID,
+		StartedAt:           now,
+		Phase:               session.PhaseActive,
+		LastInteractionTime: &now,
+		StepCount:           1,
+	}
+	require.NoError(t, s.saveSessionState(state2))
+
+	// Record shadow branch name (shared by both sessions)
+	shadowBranch := getShadowBranchNameForCommit(state1.BaseCommit, state1.WorktreeID)
+
+	// First session ends its turn — should NOT delete shadow branch
+	result := session.Transition(state1.Phase, session.EventTurnEnd, session.TransitionContext{})
+	remaining := session.ApplyCommonActions(state1, result)
+
+	err = s.HandleTurnEnd(state1, remaining)
+	require.NoError(t, err)
+
+	// Shadow branch at the pre-condensation BaseCommit should be preserved
+	// because session2 is still active on it.
+	refName := plumbing.NewBranchReferenceName(shadowBranch)
+	_, err = repo.Reference(refName, true)
+	require.NoError(t, err,
+		"shadow branch should be preserved when another active session shares it")
+
+	// Condensation still succeeded for session1
+	assert.Equal(t, 0, state1.StepCount,
+		"StepCount should be reset after condensation")
+	assert.Equal(t, session.PhaseIdle, state1.Phase,
+		"first session should be IDLE after turn end")
+
+	// Second session is still active and unaffected
+	state2, err = s.loadSessionState(sessionID2)
+	require.NoError(t, err)
+	assert.Equal(t, session.PhaseActive, state2.Phase,
+		"second session should still be ACTIVE")
+	_ = baseCommit // used for documentation
+}
+
 // TestTurnEnd_ActiveCommitted_CondensesSession verifies that HandleTurnEnd
 // with ActionCondense (from ACTIVE_COMMITTED → IDLE) condenses the session
 // to entire/sessions and cleans up the shadow branch.

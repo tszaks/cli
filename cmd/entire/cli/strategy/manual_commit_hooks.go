@@ -613,6 +613,8 @@ func (s *ManualCommitStrategy) PostCommit() error {
 			case session.ActionMigrateShadowBranch:
 				// Deferred to pass 2 so condensation reads the old shadow branch first.
 				// Migration updates BaseCommit as part of the rename.
+				// Store checkpointID so HandleTurnEnd can reuse it for deferred condensation.
+				state.PendingCheckpointID = checkpointID.String()
 				pendingMigrations = append(pendingMigrations, pendingMigration{state: state})
 			case session.ActionClearEndedAt, session.ActionUpdateLastInteraction:
 				// Handled by session.ApplyCommonActions above
@@ -1293,8 +1295,14 @@ func (s *ManualCommitStrategy) handleTurnEndCondense(logCtx context.Context, sta
 
 	s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete)
 
-	// Delete shadow branches after condensation
+	// Delete shadow branches after condensation — but only if no other active
+	// sessions share the branch (same safety check PostCommit uses).
 	for branchName := range shadowBranchesToDelete {
+		if s.hasOtherActiveSessionsOnBranch(state.SessionID, state.BaseCommit, state.WorktreeID) {
+			logging.Debug(logCtx, "turn-end: preserving shadow branch (other active session exists)",
+				slog.String("shadow_branch", branchName))
+			continue
+		}
 		if err := deleteShadowBranch(repo, branchName); err != nil {
 			fmt.Fprintf(os.Stderr, "[entire] Warning: failed to clean up %s: %v\n", branchName, err)
 		} else {
@@ -1305,6 +1313,25 @@ func (s *ManualCommitStrategy) handleTurnEndCondense(logCtx context.Context, sta
 			)
 		}
 	}
+}
+
+// hasOtherActiveSessionsOnBranch checks if any other sessions with the same
+// base commit and worktree ID are in an active phase. Used to prevent deleting
+// a shadow branch that another session still needs.
+func (s *ManualCommitStrategy) hasOtherActiveSessionsOnBranch(currentSessionID, baseCommit, worktreeID string) bool {
+	sessions, err := s.findSessionsForCommit(baseCommit)
+	if err != nil {
+		return false // Fail-open: if we can't check, don't block deletion
+	}
+	for _, other := range sessions {
+		if other.SessionID == currentSessionID {
+			continue
+		}
+		if other.WorktreeID == worktreeID && other.Phase.IsActive() {
+			return true
+		}
+	}
+	return false
 }
 
 // hasOverlappingFiles checks if any file in stagedFiles appears in filesTouched.
