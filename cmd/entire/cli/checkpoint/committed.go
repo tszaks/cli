@@ -361,8 +361,11 @@ func (s *GitStore) writeSessionToSubdirectory(opts WriteCommittedOptions, sessio
 // writeCheckpointSummary writes the root-level CheckpointSummary with aggregated statistics.
 // sessions is the complete sessions array (already built by the caller).
 func (s *GitStore) writeCheckpointSummary(opts WriteCommittedOptions, basePath string, entries map[string]object.TreeEntry, sessions []SessionFilePaths) error {
-	checkpointsCount, filesTouched, tokenUsage :=
+	checkpointsCount, filesTouched, tokenUsage, err :=
 		s.reaggregateFromEntries(basePath, len(sessions), entries)
+	if err != nil {
+		return fmt.Errorf("failed to aggregate session stats: %w", err)
+	}
 
 	summary := CheckpointSummary{
 		CheckpointID:     opts.CheckpointID,
@@ -410,8 +413,7 @@ func (s *GitStore) findSessionIndex(basePath string, existingSummary *Checkpoint
 
 // reaggregateFromEntries reads all session metadata from the entries map and
 // reaggregates CheckpointsCount, FilesTouched, and TokenUsage.
-// Used when replacing a session in-place to recompute correct aggregate stats.
-func (s *GitStore) reaggregateFromEntries(basePath string, sessionCount int, entries map[string]object.TreeEntry) (int, []string, *agent.TokenUsage) {
+func (s *GitStore) reaggregateFromEntries(basePath string, sessionCount int, entries map[string]object.TreeEntry) (int, []string, *agent.TokenUsage, error) {
 	var totalCount int
 	var allFiles []string
 	var totalTokens *agent.TokenUsage
@@ -420,18 +422,18 @@ func (s *GitStore) reaggregateFromEntries(basePath string, sessionCount int, ent
 		path := fmt.Sprintf("%s%d/%s", basePath, i, paths.MetadataFileName)
 		entry, exists := entries[path]
 		if !exists {
-			continue
+			return 0, nil, nil, fmt.Errorf("session %d metadata not found at %s", i, path)
 		}
 		meta, err := s.readMetadataFromBlob(entry.Hash)
 		if err != nil {
-			continue
+			return 0, nil, nil, fmt.Errorf("failed to read session %d metadata: %w", i, err)
 		}
 		totalCount += meta.CheckpointsCount
 		allFiles = mergeFilesTouched(allFiles, meta.FilesTouched)
 		totalTokens = aggregateTokenUsage(totalTokens, meta.TokenUsage)
 	}
 
-	return totalCount, allFiles, totalTokens
+	return totalCount, allFiles, totalTokens, nil
 }
 
 // readJSONFromBlob reads JSON from a blob hash and decodes it to the given type.
