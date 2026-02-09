@@ -567,13 +567,13 @@ func setupAgentHooksNonInteractive(w io.Writer, agentName agent.AgentName, strat
 		if agentName == agent.AgentNameGemini {
 			msg += " (Preview)"
 		}
-		fmt.Println(msg)
+		fmt.Fprintf(w, "%s\n", msg)
 	} else {
 		msg := fmt.Sprintf("Installed %d hooks for %s", installedHooks, ag.Description())
 		if agentName == agent.AgentNameGemini {
 			msg += " (Preview)"
 		}
-		fmt.Println(msg)
+		fmt.Fprintf(w, "%s\n", msg)
 	}
 
 	fmt.Fprintf(w, "✓ Project configured (%s)\n", configDisplayProject)
