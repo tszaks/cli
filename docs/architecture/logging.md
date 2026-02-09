@@ -2,7 +2,7 @@
 
 ## Overview
 
-The CLI uses Go's `log/slog` package for structured JSON logging. All logs are written to a single file `.entire/logs/entire.log` and help debug hook execution and CLI behavior. The `session_id` attribute on each log line allows filtering by session.
+The CLI uses Go's `log/slog` package for structured JSON logging. All logs are written to a single file `.entire/logs/entire.log` and help debug hook execution and CLI behavior. When a session ID is known, the `session_id` attribute on each log line allows filtering by session.
 
 ## Log Levels
 

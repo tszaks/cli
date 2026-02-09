@@ -74,7 +74,7 @@ func SetLogLevelGetter(getter func() string) {
 // Init initializes the logger for a session, writing JSON logs to
 // .entire/logs/entire.log.
 //
-// The sessionID is stored as an slog attribute on every log line for filtering.
+// If sessionID is non-empty, it is stored as an slog attribute on every log line for filtering.
 // If the log file cannot be created, falls back to stderr.
 // Log level is controlled by ENTIRE_LOG_LEVEL environment variable.
 func Init(sessionID string) error {
