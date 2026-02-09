@@ -28,6 +28,7 @@ import (
 // 6. User commits again (second condensation)
 // 7. Verify final state
 func TestShadow_FullWorkflow(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -367,6 +368,7 @@ func TestShadow_FullWorkflow(t *testing.T) {
 // TestShadow_SessionStateLocation verifies session state is stored in .git/
 // (not .entire/) so it's never accidentally committed.
 func TestShadow_SessionStateLocation(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -403,6 +405,7 @@ func TestShadow_SessionStateLocation(t *testing.T) {
 // while another session has uncommitted checkpoints triggers a warning.
 // The first prompt is blocked with continue:false, subsequent prompts proceed.
 func TestShadow_MultipleConcurrentSessions(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -479,6 +482,7 @@ func TestShadow_MultipleConcurrentSessions(t *testing.T) {
 // TestShadow_ShadowBranchMigrationOnPull verifies that when the base commit changes
 // (e.g., after stash → pull → apply), the shadow branch is moved to the new commit.
 func TestShadow_ShadowBranchMigrationOnPull(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -570,6 +574,7 @@ func TestShadow_ShadowBranchMigrationOnPull(t *testing.T) {
 // TestShadow_ShadowBranchNaming verifies shadow branches follow the
 // entire/<base-sha[:7]> naming convention.
 func TestShadow_ShadowBranchNaming(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -623,6 +628,7 @@ func TestShadow_ShadowBranchNaming(t *testing.T) {
 // TestShadow_TranscriptCondensation verifies that session transcripts are
 // included in the entire/sessions branch during condensation.
 func TestShadow_TranscriptCondensation(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -729,6 +735,7 @@ func TestShadow_TranscriptCondensation(t *testing.T) {
 // - First commit: context.md includes prompts 1-2
 // - Second commit: context.md includes prompts 1-3 (full transcript preserved)
 func TestShadow_FullTranscriptContext(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -906,6 +913,7 @@ func TestShadow_FullTranscriptContext(t *testing.T) {
 // 4. User commits
 // 5. Verify checkpoint only contains prompt 1 (NOT prompt 2)
 func TestShadow_RewindAndCondensation(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -1048,6 +1056,7 @@ func TestShadow_RewindAndCondensation(t *testing.T) {
 // in the working directory (but weren't tracked in git) before the session started are
 // preserved when rewinding. This was a bug where such files were incorrectly deleted.
 func TestShadow_RewindPreservesUntrackedFilesFromSessionStart(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -1177,6 +1186,7 @@ func TestShadow_RewindPreservesUntrackedFilesFromSessionStart(t *testing.T) {
 // 4. User enters new prompt, creates more files
 // 5. Second commit with Claude content gets a trailer
 func TestShadow_IntermediateCommitsWithoutPrompts(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -1304,6 +1314,7 @@ func TestShadow_IntermediateCommitsWithoutPrompts(t *testing.T) {
 // 2. Continue session with prompt C, commit 2 (without intermediate prompt submit)
 // 3. Verify commit 2's checkpoint has full transcript (A, B, and C)
 func TestShadow_FullTranscriptCondensationWithIntermediateCommits(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -1425,6 +1436,7 @@ func TestShadow_FullTranscriptCondensationWithIntermediateCommits(t *testing.T) 
 // present at session start are preserved during rewind, even when the shadow branch already
 // exists from a previous session.
 func TestShadow_RewindPreservesUntrackedFilesWithExistingShadowBranch(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -1564,6 +1576,7 @@ func TestShadow_RewindPreservesUntrackedFilesWithExistingShadowBranch(t *testing
 // trailer during commit message editing causes condensation to be skipped.
 // This allows users to opt-out of linking a commit to their Claude session.
 func TestShadow_TrailerRemovalSkipsCondensation(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -1682,6 +1695,7 @@ func TestShadow_TrailerRemovalSkipsCondensation(t *testing.T) {
 // TestShadow_SessionsBranchCommitTrailers verifies that commits on the entire/sessions
 // branch contain the expected trailers: Entire-Session, Entire-Strategy, and Entire-Agent.
 func TestShadow_SessionsBranchCommitTrailers(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 

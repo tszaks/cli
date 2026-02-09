@@ -21,6 +21,7 @@ import (
 // TestSessionIDConflict_OrphanedBranchIsReset tests that starting a new session
 // resets an orphaned shadow branch (one with no session state file).
 func TestSessionIDConflict_OrphanedBranchIsReset(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -96,6 +97,7 @@ func TestSessionIDConflict_OrphanedBranchIsReset(t *testing.T) {
 // TestSessionIDConflict_NoConflictWithSameSession tests that resuming the same session
 // (same session ID) does not trigger a conflict error.
 func TestSessionIDConflict_NoConflictWithSameSession(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -131,6 +133,7 @@ func TestSessionIDConflict_NoConflictWithSameSession(t *testing.T) {
 // TestSessionIDConflict_NoShadowBranch tests that starting a new session succeeds
 // when no shadow branch exists (fresh start).
 func TestSessionIDConflict_NoShadowBranch(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -162,6 +165,7 @@ func TestSessionIDConflict_NoShadowBranch(t *testing.T) {
 // TestSessionIDConflict_ManuallyCreatedOrphanedBranch tests that a manually created
 // orphaned shadow branch (simulating a crash scenario) is reset when a new session starts.
 func TestSessionIDConflict_ManuallyCreatedOrphanedBranch(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -275,6 +279,7 @@ func createOrphanedShadowBranch(t *testing.T, repoDir, branchName, sessionID str
 // TestSessionIDConflict_ShadowBranchWithoutTrailer tests that a shadow branch without
 // an Entire-Session trailer does not cause a conflict (backwards compatibility).
 func TestSessionIDConflict_ShadowBranchWithoutTrailer(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -309,6 +314,7 @@ func TestSessionIDConflict_ShadowBranchWithoutTrailer(t *testing.T) {
 // TestSessionStart_InformationalMessage tests that the session start informational message
 // contains the expected base text and concurrent session count when another session has uncommitted checkpoints.
 func TestSessionStart_InformationalMessage(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -405,6 +411,7 @@ func TestSessionStart_InformationalMessage(t *testing.T) {
 // TestSessionStart_InformationalMessageNoConcurrentSessions tests that the base informational message
 // is shown even when there are no concurrent sessions.
 func TestSessionStart_InformationalMessageNoConcurrentSessions(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 

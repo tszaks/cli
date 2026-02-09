@@ -23,6 +23,7 @@ import (
 // 5. User commits (condensation happens with attribution)
 // 6. Verify attribution metadata is correct
 func TestManualCommit_Attribution(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -212,6 +213,7 @@ func TestManualCommit_Attribution(t *testing.T) {
 
 // TestManualCommit_AttributionDeletionOnly tests attribution for deletion-only commits
 func TestManualCommit_AttributionDeletionOnly(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
@@ -361,6 +363,7 @@ func TestManualCommit_AttributionDeletionOnly(t *testing.T) {
 // 4. Second commit → CalculateAttributionWithAccumulated sums ALL PromptAttributions
 // 5. User edits from first commit are double-counted
 func TestManualCommit_AttributionNoDoubleCount(t *testing.T) {
+	t.Parallel()
 	env := NewTestEnv(t)
 	defer env.Cleanup()
 
