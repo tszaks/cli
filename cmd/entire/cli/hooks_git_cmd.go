@@ -63,11 +63,8 @@ func initHookLogging() func() {
 	// Set up log level getter so logging can read from settings
 	logging.SetLogLevelGetter(GetLogLevel)
 
+	// Read session ID for the slog attribute (empty string is fine - log file is fixed)
 	sessionID := strategy.FindMostRecentSession()
-	if sessionID == "" {
-		// No sessions - logging will use stderr fallback
-		return func() {}
-	}
 	if err := logging.Init(sessionID); err != nil {
 		// Init failed - logging will use stderr fallback
 		return func() {}
