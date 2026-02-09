@@ -79,7 +79,7 @@ Strategies: manual-commit (default), auto-commit`,
 			}
 			// Non-interactive mode if --agent flag is provided
 			if agentName != "" {
-				return setupAgentHooksNonInteractive(agent.AgentName(agentName), strategyFlag, localDev, forceHooks, skipPushSessions, telemetry)
+				return setupAgentHooksNonInteractive(cmd.OutOrStdout(), agent.AgentName(agentName), strategyFlag, localDev, forceHooks, skipPushSessions, telemetry)
 			}
 			// If strategy is specified via flag, skip interactive selection
 			if strategyFlag != "" {
@@ -151,8 +151,9 @@ func isFullyEnabled() (enabled bool, agentDesc string, configPath string) {
 		return false, "", ""
 	}
 
-	// Check agent hooks installed
-	if !checkClaudeCodeHooksInstalled() {
+	// Check any agent hooks installed (not just Claude Code — works with Gemini too)
+	installedAgents := GetAgentsWithHooksInstalled()
+	if len(installedAgents) == 0 {
 		return false, "", ""
 	}
 
@@ -166,10 +167,9 @@ func isFullyEnabled() (enabled bool, agentDesc string, configPath string) {
 		return false, "", ""
 	}
 
-	// Determine agent description
-	ag := agent.Default()
-	desc := string(agent.AgentTypeClaudeCode)
-	if ag != nil {
+	// Determine agent description from first installed agent
+	desc := string(installedAgents[0]) // fallback to agent name
+	if ag, err := agent.Get(installedAgents[0]); err == nil {
 		desc = string(ag.Type())
 	}
 
@@ -288,13 +288,17 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 
 // runEnableInteractive runs the interactive enable flow.
 func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry bool) error {
-	// Check if already fully enabled — show summary and return early
-	if fullyEnabled, agentDesc, configPath := isFullyEnabled(); fullyEnabled {
-		fmt.Fprintln(w, "Already enabled. Everything looks good.")
-		fmt.Fprintln(w)
-		fmt.Fprintf(w, "  Agent: %s\n", agentDesc)
-		fmt.Fprintf(w, "  Config: %s\n", configPath)
-		return nil
+	// Check if already fully enabled — show summary and return early.
+	// Skip early return if any configuration flags are set (user wants to reconfigure).
+	hasConfigFlags := forceHooks || skipPushSessions || !telemetry || useLocalSettings || useProjectSettings || localDev
+	if !hasConfigFlags {
+		if fullyEnabled, agentDesc, configPath := isFullyEnabled(); fullyEnabled {
+			fmt.Fprintln(w, "Already enabled. Everything looks good.")
+			fmt.Fprintln(w)
+			fmt.Fprintf(w, "  Agent: %s\n", agentDesc)
+			fmt.Fprintf(w, "  Config: %s\n", configPath)
+			return nil
+		}
 	}
 
 	// Detect default agent
@@ -354,16 +358,21 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 		fmt.Fprintln(w, "  Use --project to update the project settings file.")
 	}
 
+	// Helper to save settings to the appropriate file
+	saveSettings := func() error {
+		if shouldUseLocal {
+			return SaveEntireSettingsLocal(settings)
+		}
+		return SaveEntireSettings(settings)
+	}
+
+	// Save settings before telemetry prompt so config is persisted even if the user cancels
+	if err := saveSettings(); err != nil {
+		return fmt.Errorf("failed to save settings: %w", err)
+	}
 	configDisplay := configDisplayProject
 	if shouldUseLocal {
-		if err := SaveEntireSettingsLocal(settings); err != nil {
-			return fmt.Errorf("failed to save local settings: %w", err)
-		}
 		configDisplay = configDisplayLocal
-	} else {
-		if err := SaveEntireSettings(settings); err != nil {
-			return fmt.Errorf("failed to save settings: %w", err)
-		}
 	}
 	fmt.Fprintf(w, "✓ Project configured (%s)\n", configDisplay)
 
@@ -372,15 +381,9 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 	if err := promptTelemetryConsent(settings, telemetry); err != nil {
 		return fmt.Errorf("telemetry consent: %w", err)
 	}
-	// Save settings again after telemetry consent is recorded
-	if shouldUseLocal {
-		if err := SaveEntireSettingsLocal(settings); err != nil {
-			return fmt.Errorf("failed to save local settings: %w", err)
-		}
-	} else {
-		if err := SaveEntireSettings(settings); err != nil {
-			return fmt.Errorf("failed to save settings: %w", err)
-		}
+	// Save again to persist telemetry choice
+	if err := saveSettings(); err != nil {
+		return fmt.Errorf("failed to save settings: %w", err)
 	}
 
 	// Let the strategy handle its own setup requirements
@@ -480,7 +483,7 @@ func setupClaudeCodeHook(localDev, forceHooks bool) (int, error) {
 
 // setupAgentHooksNonInteractive sets up hooks for a specific agent non-interactively.
 // If strategyName is provided, it sets the strategy; otherwise uses default.
-func setupAgentHooksNonInteractive(agentName agent.AgentName, strategyName string, localDev, forceHooks, skipPushSessions, telemetry bool) error {
+func setupAgentHooksNonInteractive(w io.Writer, agentName agent.AgentName, strategyName string, localDev, forceHooks, skipPushSessions, telemetry bool) error {
 	ag, err := agent.Get(agentName)
 	if err != nil {
 		return fmt.Errorf("unknown agent: %s", agentName)
@@ -492,7 +495,7 @@ func setupAgentHooksNonInteractive(agentName agent.AgentName, strategyName strin
 		return fmt.Errorf("agent %s does not support hooks", agentName)
 	}
 
-	fmt.Printf("Agent: %s\n\n", ag.Type())
+	fmt.Fprintf(w, "Agent: %s\n\n", ag.Type())
 
 	// Install agent hooks + git hooks
 	if _, err := hookAgent.InstallHooks(localDev, forceHooks); err != nil {
@@ -503,9 +506,9 @@ func setupAgentHooksNonInteractive(agentName agent.AgentName, strategyName strin
 	}
 
 	if agentName == agent.AgentNameGemini {
-		fmt.Println("✓ Hooks installed - This is a work in progress")
+		fmt.Fprintln(w, "✓ Hooks installed - This is a work in progress")
 	} else {
-		fmt.Println("✓ Hooks installed")
+		fmt.Fprintln(w, "✓ Hooks installed")
 	}
 
 	// Setup .entire directory
@@ -552,7 +555,7 @@ func setupAgentHooksNonInteractive(agentName agent.AgentName, strategyName strin
 	if err := SaveEntireSettings(settings); err != nil {
 		return fmt.Errorf("failed to save settings: %w", err)
 	}
-	fmt.Printf("✓ Project configured (%s)\n", configDisplayProject)
+	fmt.Fprintf(w, "✓ Project configured (%s)\n", configDisplayProject)
 
 	// Let the strategy handle its own setup requirements (creates entire/sessions branch, etc.)
 	strat, err := strategy.Get(settings.Strategy)
@@ -563,7 +566,7 @@ func setupAgentHooksNonInteractive(agentName agent.AgentName, strategyName strin
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 
-	fmt.Println("\nReady.")
+	fmt.Fprintln(w, "\nReady.")
 
 	return nil
 }
@@ -600,54 +603,6 @@ func determineSettingsTarget(entireDir string, useLocal, useProject bool) (bool,
 
 	// Settings file doesn't exist - create it
 	return false, false
-}
-
-// Settings target options for interactive prompt
-const (
-	settingsTargetProject = "project"
-	settingsTargetLocal   = "local"
-)
-
-// promptSettingsTarget interactively asks the user where to save settings
-// when settings.json already exists and no flags were provided.
-// Returns (useLocal, error).
-func promptSettingsTarget(entireDir string, useLocal, useProject bool) (bool, error) {
-	// Explicit --local flag always uses local settings
-	if useLocal {
-		return true, nil
-	}
-
-	// Explicit --project flag always uses project settings
-	if useProject {
-		return false, nil
-	}
-
-	// Check if settings file exists
-	settingsPath := filepath.Join(entireDir, paths.SettingsFileName)
-	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
-		// Settings file doesn't exist - create it (no prompt needed)
-		return false, nil
-	}
-
-	// Settings file exists - prompt user
-	var selected string
-	form := NewAccessibleForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Project settings already exist. Where should settings be saved?").
-				Options(
-					huh.NewOption("Update project settings (settings.json)", settingsTargetProject),
-					huh.NewOption("Use local settings (settings.local.json, gitignored)", settingsTargetLocal),
-				).
-				Value(&selected),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		return false, fmt.Errorf("selection cancelled: %w", err)
-	}
-
-	return selected == settingsTargetLocal, nil
 }
 
 // setupEntireDirectory creates the .entire directory and gitignore.
