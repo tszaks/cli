@@ -601,7 +601,7 @@ func TestShellCompletionTarget(t *testing.T) {
 			shell:          "/bin/zsh",
 			wantShell:      "Zsh",
 			wantRCBase:     ".zshrc",
-			wantCompletion: "source <(entire completion zsh)",
+			wantCompletion: "autoload -Uz compinit && compinit && source <(entire completion zsh)",
 		},
 		{
 			name:           "bash_no_profile",
