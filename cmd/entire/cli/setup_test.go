@@ -826,6 +826,9 @@ func TestEnableCmd_AgentFlagNoValue(t *testing.T) {
 	if !strings.Contains(output, string(agent.DefaultAgentName)) {
 		t.Errorf("expected default agent listed, got: %s", output)
 	}
+	if strings.Contains(output, "flag needs an argument") {
+		t.Error("should not contain default cobra/pflag error message")
+	}
 }
 
 func TestEnableCmd_AgentFlagEmptyValue(t *testing.T) {
@@ -844,5 +847,8 @@ func TestEnableCmd_AgentFlagEmptyValue(t *testing.T) {
 	output := stderr.String()
 	if !strings.Contains(output, "Missing agent name") {
 		t.Errorf("expected helpful error message, got: %s", output)
+	}
+	if strings.Contains(output, "flag needs an argument") {
+		t.Error("should not contain default cobra/pflag error message")
 	}
 }
