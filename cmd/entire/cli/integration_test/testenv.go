@@ -965,6 +965,68 @@ func (env *TestEnv) GitCommitWithShadowHooks(message string, files ...string) {
 	}
 }
 
+// GitCommitAmendWithShadowHooks amends the last commit with shadow hooks.
+// This simulates `git commit --amend` with the prepare-commit-msg and post-commit hooks.
+// The prepare-commit-msg hook is called with "commit" source to indicate an amend.
+func (env *TestEnv) GitCommitAmendWithShadowHooks(message string, files ...string) {
+	env.T.Helper()
+
+	// Stage any additional files
+	for _, file := range files {
+		env.GitAdd(file)
+	}
+
+	// Write commit message to temp file
+	msgFile := filepath.Join(env.RepoDir, ".git", "COMMIT_EDITMSG")
+	if err := os.WriteFile(msgFile, []byte(message), 0o644); err != nil {
+		env.T.Fatalf("failed to write commit message file: %v", err)
+	}
+
+	// Run prepare-commit-msg hook with "commit" source (indicates amend)
+	// Format: entire hooks git prepare-commit-msg <msgfile> commit
+	prepCmd := exec.Command(getTestBinary(), "hooks", "git", "prepare-commit-msg", msgFile, "commit")
+	prepCmd.Dir = env.RepoDir
+	if output, err := prepCmd.CombinedOutput(); err != nil {
+		env.T.Logf("prepare-commit-msg (amend) output: %s", output)
+	}
+
+	// Read the modified message
+	modifiedMsg, err := os.ReadFile(msgFile)
+	if err != nil {
+		env.T.Fatalf("failed to read modified commit message: %v", err)
+	}
+
+	// Amend the commit using go-git
+	repo, err := git.PlainOpen(env.RepoDir)
+	if err != nil {
+		env.T.Fatalf("failed to open git repo: %v", err)
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		env.T.Fatalf("failed to get worktree: %v", err)
+	}
+
+	_, err = worktree.Commit(string(modifiedMsg), &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test User",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+		Amend: true,
+	})
+	if err != nil {
+		env.T.Fatalf("failed to amend commit: %v", err)
+	}
+
+	// Run post-commit hook
+	postCmd := exec.Command(getTestBinary(), "hooks", "git", "post-commit")
+	postCmd.Dir = env.RepoDir
+	if output, err := postCmd.CombinedOutput(); err != nil {
+		env.T.Logf("post-commit (amend) output: %s", output)
+	}
+}
+
 // GitCommitWithTrailerRemoved stages and commits files, simulating what happens when
 // a user removes the Entire-Checkpoint trailer during commit message editing.
 // This tests the opt-out behavior where removing the trailer skips condensation.

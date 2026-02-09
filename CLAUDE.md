@@ -284,8 +284,9 @@ All strategies implement:
 - `manual_commit_rewind.go` - Rewind implementation: file restoration from checkpoint trees
 - `manual_commit_git.go` - Git operations: checkpoint commits, tree building
 - `manual_commit_logs.go` - Session log retrieval and session listing
-- `manual_commit_hooks.go` - Git hook handlers (prepare-commit-msg, pre-push)
+- `manual_commit_hooks.go` - Git hook handlers (prepare-commit-msg, post-commit, pre-push)
 - `manual_commit_reset.go` - Shadow branch reset/cleanup functionality
+- `session_state.go` - Package-level session state functions (`LoadSessionState`, `SaveSessionState`, `ListSessionStates`, `FindMostRecentSession`)
 - `auto_commit.go` - Auto-commit strategy implementation
 - `hooks.go` - Git hook installation
 
@@ -298,6 +299,30 @@ All strategies implement:
 #### Session Package (`cmd/entire/cli/session/`)
 - `session.go` - Session data types and interfaces
 - `state.go` - `StateStore` for managing `.git/entire-sessions/` files
+- `phase.go` - Session phase state machine (phases, events, transitions, actions)
+
+#### Session Phase State Machine
+
+Sessions track their lifecycle through phases managed by a state machine in `session/phase.go`:
+
+**Phases:** `ACTIVE`, `ACTIVE_COMMITTED`, `IDLE`, `ENDED`
+
+**Events:**
+- `TurnStart` - Agent begins a turn (UserPromptSubmit hook)
+- `TurnEnd` - Agent finishes a turn (Stop hook)
+- `GitCommit` - A git commit was made (PostCommit hook)
+- `SessionStart` - New session started
+- `SessionStop` - Session explicitly stopped
+
+**Key transitions:**
+- `IDLE + TurnStart → ACTIVE` - Agent starts working
+- `ACTIVE + TurnEnd → IDLE` - Agent finishes turn
+- `ACTIVE + GitCommit → ACTIVE_COMMITTED` - User commits while agent is working (condensation deferred)
+- `ACTIVE_COMMITTED + TurnEnd → IDLE` - Agent finishes after commit (condense now)
+- `IDLE + GitCommit → IDLE` - User commits between turns (condense immediately)
+- `ENDED + GitCommit → ENDED` - Post-session commit (condense if files touched)
+
+The state machine emits **actions** (e.g., `ActionCondense`, `ActionMigrateShadowBranch`, `ActionDeferCondensation`) that hook handlers dispatch to strategy-specific implementations.
 
 #### Metadata Structure
 
