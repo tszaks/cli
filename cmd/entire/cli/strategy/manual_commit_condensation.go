@@ -27,7 +27,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-// listCheckpoints returns all checkpoints from the sessions branch.
+// listCheckpoints returns all checkpoints from the metadata branch.
 // Uses checkpoint.GitStore.ListCommitted() for reading from entire/checkpoints/v1.
 func (s *ManualCommitStrategy) listCheckpoints() ([]CheckpointInfo, error) {
 	store, err := s.getCheckpointStore()
