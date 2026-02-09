@@ -2599,6 +2599,93 @@ func TestWriteCommitted_DuplicateSessionIDReusesIndex(t *testing.T) {
 	}
 }
 
+// TestWriteCommitted_DuplicateSessionIDClearsStaleFiles verifies that when a session
+// is overwritten in-place, optional files from the previous write (prompts, context)
+// do not persist if the new write omits them, and sibling session data is untouched.
+func TestWriteCommitted_DuplicateSessionIDClearsStaleFiles(t *testing.T) {
+	repo, _ := setupBranchTestRepo(t)
+	store := NewGitStore(repo)
+	checkpointID := id.MustCheckpointID("dedd0abcdef2")
+
+	// Write session A with prompts and context
+	err := store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		CheckpointID:     checkpointID,
+		SessionID:        "session-A",
+		Strategy:         "manual-commit",
+		Transcript:       []byte(`{"v": 1}`),
+		Prompts:          []string{"original prompt"},
+		Context:          []byte("original context"),
+		CheckpointsCount: 1,
+		AuthorName:       "Test",
+		AuthorEmail:      "test@example.com",
+	})
+	if err != nil {
+		t.Fatalf("WriteCommitted() A v1 error = %v", err)
+	}
+
+	// Write session B with prompts and context
+	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		CheckpointID:     checkpointID,
+		SessionID:        "session-B",
+		Strategy:         "manual-commit",
+		Transcript:       []byte(`{"session": "B"}`),
+		Prompts:          []string{"B prompt"},
+		Context:          []byte("B context"),
+		CheckpointsCount: 1,
+		AuthorName:       "Test",
+		AuthorEmail:      "test@example.com",
+	})
+	if err != nil {
+		t.Fatalf("WriteCommitted() B error = %v", err)
+	}
+
+	// Overwrite session A WITHOUT prompts or context
+	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		CheckpointID:     checkpointID,
+		SessionID:        "session-A",
+		Strategy:         "manual-commit",
+		Transcript:       []byte(`{"v": 2}`),
+		Prompts:          nil,
+		Context:          nil,
+		CheckpointsCount: 2,
+		AuthorName:       "Test",
+		AuthorEmail:      "test@example.com",
+	})
+	if err != nil {
+		t.Fatalf("WriteCommitted() A v2 error = %v", err)
+	}
+
+	// Session A: stale prompts and context should be cleared
+	contentA, err := store.ReadSessionContent(context.Background(), checkpointID, 0)
+	if err != nil {
+		t.Fatalf("ReadSessionContent(0) error = %v", err)
+	}
+	if contentA.Prompts != "" {
+		t.Errorf("session A stale prompts should be cleared, got %q", contentA.Prompts)
+	}
+	if contentA.Context != "" {
+		t.Errorf("session A stale context should be cleared, got %q", contentA.Context)
+	}
+	if !strings.Contains(string(contentA.Transcript), `"v": 2`) {
+		t.Errorf("session A transcript should be updated, got %s", string(contentA.Transcript))
+	}
+
+	// Session B: data must be untouched
+	contentB, err := store.ReadSessionContent(context.Background(), checkpointID, 1)
+	if err != nil {
+		t.Fatalf("ReadSessionContent(1) error = %v", err)
+	}
+	if contentB.Metadata.SessionID != "session-B" {
+		t.Errorf("session B SessionID = %q, want %q", contentB.Metadata.SessionID, "session-B")
+	}
+	if !strings.Contains(contentB.Prompts, "B prompt") {
+		t.Errorf("session B prompts should be preserved, got %q", contentB.Prompts)
+	}
+	if !strings.Contains(contentB.Context, "B context") {
+		t.Errorf("session B context should be preserved, got %q", contentB.Context)
+	}
+}
+
 // highEntropySecret is a string with Shannon entropy > 4.5 that will trigger redaction.
 const highEntropySecret = "sk-ant-api03-xK9mZ2vL8nQ5rT1wY4bC7dF0gH3jE6pA"
 

@@ -284,6 +284,14 @@ func (s *GitStore) writeStandardCheckpointEntries(opts WriteCommittedOptions, ba
 func (s *GitStore) writeSessionToSubdirectory(opts WriteCommittedOptions, sessionPath string, entries map[string]object.TreeEntry) (SessionFilePaths, error) {
 	filePaths := SessionFilePaths{}
 
+	// Clear any existing entries at this path so stale files from a previous
+	// write (e.g. prompt.txt, context.md) don't persist on overwrite.
+	for key := range entries {
+		if strings.HasPrefix(key, sessionPath) {
+			delete(entries, key)
+		}
+	}
+
 	// Write transcript
 	if err := s.writeTranscript(opts, sessionPath, entries); err != nil {
 		return filePaths, err
