@@ -308,7 +308,7 @@ func generateCheckpointSummary(w, _ io.Writer, store *checkpoint.GitStore, check
 	}
 
 	// Scope the transcript to only this checkpoint's portion
-	scopedTranscript := scopeTranscriptForCheckpoint(content.Transcript, content.Metadata.TranscriptLinesAtStart)
+	scopedTranscript := scopeTranscriptForCheckpoint(content.Transcript, content.Metadata.GetTranscriptStart())
 	if len(scopedTranscript) == 0 {
 		return fmt.Errorf("checkpoint %s has no transcript content for this checkpoint (scoped)", checkpointID)
 	}
@@ -576,7 +576,7 @@ func extractPromptsFromTranscript(transcriptBytes []byte) []string {
 // When verbose is true: adds files, associated commits, and scoped transcript for this checkpoint.
 // When full is true: shows parsed full session transcript instead of scoped transcript.
 //
-// Transcript scope is controlled by TranscriptLinesAtStart in metadata, which indicates
+// Transcript scope is controlled by CheckpointTranscriptStart in metadata, which indicates
 // where this checkpoint's content begins in the full session transcript.
 //
 // Author is displayed when available (only for committed checkpoints).
@@ -586,9 +586,9 @@ func formatCheckpointOutput(summary *checkpoint.CheckpointSummary, content *chec
 	meta := content.Metadata
 
 	// Scope the transcript to this checkpoint's portion
-	// If TranscriptLinesAtStart > 0, we slice the transcript to only include
+	// If CheckpointTranscriptStart > 0, we slice the transcript to only include
 	// lines from that point onwards (excluding earlier checkpoint content)
-	scopedTranscript := scopeTranscriptForCheckpoint(content.Transcript, meta.TranscriptLinesAtStart)
+	scopedTranscript := scopeTranscriptForCheckpoint(content.Transcript, meta.GetTranscriptStart())
 
 	// Extract prompts from the scoped transcript for intent extraction
 	scopedPrompts := extractPromptsFromTranscript(scopedTranscript)
@@ -930,9 +930,9 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 		content, _ := store.ReadLatestSessionContent(context.Background(), cpID) //nolint:errcheck  // Best-effort
 		if content != nil {
 			// Scope the transcript to this checkpoint's portion
-			// If TranscriptLinesAtStart > 0, we slice the transcript to only include
+			// If CheckpointTranscriptStart > 0, we slice the transcript to only include
 			// lines from that point onwards (excluding earlier checkpoint content)
-			scopedTranscript := scopeTranscriptForCheckpoint(content.Transcript, content.Metadata.TranscriptLinesAtStart)
+			scopedTranscript := scopeTranscriptForCheckpoint(content.Transcript, content.Metadata.GetTranscriptStart())
 			// Extract prompts from the scoped transcript (not the full session's prompts)
 			scopedPrompts := extractPromptsFromTranscript(scopedTranscript)
 			if len(scopedPrompts) > 0 && scopedPrompts[0] != "" {

@@ -356,7 +356,7 @@ func TestManualCommit_AttributionDeletionOnly(t *testing.T) {
 //
 // Bug scenario:
 // 1. Checkpoint 1 → user edits → commit (condensation, PromptAttributions used)
-// 2. CheckpointCount reset to 0, but PromptAttributions NOT cleared
+// 2. StepCount reset to 0, but PromptAttributions NOT cleared
 // 3. Checkpoint 2 → new PromptAttributions appended to old ones
 // 4. Second commit → CalculateAttributionWithAccumulated sums ALL PromptAttributions
 // 5. User edits from first commit are double-counted

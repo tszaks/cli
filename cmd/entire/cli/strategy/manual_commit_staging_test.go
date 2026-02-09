@@ -424,7 +424,7 @@ func TestPromptAttribution_AlwaysStored(t *testing.T) {
 
 // TestPromptAttribution_CapturesPrePromptEdits tests that user edits made BEFORE
 // the first prompt are correctly attributed to the user, not the agent.
-// This verifies the fix for the bug where CheckpointCount > 0 guard and early
+// This verifies the fix for the bug where StepCount > 0 guard and early
 // return on missing shadow branch prevented attribution of pre-prompt edits.
 func TestPromptAttribution_CapturesPrePromptEdits(t *testing.T) {
 	dir := t.TempDir()

@@ -326,7 +326,8 @@ func (s *GitStore) writeSessionToSubdirectory(opts WriteCommittedOptions, sessio
 		IsTask:                      opts.IsTask,
 		ToolUseID:                   opts.ToolUseID,
 		TranscriptIdentifierAtStart: opts.TranscriptIdentifierAtStart,
-		TranscriptLinesAtStart:      opts.TranscriptLinesAtStart,
+		CheckpointTranscriptStart:   opts.CheckpointTranscriptStart,
+		TranscriptLinesAtStart:      opts.CheckpointTranscriptStart, // Deprecated: kept for backward compat
 		TokenUsage:                  opts.TokenUsage,
 		InitialAttribution:          opts.InitialAttribution,
 		Summary:                     opts.Summary,

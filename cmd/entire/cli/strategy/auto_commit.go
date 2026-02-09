@@ -265,8 +265,8 @@ func (s *AutoCommitStrategy) commitMetadataToMetadataBranch(repo *git.Repository
 		AuthorName:                  ctx.AuthorName,
 		AuthorEmail:                 ctx.AuthorEmail,
 		Agent:                       ctx.AgentType,
-		TranscriptIdentifierAtStart: ctx.TranscriptIdentifierAtStart,
-		TranscriptLinesAtStart:      ctx.TranscriptLinesAtStart,
+		TranscriptIdentifierAtStart: ctx.StepTranscriptIdentifier,
+		CheckpointTranscriptStart:   ctx.StepTranscriptStart,
 		TokenUsage:                  ctx.TokenUsage,
 		CheckpointsCount:            1,            // Each auto-commit checkpoint = 1
 		FilesTouched:                filesTouched, // Track modified files (same as manual-commit)
@@ -900,7 +900,7 @@ func (s *AutoCommitStrategy) GetCheckpointLog(cp Checkpoint) ([]byte, error) {
 // InitializeSession creates session state for a new session.
 // This is called during UserPromptSubmit hook to set up tracking for the session.
 // For auto-commit strategy, this creates a SessionState file in .git/entire-sessions/
-// to track CondensedTranscriptLines (transcript offset) across checkpoints.
+// to track CheckpointTranscriptStart (transcript offset) across checkpoints.
 // agentType is the human-readable name of the agent (e.g., "Claude Code").
 // transcriptPath is the path to the live transcript file (for mid-session commit detection).
 // userPrompt is the user's prompt text (stored truncated as FirstPrompt for display).
@@ -943,16 +943,16 @@ func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType agent
 	// Create new session state
 	now := time.Now()
 	state := &SessionState{
-		SessionID:                sessionID,
-		BaseCommit:               baseCommit,
-		StartedAt:                now,
-		LastInteractionTime:      &now,
-		CheckpointCount:          0,
-		CondensedTranscriptLines: 0, // Start from beginning of transcript
-		FilesTouched:             []string{},
-		AgentType:                agentType,
-		TranscriptPath:           transcriptPath,
-		FirstPrompt:              truncatePromptForStorage(userPrompt),
+		SessionID:           sessionID,
+		BaseCommit:          baseCommit,
+		StartedAt:           now,
+		LastInteractionTime: &now,
+		StepCount:           0,
+		// CheckpointTranscriptStart defaults to 0 (start from beginning of transcript)
+		FilesTouched:   []string{},
+		AgentType:      agentType,
+		TranscriptPath: transcriptPath,
+		FirstPrompt:    truncatePromptForStorage(userPrompt),
 	}
 
 	if err := SaveSessionState(state); err != nil {

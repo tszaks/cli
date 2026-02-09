@@ -89,10 +89,10 @@ func TestShadowStrategy_SessionState_SaveLoad(t *testing.T) {
 	s := &ManualCommitStrategy{}
 
 	state := &SessionState{
-		SessionID:       "test-session-123",
-		BaseCommit:      "abc123def456",
-		StartedAt:       time.Now(),
-		CheckpointCount: 5,
+		SessionID:  "test-session-123",
+		BaseCommit: "abc123def456",
+		StartedAt:  time.Now(),
+		StepCount:  5,
 	}
 
 	// Save state
@@ -122,8 +122,8 @@ func TestShadowStrategy_SessionState_SaveLoad(t *testing.T) {
 	if loaded.BaseCommit != state.BaseCommit {
 		t.Errorf("BaseCommit = %q, want %q", loaded.BaseCommit, state.BaseCommit)
 	}
-	if loaded.CheckpointCount != state.CheckpointCount {
-		t.Errorf("CheckpointCount = %d, want %d", loaded.CheckpointCount, state.CheckpointCount)
+	if loaded.StepCount != state.StepCount {
+		t.Errorf("StepCount = %d, want %d", loaded.StepCount, state.StepCount)
 	}
 }
 
@@ -176,16 +176,16 @@ func TestShadowStrategy_ListAllSessionStates(t *testing.T) {
 
 	// Save multiple session states (both with same base commit)
 	state1 := &SessionState{
-		SessionID:       "session-1",
-		BaseCommit:      "abc1234",
-		StartedAt:       time.Now(),
-		CheckpointCount: 1,
+		SessionID:  "session-1",
+		BaseCommit: "abc1234",
+		StartedAt:  time.Now(),
+		StepCount:  1,
 	}
 	state2 := &SessionState{
-		SessionID:       "session-2",
-		BaseCommit:      "abc1234",
-		StartedAt:       time.Now(),
-		CheckpointCount: 2,
+		SessionID:  "session-2",
+		BaseCommit: "abc1234",
+		StartedAt:  time.Now(),
+		StepCount:  2,
 	}
 
 	if err := s.saveSessionState(state1); err != nil {
@@ -203,6 +203,117 @@ func TestShadowStrategy_ListAllSessionStates(t *testing.T) {
 
 	if len(states) != 2 {
 		t.Errorf("listAllSessionStates() returned %d states, want 2", len(states))
+	}
+}
+
+// TestShadowStrategy_ListAllSessionStates_CleansUpStaleSessions tests that
+// listAllSessionStates cleans up stale sessions whose shadow branch no longer exists.
+// Stale sessions include: pre-state-machine sessions (empty phase), IDLE/ENDED sessions
+// that were never condensed. Active sessions and sessions with LastCheckpointID are kept.
+func TestShadowStrategy_ListAllSessionStates_CleansUpStaleSessions(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	now := time.Now()
+
+	// None of these sessions have shadow branches → cleanup logic applies.
+
+	// Session 1: Pre-state-machine session (empty phase, no checkpoint ID)
+	// Should be cleaned up.
+	staleEmpty := &SessionState{
+		SessionID:  "stale-empty-phase",
+		BaseCommit: "aaa1111",
+		StartedAt:  now.Add(-24 * time.Hour),
+		StepCount:  0,
+	}
+
+	// Session 2: IDLE session with no checkpoint ID
+	// Should be cleaned up.
+	staleIdle := &SessionState{
+		SessionID:  "stale-idle",
+		BaseCommit: "bbb2222",
+		StartedAt:  now.Add(-12 * time.Hour),
+		StepCount:  3,
+		Phase:      "idle",
+	}
+
+	// Session 3: ENDED session with no checkpoint ID
+	// Should be cleaned up.
+	staleEnded := &SessionState{
+		SessionID:  "stale-ended",
+		BaseCommit: "ccc3333",
+		StartedAt:  now.Add(-6 * time.Hour),
+		StepCount:  1,
+		Phase:      "ended",
+	}
+
+	// Session 4: ACTIVE session with no shadow branch (branch not yet created)
+	// Should be KEPT (session is still running).
+	activeNoShadow := &SessionState{
+		SessionID:  "active-no-shadow",
+		BaseCommit: "ddd4444",
+		StartedAt:  now,
+		StepCount:  0,
+		Phase:      "active",
+	}
+
+	// Session 5: IDLE session with LastCheckpointID set (already condensed)
+	// Should be KEPT (for checkpoint ID reuse).
+	condensedIdle := &SessionState{
+		SessionID:        "condensed-idle",
+		BaseCommit:       "eee5555",
+		StartedAt:        now.Add(-1 * time.Hour),
+		StepCount:        0,
+		Phase:            "idle",
+		LastCheckpointID: "a1b2c3d4e5f6",
+	}
+
+	for _, state := range []*SessionState{staleEmpty, staleIdle, staleEnded, activeNoShadow, condensedIdle} {
+		if err := s.saveSessionState(state); err != nil {
+			t.Fatalf("saveSessionState(%s) error = %v", state.SessionID, err)
+		}
+	}
+
+	states, err := s.listAllSessionStates()
+	if err != nil {
+		t.Fatalf("listAllSessionStates() error = %v", err)
+	}
+
+	// Only active-no-shadow and condensed-idle should survive
+	if len(states) != 2 {
+		var ids []string
+		for _, st := range states {
+			ids = append(ids, st.SessionID)
+		}
+		t.Fatalf("listAllSessionStates() returned %d states %v, want 2 [active-no-shadow, condensed-idle]", len(states), ids)
+	}
+
+	kept := make(map[string]bool)
+	for _, st := range states {
+		kept[st.SessionID] = true
+	}
+	if !kept["active-no-shadow"] {
+		t.Error("active session without shadow branch should be kept")
+	}
+	if !kept["condensed-idle"] {
+		t.Error("session with LastCheckpointID should be kept")
+	}
+
+	// Verify stale sessions were actually cleared from disk
+	for _, staleID := range []string{"stale-empty-phase", "stale-idle", "stale-ended"} {
+		loaded, err := LoadSessionState(staleID)
+		if err != nil {
+			t.Errorf("LoadSessionState(%s) error = %v", staleID, err)
+		}
+		if loaded != nil {
+			t.Errorf("stale session %s should have been cleared from disk", staleID)
+		}
 	}
 }
 
@@ -237,22 +348,22 @@ func TestShadowStrategy_FindSessionsForCommit(t *testing.T) {
 
 	// Save session states with different base commits
 	state1 := &SessionState{
-		SessionID:       "session-1",
-		BaseCommit:      "abc1234",
-		StartedAt:       time.Now(),
-		CheckpointCount: 1,
+		SessionID:  "session-1",
+		BaseCommit: "abc1234",
+		StartedAt:  time.Now(),
+		StepCount:  1,
 	}
 	state2 := &SessionState{
-		SessionID:       "session-2",
-		BaseCommit:      "abc1234",
-		StartedAt:       time.Now(),
-		CheckpointCount: 2,
+		SessionID:  "session-2",
+		BaseCommit: "abc1234",
+		StartedAt:  time.Now(),
+		StepCount:  2,
 	}
 	state3 := &SessionState{
-		SessionID:       "session-3",
-		BaseCommit:      "xyz7890",
-		StartedAt:       time.Now(),
-		CheckpointCount: 3,
+		SessionID:  "session-3",
+		BaseCommit: "xyz7890",
+		StartedAt:  time.Now(),
+		StepCount:  3,
 	}
 
 	for _, state := range []*SessionState{state1, state2, state3} {
@@ -304,10 +415,10 @@ func TestShadowStrategy_ClearSessionState(t *testing.T) {
 	s := &ManualCommitStrategy{}
 
 	state := &SessionState{
-		SessionID:       "test-session",
-		BaseCommit:      "abc123",
-		StartedAt:       time.Now(),
-		CheckpointCount: 1,
+		SessionID:  "test-session",
+		BaseCommit: "abc123",
+		StartedAt:  time.Now(),
+		StepCount:  1,
 	}
 
 	// Save state
@@ -850,10 +961,10 @@ func TestCheckpointInfo_JSONRoundTrip(t *testing.T) {
 
 func TestSessionState_JSONRoundTrip(t *testing.T) {
 	original := SessionState{
-		SessionID:       "session-123",
-		BaseCommit:      "abc123def456",
-		StartedAt:       time.Date(2025, 12, 2, 10, 0, 0, 0, time.UTC),
-		CheckpointCount: 10,
+		SessionID:  "session-123",
+		BaseCommit: "abc123def456",
+		StartedAt:  time.Date(2025, 12, 2, 10, 0, 0, 0, time.UTC),
+		StepCount:  10,
 	}
 
 	data, err := json.Marshal(original)
@@ -872,8 +983,8 @@ func TestSessionState_JSONRoundTrip(t *testing.T) {
 	if loaded.BaseCommit != original.BaseCommit {
 		t.Errorf("BaseCommit = %q, want %q", loaded.BaseCommit, original.BaseCommit)
 	}
-	if loaded.CheckpointCount != original.CheckpointCount {
-		t.Errorf("CheckpointCount = %d, want %d", loaded.CheckpointCount, original.CheckpointCount)
+	if loaded.StepCount != original.StepCount {
+		t.Errorf("StepCount = %d, want %d", loaded.StepCount, original.StepCount)
 	}
 }
 
@@ -1163,7 +1274,7 @@ func TestSessionState_LastCheckpointID(t *testing.T) {
 		SessionID:        "test-session-123",
 		BaseCommit:       "abc123def456",
 		StartedAt:        time.Now(),
-		CheckpointCount:  5,
+		StepCount:        5,
 		LastCheckpointID: "a1b2c3d4e5f6",
 	}
 
@@ -1206,8 +1317,8 @@ func TestSessionState_TokenUsagePersistence(t *testing.T) {
 		SessionID:                   "test-session-token-usage",
 		BaseCommit:                  "abc123def456",
 		StartedAt:                   time.Now(),
-		CheckpointCount:             5,
-		TranscriptLinesAtStart:      42,
+		StepCount:                   5,
+		CheckpointTranscriptStart:   42,
 		TranscriptIdentifierAtStart: "test-uuid-abc123",
 		TokenUsage: &agent.TokenUsage{
 			InputTokens:         1000,
@@ -1233,9 +1344,9 @@ func TestSessionState_TokenUsagePersistence(t *testing.T) {
 		t.Fatal("loadSessionState() returned nil")
 	}
 
-	// Verify TranscriptLinesAtStart
-	if loaded.TranscriptLinesAtStart != state.TranscriptLinesAtStart {
-		t.Errorf("TranscriptLinesAtStart = %d, want %d", loaded.TranscriptLinesAtStart, state.TranscriptLinesAtStart)
+	// Verify CheckpointTranscriptStart
+	if loaded.CheckpointTranscriptStart != state.CheckpointTranscriptStart {
+		t.Errorf("CheckpointTranscriptStart = %d, want %d", loaded.CheckpointTranscriptStart, state.CheckpointTranscriptStart)
 	}
 
 	// Verify TranscriptIdentifierAtStart
@@ -1299,13 +1410,13 @@ func TestShadowStrategy_PrepareCommitMsg_ReusesLastCheckpointID(t *testing.T) {
 	// Create session state with LastCheckpointID but no new content
 	// (simulating state after first commit with condensation)
 	state := &SessionState{
-		SessionID:                "test-session",
-		BaseCommit:               initialCommit.String(),
-		WorktreePath:             dir,
-		StartedAt:                time.Now(),
-		CheckpointCount:          1,
-		CondensedTranscriptLines: 10, // Already condensed
-		LastCheckpointID:         "abc123def456",
+		SessionID:                 "test-session",
+		BaseCommit:                initialCommit.String(),
+		WorktreePath:              dir,
+		StartedAt:                 time.Now(),
+		StepCount:                 1,
+		CheckpointTranscriptStart: 10, // Already condensed
+		LastCheckpointID:          "abc123def456",
 	}
 	if err := s.saveSessionState(state); err != nil {
 		t.Fatalf("saveSessionState() error = %v", err)
@@ -1503,8 +1614,8 @@ func TestSaveChanges_EmptyBaseCommit_Recovery(t *testing.T) {
 	if loaded.BaseCommit == "" {
 		t.Error("BaseCommit should be populated after recovery")
 	}
-	if loaded.CheckpointCount != 1 {
-		t.Errorf("CheckpointCount = %d, want 1", loaded.CheckpointCount)
+	if loaded.StepCount != 1 {
+		t.Errorf("StepCount = %d, want 1", loaded.StepCount)
 	}
 }
 
@@ -2349,5 +2460,116 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 	if metadata.InitialAttribution.AgentPercentage >= 100 {
 		t.Errorf("AgentPercentage should be < 100%% since user contributed, got %.1f%%",
 			metadata.InitialAttribution.AgentPercentage)
+	}
+}
+
+// TestCondenseSession_PrefersLiveTranscript verifies that CondenseSession reads the
+// live transcript file when available, rather than the potentially stale shadow branch copy.
+// This reproduces the bug where SaveChanges was skipped (no code changes) but the
+// transcript continued growing — deferred condensation would read stale data.
+func TestCondenseSession_PrefersLiveTranscript(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	// Create initial commit
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("content"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if _, err := wt.Add("file.txt"); err != nil {
+		t.Fatalf("failed to stage: %v", err)
+	}
+	_, err = wt.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "2025-01-15-test-live-transcript"
+
+	// Create metadata dir with an initial (short) transcript
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
+		t.Fatalf("failed to create metadata dir: %v", err)
+	}
+
+	staleTranscript := `{"type":"human","message":{"content":"first prompt"}}
+{"type":"assistant","message":{"content":"first response"}}
+`
+	if err := os.WriteFile(filepath.Join(metadataDirAbs, paths.TranscriptFileName), []byte(staleTranscript), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// SaveChanges to create shadow branch with the stale transcript
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 1",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() error = %v", err)
+	}
+
+	// Now simulate the conversation continuing: write a LONGER live transcript file.
+	// In the real bug, SaveChanges would be skipped because totalChanges == 0,
+	// so the shadow branch still has the stale version.
+	liveTranscriptFile := filepath.Join(dir, "live-transcript.jsonl")
+	liveTranscript := `{"type":"human","message":{"content":"first prompt"}}
+{"type":"assistant","message":{"content":"first response"}}
+{"type":"human","message":{"content":"second prompt"}}
+{"type":"assistant","message":{"content":"second response"}}
+`
+	if err := os.WriteFile(liveTranscriptFile, []byte(liveTranscript), 0o644); err != nil {
+		t.Fatalf("failed to write live transcript: %v", err)
+	}
+
+	// Load session state and set TranscriptPath to the live file
+	state, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("loadSessionState() error = %v", err)
+	}
+	state.TranscriptPath = liveTranscriptFile
+	if err := s.saveSessionState(state); err != nil {
+		t.Fatalf("saveSessionState() error = %v", err)
+	}
+
+	// Condense — this should read the live transcript, not the shadow branch copy
+	checkpointID := id.MustCheckpointID("b2c3d4e5f6a1")
+	result, err := s.CondenseSession(repo, checkpointID, state)
+	if err != nil {
+		t.Fatalf("CondenseSession() error = %v", err)
+	}
+
+	// The live transcript has 4 lines; the shadow branch copy has 2.
+	// If we read the stale shadow copy, we'd only see 2 lines.
+	if result.TotalTranscriptLines != 4 {
+		t.Errorf("TotalTranscriptLines = %d, want 4 (live transcript has 4 lines, shadow has 2)", result.TotalTranscriptLines)
+	}
+
+	// Verify the condensed content includes the second prompt
+	store := checkpoint.NewGitStore(repo)
+	content, err := store.ReadLatestSessionContent(t.Context(), checkpointID)
+	if err != nil {
+		t.Fatalf("ReadLatestSessionContent() error = %v", err)
+	}
+	if !strings.Contains(string(content.Transcript), "second prompt") {
+		t.Error("condensed transcript should contain 'second prompt' from live file, but it doesn't")
 	}
 }

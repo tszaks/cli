@@ -555,8 +555,8 @@ func TestShadow_ShadowBranchMigrationOnPull(t *testing.T) {
 	if state.BaseCommit != newHead {
 		t.Errorf("Session base commit should be %s, got %s", newHead[:7], state.BaseCommit[:7])
 	}
-	if state.CheckpointCount != 2 {
-		t.Errorf("Expected 2 checkpoints after migration, got %d", state.CheckpointCount)
+	if state.StepCount != 2 {
+		t.Errorf("Expected 2 checkpoints after migration, got %d", state.StepCount)
 	}
 	// Verify agent_type is preserved across checkpoints and migration
 	expectedAgentType := agent.AgentTypeClaudeCode
@@ -1609,7 +1609,7 @@ func TestShadow_TrailerRemovalSkipsCondensation(t *testing.T) {
 
 	// Verify commit does NOT have trailer
 	commitMsg := env.GetCommitMessage(commitHash)
-	if strings.Contains(commitMsg, "Entire-Checkpoint:") {
+	if _, found := trailers.ParseCheckpoint(commitMsg); found {
 		t.Errorf("Commit should NOT have Entire-Checkpoint trailer (it was removed), got:\n%s", commitMsg)
 	}
 	t.Logf("Commit message (trailer removed):\n%s", commitMsg)
@@ -1656,10 +1656,10 @@ func TestShadow_TrailerRemovalSkipsCondensation(t *testing.T) {
 	checkpointID := env.GetCheckpointIDFromCommitMessage(commit2Hash)
 	t.Logf("Second commit: %s, checkpoint: %s", commit2Hash[:7], checkpointID)
 
-	// Verify second commit HAS trailer
+	// Verify second commit HAS trailer with valid format
 	commit2Msg := env.GetCommitMessage(commit2Hash)
-	if !strings.Contains(commit2Msg, "Entire-Checkpoint:") {
-		t.Errorf("Second commit should have Entire-Checkpoint trailer, got:\n%s", commit2Msg)
+	if _, found := trailers.ParseCheckpoint(commit2Msg); !found {
+		t.Errorf("Second commit should have valid Entire-Checkpoint trailer, got:\n%s", commit2Msg)
 	}
 
 	// Verify condensation happened for second commit

@@ -86,10 +86,10 @@ func TestSessionIDConflict_OrphanedBranchIsReset(t *testing.T) {
 
 	// Verify shadow branch now has session2's checkpoint
 	state2, _ := env.GetSessionState(session2.ID)
-	if state2 == nil || state2.CheckpointCount == 0 {
+	if state2 == nil || state2.StepCount == 0 {
 		t.Error("Session 2 should have checkpoints after orphaned branch was reset")
 	} else {
-		t.Logf("Session 2 has %d checkpoint(s)", state2.CheckpointCount)
+		t.Logf("Session 2 has %d checkpoint(s)", state2.StepCount)
 	}
 }
 
@@ -202,10 +202,10 @@ func TestSessionIDConflict_ManuallyCreatedOrphanedBranch(t *testing.T) {
 
 	// Verify session has checkpoints
 	state, _ := env.GetSessionState(session.ID)
-	if state == nil || state.CheckpointCount == 0 {
+	if state == nil || state.StepCount == 0 {
 		t.Error("Session should have checkpoints after orphaned branch was reset")
 	} else {
-		t.Logf("New session has %d checkpoint(s)", state.CheckpointCount)
+		t.Logf("New session has %d checkpoint(s)", state.StepCount)
 	}
 }
 
@@ -321,7 +321,7 @@ func TestSessionStart_InformationalMessage(t *testing.T) {
 	env.GitCheckoutNewBranch("feature/test")
 	env.InitEntire(strategy.StrategyNameManualCommit)
 
-	// Create first session and save a checkpoint (so CheckpointCount > 0)
+	// Create first session and save a checkpoint (so StepCount > 0)
 	session1 := env.NewSession()
 	if err := env.SimulateUserPromptSubmit(session1.ID); err != nil {
 		t.Fatalf("SimulateUserPromptSubmit (session1) failed: %v", err)
@@ -338,10 +338,10 @@ func TestSessionStart_InformationalMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get session1 state: %v", err)
 	}
-	if state1 == nil || state1.CheckpointCount == 0 {
+	if state1 == nil || state1.StepCount == 0 {
 		t.Fatal("Session 1 should have checkpoints")
 	}
-	t.Logf("Session 1 (%s) has %d checkpoint(s)", session1.EntireID, state1.CheckpointCount)
+	t.Logf("Session 1 (%s) has %d checkpoint(s)", session1.EntireID, state1.StepCount)
 
 	// Start a second session (different session ID, same base commit)
 	session2 := env.NewSession()

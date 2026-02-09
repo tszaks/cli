@@ -338,10 +338,10 @@ func TestListOrphanedSessionStates_RecentSessionNotOrphaned(t *testing.T) {
 	// Create a session state file that was JUST started (simulating InitializeSession)
 	// This session has no checkpoints and no shadow branch yet
 	state := &SessionState{
-		SessionID:       "recent-session-123",
-		BaseCommit:      commitHash.String(), // Full 40-char hash
-		StartedAt:       time.Now(),          // Just started!
-		CheckpointCount: 0,                   // No checkpoints yet
+		SessionID:  "recent-session-123",
+		BaseCommit: commitHash.String(), // Full 40-char hash
+		StartedAt:  time.Now(),          // Just started!
+		StepCount:  0,                   // No checkpoints yet
 	}
 	if err := SaveSessionState(state); err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)
@@ -412,11 +412,11 @@ func TestListOrphanedSessionStates_ShadowBranchMatching(t *testing.T) {
 	// Create a session state with the FULL 40-char hash and WorktreeID (matching real behavior)
 	// Real code: state.BaseCommit = head.Hash().String(), state.WorktreeID = worktreeID
 	state := &SessionState{
-		SessionID:       "session-with-shadow-branch",
-		BaseCommit:      fullHash, // Full 40-char hash
-		WorktreeID:      worktreeID,
-		StartedAt:       time.Now().Add(-1 * time.Hour),
-		CheckpointCount: 1,
+		SessionID:  "session-with-shadow-branch",
+		BaseCommit: fullHash, // Full 40-char hash
+		WorktreeID: worktreeID,
+		StartedAt:  time.Now().Add(-1 * time.Hour),
+		StepCount:  1,
 	}
 	if err := SaveSessionState(state); err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)

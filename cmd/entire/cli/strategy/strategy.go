@@ -11,6 +11,7 @@ import (
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/session"
 )
 
 // ErrNoMetadata is returned when a commit does not have an Entire metadata trailer.
@@ -178,9 +179,9 @@ type SaveContext struct {
 	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
 	AgentType agent.AgentType
 
-	// Transcript position at checkpoint start - tracks what was added during this checkpoint
-	TranscriptIdentifierAtStart string // Last identifier when checkpoint started (UUID for Claude, message ID for Gemini)
-	TranscriptLinesAtStart      int    // Line count when checkpoint started
+	// Transcript position at step/turn start - tracks what was added during this step
+	StepTranscriptIdentifier string // Last identifier when step started (UUID for Claude, message ID for Gemini)
+	StepTranscriptStart      int    // Transcript line count when this step/turn started
 
 	// TokenUsage contains the token usage for this checkpoint
 	TokenUsage *agent.TokenUsage
@@ -460,6 +461,18 @@ type PrePushHandler interface {
 	PrePush(remote string) error
 }
 
+// TurnEndHandler is an optional interface for strategies that need to
+// handle deferred actions when an agent turn ends.
+// For example, manual-commit strategy uses this to condense session data
+// that was deferred during ACTIVE_COMMITTED → IDLE transitions.
+type TurnEndHandler interface {
+	// HandleTurnEnd dispatches strategy-specific actions emitted by the
+	// ACTIVE_COMMITTED → IDLE (or other) turn-end transition.
+	// The state has already been updated by ApplyCommonActions; the caller
+	// saves it after this method returns.
+	HandleTurnEnd(state *session.State, actions []session.Action) error
+}
+
 // LogsOnlyRestorer is an optional interface for strategies that support
 // restoring session logs without file state restoration.
 // This is used for "logs-only" rewind points where only the session transcript
@@ -474,12 +487,28 @@ type LogsOnlyRestorer interface {
 
 // SessionResetter is an optional interface for strategies that support
 // resetting session state and shadow branches.
-// This is used by the "rewind reset" command to clean up shadow branches
+// This is used by the "reset" command to clean up shadow branches
 // and session state when a user wants to start fresh.
 type SessionResetter interface {
 	// Reset deletes the shadow branch and session state for the current HEAD.
 	// Returns nil if there's nothing to reset (no shadow branch).
 	Reset() error
+
+	// ResetSession clears the state for a single session and cleans up
+	// the shadow branch if no other sessions reference it.
+	// File changes remain in the working directory.
+	ResetSession(sessionID string) error
+}
+
+// SessionCondenser is an optional interface for strategies that support
+// force-condensing a session. This is used by "entire sessions fix" to
+// salvage stuck sessions by condensing their data to permanent storage.
+type SessionCondenser interface {
+	// CondenseSessionByID force-condenses a session and cleans up.
+	// Generates a new checkpoint ID, condenses to entire/sessions,
+	// updates the session state, and removes the shadow branch
+	// if no other active sessions need it.
+	CondenseSessionByID(sessionID string) error
 }
 
 // ConcurrentSessionChecker is an optional interface for strategies that support
