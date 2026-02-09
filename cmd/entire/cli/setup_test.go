@@ -786,12 +786,37 @@ func TestRemoveEntireDirectory_NotExists(t *testing.T) {
 }
 
 func TestPrintMissingAgentError(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	printMissingAgentError(&buf)
 	output := buf.String()
 
 	if !strings.Contains(output, "Missing agent name") {
 		t.Error("expected 'Missing agent name' in output")
+	}
+	for _, a := range agent.List() {
+		if !strings.Contains(output, string(a)) {
+			t.Errorf("expected agent %q listed in output", a)
+		}
+	}
+	if !strings.Contains(output, "(default)") {
+		t.Error("expected default annotation in output")
+	}
+	if !strings.Contains(output, "Usage: entire enable --agent") {
+		t.Error("expected usage line in output")
+	}
+}
+
+func TestPrintWrongAgentError(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	printWrongAgentError(&buf, "not-an-agent")
+	output := buf.String()
+
+	if !strings.Contains(output, `Unknown agent "not-an-agent"`) {
+		t.Error("expected unknown agent name in output")
 	}
 	for _, a := range agent.List() {
 		if !strings.Contains(output, string(a)) {

@@ -69,8 +69,6 @@ Strategies: manual-commit (default), auto-commit`,
 			// not a usage error, so we silence Cobra's output and use SilentError
 			// to prevent duplicate error output in main.go
 			if _, err := paths.RepoRoot(); err != nil {
-				cmd.SilenceUsage = true
-				cmd.SilenceErrors = true
 				fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository. Please run 'entire enable' from within a git repository.")
 				return NewSilentError(errors.New("not a git repository"))
 			}
@@ -80,12 +78,17 @@ Strategies: manual-commit (default), auto-commit`,
 			}
 			// Non-interactive mode if --agent flag is provided
 			if cmd.Flags().Changed("agent") && agentName == "" {
-				cmd.SilenceUsage = true
 				printMissingAgentError(cmd.ErrOrStderr())
 				return NewSilentError(errors.New("missing agent name"))
 			}
+
 			if agentName != "" {
-				return setupAgentHooksNonInteractive(cmd.OutOrStdout(), agent.AgentName(agentName), strategyFlag, localDev, forceHooks, skipPushSessions, telemetry)
+				ag, err := agent.Get(agent.AgentName(agentName))
+				if err != nil {
+					printWrongAgentError(cmd.ErrOrStderr(), agentName)
+					return NewSilentError(errors.New("wrong agent name"))
+				}
+				return setupAgentHooksNonInteractive(cmd.OutOrStdout(), ag, strategyFlag, localDev, forceHooks, skipPushSessions, telemetry)
 			}
 			// If strategy is specified via flag, skip interactive selection
 			if strategyFlag != "" {
@@ -503,10 +506,10 @@ func setupClaudeCodeHook(localDev, forceHooks bool) (int, error) {
 	return count, nil
 }
 
-// printMissingAgentError writes a helpful error listing available agents.
-func printMissingAgentError(w io.Writer) {
+// printAgentError writes an error message followed by available agents and usage.
+func printAgentError(w io.Writer, message string) {
 	agents := agent.List()
-	fmt.Fprintln(w, "Missing agent name. Available agents:")
+	fmt.Fprintf(w, "%s Available agents:\n", message)
 	fmt.Fprintln(w)
 	for _, a := range agents {
 		suffix := ""
@@ -519,14 +522,20 @@ func printMissingAgentError(w io.Writer) {
 	fmt.Fprintln(w, "Usage: entire enable --agent <agent-name>")
 }
 
+// printMissingAgentError writes a helpful error listing available agents.
+func printMissingAgentError(w io.Writer) {
+	printAgentError(w, "Missing agent name.")
+}
+
+// printWrongAgentError writes a helpful error when an unknown agent name is provided.
+func printWrongAgentError(w io.Writer, name string) {
+	printAgentError(w, fmt.Sprintf("Unknown agent %q.", name))
+}
+
 // setupAgentHooksNonInteractive sets up hooks for a specific agent non-interactively.
 // If strategyName is provided, it sets the strategy; otherwise uses default.
-func setupAgentHooksNonInteractive(w io.Writer, agentName agent.AgentName, strategyName string, localDev, forceHooks, skipPushSessions, telemetry bool) error {
-	ag, err := agent.Get(agentName)
-	if err != nil {
-		return fmt.Errorf("unknown agent: %s", agentName)
-	}
-
+func setupAgentHooksNonInteractive(w io.Writer, ag agent.Agent, strategyName string, localDev, forceHooks, skipPushSessions, telemetry bool) error {
+	agentName := ag.Name()
 	// Check if agent supports hooks
 	hookAgent, ok := ag.(agent.HookSupport)
 	if !ok {
