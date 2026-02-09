@@ -699,6 +699,11 @@ func shellCompletionTarget() (shellName, rcFile, completionLine string, err erro
 			bashRC,
 			"source <(entire completion bash)",
 			nil
+	case strings.Contains(shell, "fish"):
+		return "Fish",
+			filepath.Join(home, ".config", "fish", "config.fish"),
+			"entire completion fish | source",
+			nil
 	default:
 		return "", "", "", errUnsupportedShell
 	}
@@ -710,7 +715,7 @@ func promptShellCompletion(w io.Writer) error {
 	shellName, rcFile, completionLine, err := shellCompletionTarget()
 	if err != nil {
 		if errors.Is(err, errUnsupportedShell) {
-			fmt.Fprintf(w, "Note: Shell completion not available for your shell. Supported: zsh, bash.\n")
+			fmt.Fprintf(w, "Note: Shell completion not available for your shell. Supported: zsh, bash, fish.\n")
 			return nil
 		}
 		return fmt.Errorf("shell completion: %w", err)
@@ -765,6 +770,9 @@ func isCompletionConfigured(rcFile string) bool {
 
 // appendShellCompletion adds the completion line to the rc file.
 func appendShellCompletion(rcFile, completionLine string) error {
+	if err := os.MkdirAll(filepath.Dir(rcFile), 0o700); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
 	//nolint:gosec // G302: Shell rc files need 0644 for user readability
 	f, err := os.OpenFile(rcFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
