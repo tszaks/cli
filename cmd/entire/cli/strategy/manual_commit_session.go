@@ -79,24 +79,19 @@ func (s *ManualCommitStrategy) listAllSessionStates() ([]*SessionState, error) {
 	for _, sessionState := range sessionStates {
 		state := sessionState
 
-		// Skip and cleanup orphaned sessions whose shadow branch no longer exists
-		// Only cleanup if the session has created checkpoints (StepCount > 0)
-		// AND has no LastCheckpointID (not recently condensed)
-		// Sessions with LastCheckpointID are valid - they were condensed and the shadow
-		// branch was intentionally deleted. Keep them for LastCheckpointID reuse.
+		// Skip and cleanup orphaned sessions whose shadow branch no longer exists.
+		// Keep active sessions (shadow branch may not be created yet) and sessions
+		// with LastCheckpointID (needed for checkpoint ID reuse on subsequent commits).
+		// Clean up everything else: stale pre-state-machine sessions (empty phase),
+		// IDLE/ENDED sessions that were never condensed, etc.
 		shadowBranch := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 		refName := plumbing.NewBranchReferenceName(shadowBranch)
 		if _, err := repo.Reference(refName, true); err != nil {
-			// Shadow branch doesn't exist
-			// Only cleanup if session has checkpoints AND no LastCheckpointID
-			// Sessions with LastCheckpointID should be kept for checkpoint reuse
-			if state.StepCount > 0 && state.LastCheckpointID == "" {
-				// Clear the orphaned session state (best-effort, don't fail listing)
+			if !state.Phase.IsActive() && state.LastCheckpointID.IsEmpty() {
 				//nolint:errcheck,gosec // G104: Cleanup is best-effort, shouldn't fail the list operation
 				store.Clear(context.Background(), state.SessionID)
 				continue
 			}
-			// Keep sessions with LastCheckpointID or no checkpoints yet
 		}
 
 		states = append(states, state)

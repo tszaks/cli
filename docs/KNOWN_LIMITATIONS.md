@@ -4,31 +4,13 @@ This document describes known limitations of the Entire CLI.
 
 ## Git Operations
 
-### Amending Commits Loses Checkpoint Link
+### Amending Commits with `-m` Flag
 
-When you amend a commit that has an `Entire-Checkpoint` trailer using `git commit --amend -m "new message"`, the checkpoint link is lost because the `-m` flag replaces the entire commit message.
+When you amend a commit using `git commit --amend -m "new message"`, the `-m` flag replaces the entire message including any `Entire-Checkpoint` trailer. Git passes `source="message"` (not `"commit"`) to the prepare-commit-msg hook, so the amend-specific trailer preservation logic is bypassed.
 
-**Impact:**
-- The link between your code commit and the session metadata on `entire/sessions` is broken
-- `entire explain` can no longer find the associated session transcript
-- The checkpoint data still exists but is orphaned
+**However, the trailer is automatically restored** if `PendingCheckpointID` or `LastCheckpointID` exists in session state (set during the original condensation). This means `git commit --amend -m "..."` preserves the checkpoint link in most cases, including when Claude does the amend in a non-interactive environment.
 
-**Workarounds:**
-
-1. **Amend without `-m`**: Use `git commit --amend` (without `-m`) to open your editor, which preserves the existing message including the trailer
-
-2. **Manually preserve the trailer**: If you must use `-m`, first note the checkpoint ID:
-   ```bash
-   git log -1 --format=%B | grep "Entire-Checkpoint"
-   ```
-   Then include it in your new message:
-   ```bash
-   git commit --amend -m "new message
-
-   Entire-Checkpoint: <id-from-above>"
-   ```
-
-3. **Re-add after amend**: If you forgot, you can amend again to add the trailer back (if you still have the checkpoint ID from `entire explain` or the reflog)
+The only case where the link is lost is when `-m` is used with genuinely *new* content (no prior condensation) and `/dev/tty` is not available for the interactive confirmation prompt.
 
 **Tracked in:** [ENT-161](https://linear.app/entirehq/issue/ENT-161)
 
