@@ -4,10 +4,10 @@ Entire hooks into your git workflow to capture AI agent sessions on every push. 
 
 ## Quick Start
 
-```bash
-# Install via Homebrew (requires SSH access)
-brew tap entirehq/tap git@github.com:entirehq/homebrew-entire.git
-brew install entirehq/tap/entire
+```
+# Install via Homebrew
+brew tap entireio/tap
+brew install entireio/tap/entire
 
 # Enable in your project
 cd your-project && entire enable
@@ -20,7 +20,7 @@ entire status
 
 ### 1. Enable Entire in Your Repository
 
-```bash
+```
 entire enable
 ```
 
@@ -30,7 +30,7 @@ This installs Claude Code and git hooks that automatically capture checkpoints w
 
 Just use Claude Code normally. Entire runs in the background, creating checkpoints automatically:
 
-```bash
+```
 entire status  # Check current session status anytime
 ```
 
@@ -38,7 +38,7 @@ entire status  # Check current session status anytime
 
 If you want to undo some changes and go back to an earlier checkpoint:
 
-```bash
+```
 entire rewind
 ```
 
@@ -48,7 +48,7 @@ This shows all available checkpoints in the current session. Select one to resto
 
 To see and restore sessions from earlier work:
 
-```bash
+```
 entire resume
 ```
 
@@ -56,7 +56,7 @@ Lists all past sessions with timestamps. You can view the conversation history o
 
 ### 5. Disable Entire (Optional)
 
-```bash
+```
 entire disable
 ```
 
@@ -70,7 +70,7 @@ A **session** represents a complete interaction with your AI agent, from start t
 
 **Session ID format:** `YYYY-MM-DD-<UUID>` (e.g., `2026-01-08-abc123de-f456-7890-abcd-ef1234567890`)
 
-Sessions are stored separately from your code commits on the `entire/sessions` branch.
+Sessions are stored separately from your code commits on the `entire/checkpoints/v1` branch.
 
 ### Checkpoints
 
@@ -121,7 +121,7 @@ Entire offers two strategies for capturing your work:
 
 **Examples:**
 
-```bash
+```
 # Use auto-commit strategy
 entire enable --strategy auto-commit
 
@@ -167,7 +167,7 @@ Personal overrides, gitignored by default:
 | `enabled`                              | `true`, `false`                  | Enable/disable Entire                          |
 | `agent`                                | `claude-code`, `gemini`, etc.    | AI agent to integrate with                     |
 | `log_level`                            | `debug`, `info`, `warn`, `error` | Logging verbosity                              |
-| `strategy_options.push_sessions`       | `true`, `false`                  | Auto-push `entire/sessions` branch on git push |
+| `strategy_options.push_sessions`       | `true`, `false`                  | Auto-push `entire/checkpoints/v1` branch on git push |
 | `strategy_options.summarize.enabled`   | `true`, `false`                  | Auto-generate AI summaries at commit time      |
 
 ### Auto-Summarization
@@ -211,19 +211,19 @@ Local settings override project settings field-by-field. When you run `entire st
 If you see an error like this when running `entire resume`:
 
 ```
-Failed to fetch metadata: failed to fetch entire/sessions from origin: ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain
+Failed to fetch metadata: failed to fetch entire/checkpoints/v1 from origin: ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain
 ```
 
 This is a [known issue with go-git's SSH handling](https://github.com/go-git/go-git/issues/411). Fix it by adding GitHub's host keys to your known_hosts file:
 
-```bash
+```
 ssh-keyscan -t rsa github.com > ~/.ssh/known_hosts
 ssh-keyscan -t ecdsa github.com >> ~/.ssh/known_hosts
 ```
 
 ### Debug Mode
 
-```bash
+```
 # Via environment variable
 ENTIRE_LOG_LEVEL=debug entire status
 
@@ -235,7 +235,7 @@ ENTIRE_LOG_LEVEL=debug entire status
 
 ### Resetting State
 
-```bash
+```
 # Reset shadow branch for current commit
 entire reset --force
 
@@ -247,7 +247,7 @@ entire disable && entire enable --force
 
 For screen reader users, enable accessible mode:
 
-```bash
+```
 export ACCESSIBLE=1
 entire enable
 ```
@@ -264,7 +264,7 @@ This project uses [mise](https://mise.jdx.dev/) for task automation and dependen
 
 ### Getting Started
 
-```bash
+```
 # Clone the repository
 git clone <repo-url>
 cd cli
@@ -278,7 +278,7 @@ mise run build
 
 ### Common Tasks
 
-```bash
+```
 # Run tests
 mise run test
 
@@ -310,7 +310,7 @@ mise run dev:publish
 
 ## Getting Help
 
-```bash
+```
 entire --help              # General help
 entire <command> --help    # Command-specific help
 ```

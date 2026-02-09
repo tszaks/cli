@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+	_ "github.com/entireio/cli/cmd/entire/cli/agent/claudecode"
+	_ "github.com/entireio/cli/cmd/entire/cli/agent/geminicli"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
 	"github.com/go-git/go-git/v5"
@@ -543,6 +546,26 @@ func TestCheckEntireDirExists(t *testing.T) {
 	}
 }
 
+func TestIsFullyEnabled_NotEnabled(t *testing.T) {
+	setupTestDir(t)
+
+	// No settings, no hooks, no directory - should not be fully enabled
+	enabled, _, _ := isFullyEnabled()
+	if enabled {
+		t.Error("isFullyEnabled() should return false when nothing is set up")
+	}
+}
+
+func TestIsFullyEnabled_SettingsDisabled(t *testing.T) {
+	setupTestDir(t)
+	writeSettings(t, testSettingsDisabled)
+
+	enabled, _, _ := isFullyEnabled()
+	if enabled {
+		t.Error("isFullyEnabled() should return false when settings have enabled=false")
+	}
+}
+
 func TestCountSessionStates(t *testing.T) {
 	setupTestRepo(t)
 
@@ -601,7 +624,7 @@ func TestShellCompletionTarget(t *testing.T) {
 			shell:          "/bin/zsh",
 			wantShell:      "Zsh",
 			wantRCBase:     ".zshrc",
-			wantCompletion: "source <(entire completion zsh)",
+			wantCompletion: "autoload -Uz compinit && compinit && source <(entire completion zsh)",
 		},
 		{
 			name:           "bash_no_profile",
@@ -619,9 +642,11 @@ func TestShellCompletionTarget(t *testing.T) {
 			wantCompletion: "source <(entire completion bash)",
 		},
 		{
-			name:             "fish_unsupported",
-			shell:            "/usr/bin/fish",
-			wantErrUnsupport: true,
+			name:           "fish",
+			shell:          "/usr/bin/fish",
+			wantShell:      "Fish",
+			wantRCBase:     filepath.Join(".config", "fish", "config.fish"),
+			wantCompletion: "entire completion fish | source",
 		},
 		{
 			name:             "empty_shell",
@@ -656,9 +681,6 @@ func TestShellCompletionTarget(t *testing.T) {
 			if shellName != tt.wantShell {
 				t.Errorf("shellName = %q, want %q", shellName, tt.wantShell)
 			}
-			if filepath.Base(rcFile) != tt.wantRCBase {
-				t.Errorf("rcFile base = %q, want %q", filepath.Base(rcFile), tt.wantRCBase)
-			}
 			wantRC := filepath.Join(home, tt.wantRCBase)
 			if rcFile != wantRC {
 				t.Errorf("rcFile = %q, want %q", rcFile, wantRC)
@@ -670,11 +692,188 @@ func TestShellCompletionTarget(t *testing.T) {
 	}
 }
 
+func TestAppendShellCompletion(t *testing.T) {
+	tests := []struct {
+		name           string
+		rcFileRelPath  string
+		completionLine string
+		preExisting    string // existing content in rc file; empty means file doesn't exist
+		createParent   bool   // whether parent dir already exists
+	}{
+		{
+			name:           "zsh_new_file",
+			rcFileRelPath:  ".zshrc",
+			completionLine: "source <(entire completion zsh)",
+			createParent:   true,
+		},
+		{
+			name:           "zsh_existing_file",
+			rcFileRelPath:  ".zshrc",
+			completionLine: "source <(entire completion zsh)",
+			preExisting:    "# existing zshrc content\n",
+			createParent:   true,
+		},
+		{
+			name:           "fish_no_parent_dir",
+			rcFileRelPath:  filepath.Join(".config", "fish", "config.fish"),
+			completionLine: "entire completion fish | source",
+			createParent:   false,
+		},
+		{
+			name:           "fish_existing_dir",
+			rcFileRelPath:  filepath.Join(".config", "fish", "config.fish"),
+			completionLine: "entire completion fish | source",
+			createParent:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			rcFile := filepath.Join(home, tt.rcFileRelPath)
+
+			if tt.createParent {
+				if err := os.MkdirAll(filepath.Dir(rcFile), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tt.preExisting != "" {
+				if err := os.WriteFile(rcFile, []byte(tt.preExisting), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if err := appendShellCompletion(rcFile, tt.completionLine); err != nil {
+				t.Fatalf("appendShellCompletion() error: %v", err)
+			}
+
+			// Verify the file was created and contains the completion line.
+			data, err := os.ReadFile(rcFile)
+			if err != nil {
+				t.Fatalf("reading rc file: %v", err)
+			}
+			content := string(data)
+
+			if !strings.Contains(content, shellCompletionComment) {
+				t.Errorf("rc file missing comment %q", shellCompletionComment)
+			}
+			if !strings.Contains(content, tt.completionLine) {
+				t.Errorf("rc file missing completion line %q", tt.completionLine)
+			}
+			if tt.preExisting != "" && !strings.HasPrefix(content, tt.preExisting) {
+				t.Errorf("pre-existing content was overwritten")
+			}
+
+			// Verify parent directory permissions.
+			info, err := os.Stat(filepath.Dir(rcFile))
+			if err != nil {
+				t.Fatalf("stat parent dir: %v", err)
+			}
+			if !info.IsDir() {
+				t.Fatal("parent path is not a directory")
+			}
+		})
+	}
+}
+
 func TestRemoveEntireDirectory_NotExists(t *testing.T) {
 	setupTestDir(t)
 
 	// Should not error when directory doesn't exist
 	if err := removeEntireDirectory(); err != nil {
 		t.Fatalf("removeEntireDirectory() should not error when directory doesn't exist: %v", err)
+	}
+}
+
+func TestPrintMissingAgentError(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	printMissingAgentError(&buf)
+	output := buf.String()
+
+	if !strings.Contains(output, "Missing agent name") {
+		t.Error("expected 'Missing agent name' in output")
+	}
+	for _, a := range agent.List() {
+		if !strings.Contains(output, string(a)) {
+			t.Errorf("expected agent %q listed in output", a)
+		}
+	}
+	if !strings.Contains(output, "(default)") {
+		t.Error("expected default annotation in output")
+	}
+	if !strings.Contains(output, "Usage: entire enable --agent") {
+		t.Error("expected usage line in output")
+	}
+}
+
+func TestPrintWrongAgentError(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	printWrongAgentError(&buf, "not-an-agent")
+	output := buf.String()
+
+	if !strings.Contains(output, `Unknown agent "not-an-agent"`) {
+		t.Error("expected unknown agent name in output")
+	}
+	for _, a := range agent.List() {
+		if !strings.Contains(output, string(a)) {
+			t.Errorf("expected agent %q listed in output", a)
+		}
+	}
+	if !strings.Contains(output, "(default)") {
+		t.Error("expected default annotation in output")
+	}
+	if !strings.Contains(output, "Usage: entire enable --agent") {
+		t.Error("expected usage line in output")
+	}
+}
+
+func TestEnableCmd_AgentFlagNoValue(t *testing.T) {
+	setupTestRepo(t)
+
+	cmd := newEnableCmd()
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--agent"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when --agent is used without a value")
+	}
+
+	output := stderr.String()
+	if !strings.Contains(output, "Missing agent name") {
+		t.Errorf("expected helpful error message, got: %s", output)
+	}
+	if !strings.Contains(output, string(agent.DefaultAgentName)) {
+		t.Errorf("expected default agent listed, got: %s", output)
+	}
+	if strings.Contains(output, "flag needs an argument") {
+		t.Error("should not contain default cobra/pflag error message")
+	}
+}
+
+func TestEnableCmd_AgentFlagEmptyValue(t *testing.T) {
+	setupTestRepo(t)
+
+	cmd := newEnableCmd()
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--agent="})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when --agent= is used with empty value")
+	}
+
+	output := stderr.String()
+	if !strings.Contains(output, "Missing agent name") {
+		t.Errorf("expected helpful error message, got: %s", output)
+	}
+	if strings.Contains(output, "flag needs an argument") {
+		t.Error("should not contain default cobra/pflag error message")
 	}
 }
