@@ -27,7 +27,9 @@ type State struct {
 	// SessionID is the unique session identifier
 	SessionID string `json:"session_id"`
 
-	// BaseCommit is the HEAD commit when the session started
+	// BaseCommit tracks the current shadow branch base. Initially set to HEAD when the
+	// session starts, but updated on migration (pull/rebase) and after condensation.
+	// Used for shadow branch naming and checkpoint storage — NOT for attribution.
 	BaseCommit string `json:"base_commit"`
 
 	// AttributionBaseCommit is the commit used as the reference point for attribution calculations.
@@ -161,6 +163,13 @@ func (s *State) NormalizeAfterLoad() {
 	// redundant transcript content in a condensation, not data loss.
 	s.CondensedTranscriptLines = 0
 	s.TranscriptLinesAtStart = 0
+
+	// Backfill AttributionBaseCommit for sessions created before this field existed.
+	// Without this, a mid-turn commit would migrate BaseCommit and the fallback in
+	// calculateSessionAttributions would use the migrated value, producing zero attribution.
+	if s.AttributionBaseCommit == "" && s.BaseCommit != "" {
+		s.AttributionBaseCommit = s.BaseCommit
+	}
 }
 
 // StateStore provides low-level operations for managing session state files.
