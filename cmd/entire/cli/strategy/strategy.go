@@ -487,12 +487,28 @@ type LogsOnlyRestorer interface {
 
 // SessionResetter is an optional interface for strategies that support
 // resetting session state and shadow branches.
-// This is used by the "rewind reset" command to clean up shadow branches
+// This is used by the "reset" command to clean up shadow branches
 // and session state when a user wants to start fresh.
 type SessionResetter interface {
 	// Reset deletes the shadow branch and session state for the current HEAD.
 	// Returns nil if there's nothing to reset (no shadow branch).
 	Reset() error
+
+	// ResetSession clears the state for a single session and cleans up
+	// the shadow branch if no other sessions reference it.
+	// File changes remain in the working directory.
+	ResetSession(sessionID string) error
+}
+
+// SessionCondenser is an optional interface for strategies that support
+// force-condensing a session. This is used by "entire sessions fix" to
+// salvage stuck sessions by condensing their data to permanent storage.
+type SessionCondenser interface {
+	// CondenseSessionByID force-condenses a session and cleans up.
+	// Generates a new checkpoint ID, condenses to entire/sessions,
+	// updates the session state, and removes the shadow branch
+	// if no other active sessions need it.
+	CondenseSessionByID(sessionID string) error
 }
 
 // ConcurrentSessionChecker is an optional interface for strategies that support
