@@ -463,10 +463,27 @@ func (s *ManualCommitStrategy) handleAmendCommitMsg(logCtx context.Context, comm
 		return nil //nolint:nilerr // No sessions - nothing to restore
 	}
 
-	// Find first session with PendingCheckpointID or LastCheckpointID to restore.
+	// For amend, HEAD^ is the commit being amended, and HEAD is where we are now.
+	// We need to match sessions whose BaseCommit equals HEAD (the commit being amended
+	// was created from this base). This prevents stale sessions from injecting
+	// unrelated checkpoint IDs.
+	repo, repoErr := OpenRepository()
+	if repoErr != nil {
+		return nil //nolint:nilerr // Hook must be silent on failure
+	}
+	head, headErr := repo.Head()
+	if headErr != nil {
+		return nil //nolint:nilerr // Hook must be silent on failure
+	}
+	currentHead := head.Hash().String()
+
+	// Find first matching session with PendingCheckpointID or LastCheckpointID to restore.
 	// PendingCheckpointID is set during ACTIVE_COMMITTED (deferred condensation).
 	// LastCheckpointID is set after condensation completes.
 	for _, state := range sessions {
+		if state.BaseCommit != currentHead {
+			continue
+		}
 		var cpID id.CheckpointID
 		source := ""
 
@@ -960,11 +977,17 @@ func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(repo *git.
 	// Normalize modified files from absolute to repo-relative paths.
 	// Transcript tool_use entries contain absolute paths (e.g., /Users/alex/project/src/main.go)
 	// but getStagedFiles returns repo-relative paths (e.g., src/main.go).
-	worktreePath, wpErr := GetWorktreePath()
-	if wpErr == nil {
+	// Use state.WorktreePath (already resolved) to avoid an extra git subprocess.
+	basePath := state.WorktreePath
+	if basePath == "" {
+		if wp, wpErr := GetWorktreePath(); wpErr == nil {
+			basePath = wp
+		}
+	}
+	if basePath != "" {
 		normalized := make([]string, 0, len(modifiedFiles))
 		for _, f := range modifiedFiles {
-			if rel := paths.ToRelativePath(f, worktreePath); rel != "" {
+			if rel := paths.ToRelativePath(f, basePath); rel != "" {
 				normalized = append(normalized, rel)
 			} else {
 				// Already relative or outside repo — keep as-is
