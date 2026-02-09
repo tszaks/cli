@@ -788,10 +788,15 @@ func (s *ManualCommitStrategy) postCommitUpdateBaseCommitOnly(logCtx context.Con
 
 	newHead := head.Hash().String()
 	for _, state := range sessions {
+		// Only update active sessions. Idle/ended sessions are kept around for
+		// LastCheckpointID reuse and should not be advanced to HEAD.
+		if !state.Phase.IsActive() {
+			continue
+		}
 		if state.BaseCommit != newHead {
 			logging.Debug(logCtx, "post-commit (no trailer): updating BaseCommit",
 				slog.String("session_id", state.SessionID),
-				slog.String("old_base", state.BaseCommit[:7]),
+				slog.String("old_base", truncateHash(state.BaseCommit)),
 				slog.String("new_head", newHead[:7]),
 			)
 			state.BaseCommit = newHead
@@ -800,6 +805,14 @@ func (s *ManualCommitStrategy) postCommitUpdateBaseCommitOnly(logCtx context.Con
 			}
 		}
 	}
+}
+
+// truncateHash safely truncates a git hash to 7 chars for logging.
+func truncateHash(h string) string {
+	if len(h) > 7 {
+		return h[:7]
+	}
+	return h
 }
 
 // filterSessionsWithNewContent returns sessions that have new transcript content

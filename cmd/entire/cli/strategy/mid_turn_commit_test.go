@@ -179,7 +179,8 @@ func TestSaveChanges_PreservesPendingCheckpointID(t *testing.T) {
 	// Set PendingCheckpointID (simulating what PostCommit does)
 	state, err := s.loadSessionState(sessionID)
 	require.NoError(t, err)
-	state.PendingCheckpointID = "abc123def456"
+	const testPendingCpID = "abc123def456"
+	state.PendingCheckpointID = testPendingCpID
 	state.Phase = session.PhaseActiveCommitted
 	require.NoError(t, s.saveSessionState(state))
 
@@ -210,7 +211,7 @@ func TestSaveChanges_PreservesPendingCheckpointID(t *testing.T) {
 	// Reload state and verify PendingCheckpointID is preserved
 	state, err = s.loadSessionState(sessionID)
 	require.NoError(t, err)
-	assert.Equal(t, "abc123def456", state.PendingCheckpointID,
+	assert.Equal(t, testPendingCpID, state.PendingCheckpointID,
 		"PendingCheckpointID should be preserved across SaveChanges calls, "+
 			"not cleared — it's needed for deferred condensation at turn end")
 }
