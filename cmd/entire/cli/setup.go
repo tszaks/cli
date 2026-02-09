@@ -24,6 +24,12 @@ const (
 	strategyDisplayAutoCommit   = "auto-commit"
 )
 
+// Config path display strings
+const (
+	configDisplayProject = ".entire/settings.json"
+	configDisplayLocal   = ".entire/settings.local.json"
+)
+
 // strategyDisplayToInternal maps user-friendly names to internal strategy names
 var strategyDisplayToInternal = map[string]string{
 	strategyDisplayManualCommit: strategy.StrategyNameManualCommit,
@@ -136,6 +142,51 @@ Use --uninstall to completely remove Entire from this repository, including:
 	return cmd
 }
 
+// isFullyEnabled checks whether Entire is already fully set up.
+// Returns whether it's fully enabled, and if so, the agent type display name and config file path.
+func isFullyEnabled() (enabled bool, agentDesc string, configPath string) {
+	// Check settings exist and Enabled == true
+	s, err := LoadEntireSettings()
+	if err != nil || !s.Enabled {
+		return false, "", ""
+	}
+
+	// Check agent hooks installed
+	if !checkClaudeCodeHooksInstalled() {
+		return false, "", ""
+	}
+
+	// Check git hooks installed
+	if !strategy.IsGitHookInstalled() {
+		return false, "", ""
+	}
+
+	// Check .entire directory exists
+	if !checkEntireDirExists() {
+		return false, "", ""
+	}
+
+	// Determine agent description
+	ag := agent.Default()
+	desc := string(agent.AgentTypeClaudeCode)
+	if ag != nil {
+		desc = string(ag.Type())
+	}
+
+	// Determine config path - check if local settings exists, otherwise show project settings
+	entireDirAbs, err := paths.AbsPath(paths.EntireDir)
+	if err != nil {
+		entireDirAbs = paths.EntireDir
+	}
+	configDisplay := configDisplayProject
+	localSettingsPath := filepath.Join(entireDirAbs, "settings.local.json")
+	if _, err := os.Stat(localSettingsPath); err == nil {
+		configDisplay = configDisplayLocal
+	}
+
+	return true, desc, configDisplay
+}
+
 // runEnableWithStrategy enables Entire with a specified strategy (non-interactive).
 // The selectedStrategy can be either a display name (manual-commit, auto-commit)
 // or an internal name (manual-commit, auto-commit).
@@ -152,24 +203,26 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 		return fmt.Errorf("unknown strategy: %s (use manual-commit or auto-commit)", selectedStrategy)
 	}
 
-	// Setup Claude Code hooks
-	hooksInstalled, err := setupClaudeCodeHook(localDev, forceHooks)
-	if err != nil {
+	// Detect default agent
+	ag := agent.Default()
+	agentType := string(agent.AgentTypeClaudeCode)
+	if ag != nil {
+		agentType = string(ag.Type())
+	}
+	fmt.Fprintf(w, "Agent: %s (use --agent to change)\n\n", agentType)
+
+	// Setup Claude Code hooks + git hooks → combined "Hooks installed" message
+	if _, err := setupClaudeCodeHook(localDev, forceHooks); err != nil {
 		return fmt.Errorf("failed to setup Claude Code hooks: %w", err)
 	}
-	if hooksInstalled > 0 {
-		fmt.Fprintln(w, "✓ Claude Code hooks installed")
-	} else {
-		fmt.Fprintln(w, "✓ Claude Code hooks verified")
+	if _, err := strategy.InstallGitHook(true); err != nil {
+		return fmt.Errorf("failed to install git hooks: %w", err)
 	}
+	fmt.Fprintln(w, "✓ Hooks installed")
 
 	// Setup .entire directory
-	dirCreated, err := setupEntireDirectory()
-	if err != nil {
+	if _, err := setupEntireDirectory(); err != nil {
 		return fmt.Errorf("failed to setup .entire directory: %w", err)
-	}
-	if dirCreated {
-		fmt.Fprintln(w, "✓ .entire directory created")
 	}
 
 	// Load existing settings to preserve other options (like strategy_options.push)
@@ -210,69 +263,64 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 		fmt.Fprintln(w, "  Use --project to update the project settings file.")
 	}
 
+	configDisplay := configDisplayProject
 	if shouldUseLocal {
 		if err := SaveEntireSettingsLocal(settings); err != nil {
 			return fmt.Errorf("failed to save local settings: %w", err)
 		}
-		fmt.Fprintln(w, "✓ Local settings saved (.entire/settings.local.json)")
+		configDisplay = configDisplayLocal
 	} else {
 		if err := SaveEntireSettings(settings); err != nil {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
-		fmt.Fprintln(w, "✓ Project settings saved (.entire/settings.json)")
 	}
-
-	// Install git hooks (always reinstall to ensure they're up-to-date)
-	gitHooksInstalled, err := strategy.InstallGitHook(true)
-	if err != nil {
-		return fmt.Errorf("failed to install git hooks: %w", err)
-	}
-	if gitHooksInstalled > 0 {
-		fmt.Fprintln(w, "✓ Git hooks installed")
-	} else {
-		fmt.Fprintln(w, "✓ Git hooks verified")
-	}
+	fmt.Fprintf(w, "✓ Project configured (%s)\n", configDisplay)
 
 	// Let the strategy handle its own setup requirements
 	if err := strat.EnsureSetup(); err != nil {
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 
-	// Show success message with display name
-	displayName := selectedStrategy
-	if dn, ok := strategyInternalToDisplay[internalStrategy]; ok {
-		displayName = dn
-	}
-	fmt.Fprintf(w, "\n✓ %s strategy enabled\n", displayName)
+	fmt.Fprintln(w, "\nReady.")
 
 	return nil
 }
 
 // runEnableInteractive runs the interactive enable flow.
 func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry bool) error {
-	// Use the default strategy (manual-commit)
-	internalStrategy := strategy.DefaultStrategyName
-	fmt.Fprintf(w, "Using %s strategy (use --strategy to change)\n\n", strategyInternalToDisplay[internalStrategy])
+	// Check if already fully enabled — show summary and return early
+	if fullyEnabled, agentDesc, configPath := isFullyEnabled(); fullyEnabled {
+		fmt.Fprintln(w, "Already enabled. Everything looks good.")
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "  Agent: %s\n", agentDesc)
+		fmt.Fprintf(w, "  Config: %s\n", configPath)
+		return nil
+	}
 
-	// Setup Claude Code hooks
-	hooksInstalled, err := setupClaudeCodeHook(localDev, forceHooks)
-	if err != nil {
+	// Detect default agent
+	ag := agent.Default()
+	agentType := string(agent.AgentTypeClaudeCode)
+	if ag != nil {
+		agentType = string(ag.Type())
+	}
+	fmt.Fprintf(w, "Agent: %s (use --agent to change)\n\n", agentType)
+
+	// Install Claude Code hooks + git hooks → combined "Hooks installed" message
+	if _, err := setupClaudeCodeHook(localDev, forceHooks); err != nil {
 		return fmt.Errorf("failed to setup Claude Code hooks: %w", err)
 	}
-	if hooksInstalled > 0 {
-		fmt.Fprintln(w, "✓ Claude Code hooks installed")
-	} else {
-		fmt.Fprintln(w, "✓ Claude Code hooks verified")
+	if _, err := strategy.InstallGitHook(true); err != nil {
+		return fmt.Errorf("failed to install git hooks: %w", err)
 	}
+	fmt.Fprintln(w, "✓ Hooks installed")
 
 	// Setup .entire directory
-	dirCreated, err := setupEntireDirectory()
-	if err != nil {
+	if _, err := setupEntireDirectory(); err != nil {
 		return fmt.Errorf("failed to setup .entire directory: %w", err)
 	}
-	if dirCreated {
-		fmt.Fprintln(w, "✓ .entire directory created")
-	}
+
+	// Use the default strategy (manual-commit)
+	internalStrategy := strategy.DefaultStrategyName
 
 	// Load existing settings to preserve other options (like strategy_options.push)
 	settings, err := LoadEntireSettings()
@@ -293,42 +341,46 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 		settings.StrategyOptions["push_sessions"] = false
 	}
 
-	// Ask about telemetry consent (only if not already asked)
-	if err := promptTelemetryConsent(settings, telemetry); err != nil {
-		return fmt.Errorf("telemetry consent: %w", err)
-	}
-
-	// Determine which settings file to write to (interactive prompt if settings.json exists)
+	// Determine which settings file to write to
+	// First run always creates settings.json (no prompt)
 	entireDirAbs, err := paths.AbsPath(paths.EntireDir)
 	if err != nil {
 		entireDirAbs = paths.EntireDir // Fallback to relative
 	}
-	shouldUseLocal, err := promptSettingsTarget(entireDirAbs, useLocalSettings, useProjectSettings)
-	if err != nil {
-		return err
+	shouldUseLocal, showNotification := determineSettingsTarget(entireDirAbs, useLocalSettings, useProjectSettings)
+
+	if showNotification {
+		fmt.Fprintln(w, "Info: Project settings exist. Saving to settings.local.json instead.")
+		fmt.Fprintln(w, "  Use --project to update the project settings file.")
 	}
 
+	configDisplay := configDisplayProject
 	if shouldUseLocal {
 		if err := SaveEntireSettingsLocal(settings); err != nil {
 			return fmt.Errorf("failed to save local settings: %w", err)
 		}
-		fmt.Fprintln(w, "✓ Local settings saved (.entire/settings.local.json)")
+		configDisplay = configDisplayLocal
 	} else {
 		if err := SaveEntireSettings(settings); err != nil {
 			return fmt.Errorf("failed to save settings: %w", err)
 		}
-		fmt.Fprintln(w, "✓ Project settings saved (.entire/settings.json)")
 	}
+	fmt.Fprintf(w, "✓ Project configured (%s)\n", configDisplay)
 
-	// Install git hooks (always reinstall to ensure they're up-to-date)
-	gitHooksInstalled, err := strategy.InstallGitHook(true)
-	if err != nil {
-		return fmt.Errorf("failed to install git hooks: %w", err)
+	// Ask about telemetry consent (only if not already asked)
+	fmt.Fprintln(w)
+	if err := promptTelemetryConsent(settings, telemetry); err != nil {
+		return fmt.Errorf("telemetry consent: %w", err)
 	}
-	if gitHooksInstalled > 0 {
-		fmt.Fprintln(w, "✓ Git hooks installed")
+	// Save settings again after telemetry consent is recorded
+	if shouldUseLocal {
+		if err := SaveEntireSettingsLocal(settings); err != nil {
+			return fmt.Errorf("failed to save local settings: %w", err)
+		}
 	} else {
-		fmt.Fprintln(w, "✓ Git hooks verified")
+		if err := SaveEntireSettings(settings); err != nil {
+			return fmt.Errorf("failed to save settings: %w", err)
+		}
 	}
 
 	// Let the strategy handle its own setup requirements
@@ -340,8 +392,7 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 
-	// Show success message with display name
-	fmt.Fprintf(w, "\n✓ %s strategy enabled\n", strategyInternalToDisplay[internalStrategy])
+	fmt.Fprintln(w, "\nReady.")
 
 	return nil
 }
@@ -441,24 +492,25 @@ func setupAgentHooksNonInteractive(agentName agent.AgentName, strategyName strin
 		return fmt.Errorf("agent %s does not support hooks", agentName)
 	}
 
-	// Install hooks
-	count, err := hookAgent.InstallHooks(localDev, forceHooks)
-	if err != nil {
+	fmt.Printf("Agent: %s\n\n", ag.Type())
+
+	// Install agent hooks + git hooks
+	if _, err := hookAgent.InstallHooks(localDev, forceHooks); err != nil {
 		return fmt.Errorf("failed to install hooks for %s: %w", agentName, err)
 	}
+	if _, err := strategy.InstallGitHook(true); err != nil {
+		return fmt.Errorf("failed to install git hooks: %w", err)
+	}
 
-	if count == 0 {
-		msg := fmt.Sprintf("Hooks for %s already installed", ag.Description())
-		if agentName == agent.AgentNameGemini {
-			msg += " - This is a work in progress"
-		}
-		fmt.Println(msg)
+	if agentName == agent.AgentNameGemini {
+		fmt.Println("✓ Hooks installed - This is a work in progress")
 	} else {
-		msg := fmt.Sprintf("Installed %d hooks for %s", count, ag.Description())
-		if agentName == agent.AgentNameGemini {
-			msg += " - This is a work in progress"
-		}
-		fmt.Println(msg)
+		fmt.Println("✓ Hooks installed")
+	}
+
+	// Setup .entire directory
+	if _, err := setupEntireDirectory(); err != nil {
+		return fmt.Errorf("failed to setup .entire directory: %w", err)
 	}
 
 	// Update settings to store the strategy
@@ -500,11 +552,7 @@ func setupAgentHooksNonInteractive(agentName agent.AgentName, strategyName strin
 	if err := SaveEntireSettings(settings); err != nil {
 		return fmt.Errorf("failed to save settings: %w", err)
 	}
-
-	// Install git hooks (always reinstall to ensure they're up-to-date)
-	if _, err := strategy.InstallGitHook(true); err != nil {
-		return fmt.Errorf("failed to install git hooks: %w", err)
-	}
+	fmt.Printf("✓ Project configured (%s)\n", configDisplayProject)
 
 	// Let the strategy handle its own setup requirements (creates entire/sessions branch, etc.)
 	strat, err := strategy.Get(settings.Strategy)
@@ -514,6 +562,8 @@ func setupAgentHooksNonInteractive(agentName agent.AgentName, strategyName strin
 	if err := strat.EnsureSetup(); err != nil {
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
+
+	fmt.Println("\nReady.")
 
 	return nil
 }
