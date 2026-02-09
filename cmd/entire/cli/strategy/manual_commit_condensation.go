@@ -362,24 +362,26 @@ func countTranscriptItems(agentType agent.AgentType, content string) int {
 		return 0
 	}
 
-	switch agentType {
-	case agent.AgentTypeGemini:
+	// Try Gemini format first if agentType is Gemini, or as fallback if Unknown
+	if agentType == agent.AgentTypeGemini || agentType == agent.AgentTypeUnknown {
 		transcript, err := geminicli.ParseTranscript([]byte(content))
-		if err != nil || transcript == nil {
+		if err == nil && transcript != nil && len(transcript.Messages) > 0 {
+			return len(transcript.Messages)
+		}
+		// If agentType is explicitly Gemini but parsing failed, return 0
+		if agentType == agent.AgentTypeGemini {
 			return 0
 		}
-		return len(transcript.Messages)
-
-	case agent.AgentTypeClaudeCode, agent.AgentTypeUnknown:
-		fallthrough
-	default: // JSONL-based agents
-		allLines := strings.Split(content, "\n")
-		// Trim trailing empty lines (from final \n in JSONL)
-		for len(allLines) > 0 && strings.TrimSpace(allLines[len(allLines)-1]) == "" {
-			allLines = allLines[:len(allLines)-1]
-		}
-		return len(allLines)
+		// Otherwise fall through to JSONL parsing for Unknown type
 	}
+
+	// Claude Code and other JSONL-based agents
+	allLines := strings.Split(content, "\n")
+	// Trim trailing empty lines (from final \n in JSONL)
+	for len(allLines) > 0 && strings.TrimSpace(allLines[len(allLines)-1]) == "" {
+		allLines = allLines[:len(allLines)-1]
+	}
+	return len(allLines)
 }
 
 // extractUserPrompts extracts all user prompts from transcript content.
@@ -389,19 +391,28 @@ func extractUserPrompts(agentType agent.AgentType, content string) []string {
 		return nil
 	}
 
-	switch agentType {
-	case agent.AgentTypeGemini:
+	// Try Gemini format first if agentType is Gemini, or as fallback if Unknown
+	if agentType == agent.AgentTypeGemini || agentType == agent.AgentTypeUnknown {
 		prompts, err := geminicli.ExtractAllUserPrompts([]byte(content))
-		if err != nil {
+		if err == nil && len(prompts) > 0 {
+			// Strip IDE context tags for consistency with Claude Code handling
+			cleaned := make([]string, 0, len(prompts))
+			for _, prompt := range prompts {
+				if stripped := textutil.StripIDEContextTags(prompt); stripped != "" {
+					cleaned = append(cleaned, stripped)
+				}
+			}
+			return cleaned
+		}
+		// If agentType is explicitly Gemini but parsing failed, return nil
+		if agentType == agent.AgentTypeGemini {
 			return nil
 		}
-		return prompts
-
-	case agent.AgentTypeClaudeCode, agent.AgentTypeUnknown:
-		fallthrough
-	default: // JSONL-based agents
-		return extractUserPromptsFromLines(strings.Split(content, "\n"))
+		// Otherwise fall through to JSONL parsing for Unknown type
 	}
+
+	// Claude Code and other JSONL-based agents
+	return extractUserPromptsFromLines(strings.Split(content, "\n"))
 }
 
 // calculateTokenUsage calculates token usage from raw transcript data.
@@ -413,19 +424,30 @@ func calculateTokenUsage(agentType agent.AgentType, data []byte, startOffset int
 		return &agent.TokenUsage{}
 	}
 
-	switch agentType {
-	case agent.AgentTypeGemini:
-		return geminicli.CalculateTokenUsage(data, startOffset)
-
-	case agent.AgentTypeClaudeCode, agent.AgentTypeUnknown:
-		fallthrough
-	default: // JSONL-based agents
-		lines, err := claudecode.ParseTranscript(data)
-		if err != nil || len(lines) == 0 {
+	// Try Gemini format first if agentType is Gemini, or as fallback if Unknown
+	if agentType == agent.AgentTypeGemini || agentType == agent.AgentTypeUnknown {
+		// Attempt to parse as Gemini JSON
+		transcript, err := geminicli.ParseTranscript(data)
+		if err == nil && transcript != nil && len(transcript.Messages) > 0 {
+			return geminicli.CalculateTokenUsage(data, startOffset)
+		}
+		// If agentType is explicitly Gemini but parsing failed, return empty usage
+		if agentType == agent.AgentTypeGemini {
 			return &agent.TokenUsage{}
 		}
-		return claudecode.CalculateTokenUsage(lines)
+		// Otherwise fall through to JSONL parsing for Unknown type
 	}
+
+	// Claude Code and other JSONL-based agents
+	lines, err := claudecode.ParseTranscript(data)
+	if err != nil || len(lines) == 0 {
+		return &agent.TokenUsage{}
+	}
+	// Slice transcript lines to only include checkpoint portion
+	if startOffset > 0 && startOffset < len(lines) {
+		lines = lines[startOffset:]
+	}
+	return claudecode.CalculateTokenUsage(lines)
 }
 
 // extractUserPromptsFromLines extracts user prompts from JSONL transcript lines.
