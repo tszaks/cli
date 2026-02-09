@@ -184,6 +184,9 @@ func transitionFromActive(event Event, ctx TransitionContext) TransitionResult {
 	switch event {
 	case EventTurnStart:
 		// Ctrl-C recovery: just continue.
+		// This is a degenerate case where the EndTurn is skipped after a in-turn commit.
+		// Either the agent crashed or the user interrupted it.
+		// We choose to continue, and defer condensation to the next TurnEnd or GitCommit.
 		return TransitionResult{
 			NewPhase: PhaseActive,
 			Actions:  []Action{ActionUpdateLastInteraction},
@@ -220,6 +223,9 @@ func transitionFromActiveCommitted(event Event, ctx TransitionContext) Transitio
 	switch event {
 	case EventTurnStart:
 		// Ctrl-C recovery after commit.
+		// This is a degenerate case where the EndTurn is skipped after a in-turn commit.
+		// Either the agent crashed or the user interrupted it.
+		// We choose to continue, and defer condensation to the next TurnEnd or GitCommit.
 		return TransitionResult{
 			NewPhase: PhaseActive,
 			Actions:  []Action{ActionUpdateLastInteraction},

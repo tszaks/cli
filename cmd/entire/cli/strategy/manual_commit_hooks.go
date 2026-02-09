@@ -370,10 +370,28 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 	// Prepare prompt for display: collapse newlines/whitespace, then truncate (rune-safe)
 	displayPrompt := stringutil.TruncateRunes(stringutil.CollapseWhitespace(lastPrompt), 80, "...")
 
+	// Check if we're restoring an existing checkpoint ID (already condensed)
+	// vs linking a genuinely new checkpoint. Restoring doesn't need user confirmation
+	// since the data is already committed — this handles git commit --amend -m "..."
+	// and non-interactive environments (e.g., Claude doing commits).
+	isRestoringExisting := false
+	if !hasNewContent && reusedSession != nil {
+		// Reusing LastCheckpointID from a previous condensation
+		isRestoringExisting = true
+	} else if hasNewContent {
+		for _, state := range sessionsWithContent {
+			if state.PendingCheckpointID != "" {
+				isRestoringExisting = true
+				break
+			}
+		}
+	}
+
 	// Add trailer differently based on commit source
-	if source == "message" {
-		// Using -m or -F: ask user interactively whether to add trailer
-		// (comments won't be stripped by git in this mode)
+	switch {
+	case source == "message" && !isRestoringExisting:
+		// Using -m or -F with genuinely new content: ask user interactively
+		// whether to add trailer (comments won't be stripped by git in this mode)
 
 		// Build context string for interactive prompt
 		var promptContext string
@@ -390,7 +408,11 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 			return nil
 		}
 		message = addCheckpointTrailer(message, checkpointID)
-	} else {
+	case source == "message":
+		// Restoring existing checkpoint ID (amend, split commit, or non-interactive)
+		// No confirmation needed — data is already condensed
+		message = addCheckpointTrailer(message, checkpointID)
+	default:
 		// Normal editor flow: add trailer with explanatory comment (will be stripped by git)
 		message = addCheckpointTrailerWithComment(message, checkpointID, string(agentType), displayPrompt)
 	}
@@ -574,8 +596,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		transitionCtx.HasFilesTouched = len(state.FilesTouched) > 0
 
 		// Run the state machine transition
-		result := session.Transition(state.Phase, session.EventGitCommit, transitionCtx)
-		remaining := session.ApplyCommonActions(state, result)
+		remaining := TransitionAndLog(state, session.EventGitCommit, transitionCtx)
 
 		// Dispatch strategy-specific actions.
 		// Each branch handles its own BaseCommit update so there is no
@@ -983,8 +1004,7 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 
 	if state != nil && state.BaseCommit != "" {
 		// Session is fully initialized — apply phase transition for TurnStart
-		result := session.Transition(state.Phase, session.EventTurnStart, session.TransitionContext{})
-		session.ApplyCommonActions(state, result)
+		TransitionAndLog(state, session.EventTurnStart, session.TransitionContext{})
 
 		// Backfill AgentType if empty or set to the generic default "Agent"
 		if !isSpecificAgentType(state.AgentType) && agentType != "" {
@@ -1040,8 +1060,7 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 	}
 
 	// Apply phase transition: new session starts as ACTIVE
-	result := session.Transition(state.Phase, session.EventTurnStart, session.TransitionContext{})
-	session.ApplyCommonActions(state, result)
+	TransitionAndLog(state, session.EventTurnStart, session.TransitionContext{})
 
 	// Calculate attribution for pre-prompt edits
 	// This captures any user edits made before the first prompt
@@ -1201,7 +1220,7 @@ func (s *ManualCommitStrategy) getLastPrompt(repo *git.Repository, state *Sessio
 
 	// Extract session data to get prompts for commit message generation
 	// Pass agent type to handle different transcript formats (JSONL for Claude, JSON for Gemini)
-	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, nil, state.AgentType)
+	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, nil, state.AgentType, "")
 	if err != nil || len(sessionData.Prompts) == 0 {
 		return ""
 	}
