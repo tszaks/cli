@@ -62,7 +62,7 @@ func TestFeature_Bar(t *testing.T) {
 }
 ```
 
-**Exception:** Tests that use `os.Chdir()` (process-global state) cannot be parallelized — e.g., `agent_test.go`.
+**Exception:** Tests that modify process-global state cannot be parallelized. This includes `os.Chdir()`/`t.Chdir()` and `os.Setenv()`/`t.Setenv()` — Go's test framework will panic if these are used after `t.Parallel()`.
 
 ### Linting and Formatting
 ```bash
