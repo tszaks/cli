@@ -283,7 +283,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 			logging.Debug(logCtx, "prepare-commit-msg: no sessions match current HEAD",
 				slog.String("strategy", "manual-commit"),
 				slog.String("source", source),
-				slog.String("current_head", currentHeadHash[:7]),
+				slog.String("current_head", truncateHash(currentHeadHash)),
 				slog.Int("total_sessions", len(sessions)),
 			)
 			return nil
@@ -780,7 +780,7 @@ func (s *ManualCommitStrategy) updateBaseCommitIfChanged(logCtx context.Context,
 		state.BaseCommit = newHead
 		logging.Debug(logCtx, "post-commit: updated BaseCommit",
 			slog.String("session_id", state.SessionID),
-			slog.String("new_head", newHead[:7]),
+			slog.String("new_head", truncateHash(newHead)),
 		)
 	}
 }
@@ -814,7 +814,7 @@ func (s *ManualCommitStrategy) postCommitUpdateBaseCommitOnly(logCtx context.Con
 			logging.Debug(logCtx, "post-commit (no trailer): updating BaseCommit",
 				slog.String("session_id", state.SessionID),
 				slog.String("old_base", truncateHash(state.BaseCommit)),
-				slog.String("new_head", newHead[:7]),
+				slog.String("new_head", truncateHash(newHead)),
 			)
 			state.BaseCommit = newHead
 			if err := s.saveSessionState(state); err != nil {
