@@ -248,11 +248,8 @@ func (s *GitStore) writeStandardCheckpointEntries(opts WriteCommittedOptions, ba
 		}
 	}
 
-	// Determine session index (0, 1, 2, ...) - 0-based numbering
-	sessionIndex := 0
-	if existingSummary != nil {
-		sessionIndex = len(existingSummary.Sessions)
-	}
+	// Determine session index: reuse existing slot if session ID matches, otherwise append
+	sessionIndex := s.findSessionIndex(basePath, existingSummary, entries, opts.SessionID)
 
 	// Write session files to numbered subdirectory
 	sessionPath := fmt.Sprintf("%s%d/", basePath, sessionIndex)
@@ -268,8 +265,18 @@ func (s *GitStore) writeStandardCheckpointEntries(opts WriteCommittedOptions, ba
 		}
 	}
 
+	// Build the sessions array
+	var sessions []SessionFilePaths
+	if existingSummary != nil {
+		sessions = make([]SessionFilePaths, max(len(existingSummary.Sessions), sessionIndex+1))
+		copy(sessions, existingSummary.Sessions)
+	} else {
+		sessions = make([]SessionFilePaths, 1)
+	}
+	sessions[sessionIndex] = sessionFilePaths
+
 	// Update root metadata.json with CheckpointSummary
-	return s.writeCheckpointSummary(opts, basePath, entries, existingSummary, sessionFilePaths)
+	return s.writeCheckpointSummary(opts, basePath, entries, sessions)
 }
 
 // writeSessionToSubdirectory writes a single session's files to a numbered subdirectory.
@@ -352,27 +359,19 @@ func (s *GitStore) writeSessionToSubdirectory(opts WriteCommittedOptions, sessio
 }
 
 // writeCheckpointSummary writes the root-level CheckpointSummary with aggregated statistics.
-func (s *GitStore) writeCheckpointSummary(opts WriteCommittedOptions, basePath string, entries map[string]object.TreeEntry, existingSummary *CheckpointSummary, sessionFilePaths SessionFilePaths) error {
+// sessions is the complete sessions array (already built by the caller).
+func (s *GitStore) writeCheckpointSummary(opts WriteCommittedOptions, basePath string, entries map[string]object.TreeEntry, sessions []SessionFilePaths) error {
+	checkpointsCount, filesTouched, tokenUsage :=
+		s.reaggregateFromEntries(basePath, len(sessions), entries)
+
 	summary := CheckpointSummary{
 		CheckpointID:     opts.CheckpointID,
 		Strategy:         opts.Strategy,
 		Branch:           opts.Branch,
-		CheckpointsCount: opts.CheckpointsCount,
-		FilesTouched:     opts.FilesTouched,
-		Sessions:         []SessionFilePaths{sessionFilePaths},
-		TokenUsage:       opts.TokenUsage,
-	}
-
-	// Aggregate with existing summary if present
-	if existingSummary != nil {
-		summary.CheckpointsCount = existingSummary.CheckpointsCount + opts.CheckpointsCount
-		summary.FilesTouched = mergeFilesTouched(existingSummary.FilesTouched, opts.FilesTouched)
-		summary.TokenUsage = aggregateTokenUsage(existingSummary.TokenUsage, opts.TokenUsage)
-
-		// Copy existing sessions and append new session
-		summary.Sessions = make([]SessionFilePaths, len(existingSummary.Sessions)+1)
-		copy(summary.Sessions, existingSummary.Sessions)
-		summary.Sessions[len(existingSummary.Sessions)] = sessionFilePaths
+		CheckpointsCount: checkpointsCount,
+		FilesTouched:     filesTouched,
+		Sessions:         sessions,
+		TokenUsage:       tokenUsage,
 	}
 
 	metadataJSON, err := jsonutil.MarshalIndentWithNewline(summary, "", "  ")
@@ -389,6 +388,50 @@ func (s *GitStore) writeCheckpointSummary(opts WriteCommittedOptions, basePath s
 		Hash: metadataHash,
 	}
 	return nil
+}
+
+// findSessionIndex returns the index of an existing session with the given ID,
+// or the next available index if not found. This prevents duplicate session entries.
+func (s *GitStore) findSessionIndex(basePath string, existingSummary *CheckpointSummary, entries map[string]object.TreeEntry, sessionID string) int {
+	if existingSummary == nil {
+		return 0
+	}
+	for i := range len(existingSummary.Sessions) {
+		path := fmt.Sprintf("%s%d/%s", basePath, i, paths.MetadataFileName)
+		if entry, exists := entries[path]; exists {
+			meta, err := s.readMetadataFromBlob(entry.Hash)
+			if err == nil && meta.SessionID == sessionID {
+				return i
+			}
+		}
+	}
+	return len(existingSummary.Sessions)
+}
+
+// reaggregateFromEntries reads all session metadata from the entries map and
+// reaggregates CheckpointsCount, FilesTouched, and TokenUsage.
+// Used when replacing a session in-place to recompute correct aggregate stats.
+func (s *GitStore) reaggregateFromEntries(basePath string, sessionCount int, entries map[string]object.TreeEntry) (int, []string, *agent.TokenUsage) {
+	var totalCount int
+	var allFiles []string
+	var totalTokens *agent.TokenUsage
+
+	for i := range sessionCount {
+		path := fmt.Sprintf("%s%d/%s", basePath, i, paths.MetadataFileName)
+		entry, exists := entries[path]
+		if !exists {
+			continue
+		}
+		meta, err := s.readMetadataFromBlob(entry.Hash)
+		if err != nil {
+			continue
+		}
+		totalCount += meta.CheckpointsCount
+		allFiles = mergeFilesTouched(allFiles, meta.FilesTouched)
+		totalTokens = aggregateTokenUsage(totalTokens, meta.TokenUsage)
+	}
+
+	return totalCount, allFiles, totalTokens
 }
 
 // readJSONFromBlob reads JSON from a blob hash and decodes it to the given type.
