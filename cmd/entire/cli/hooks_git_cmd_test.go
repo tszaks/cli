@@ -55,7 +55,7 @@ func TestInitHookLogging(t *testing.T) {
 		defer cleanup()
 
 		// Verify log file was created
-		logFile := filepath.Join(logsDir, sessionID+".log")
+		logFile := filepath.Join(logsDir, "entire.log")
 		if _, err := os.Stat(logFile); os.IsNotExist(err) {
 			t.Errorf("expected log file to be created at %s", logFile)
 		}

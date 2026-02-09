@@ -64,10 +64,10 @@ func initHookLogging() func() {
 	// Set up log level getter so logging can read from settings
 	logging.SetLogLevelGetter(GetLogLevel)
 
+	// Read session ID for the slog attribute (empty string is fine - log file is fixed)
 	sessionID, err := paths.ReadCurrentSession()
-	if err != nil || sessionID == "" {
-		// No session file or empty - logging will use stderr fallback
-		return func() {}
+	if err != nil {
+		sessionID = ""
 	}
 	if err := logging.Init(sessionID); err != nil {
 		// Init failed - logging will use stderr fallback

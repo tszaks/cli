@@ -81,7 +81,7 @@ func TestNewAgentHookVerbCmd_LogsInvocation(t *testing.T) {
 	cleanup()
 
 	// Verify log file was created and contains expected content
-	logFile := filepath.Join(logsDir, sessionID+".log")
+	logFile := filepath.Join(logsDir, "entire.log")
 	content, err := os.ReadFile(logFile)
 	if err != nil {
 		t.Fatalf("failed to read log file: %v", err)
@@ -196,7 +196,7 @@ func TestNewAgentHookVerbCmd_LogsFailure(t *testing.T) {
 	cleanup()
 
 	// Verify log file contains failure status
-	logFile := filepath.Join(logsDir, sessionID+".log")
+	logFile := filepath.Join(logsDir, "entire.log")
 	content, err := os.ReadFile(logFile)
 	if err != nil {
 		t.Fatalf("failed to read log file: %v", err)
