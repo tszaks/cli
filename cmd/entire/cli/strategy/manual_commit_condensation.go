@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
@@ -113,10 +114,13 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		return nil, fmt.Errorf("shadow branch not found: %w", err)
 	}
 
-	// Extract session data from the shadow branch
-	// Use tracked files from session state instead of collecting all files from tree
-	// Pass agent type to handle different transcript formats (JSONL for Claude, JSON for Gemini)
-	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, state.FilesTouched, state.AgentType)
+	// Extract session data from the shadow branch (with live transcript fallback).
+	// Use tracked files from session state instead of collecting all files from tree.
+	// Pass agent type to handle different transcript formats (JSONL for Claude, JSON for Gemini).
+	// Pass live transcript path so condensation reads the current file rather than a
+	// potentially stale shadow branch copy (SaveChanges may have been skipped if the
+	// last turn had no code changes).
+	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, state.FilesTouched, state.AgentType, state.TranscriptPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract session data: %w", err)
 	}
@@ -282,7 +286,10 @@ func calculateSessionAttributions(repo *git.Repository, shadowRef *plumbing.Refe
 // extractSessionData extracts session data from the shadow branch.
 // filesTouched is the list of files tracked during the session (from SessionState.FilesTouched).
 // agentType identifies the agent (e.g., "Gemini CLI", "Claude Code") to determine transcript format.
-func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRef plumbing.Hash, sessionID string, filesTouched []string, agentType agent.AgentType) (*ExtractedSessionData, error) {
+// liveTranscriptPath, when non-empty and readable, is preferred over the shadow branch copy.
+// This handles the case where SaveChanges was skipped (no code changes) but the transcript
+// continued growing — the shadow branch copy would be stale.
+func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRef plumbing.Hash, sessionID string, filesTouched []string, agentType agent.AgentType, liveTranscriptPath string) (*ExtractedSessionData, error) {
 	commit, err := repo.CommitObject(shadowRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit object: %w", err)
@@ -297,16 +304,25 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 	// sessionID is already an "entire session ID" (with date prefix)
 	metadataDir := paths.SessionMetadataDirFromSessionID(sessionID)
 
-	// Extract transcript
-	// TODO: remove paths.TranscriptFileNameLegacy usage ?
+	// Extract transcript — prefer the live file when available, fall back to shadow branch.
+	// The shadow branch copy may be stale if the last turn ended without code changes
+	// (SaveChanges is only called when there are file modifications).
 	var fullTranscript string
-	if file, fileErr := tree.File(metadataDir + "/" + paths.TranscriptFileName); fileErr == nil {
-		if content, contentErr := file.Contents(); contentErr == nil {
-			fullTranscript = content
+	if liveTranscriptPath != "" {
+		if liveData, readErr := os.ReadFile(liveTranscriptPath); readErr == nil && len(liveData) > 0 { //nolint:gosec // path from session state
+			fullTranscript = string(liveData)
 		}
-	} else if file, fileErr := tree.File(metadataDir + "/" + paths.TranscriptFileNameLegacy); fileErr == nil {
-		if content, contentErr := file.Contents(); contentErr == nil {
-			fullTranscript = content
+	}
+	if fullTranscript == "" {
+		// Fall back to shadow branch copy
+		if file, fileErr := tree.File(metadataDir + "/" + paths.TranscriptFileName); fileErr == nil {
+			if content, contentErr := file.Contents(); contentErr == nil {
+				fullTranscript = content
+			}
+		} else if file, fileErr := tree.File(metadataDir + "/" + paths.TranscriptFileNameLegacy); fileErr == nil {
+			if content, contentErr := file.Contents(); contentErr == nil {
+				fullTranscript = content
+			}
 		}
 	}
 

@@ -2462,3 +2462,114 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 			metadata.InitialAttribution.AgentPercentage)
 	}
 }
+
+// TestCondenseSession_PrefersLiveTranscript verifies that CondenseSession reads the
+// live transcript file when available, rather than the potentially stale shadow branch copy.
+// This reproduces the bug where SaveChanges was skipped (no code changes) but the
+// transcript continued growing — deferred condensation would read stale data.
+func TestCondenseSession_PrefersLiveTranscript(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	// Create initial commit
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("content"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if _, err := wt.Add("file.txt"); err != nil {
+		t.Fatalf("failed to stage: %v", err)
+	}
+	_, err = wt.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "2025-01-15-test-live-transcript"
+
+	// Create metadata dir with an initial (short) transcript
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
+		t.Fatalf("failed to create metadata dir: %v", err)
+	}
+
+	staleTranscript := `{"type":"human","message":{"content":"first prompt"}}
+{"type":"assistant","message":{"content":"first response"}}
+`
+	if err := os.WriteFile(filepath.Join(metadataDirAbs, paths.TranscriptFileName), []byte(staleTranscript), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// SaveChanges to create shadow branch with the stale transcript
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 1",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() error = %v", err)
+	}
+
+	// Now simulate the conversation continuing: write a LONGER live transcript file.
+	// In the real bug, SaveChanges would be skipped because totalChanges == 0,
+	// so the shadow branch still has the stale version.
+	liveTranscriptFile := filepath.Join(dir, "live-transcript.jsonl")
+	liveTranscript := `{"type":"human","message":{"content":"first prompt"}}
+{"type":"assistant","message":{"content":"first response"}}
+{"type":"human","message":{"content":"second prompt"}}
+{"type":"assistant","message":{"content":"second response"}}
+`
+	if err := os.WriteFile(liveTranscriptFile, []byte(liveTranscript), 0o644); err != nil {
+		t.Fatalf("failed to write live transcript: %v", err)
+	}
+
+	// Load session state and set TranscriptPath to the live file
+	state, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("loadSessionState() error = %v", err)
+	}
+	state.TranscriptPath = liveTranscriptFile
+	if err := s.saveSessionState(state); err != nil {
+		t.Fatalf("saveSessionState() error = %v", err)
+	}
+
+	// Condense — this should read the live transcript, not the shadow branch copy
+	checkpointID := id.MustCheckpointID("b2c3d4e5f6a1")
+	result, err := s.CondenseSession(repo, checkpointID, state)
+	if err != nil {
+		t.Fatalf("CondenseSession() error = %v", err)
+	}
+
+	// The live transcript has 4 lines; the shadow branch copy has 2.
+	// If we read the stale shadow copy, we'd only see 2 lines.
+	if result.TotalTranscriptLines != 4 {
+		t.Errorf("TotalTranscriptLines = %d, want 4 (live transcript has 4 lines, shadow has 2)", result.TotalTranscriptLines)
+	}
+
+	// Verify the condensed content includes the second prompt
+	store := checkpoint.NewGitStore(repo)
+	content, err := store.ReadLatestSessionContent(t.Context(), checkpointID)
+	if err != nil {
+		t.Fatalf("ReadLatestSessionContent() error = %v", err)
+	}
+	if !strings.Contains(string(content.Transcript), "second prompt") {
+		t.Error("condensed transcript should contain 'second prompt' from live file, but it doesn't")
+	}
+}

@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -134,6 +135,12 @@ func commitWithMetadata() error {
 	if err := os.MkdirAll(sessionDirAbs, 0o750); err != nil {
 		return fmt.Errorf("failed to create session directory: %w", err)
 	}
+
+	// Wait for Claude Code to flush the transcript file.
+	// The stop hook fires before the transcript is fully written to disk.
+	// We poll for our own hook_progress sentinel entry in the file tail,
+	// which guarantees all prior entries have been flushed.
+	waitForTranscriptFlush(transcriptPath, time.Now())
 
 	// Copy transcript
 	logFile := filepath.Join(sessionDirAbs, paths.TranscriptFileName)
@@ -783,4 +790,99 @@ func markSessionEnded(sessionID string) error {
 		return fmt.Errorf("failed to save session state: %w", err)
 	}
 	return nil
+}
+
+// stopHookSentinel is the string that appears in Claude Code's hook_progress
+// transcript entry when it launches our stop hook. Used to detect that the
+// transcript file has been fully flushed before we copy it.
+const stopHookSentinel = "hooks claude-code stop"
+
+// waitForTranscriptFlush polls the transcript file tail for the hook_progress
+// sentinel entry that Claude Code writes when launching the stop hook.
+// Once this entry appears in the file, all prior entries (assistant replies,
+// tool results) are guaranteed to have been flushed.
+//
+// hookStartTime is the approximate time our process started, used to avoid
+// matching stale sentinel entries from previous stop hook invocations.
+//
+// Falls back silently after a timeout — the transcript copy will proceed
+// with whatever data is available.
+func waitForTranscriptFlush(transcriptPath string, hookStartTime time.Time) {
+	const (
+		maxWait      = 3 * time.Second
+		pollInterval = 50 * time.Millisecond
+		tailBytes    = 4096 // Read last 4KB — sentinel is near the end
+		maxSkew      = 2 * time.Second
+	)
+
+	logCtx := logging.WithComponent(context.Background(), "hooks")
+	deadline := time.Now().Add(maxWait)
+	for time.Now().Before(deadline) {
+		if checkStopSentinel(transcriptPath, tailBytes, hookStartTime, maxSkew) {
+			logging.Debug(logCtx, "transcript flush sentinel found",
+				slog.Duration("wait", time.Since(hookStartTime)),
+			)
+			return
+		}
+		time.Sleep(pollInterval)
+	}
+	// Timeout — proceed with whatever is on disk.
+	logging.Warn(logCtx, "transcript flush sentinel not found within timeout, proceeding",
+		slog.Duration("timeout", maxWait),
+	)
+}
+
+// checkStopSentinel reads the tail of the transcript file and looks for a
+// hook_progress entry containing the stop hook sentinel, with a timestamp
+// close to hookStartTime.
+func checkStopSentinel(path string, tailBytes int64, hookStartTime time.Time, maxSkew time.Duration) bool {
+	f, err := os.Open(path) //nolint:gosec // path comes from agent hook input
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	// Seek to tail
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	offset := info.Size() - tailBytes
+	if offset < 0 {
+		offset = 0
+	}
+	buf := make([]byte, info.Size()-offset)
+	if _, err := f.ReadAt(buf, offset); err != nil {
+		return false
+	}
+
+	// Scan lines from the tail for the sentinel
+	lines := strings.Split(string(buf), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.Contains(line, stopHookSentinel) {
+			continue
+		}
+
+		// Parse timestamp to check recency
+		var entry struct {
+			Timestamp string `json:"timestamp"`
+		}
+		if json.Unmarshal([]byte(line), &entry) != nil || entry.Timestamp == "" {
+			continue
+		}
+		ts, err := time.Parse(time.RFC3339Nano, entry.Timestamp)
+		if err != nil {
+			ts, err = time.Parse(time.RFC3339, entry.Timestamp)
+			if err != nil {
+				continue
+			}
+		}
+
+		// Check timestamp is within skew window of our start time
+		if ts.After(hookStartTime.Add(-maxSkew)) && ts.Before(hookStartTime.Add(maxSkew)) {
+			return true
+		}
+	}
+	return false
 }
