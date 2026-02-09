@@ -122,7 +122,8 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 	// Pass live transcript path so condensation reads the current file rather than a
 	// potentially stale shadow branch copy (SaveChanges may have been skipped if the
 	// last turn had no code changes).
-	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, state.FilesTouched, state.AgentType, state.TranscriptPath)
+	// Pass CheckpointTranscriptStart for accurate token calculation (line offset for Claude, message index for Gemini).
+	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, state.FilesTouched, state.AgentType, state.TranscriptPath, state.CheckpointTranscriptStart)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract session data: %w", err)
 	}
@@ -295,7 +296,8 @@ func calculateSessionAttributions(repo *git.Repository, shadowRef *plumbing.Refe
 // liveTranscriptPath, when non-empty and readable, is preferred over the shadow branch copy.
 // This handles the case where SaveChanges was skipped (no code changes) but the transcript
 // continued growing — the shadow branch copy would be stale.
-func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRef plumbing.Hash, sessionID string, filesTouched []string, agentType agent.AgentType, liveTranscriptPath string) (*ExtractedSessionData, error) {
+// checkpointTranscriptStart is the line offset (Claude) or message index (Gemini) where the current checkpoint began.
+func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRef plumbing.Hash, sessionID string, filesTouched []string, agentType agent.AgentType, liveTranscriptPath string, checkpointTranscriptStart int) (*ExtractedSessionData, error) {
 	commit, err := repo.CommitObject(shadowRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit object: %w", err)
@@ -341,13 +343,8 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 		if isGeminiFormat {
 			// Gemini uses JSON format with a "messages" array
 			data.Transcript = []byte(fullTranscript)
-			// Count messages in Gemini JSON for consistent position tracking
-			// This must match GetTranscriptPosition() which returns message count
-			if geminiTranscript, err := geminicli.ParseTranscript([]byte(fullTranscript)); err == nil {
-				data.FullTranscriptLines = len(geminiTranscript.Messages)
-			} else {
-				data.FullTranscriptLines = 1 // Fallback if parsing fails
-			}
+			// Count messages for proper indexing (used for CheckpointTranscriptStart)
+			data.FullTranscriptLines = countGeminiMessages(fullTranscript)
 			data.Prompts = extractUserPromptsFromGeminiJSON(fullTranscript)
 			data.Context = generateContextFromPrompts(data.Prompts)
 		} else {
@@ -379,8 +376,8 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 	if len(data.Transcript) > 0 {
 		// Use agent-specific parser for token calculation
 		if isGeminiFormat {
-			// Gemini JSON format - use Gemini token parser
-			data.TokenUsage = geminicli.CalculateTokenUsage(data.Transcript, 0)
+			// Gemini JSON format - use Gemini token parser with message index
+			data.TokenUsage = geminicli.CalculateTokenUsage(data.Transcript, checkpointTranscriptStart)
 		} else {
 			// Claude JSONL format - use Claude token parser
 			transcriptLines, err := claudecode.ParseTranscript(data.Transcript)
@@ -410,6 +407,18 @@ func isGeminiJSONTranscript(content string) bool {
 		return false
 	}
 	return transcript.Messages != nil
+}
+
+// countGeminiMessages counts the number of messages in a Gemini JSON transcript.
+// Returns 0 if the content is not valid Gemini JSON.
+func countGeminiMessages(content string) int {
+	var transcript struct {
+		Messages []json.RawMessage `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(content), &transcript); err != nil {
+		return 0
+	}
+	return len(transcript.Messages)
 }
 
 // extractUserPromptsFromGeminiJSON extracts user prompts from Gemini's JSON transcript format.
