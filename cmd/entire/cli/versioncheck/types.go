@@ -28,5 +28,5 @@ const (
 	cacheFileName = "version_check.json"
 
 	// globalConfigDirName is the name of the global config directory in the user's home.
-	globalConfigDirName = ".entire"
+	globalConfigDirName = ".config/entire"
 )

@@ -70,7 +70,7 @@ func CheckAndNotify(cmd *cobra.Command, currentVersion string) {
 	}
 }
 
-// globalConfigDirPath returns the expanded path to the global config directory (~/.entire).
+// globalConfigDirPath returns the expanded path to the global config directory (~/.config/entire).
 func globalConfigDirPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -86,7 +86,7 @@ func ensureGlobalConfigDir() error {
 		return err
 	}
 
-	//nolint:gosec // ~/.entire is user home directory, 0o755 is appropriate
+	//nolint:gosec // ~/.config/entire is user home directory, 0o755 is appropriate
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
