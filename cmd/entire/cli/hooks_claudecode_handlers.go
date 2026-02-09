@@ -377,7 +377,7 @@ func commitWithMetadata() error {
 
 	// Fire EventTurnEnd to transition session phase (all strategies).
 	// This moves ACTIVE → IDLE or ACTIVE_COMMITTED → IDLE.
-	// TODO(ENT-221): dispatch ActionCondense for ACTIVE_COMMITTED → IDLE transitions.
+	// For ACTIVE_COMMITTED → IDLE, HandleTurnEnd dispatches ActionCondense.
 	transitionSessionTurnEnd(sessionID)
 
 	// Clean up pre-prompt state (CLI responsibility)
