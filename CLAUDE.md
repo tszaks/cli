@@ -42,6 +42,28 @@ mise run test:ci
 
 Integration tests use the `//go:build integration` build tag and are located in `cmd/entire/cli/integration_test/`.
 
+### Test Parallelization
+
+**Always use `t.Parallel()` in tests.** Every top-level test function and subtest should call `t.Parallel()` unless it modifies process-global state (e.g., `os.Chdir()`).
+
+```go
+func TestFeature_Foo(t *testing.T) {
+    t.Parallel()
+    // ...
+}
+
+// Integration tests: RunForAllStrategies handles t.Parallel() for subtests internally,
+// but the top-level test still needs it
+func TestFeature_Bar(t *testing.T) {
+    t.Parallel()
+    RunForAllStrategies(t, func(t *testing.T, env *TestEnv, strategyName string) {
+        // ...
+    })
+}
+```
+
+**Exception:** Tests that modify process-global state cannot be parallelized. This includes `os.Chdir()`/`t.Chdir()` and `os.Setenv()`/`t.Setenv()` — Go's test framework will panic if these are used after `t.Parallel()`.
+
 ### Linting and Formatting
 ```bash
 mise run fmt && mise run lint
