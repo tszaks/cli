@@ -16,6 +16,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // Strategy display names for user-friendly selection
@@ -78,6 +79,11 @@ Strategies: manual-commit (default), auto-commit`,
 				return err
 			}
 			// Non-interactive mode if --agent flag is provided
+			if cmd.Flags().Changed("agent") && agentName == "" {
+				cmd.SilenceUsage = true
+				printMissingAgentError(cmd.ErrOrStderr())
+				return NewSilentError(errors.New("missing agent name"))
+			}
 			if agentName != "" {
 				return setupAgentHooksNonInteractive(cmd.OutOrStdout(), agent.AgentName(agentName), strategyFlag, localDev, forceHooks, skipPushSessions, telemetry)
 			}
@@ -103,6 +109,17 @@ Strategies: manual-commit (default), auto-commit`,
 	//nolint:errcheck,gosec // completion is optional, flag is defined above
 	cmd.RegisterFlagCompletionFunc("strategy", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return []string{strategyDisplayManualCommit, strategyDisplayAutoCommit}, cobra.ShellCompDirectiveNoFileComp
+	})
+
+	// Provide a helpful error when --agent is used without a value
+	defaultFlagErr := cmd.FlagErrorFunc()
+	cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error {
+		var valErr *pflag.ValueRequiredError
+		if errors.As(err, &valErr) && valErr.GetSpecifiedName() == "agent" {
+			printMissingAgentError(c.ErrOrStderr())
+			return NewSilentError(errors.New("missing agent name"))
+		}
+		return defaultFlagErr(c, err)
 	})
 
 	// Add subcommands for automation/testing
@@ -484,6 +501,22 @@ func setupClaudeCodeHook(localDev, forceHooks bool) (int, error) {
 	}
 
 	return count, nil
+}
+
+// printMissingAgentError writes a helpful error listing available agents.
+func printMissingAgentError(w io.Writer) {
+	agents := agent.List()
+	fmt.Fprintln(w, "Missing agent name. Available agents:")
+	fmt.Fprintln(w)
+	for _, a := range agents {
+		suffix := ""
+		if a == agent.DefaultAgentName {
+			suffix = "    (default)"
+		}
+		fmt.Fprintf(w, "  %s%s\n", a, suffix)
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Usage: entire enable --agent <agent-name>")
 }
 
 // setupAgentHooksNonInteractive sets up hooks for a specific agent non-interactively.
