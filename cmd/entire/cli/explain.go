@@ -452,47 +452,23 @@ func explainTemporaryCheckpoint(w io.Writer, repo *git.Repository, store *checkp
 
 // getAssociatedCommits finds git commits that reference the given checkpoint ID.
 // Searches commits on the current branch for Entire-Checkpoint trailer matches.
-// When searchAll is true, removes the commit scan limit (may be slow).
+// When searchAll is true, uses full DAG walk with no depth limit (may be slow).
+// This finds checkpoint commits on merged feature branches (second parents of merges).
 func getAssociatedCommits(repo *git.Repository, checkpointID id.CheckpointID, searchAll bool) ([]associatedCommit, error) {
 	head, err := repo.Head()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
-	// Determine scan limit
-	limit := commitScanLimit
-	if searchAll {
-		limit = 0 // No limit
-	}
-
-	// Precompute main branch commits for filtering (skip commits shared with main on feature branches)
-	reachableFromMain := computeReachableFromMain(repo)
-
-	// Walk first-parent chain to find associated commits.
-	// First-parent traversal avoids walking into main's history through merge commit parents.
-	// reachableFromMain filtering skips commits that are on main (before the branch point).
 	commits := []associatedCommit{} // Initialize as empty slice, not nil (nil means "not searched")
 	targetID := checkpointID.String()
 
-	err = walkFirstParentCommits(repo, head.Hash(), limit, func(c *object.Commit) error {
-		// Once we hit a commit reachable from main on the first-parent chain,
-		// all earlier ancestors are also shared-with-main, so stop scanning.
-		if reachableFromMain[c.Hash] {
-			return errStopIteration
-		}
-
-		// Check for matching checkpoint trailer
-		cpID, found := trailers.ParseCheckpoint(c.Message)
-		if !found || cpID.String() != targetID {
-			return nil
-		}
-
+	collectCommit := func(c *object.Commit) {
 		fullSHA := c.Hash.String()
 		shortSHA := fullSHA
 		if len(fullSHA) >= 7 {
 			shortSHA = fullSHA[:7]
 		}
-
 		commits = append(commits, associatedCommit{
 			SHA:      fullSHA,
 			ShortSHA: shortSHA,
@@ -500,9 +476,46 @@ func getAssociatedCommits(repo *git.Repository, checkpointID id.CheckpointID, se
 			Author:   c.Author.Name,
 			Date:     c.Author.When,
 		})
+	}
 
-		return nil
-	})
+	if searchAll {
+		// Full DAG walk: follows all parents of merge commits, no depth limit.
+		// This finds checkpoint commits on merged feature branches.
+		iter, iterErr := repo.Log(&git.LogOptions{
+			From:  head.Hash(),
+			Order: git.LogOrderCommitterTime,
+		})
+		if iterErr != nil {
+			return nil, fmt.Errorf("failed to get commit log: %w", iterErr)
+		}
+		defer iter.Close()
+
+		err = iter.ForEach(func(c *object.Commit) error {
+			cpID, found := trailers.ParseCheckpoint(c.Message)
+			if found && cpID.String() == targetID {
+				collectCommit(c)
+			}
+			return nil
+		})
+	} else {
+		// First-parent walk with depth limit and branch filtering.
+		// Avoids walking into main's history through merge commit parents.
+		reachableFromMain := computeReachableFromMain(repo)
+
+		err = walkFirstParentCommits(repo, head.Hash(), commitScanLimit, func(c *object.Commit) error {
+			// Once we hit a commit reachable from main on the first-parent chain,
+			// all earlier ancestors are also shared-with-main, so stop scanning.
+			if reachableFromMain[c.Hash] {
+				return errStopIteration
+			}
+
+			cpID, found := trailers.ParseCheckpoint(c.Message)
+			if found && cpID.String() == targetID {
+				collectCommit(c)
+			}
+			return nil
+		})
+	}
 
 	if err != nil {
 		return nil, fmt.Errorf("error iterating commits: %w", err)
