@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
-	_ "github.com/entireio/cli/cmd/entire/cli/agent/claudecode" // Register agent for resolveAgentForRewind tests
-	_ "github.com/entireio/cli/cmd/entire/cli/agent/geminicli"  // Register agent for resolveAgentForRewind tests
+	_ "github.com/entireio/cli/cmd/entire/cli/agent/claudecode" // Register agent for ResolveAgentForRewind tests
+	_ "github.com/entireio/cli/cmd/entire/cli/agent/geminicli"  // Register agent for ResolveAgentForRewind tests
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -286,7 +286,7 @@ func TestResolveAgentForRewind(t *testing.T) {
 
 	t.Run("empty type falls back to default agent", func(t *testing.T) {
 		t.Parallel()
-		ag, err := resolveAgentForRewind("")
+		ag, err := ResolveAgentForRewind("")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -301,7 +301,7 @@ func TestResolveAgentForRewind(t *testing.T) {
 
 	t.Run("AgentTypeUnknown falls back to default agent", func(t *testing.T) {
 		t.Parallel()
-		ag, err := resolveAgentForRewind("Agent")
+		ag, err := ResolveAgentForRewind("Agent")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -312,7 +312,7 @@ func TestResolveAgentForRewind(t *testing.T) {
 
 	t.Run("Claude Code type resolves correctly", func(t *testing.T) {
 		t.Parallel()
-		ag, err := resolveAgentForRewind("Claude Code")
+		ag, err := ResolveAgentForRewind("Claude Code")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -323,7 +323,7 @@ func TestResolveAgentForRewind(t *testing.T) {
 
 	t.Run("Gemini CLI type resolves correctly", func(t *testing.T) {
 		t.Parallel()
-		ag, err := resolveAgentForRewind("Gemini CLI")
+		ag, err := ResolveAgentForRewind("Gemini CLI")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -334,7 +334,7 @@ func TestResolveAgentForRewind(t *testing.T) {
 
 	t.Run("unknown type returns error", func(t *testing.T) {
 		t.Parallel()
-		_, err := resolveAgentForRewind("Nonexistent Agent")
+		_, err := ResolveAgentForRewind("Nonexistent Agent")
 		if err == nil {
 			t.Error("expected error for unknown agent type")
 		}
