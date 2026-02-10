@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
@@ -363,8 +362,8 @@ func findTranscriptForSession(sessionID, repoRoot string) (string, error) {
 	// Extract the agent-specific session ID (removes date prefix)
 	agentSessionID := ag.ExtractAgentSessionID(sessionID)
 
-	// Build the transcript path
-	transcriptPath := filepath.Join(sessionDir, agentSessionID+".jsonl")
+	// Resolve the transcript path using agent-specific naming conventions
+	transcriptPath := ag.ResolveSessionFile(sessionDir, agentSessionID)
 
 	// Check if it exists
 	if _, err := os.Stat(transcriptPath); err != nil {

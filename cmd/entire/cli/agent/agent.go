@@ -59,6 +59,13 @@ type Agent interface {
 	// Examples: ".jsonl" (Claude), ".json" (Gemini)
 	SessionFileExtension() string
 
+	// ResolveSessionFile returns the path to the session transcript file for a given
+	// agent session ID. Agents use different naming conventions:
+	//   Claude: <sessionDir>/<id>.jsonl
+	//   Gemini: <sessionDir>/session-<date>-<shortid>.json (searches for existing file)
+	// If no existing file is found, returns a sensible default path.
+	ResolveSessionFile(sessionDir, agentSessionID string) string
+
 	// ReadSession reads session data from agent's storage.
 	// Handles different formats: JSONL (Claude), SQLite (Cursor), Markdown (Aider)
 	ReadSession(input *HookInput) (*AgentSession, error)

@@ -674,9 +674,9 @@ func restoreSessionTranscript(transcriptFile, sessionID string, agent agentpkg.A
 		return fmt.Errorf("failed to create agent session directory: %w", err)
 	}
 
-	// Extract agent's session ID format from Entire session ID
+	// Resolve the agent's session file path (agent-specific naming conventions)
 	agentSessionID := agent.ExtractAgentSessionID(sessionID)
-	sessionFile := filepath.Join(sessionDir, agentSessionID+agent.SessionFileExtension())
+	sessionFile := agent.ResolveSessionFile(sessionDir, agentSessionID)
 	fmt.Fprintf(os.Stderr, "Copying transcript:\n  From: %s\n  To: %s\n", transcriptFile, sessionFile)
 	if err := copyFile(transcriptFile, sessionFile); err != nil {
 		return fmt.Errorf("failed to copy transcript: %w", err)
@@ -748,9 +748,9 @@ func writeTranscriptToAgentSession(content []byte, sessionID string, agent agent
 		return "", fmt.Errorf("failed to create agent session directory: %w", err)
 	}
 
-	// Write transcript to agent's session storage
+	// Resolve the agent's session file path (agent-specific naming conventions)
 	agentSessionID := agent.ExtractAgentSessionID(sessionID)
-	sessionFile := filepath.Join(agentSessionDir, agentSessionID+agent.SessionFileExtension())
+	sessionFile := agent.ResolveSessionFile(agentSessionDir, agentSessionID)
 	fmt.Fprintf(os.Stderr, "Writing transcript to: %s\n", sessionFile)
 	if err := os.WriteFile(sessionFile, content, 0o600); err != nil {
 		return "", fmt.Errorf("failed to write transcript: %w", err)
@@ -802,9 +802,9 @@ func restoreTaskCheckpointTranscript(strat strategy.Strategy, point strategy.Rew
 		return fmt.Errorf("failed to create agent session directory: %w", err)
 	}
 
-	// Write truncated transcript to agent's session storage
+	// Resolve the agent's session file path (agent-specific naming conventions)
 	agentSessionID := agent.ExtractAgentSessionID(sessionID)
-	sessionFile := filepath.Join(agentSessionDir, agentSessionID+agent.SessionFileExtension())
+	sessionFile := agent.ResolveSessionFile(agentSessionDir, agentSessionID)
 	fmt.Fprintf(os.Stderr, "Writing truncated transcript to: %s\n", sessionFile)
 
 	if err := writeTranscript(sessionFile, truncated); err != nil {

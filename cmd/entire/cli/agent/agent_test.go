@@ -31,6 +31,9 @@ func (m *mockAgent) ExtractAgentSessionID(entireID string) string { return entir
 func (m *mockAgent) ProtectedDirs() []string                      { return nil }
 func (m *mockAgent) GetSessionDir(_ string) (string, error)       { return "", nil }
 func (m *mockAgent) SessionFileExtension() string                 { return ".jsonl" }
+func (m *mockAgent) ResolveSessionFile(sessionDir, agentSessionID string) string {
+	return sessionDir + "/" + agentSessionID + ".jsonl"
+}
 
 //nolint:nilnil // Mock implementation
 func (m *mockAgent) ReadSession(_ *HookInput) (*AgentSession, error) { return nil, nil }
