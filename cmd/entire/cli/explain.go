@@ -24,6 +24,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -945,7 +946,7 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 		count := 0
 		err = iter.ForEach(func(c *object.Commit) error {
 			if count >= commitScanLimit {
-				return errStopIteration
+				return storer.ErrStop
 			}
 			count++
 			collectCheckpoint(c)
