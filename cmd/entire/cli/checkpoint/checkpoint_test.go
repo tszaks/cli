@@ -2307,6 +2307,7 @@ func TestWriteTemporary_FirstCheckpoint_FilenamesWithSpaces(t *testing.T) {
 // the same session ID twice to the same checkpoint updates the existing slot
 // rather than creating a duplicate subdirectory.
 func TestWriteCommitted_DuplicateSessionIDUpdatesInPlace(t *testing.T) {
+	t.Parallel()
 	repo, _ := setupBranchTestRepo(t)
 	store := NewGitStore(repo)
 	checkpointID := id.MustCheckpointID("deda01234567")
@@ -2443,6 +2444,7 @@ func TestWriteCommitted_DuplicateSessionIDUpdatesInPlace(t *testing.T) {
 // TestWriteCommitted_DuplicateSessionIDSingleSession verifies that writing
 // the same session ID twice when it's the only session updates in-place.
 func TestWriteCommitted_DuplicateSessionIDSingleSession(t *testing.T) {
+	t.Parallel()
 	repo, _ := setupBranchTestRepo(t)
 	store := NewGitStore(repo)
 	checkpointID := id.MustCheckpointID("dedb07654321")
@@ -2520,6 +2522,7 @@ func TestWriteCommitted_DuplicateSessionIDSingleSession(t *testing.T) {
 // already exists at index 0, writing it again reuses index 0 (not index 2).
 // The session file paths in the summary must point to /0/, not /2/.
 func TestWriteCommitted_DuplicateSessionIDReusesIndex(t *testing.T) {
+	t.Parallel()
 	repo, _ := setupBranchTestRepo(t)
 	store := NewGitStore(repo)
 	checkpointID := id.MustCheckpointID("dedc0abcdef1")
@@ -2603,6 +2606,7 @@ func TestWriteCommitted_DuplicateSessionIDReusesIndex(t *testing.T) {
 // is overwritten in-place, optional files from the previous write (prompts, context)
 // do not persist if the new write omits them, and sibling session data is untouched.
 func TestWriteCommitted_DuplicateSessionIDClearsStaleFiles(t *testing.T) {
+	t.Parallel()
 	repo, _ := setupBranchTestRepo(t)
 	store := NewGitStore(repo)
 	checkpointID := id.MustCheckpointID("dedd0abcdef2")
