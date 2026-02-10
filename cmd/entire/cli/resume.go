@@ -414,69 +414,49 @@ func resumeSession(sessionID string, checkpointID id.CheckpointID, force bool) e
 			Agent:        metadata.Agent,
 		}
 
-		if err := restorer.RestoreLogsOnly(point, force); err != nil {
-			// Fall back to single-session restore
+		sessions, restoreErr := restorer.RestoreLogsOnly(point, force)
+		if restoreErr != nil || len(sessions) == 0 {
+			// Fall back to single-session restore (e.g., old checkpoints without agent metadata)
 			return resumeSingleSession(ctx, ag, sessionID, checkpointID, repoRoot, force)
 		}
 
-		// Get checkpoint metadata to show all sessions
-		repo, err := openRepository()
-		if err != nil {
-			// Just show the primary session - graceful fallback
-			agentSID := ag.ExtractAgentSessionID(sessionID)
-			fmt.Fprintf(os.Stderr, "Session: %s\n", sessionID)
-			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
-			fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSID))
-			return nil //nolint:nilerr // Graceful fallback to single session
-		}
-
-		metadataTree, err := strategy.GetMetadataBranchTree(repo)
-		if err != nil {
-			agentSID := ag.ExtractAgentSessionID(sessionID)
-			fmt.Fprintf(os.Stderr, "Session: %s\n", sessionID)
-			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
-			fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSID))
-			return nil //nolint:nilerr // Graceful fallback to single session
-		}
-
-		metadata, err := strategy.ReadCheckpointMetadata(metadataTree, checkpointID.Path())
-		if err != nil || metadata.SessionCount <= 1 {
-			// Single session or can't read metadata - show standard single session output
-			agentSID := ag.ExtractAgentSessionID(sessionID)
-			fmt.Fprintf(os.Stderr, "Session: %s\n", sessionID)
-			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
-			fmt.Fprintf(os.Stderr, "  %s\n", ag.FormatResumeCommand(agentSID))
-			return nil //nolint:nilerr // Graceful fallback to single session
-		}
-
-		// Multi-session: show all resume commands with prompts
-		checkpointPath := checkpointID.Path()
-		sessionPrompts := strategy.ReadAllSessionPromptsFromTree(metadataTree, checkpointPath, metadata.SessionCount, metadata.SessionIDs)
-
-		logging.Debug(ctx, "resume session completed (multi-session)",
+		logging.Debug(ctx, "resume session completed",
 			slog.String("checkpoint_id", checkpointID.String()),
-			slog.Int("session_count", metadata.SessionCount),
+			slog.Int("session_count", len(sessions)),
 		)
 
-		fmt.Fprintf(os.Stderr, "\nRestored %d sessions. To continue, run:\n", metadata.SessionCount)
-		for i, sid := range metadata.SessionIDs {
-			agentSID := ag.ExtractAgentSessionID(sid)
-			cmd := ag.FormatResumeCommand(agentSID)
-
-			var prompt string
-			if i < len(sessionPrompts) {
-				prompt = sessionPrompts[i]
+		// Print per-session resume commands using returned sessions
+		if len(sessions) > 1 {
+			fmt.Fprintf(os.Stderr, "\nRestored %d sessions. To continue, run:\n", len(sessions))
+		} else if len(sessions) == 1 {
+			fmt.Fprintf(os.Stderr, "Session: %s\n", sessions[0].SessionID)
+			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
+		}
+		for i, sess := range sessions {
+			sessAg, agErr := strategy.ResolveAgentForRewind(sess.Agent)
+			if agErr != nil {
+				continue
 			}
+			agentSID := sessAg.ExtractAgentSessionID(sess.SessionID)
+			cmd := sessAg.FormatResumeCommand(agentSID)
 
-			if i == len(metadata.SessionIDs)-1 {
-				if prompt != "" {
-					fmt.Fprintf(os.Stderr, "  %s  # %s (most recent)\n", cmd, prompt)
+			if len(sessions) > 1 {
+				if i == len(sessions)-1 {
+					if sess.Prompt != "" {
+						fmt.Fprintf(os.Stderr, "  %s  # %s (most recent)\n", cmd, sess.Prompt)
+					} else {
+						fmt.Fprintf(os.Stderr, "  %s  # (most recent)\n", cmd)
+					}
 				} else {
-					fmt.Fprintf(os.Stderr, "  %s  # (most recent)\n", cmd)
+					if sess.Prompt != "" {
+						fmt.Fprintf(os.Stderr, "  %s  # %s\n", cmd, sess.Prompt)
+					} else {
+						fmt.Fprintf(os.Stderr, "  %s\n", cmd)
+					}
 				}
 			} else {
-				if prompt != "" {
-					fmt.Fprintf(os.Stderr, "  %s  # %s\n", cmd, prompt)
+				if sess.Prompt != "" {
+					fmt.Fprintf(os.Stderr, "  %s  # %s\n", cmd, sess.Prompt)
 				} else {
 					fmt.Fprintf(os.Stderr, "  %s\n", cmd)
 				}

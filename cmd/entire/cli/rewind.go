@@ -29,14 +29,11 @@ import (
 // unknownSessionID is the fallback session ID used when no session ID is provided.
 const unknownSessionID = "unknown"
 
-// getAgent returns an agent by type
+// getAgent returns an agent by type, falling back to the default agent for empty types.
 func getAgent(agentType agentpkg.AgentType) (agentpkg.Agent, error) {
-	if agentType == "" {
-		return nil, errors.New("agent type cannot be empty")
-	}
-	ag, err := agentpkg.GetByAgentType(agentType)
+	ag, err := strategy.ResolveAgentForRewind(agentType)
 	if err != nil {
-		return nil, fmt.Errorf("getting agent: %w", err)
+		return nil, fmt.Errorf("resolving agent: %w", err)
 	}
 	return ag, nil
 }
@@ -553,7 +550,8 @@ func handleLogsOnlyRewindNonInteractive(start strategy.Strategy, point strategy.
 		return errors.New("strategy does not support logs-only restoration")
 	}
 
-	if err := restorer.RestoreLogsOnly(point, true); err != nil { // force=true for explicit rewind
+	sessions, err := restorer.RestoreLogsOnly(point, true) // force=true for explicit rewind
+	if err != nil {
 		logging.Error(ctx, "logs-only rewind failed",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
@@ -566,7 +564,7 @@ func handleLogsOnlyRewindNonInteractive(start strategy.Strategy, point strategy.
 	)
 
 	// Show resume commands for all sessions
-	printMultiSessionResumeCommands(point, agent)
+	printMultiSessionResumeCommands(sessions)
 
 	fmt.Println("Note: Working directory unchanged. Use interactive mode for full checkout.")
 	return nil
@@ -602,7 +600,8 @@ func handleLogsOnlyResetNonInteractive(start strategy.Strategy, point strategy.R
 	}
 
 	// Restore logs first
-	if err := restorer.RestoreLogsOnly(point, true); err != nil { // force=true for explicit rewind
+	sessions, err := restorer.RestoreLogsOnly(point, true) // force=true for explicit rewind
+	if err != nil {
 		logging.Error(ctx, "logs-only reset failed during log restoration",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
@@ -631,7 +630,7 @@ func handleLogsOnlyResetNonInteractive(start strategy.Strategy, point strategy.R
 	fmt.Printf("Reset branch to %s.\n", shortID)
 
 	// Show resume commands for all sessions
-	printMultiSessionResumeCommands(point, agent)
+	printMultiSessionResumeCommands(sessions)
 
 	// Show recovery instructions
 	if currentHead != "" && currentHead != point.ID {
@@ -884,7 +883,8 @@ func handleLogsOnlyRestore(start strategy.Strategy, point strategy.RewindPoint) 
 	}
 
 	// Restore logs
-	if err := restorer.RestoreLogsOnly(point, true); err != nil { // force=true for explicit rewind
+	sessions, err := restorer.RestoreLogsOnly(point, true) // force=true for explicit rewind
+	if err != nil {
 		logging.Error(ctx, "logs-only restore failed",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
@@ -898,7 +898,7 @@ func handleLogsOnlyRestore(start strategy.Strategy, point strategy.RewindPoint) 
 
 	// Show resume commands for all sessions
 	fmt.Println("Restored session logs.")
-	printMultiSessionResumeCommands(point, agent)
+	printMultiSessionResumeCommands(sessions)
 	return nil
 }
 
@@ -925,7 +925,8 @@ func handleLogsOnlyCheckout(start strategy.Strategy, point strategy.RewindPoint,
 		return errors.New("strategy does not support logs-only restoration")
 	}
 
-	if err := restorer.RestoreLogsOnly(point, true); err != nil { // force=true for explicit rewind
+	sessions, err := restorer.RestoreLogsOnly(point, true) // force=true for explicit rewind
+	if err != nil {
 		logging.Error(ctx, "logs-only checkout failed during log restoration",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
@@ -950,7 +951,7 @@ func handleLogsOnlyCheckout(start strategy.Strategy, point strategy.RewindPoint,
 
 	if !confirm {
 		fmt.Println("Checkout cancelled. Session logs were still restored.")
-		printMultiSessionResumeCommands(point, agent)
+		printMultiSessionResumeCommands(sessions)
 		return nil
 	}
 
@@ -968,7 +969,7 @@ func handleLogsOnlyCheckout(start strategy.Strategy, point strategy.RewindPoint,
 	)
 
 	fmt.Printf("Checked out %s (detached HEAD).\n", shortID)
-	printMultiSessionResumeCommands(point, agent)
+	printMultiSessionResumeCommands(sessions)
 	return nil
 }
 
@@ -995,12 +996,13 @@ func handleLogsOnlyReset(start strategy.Strategy, point strategy.RewindPoint, sh
 		return errors.New("strategy does not support logs-only restoration")
 	}
 
-	if err := restorer.RestoreLogsOnly(point, true); err != nil { // force=true for explicit rewind
+	sessions, restoreErr := restorer.RestoreLogsOnly(point, true) // force=true for explicit rewind
+	if restoreErr != nil {
 		logging.Error(ctx, "logs-only reset failed during log restoration",
 			slog.String("checkpoint_id", point.ID),
-			slog.String("error", err.Error()),
+			slog.String("error", restoreErr.Error()),
 		)
-		return fmt.Errorf("failed to restore logs: %w", err)
+		return fmt.Errorf("failed to restore logs: %w", restoreErr)
 	}
 
 	// Get current HEAD before reset (for recovery message)
@@ -1050,7 +1052,7 @@ func handleLogsOnlyReset(start strategy.Strategy, point strategy.RewindPoint, sh
 
 	if !confirm {
 		fmt.Println("Reset cancelled. Session logs were still restored.")
-		printMultiSessionResumeCommands(point, agent)
+		printMultiSessionResumeCommands(sessions)
 		return nil
 	}
 
@@ -1068,7 +1070,7 @@ func handleLogsOnlyReset(start strategy.Strategy, point strategy.RewindPoint, sh
 	)
 
 	fmt.Printf("Reset branch to %s.\n", shortID)
-	printMultiSessionResumeCommands(point, agent)
+	printMultiSessionResumeCommands(sessions)
 
 	// Show recovery instructions
 	if currentHead != "" && currentHead != point.ID {
@@ -1231,49 +1233,43 @@ func formatResumeCommand(entireSessionID string, agent agentpkg.Agent) string {
 	return agent.FormatResumeCommand(agentSessionID)
 }
 
-// printMultiSessionResumeCommands prints resume commands for all sessions in a rewind point.
-// For single-session checkpoints, prints a single resume command.
-// For multi-session checkpoints, prints all sessions with prompts as comments.
-func printMultiSessionResumeCommands(point strategy.RewindPoint, agent agentpkg.Agent) {
-	// Check if this is a multi-session checkpoint
-	if point.SessionCount > 1 && len(point.SessionIDs) > 1 {
-		fmt.Printf("\nRestored %d sessions. Resume with:\n", point.SessionCount)
+// printMultiSessionResumeCommands prints resume commands for restored sessions.
+// Each session may have a different agent, so per-session agent resolution is used.
+func printMultiSessionResumeCommands(sessions []strategy.RestoredSession) {
+	if len(sessions) == 0 {
+		return
+	}
 
-		// Print each session with prompt as comment
-		for i, sessionID := range point.SessionIDs {
-			cmd := formatResumeCommand(sessionID, agent)
+	if len(sessions) > 1 {
+		fmt.Printf("\nRestored %d sessions. Resume with:\n", len(sessions))
+	}
 
-			// Get prompt for this session (if available)
-			var prompt string
-			if i < len(point.SessionPrompts) {
-				prompt = point.SessionPrompts[i]
-			}
+	for i, sess := range sessions {
+		ag, err := strategy.ResolveAgentForRewind(sess.Agent)
+		if err != nil {
+			continue
+		}
 
+		cmd := formatResumeCommand(sess.SessionID, ag)
+
+		if len(sessions) > 1 {
 			// Add "(most recent)" label to the last session
-			if i == len(point.SessionIDs)-1 {
-				if prompt != "" {
-					fmt.Printf("  %s  # %s (most recent)\n", cmd, prompt)
+			if i == len(sessions)-1 {
+				if sess.Prompt != "" {
+					fmt.Printf("  %s  # %s (most recent)\n", cmd, sess.Prompt)
 				} else {
 					fmt.Printf("  %s  # (most recent)\n", cmd)
 				}
 			} else {
-				if prompt != "" {
-					fmt.Printf("  %s  # %s\n", cmd, prompt)
+				if sess.Prompt != "" {
+					fmt.Printf("  %s  # %s\n", cmd, sess.Prompt)
 				} else {
 					fmt.Printf("  %s\n", cmd)
 				}
 			}
-		}
-	} else {
-		// Single session - use traditional format with prompt if available
-		sessionID := point.SessionID
-		if sessionID == "" && len(point.SessionIDs) > 0 {
-			sessionID = point.SessionIDs[len(point.SessionIDs)-1]
-		}
-		if sessionID != "" {
-			cmd := formatResumeCommand(sessionID, agent)
-			if point.SessionPrompt != "" {
-				fmt.Printf("%s  # %s\n", cmd, point.SessionPrompt)
+		} else {
+			if sess.Prompt != "" {
+				fmt.Printf("%s  # %s\n", cmd, sess.Prompt)
 			} else {
 				fmt.Printf("%s\n", cmd)
 			}
