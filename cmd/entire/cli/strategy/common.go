@@ -1121,9 +1121,16 @@ func DeleteBranchCLI(branchName string) error {
 
 	// Pre-check: verify the branch exists so callers get a structured error
 	// instead of parsing git's output string (which varies across locales).
+	// git show-ref exits 1 for "not found" and 128+ for fatal errors (corrupt
+	// repo, permissions, not a git directory). Only map exit code 1 to
+	// ErrBranchNotFound; propagate other failures as-is.
 	check := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName) //nolint:gosec // branchName comes from internal shadow branch naming
 	if err := check.Run(); err != nil {
-		return fmt.Errorf("%w: %s", ErrBranchNotFound, branchName)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return fmt.Errorf("%w: %s", ErrBranchNotFound, branchName)
+		}
+		return fmt.Errorf("failed to check branch %s: %w", branchName, err)
 	}
 
 	cmd := exec.CommandContext(ctx, "git", "branch", "-D", "--", branchName)
