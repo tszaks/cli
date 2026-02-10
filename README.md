@@ -1,13 +1,36 @@
 # Entire CLI
 
-Entire hooks into your git workflow to capture AI agent sessions on every push. Sessions are indexed alongside commits, creating a searchable record of how code was written. Runs locally, stays in your repo.
+Entire hooks into your git workflow to capture AI agent sessions on every push. Sessions are indexed alongside commits, creating a searchable record of how code was written in your repo.
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Typical Workflow](#typical-workflow)
+- [Key Concepts](#key-concepts)
+  - [How It Works](#how-it-works)
+  - [Strategies](#strategies)
+- [Commands Reference](#commands-reference)
+- [Configuration](#configuration)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [Getting Help](#getting-help)
+- [License](#license)
+
+## Requirements
+
+- Git
+- macOS or Linux (Windows via WSL)
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Gemini CLI](https://github.com/google-gemini/gemini-cli) installed and authenticated
 
 ## Quick Start
 
-```
+```bash
 # Install via Homebrew
 brew tap entireio/tap
 brew install entireio/tap/entire
+
+# Or install via Go
+go install github.com/entireio/cli/cmd/entire@latest
 
 # Enable in your project
 cd your-project && entire enable
@@ -83,6 +106,29 @@ A **checkpoint** is a snapshot within a session that you can rewind to—a "save
 
 **Checkpoint IDs** are 12-character hex strings (e.g., `a3b2c4d5e6f7`).
 
+### How It Works
+
+```
+Your Branch                    entire/checkpoints/v1
+     │                                  │
+     ▼                                  │
+[Base Commit]                           │
+     │                                  │
+     │  ┌─── Agent works ───┐           │
+     │  │  Step 1           │           │
+     │  │  Step 2           │           │ 
+     │  │  Step 3           │           │
+     │  └───────────────────┘           │
+     │                                  │
+     ▼                                  ▼
+[Your Commit] ─────────────────► [Session Metadata]
+     │                           (transcript, prompts,
+     │                            files touched)
+     ▼
+```
+
+Checkpoints are saved as you work. When you commit, session metadata is permanently stored on the `entire/checkpoints/v1` branch and linked to your commit.
+
 ### Strategies
 
 Entire offers two strategies for capturing your work:
@@ -90,9 +136,17 @@ Entire offers two strategies for capturing your work:
 | Aspect              | Manual-Commit                            | Auto-Commit                                        |
 | ------------------- | ---------------------------------------- | -------------------------------------------------- |
 | Code commits        | None on your branch                      | Created automatically after each agent response    |
-| Safe on main branch | Yes                                      | No - creates commits                               |
+| Safe on main branch | Yes                                      | Use caution - creates commits on active branch     |
 | Rewind              | Always possible, non-destructive         | Full rewind on feature branches; logs-only on main |
 | Best for            | Most workflows - keeps git history clean | Teams wanting automatic code commits               |
+
+### Git Worktrees
+
+Entire works seamlessly with [git worktrees](https://git-scm.com/docs/git-worktree). Each worktree has independent session tracking, so you can run multiple AI sessions in different worktrees without conflicts.
+
+### Concurrent Sessions
+
+Multiple AI sessions can run on the same commit. If you start a second session while another has uncommitted work, Entire warns you and tracks them separately. Both sessions' checkpoints are preserved and can be rewound independently.
 
 ## Commands Reference
 
@@ -319,3 +373,7 @@ entire <command> --help    # Command-specific help
 
 - **GitHub Issues:** Report bugs or request features at https://github.com/entireio/cli/issues
 - **Contributing:** See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
