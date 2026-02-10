@@ -117,7 +117,6 @@ func ListShadowBranches() ([]string, error) {
 // DeleteShadowBranches deletes the specified branches from the repository.
 // Returns two slices: successfully deleted branches and branches that failed to delete.
 // Individual branch deletion failures do not stop the operation - all branches are attempted.
-// Returns an error only if the repository cannot be opened.
 func DeleteShadowBranches(branches []string) (deleted []string, failed []string, err error) {
 	if len(branches) == 0 {
 		return []string{}, []string{}, nil

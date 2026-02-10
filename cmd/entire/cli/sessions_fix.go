@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -286,7 +287,10 @@ func discardSession(ss stuckSession, _ *git.Repository, errW io.Writer) error {
 			fmt.Fprintf(errW, "Warning: could not check other sessions for shadow branch: %v\n", err)
 		} else if shouldDelete {
 			if err := strategy.DeleteBranchCLI(ss.ShadowBranch); err != nil {
-				return fmt.Errorf("failed to delete shadow branch: %w", err)
+				// Branch already gone is not an error — keeps discard idempotent
+				if !strings.Contains(err.Error(), "not found") {
+					return fmt.Errorf("failed to delete shadow branch: %w", err)
+				}
 			}
 		}
 	}
