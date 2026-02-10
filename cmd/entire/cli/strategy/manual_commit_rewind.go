@@ -328,7 +328,7 @@ func (s *ManualCommitStrategy) Rewind(point RewindPoint) error {
 	}
 
 	// Find and delete untracked files that aren't in the checkpoint
-	// These are likely files created by Claude in later checkpoints
+	// These are likely files created by the agent in later checkpoints
 	err = filepath.Walk(repoRoot, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return nil //nolint:nilerr // Skip filesystem errors during walk
@@ -745,7 +745,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 //
 //nolint:ireturn // Factory pattern returns interface - agent type determined at runtime
 func resolveAgentForRewind(agentType agent.AgentType) (agent.Agent, error) {
-	if agentType == "" {
+	if !isSpecificAgentType(agentType) {
 		ag := agent.Default()
 		if ag == nil {
 			return nil, errors.New("no default agent registered")

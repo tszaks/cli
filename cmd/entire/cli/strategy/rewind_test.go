@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/entireio/cli/cmd/entire/cli/agent"
 	_ "github.com/entireio/cli/cmd/entire/cli/agent/claudecode" // Register agent for resolveAgentForRewind tests
 	_ "github.com/entireio/cli/cmd/entire/cli/agent/geminicli"  // Register agent for resolveAgentForRewind tests
 
@@ -293,8 +294,19 @@ func TestResolveAgentForRewind(t *testing.T) {
 			t.Fatal("expected non-nil agent")
 		}
 		// Default is Claude
-		if ag.Name() != "claude-code" {
-			t.Errorf("Name() = %q, want %q", ag.Name(), "claude-code")
+		if ag.Name() != agent.AgentNameClaudeCode {
+			t.Errorf("Name() = %q, want %q", ag.Name(), agent.AgentNameClaudeCode)
+		}
+	})
+
+	t.Run("AgentTypeUnknown falls back to default agent", func(t *testing.T) {
+		t.Parallel()
+		ag, err := resolveAgentForRewind("Agent")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if ag.Name() != agent.AgentNameClaudeCode {
+			t.Errorf("Name() = %q, want %q", ag.Name(), agent.AgentNameClaudeCode)
 		}
 	})
 
@@ -304,8 +316,8 @@ func TestResolveAgentForRewind(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if ag.Name() != "claude-code" {
-			t.Errorf("Name() = %q, want %q", ag.Name(), "claude-code")
+		if ag.Name() != agent.AgentNameClaudeCode {
+			t.Errorf("Name() = %q, want %q", ag.Name(), agent.AgentNameClaudeCode)
 		}
 	})
 
@@ -315,8 +327,8 @@ func TestResolveAgentForRewind(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if ag.Name() != "gemini" {
-			t.Errorf("Name() = %q, want %q", ag.Name(), "gemini")
+		if ag.Name() != agent.AgentNameGemini {
+			t.Errorf("Name() = %q, want %q", ag.Name(), agent.AgentNameGemini)
 		}
 	})
 

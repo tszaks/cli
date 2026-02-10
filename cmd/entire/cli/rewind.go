@@ -50,7 +50,7 @@ func newRewindCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rewind",
 		Short: "Browse checkpoints and rewind your session",
-		Long: `Interactive command for rewinding and managing Claude Code sessions.
+		Long: `Interactive command for rewinding and managing agent sessions.
 
 This command will show you an interactive list of recent checkpoints.  You'll be
 able to select one for Entire to rewind your branch state, including your code and
@@ -101,7 +101,7 @@ func runRewindInteractive() error { //nolint:maintidx // already present in code
 
 	if len(points) == 0 {
 		fmt.Println("No rewind points found.")
-		fmt.Println("Rewind points are created automatically when Claude Code sessions end.")
+		fmt.Println("Rewind points are created automatically when agent sessions end.")
 		return nil
 	}
 
@@ -651,7 +651,7 @@ func extractSessionIDFromMetadata(metadataDir string) string {
 
 func restoreSessionTranscript(transcriptFile, sessionID string, agent agentpkg.Agent) error {
 	// Get repo root for agent's session directory lookup
-	// Use repo root instead of CWD because Claude stores sessions per-repo,
+	// Use repo root instead of CWD because agents store sessions per-repo,
 	// and running from a subdirectory would look up the wrong session directory
 	repoRoot, err := paths.RepoRoot()
 	if err != nil {
@@ -773,7 +773,7 @@ func restoreTaskCheckpointTranscript(strat strategy.Strategy, point strategy.Rew
 	truncated := TruncateTranscriptAtUUID(transcript, checkpointUUID)
 
 	// Get repo root for agent's session directory lookup
-	// Use repo root instead of CWD because Claude stores sessions per-repo,
+	// Use repo root instead of CWD because agents store sessions per-repo,
 	// and running from a subdirectory would look up the wrong session directory
 	repoRoot, err := paths.RepoRoot()
 	if err != nil {

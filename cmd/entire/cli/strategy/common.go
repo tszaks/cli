@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
@@ -209,10 +210,18 @@ func isProtectedPath(relPath string) bool {
 
 // protectedDirs returns the list of directories to protect. This combines
 // static infrastructure dirs with agent-reported dirs from the registry.
+// The result is cached since it's called per-file during filepath.Walk.
 func protectedDirs() []string {
-	dirs := []string{gitDir, entireDir}
-	return append(dirs, agent.AllProtectedDirs()...)
+	protectedDirsOnce.Do(func() {
+		protectedDirsCache = append([]string{gitDir, entireDir}, agent.AllProtectedDirs()...)
+	})
+	return protectedDirsCache
 }
+
+var (
+	protectedDirsOnce  sync.Once
+	protectedDirsCache []string
+)
 
 // isSpecificAgentType returns true if the agent type is a known, specific value
 // (not empty and not the generic "Agent" fallback).
@@ -1193,7 +1202,7 @@ func HardResetWithProtection(commitHash plumbing.Hash) (shortID string, err erro
 // collectUntrackedFiles collects all untracked files in the working directory.
 // This is used to capture the initial state when starting a session,
 // ensuring untracked files present at session start are preserved during rewind.
-// Excludes .git/, .entire/, and .claude/ directories (which are system/config directories).
+// Excludes protected directories (.git/, .entire/, and agent config directories).
 // Works correctly from any subdirectory within the repository.
 func collectUntrackedFiles() ([]string, error) {
 	// Get repository root to walk from there
