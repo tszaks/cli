@@ -2168,6 +2168,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 }
 
 func TestCountTranscriptLines(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		content  string
@@ -2208,6 +2209,11 @@ func TestCountTranscriptLines(t *testing.T) {
 			expected: 0,
 		},
 		{
+			name:     "Gemini JSON - malformed messages (fallback to 1)",
+			content:  `{"messages": [1, 2, 3]}`,
+			expected: 1,
+		},
+		{
 			name:     "empty string",
 			content:  "",
 			expected: 0,
@@ -2216,6 +2222,7 @@ func TestCountTranscriptLines(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := countTranscriptLines(tt.content)
 			if result != tt.expected {
 				t.Errorf("countTranscriptLines() = %d, want %d", result, tt.expected)
