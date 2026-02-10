@@ -96,13 +96,6 @@ func (s *AutoCommitStrategy) Description() string {
 	return "Auto-commits code to active branch with metadata on entire/checkpoints/v1"
 }
 
-// AllowsMainBranch returns true to allow auto-commit strategy on main branch.
-// The strategy creates clean commits with Entire-Checkpoint trailers, and detailed
-// metadata is stored on the separate entire/checkpoints/v1 orphan branch.
-func (s *AutoCommitStrategy) AllowsMainBranch() bool {
-	return true
-}
-
 func (s *AutoCommitStrategy) ValidateRepository() error {
 	repo, err := OpenRepository()
 	if err != nil {

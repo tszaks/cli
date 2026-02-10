@@ -89,12 +89,6 @@ func captureInitialState() error {
 
 // commitWithMetadata commits the session changes with metadata.
 func commitWithMetadata() error {
-	// Skip on default branch for strategies that don't allow it
-	if skip, branchName := ShouldSkipOnDefaultBranchForStrategy(); skip {
-		fmt.Fprintf(os.Stderr, "Entire: skipping on branch '%s' - create a feature branch to use Entire tracking\n", branchName)
-		return nil // Don't fail the hook, just skip
-	}
-
 	// Get the agent for hook input parsing and session ID transformation
 	ag, err := GetCurrentHookAgent()
 	if err != nil {
@@ -516,12 +510,6 @@ func handleClaudeCodePostTodo() error {
 
 // handleClaudeCodePreTask handles the PreToolUse[Task] hook
 func handleClaudeCodePreTask() error {
-	// Skip on default branch for strategies that don't allow it
-	if skip, branchName := ShouldSkipOnDefaultBranchForStrategy(); skip {
-		fmt.Fprintf(os.Stderr, "Entire: skipping on branch '%s' - create a feature branch to use Entire tracking\n", branchName)
-		return nil // Don't fail the hook, just skip
-	}
-
 	input, err := parseTaskHookInput(os.Stdin)
 	if err != nil {
 		return fmt.Errorf("failed to parse PreToolUse[Task] input: %w", err)
@@ -558,12 +546,6 @@ func handleClaudeCodePreTask() error {
 
 // handleClaudeCodePostTask handles the PostToolUse[Task] hook
 func handleClaudeCodePostTask() error {
-	// Skip on default branch for strategies that don't allow it
-	if skip, branchName := ShouldSkipOnDefaultBranchForStrategy(); skip {
-		fmt.Fprintf(os.Stderr, "Entire: skipping on branch '%s' - create a feature branch to use Entire tracking\n", branchName)
-		return nil // Don't fail the hook, just skip
-	}
-
 	input, err := parsePostTaskHookInput(os.Stdin)
 	if err != nil {
 		return fmt.Errorf("failed to parse PostToolUse[Task] input: %w", err)

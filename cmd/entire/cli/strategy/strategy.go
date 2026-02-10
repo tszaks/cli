@@ -319,13 +319,6 @@ type Strategy interface {
 	// Description returns a human-readable description for the setup wizard
 	Description() string
 
-	// AllowsMainBranch returns true if this strategy can safely operate on the
-	// default branch (main/master). Strategies that don't modify the working
-	// branch's commit history (like manual-commit strategies) can return true.
-	// Strategies that create commits on the working branch should return false
-	// to prevent polluting main branch history.
-	AllowsMainBranch() bool
-
 	// ValidateRepository checks if the repository is in a valid state
 	// for this strategy to operate. Returns an error if validation fails.
 	ValidateRepository() error

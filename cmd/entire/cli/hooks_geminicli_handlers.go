@@ -451,12 +451,6 @@ func handleGeminiBeforeAgent() error {
 // AfterAgent fires after EVERY user prompt/response cycle, making it the correct place
 // for checkpoint creation (not SessionEnd, which only fires on explicit exit).
 func handleGeminiAfterAgent() error {
-	// Skip on default branch for strategies that don't allow it
-	if skip, branchName := ShouldSkipOnDefaultBranchForStrategy(); skip {
-		fmt.Fprintf(os.Stderr, "Entire: skipping on branch '%s' - create a feature branch to use Entire tracking\n", branchName)
-		return nil
-	}
-
 	// Always use Gemini agent for Gemini hooks
 	ag, err := agent.Get("gemini")
 	if err != nil {

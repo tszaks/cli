@@ -80,13 +80,6 @@ func (s *ManualCommitStrategy) Description() string {
 	return "Manual commit checkpoints with session logs on entire/checkpoints/v1"
 }
 
-// AllowsMainBranch returns true because manual-commit strategy only writes to shadow
-// branches (entire/<hash>) and entire/checkpoints/v1, never modifying the working branch's
-// commit history.
-func (s *ManualCommitStrategy) AllowsMainBranch() bool {
-	return true
-}
-
 // ValidateRepository validates that the repository is suitable for this strategy.
 func (s *ManualCommitStrategy) ValidateRepository() error {
 	repo, err := OpenRepository()
