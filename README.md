@@ -50,7 +50,7 @@ entire enable
 This configures git hooks to work with your AI agent (Claude Code or Gemini CLI). The hooks capture session data at specific points in your workflow. Your code commits stay clean—all session metadata is stored separately on the `entire/checkpoints/v1` branch.
 
 **When checkpoints are created** depends on your chosen strategy (default is `manual-commit`):
-- **Manual-commit**: Checkpoints are created when you make a git commit
+- **Manual-commit**: Checkpoints are created when you or the agent make a git commit
 - **Auto-commit**: Checkpoints are created after each agent response
 
 ### 2. Work with Your AI Agent
