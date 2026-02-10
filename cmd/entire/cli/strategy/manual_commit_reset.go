@@ -44,7 +44,7 @@ func (s *ManualCommitStrategy) Reset() error {
 
 	// Check if shadow branch exists
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
-	ref, err := repo.Reference(refName, true)
+	_, err = repo.Reference(refName, true)
 	hasShadowBranch := err == nil
 
 	// Find sessions for this commit
@@ -78,7 +78,7 @@ func (s *ManualCommitStrategy) Reset() error {
 
 	// Delete the shadow branch if it exists
 	if hasShadowBranch {
-		if err := repo.Storer.RemoveReference(ref.Name()); err != nil {
+		if err := DeleteBranchCLI(shadowBranchName); err != nil {
 			return fmt.Errorf("failed to delete shadow branch: %w", err)
 		}
 		fmt.Fprintf(os.Stderr, "Deleted shadow branch %s\n", shadowBranchName)

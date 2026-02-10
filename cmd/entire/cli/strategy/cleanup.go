@@ -123,23 +123,10 @@ func DeleteShadowBranches(branches []string) (deleted []string, failed []string,
 		return []string{}, []string{}, nil
 	}
 
-	repo, err := OpenRepository()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open git repository: %w", err)
-	}
-
 	for _, branch := range branches {
-		refName := plumbing.NewBranchReferenceName(branch)
-
-		// Check if reference exists before trying to delete
-		ref, err := repo.Reference(refName, true)
-		if err != nil {
-			failed = append(failed, branch)
-			continue
-		}
-
-		// Delete the reference
-		if err := repo.Storer.RemoveReference(ref.Name()); err != nil {
+		// Use git CLI to delete branches because go-git v5's RemoveReference
+		// doesn't properly persist deletions with packed refs or worktrees
+		if err := DeleteBranchCLI(branch); err != nil {
 			failed = append(failed, branch)
 			continue
 		}

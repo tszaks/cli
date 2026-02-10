@@ -1105,6 +1105,20 @@ func getTaskTranscriptFromTree(point RewindPoint) ([]byte, error) {
 	return []byte(content), nil
 }
 
+// DeleteBranchCLI deletes a git branch using the git CLI.
+// Uses `git branch -D` instead of go-git's RemoveReference because go-git v5
+// doesn't properly persist deletions when refs are packed (.git/packed-refs)
+// or in a worktree context. This is the same class of go-git v5 bug that
+// affects checkout and reset --hard (see HardResetWithProtection).
+func DeleteBranchCLI(branchName string) error {
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, "git", "branch", "-D", branchName)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to delete branch %s: %s: %w", branchName, strings.TrimSpace(string(output)), err)
+	}
+	return nil
+}
+
 // HardResetWithProtection performs a git reset --hard to the specified commit.
 // Uses the git CLI instead of go-git because go-git's HardReset incorrectly
 // deletes untracked directories (like .entire/) even when they're in .gitignore.
