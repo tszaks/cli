@@ -49,6 +49,11 @@ type Agent interface {
 	//   Cursor: ~/Library/Application Support/Cursor/User/globalStorage/
 	GetSessionDir(repoPath string) (string, error)
 
+	// SessionFileExtension returns the file extension for session transcript files.
+	// Includes the leading dot.
+	// Examples: ".jsonl" (Claude), ".json" (Gemini)
+	SessionFileExtension() string
+
 	// ReadSession reads session data from agent's storage.
 	// Handles different formats: JSONL (Claude), SQLite (Cursor), Markdown (Aider)
 	ReadSession(input *HookInput) (*AgentSession, error)

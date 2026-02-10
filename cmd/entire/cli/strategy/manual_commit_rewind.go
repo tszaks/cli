@@ -714,7 +714,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 		}
 
 		agentSessionID := ag.ExtractAgentSessionID(sessionID)
-		sessionFile := filepath.Join(sessionDir, agentSessionID+".jsonl")
+		sessionFile := filepath.Join(sessionDir, agentSessionID+ag.SessionFileExtension())
 
 		// Get first prompt for display
 		promptPreview := ExtractFirstPrompt(content.Prompts)
@@ -831,7 +831,7 @@ func (s *ManualCommitStrategy) classifySessionsForRestore(ctx context.Context, s
 		}
 
 		agentSessionID := ag.ExtractAgentSessionID(sessionID)
-		localPath := filepath.Join(sessionDir, agentSessionID+".jsonl")
+		localPath := filepath.Join(sessionDir, agentSessionID+ag.SessionFileExtension())
 
 		localTime := paths.GetLastTimestampFromFile(localPath)
 		checkpointTime := paths.GetLastTimestampFromBytes(content.Transcript)
