@@ -2465,7 +2465,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 
 func TestCountTranscriptLines(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
+	tests := []struct { //nolint:dupl // table-driven test structure, not logic duplication
 		name     string
 		content  string
 		expected int
