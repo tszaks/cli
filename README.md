@@ -73,13 +73,13 @@ This shows all available checkpoints in the current session. Select one to resto
 
 ### 4. Resume a Previous Session
 
-To see and restore sessions from earlier work:
+To restore the latest checkpointed session for a branch:
 
 ```
-entire resume
+entire resume <branch>
 ```
 
-Lists all past sessions with timestamps. You can view the conversation history or restore the code from any session.
+Entire checks out the branch, finds its most recent checkpointed session, and prints the agent-specific command to continue it.
 
 ### 5. Disable Entire (Optional)
 
@@ -162,7 +162,7 @@ Multiple AI sessions can run on the same commit. If you start a second session w
 | `entire enable`  | Enable Entire in your repository (uses `manual-commit` by default)            |
 | `entire explain` | Explain a session or commit                                                   |
 | `entire reset`   | Delete the shadow branch and session state for the current HEAD commit        |
-| `entire resume`  | Resume a previous session                                                     |
+| `entire resume <branch>` | Switch to a branch and resume its latest checkpointed session      |
 | `entire rewind`  | Rewind to a previous checkpoint                                               |
 | `entire status`  | Show current session and strategy info                                        |
 | `entire version` | Show Entire CLI version                                                       |
@@ -281,7 +281,7 @@ If you run into any issues with Gemini CLI integration, please [open an issue](h
 
 ### SSH Authentication Errors
 
-If you see an error like this when running `entire resume`:
+If you see an error like this when running `entire resume <branch>`:
 
 ```
 Failed to fetch metadata: failed to fetch entire/checkpoints/v1 from origin: ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain
