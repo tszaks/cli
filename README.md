@@ -73,13 +73,13 @@ This shows all available checkpoints in the current session. Select one to resto
 
 ### 4. Resume a Previous Session
 
-To restore the latest checkpointed session for a branch:
+To restore the latest checkpointed session metadata for a branch:
 
 ```
 entire resume <branch>
 ```
 
-Entire checks out the branch, finds its most recent checkpointed session, and prints the agent-specific command to continue it.
+Entire checks out the branch, restores the latest checkpointed session metadata (one or more sessions), and prints command(s) to continue.
 
 ### 5. Disable Entire (Optional)
 
@@ -162,7 +162,7 @@ Multiple AI sessions can run on the same commit. If you start a second session w
 | `entire enable`  | Enable Entire in your repository (uses `manual-commit` by default)            |
 | `entire explain` | Explain a session or commit                                                   |
 | `entire reset`   | Delete the shadow branch and session state for the current HEAD commit        |
-| `entire resume <branch>` | Switch to a branch and resume its latest checkpointed session      |
+| `entire resume <branch>` | Switch to a branch, restore latest checkpointed session metadata, and show command(s) to continue |
 | `entire rewind`  | Rewind to a previous checkpoint                                               |
 | `entire status`  | Show current session and strategy info                                        |
 | `entire version` | Show Entire CLI version                                                       |
