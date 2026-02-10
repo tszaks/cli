@@ -270,6 +270,23 @@ func TestExtractAgentSessionID(t *testing.T) {
 	}
 }
 
+func TestSessionFileExtension(t *testing.T) {
+	t.Parallel()
+	ag := &GeminiCLIAgent{}
+	if ext := ag.SessionFileExtension(); ext != ".json" {
+		t.Errorf("SessionFileExtension() = %q, want %q", ext, ".json")
+	}
+}
+
+func TestProtectedDirs(t *testing.T) {
+	t.Parallel()
+	ag := &GeminiCLIAgent{}
+	dirs := ag.ProtectedDirs()
+	if len(dirs) != 1 || dirs[0] != ".gemini" {
+		t.Errorf("ProtectedDirs() = %v, want [.gemini]", dirs)
+	}
+}
+
 func TestGetSessionDir(t *testing.T) {
 	ag := &GeminiCLIAgent{}
 

@@ -693,3 +693,34 @@ func TestIsOnDefaultBranch(t *testing.T) {
 		}
 	})
 }
+
+func TestIsProtectedPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		path      string
+		protected bool
+	}{
+		{".git", true},
+		{".git/objects", true},
+		{".entire", true},
+		{".entire/metadata/session.json", true},
+		{".claude", true},
+		{".claude/settings.json", true},
+		{".gemini", true},
+		{".gemini/settings.json", true},
+		{"src/main.go", false},
+		{"README.md", false},
+		{".gitignore", false},
+		{".github/workflows/ci.yml", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			t.Parallel()
+			if got := isProtectedPath(tt.path); got != tt.protected {
+				t.Errorf("isProtectedPath(%q) = %v, want %v", tt.path, got, tt.protected)
+			}
+		})
+	}
+}

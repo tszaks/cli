@@ -7,6 +7,23 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 )
 
+func TestSessionFileExtension(t *testing.T) {
+	t.Parallel()
+	ag := &ClaudeCodeAgent{}
+	if ext := ag.SessionFileExtension(); ext != ".jsonl" {
+		t.Errorf("SessionFileExtension() = %q, want %q", ext, ".jsonl")
+	}
+}
+
+func TestProtectedDirs(t *testing.T) {
+	t.Parallel()
+	ag := &ClaudeCodeAgent{}
+	dirs := ag.ProtectedDirs()
+	if len(dirs) != 1 || dirs[0] != ".claude" {
+		t.Errorf("ProtectedDirs() = %v, want [.claude]", dirs)
+	}
+}
+
 func TestParseHookInput_UserPromptSubmit(t *testing.T) {
 	t.Parallel()
 
