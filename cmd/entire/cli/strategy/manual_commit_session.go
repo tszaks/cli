@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/buildinfo"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 
@@ -218,6 +219,7 @@ func (s *ManualCommitStrategy) initializeSession(repo *git.Repository, sessionID
 	headHash := head.Hash().String()
 	state := &SessionState{
 		SessionID:             sessionID,
+		CLIVersion:            buildinfo.Version,
 		BaseCommit:            headHash,
 		AttributionBaseCommit: headHash,
 		WorktreePath:          worktreePath,

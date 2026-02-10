@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/entireio/cli/cmd/entire/cli/buildinfo"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 
 	"github.com/go-git/go-git/v5"
@@ -226,6 +227,25 @@ func setupGitRepo(t *testing.T) string {
 	require.NoError(t, err)
 
 	return dir
+}
+
+// TestInitializeSession_SetsCLIVersion verifies that InitializeSession
+// persists buildinfo.Version in the session state.
+func TestInitializeSession_SetsCLIVersion(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+
+	err := s.InitializeSession("test-session-cli-version", "Claude Code", "", "")
+	require.NoError(t, err)
+
+	state, err := s.loadSessionState("test-session-cli-version")
+	require.NoError(t, err)
+	require.NotNil(t, state)
+
+	assert.Equal(t, buildinfo.Version, state.CLIVersion,
+		"InitializeSession should set CLIVersion to buildinfo.Version")
 }
 
 // writeTestFile is a helper to create a test file with given content.
