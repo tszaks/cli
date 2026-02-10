@@ -288,7 +288,12 @@ func runRewindInteractive() error { //nolint:maintidx // already present in code
 		}
 	} else {
 		// For session checkpoint: restore full transcript
-		sessionID = extractSessionIDFromMetadata(selectedPoint.MetadataDir)
+		// Prefer SessionID from trailer (set by GetRewindPoints from Entire-Session trailer)
+		// over path-based extraction which is less reliable.
+		sessionID = selectedPoint.SessionID
+		if sessionID == "" {
+			sessionID = extractSessionIDFromMetadata(selectedPoint.MetadataDir)
+		}
 		transcriptFile = filepath.Join(selectedPoint.MetadataDir, paths.TranscriptFileNameLegacy)
 	}
 
@@ -485,7 +490,11 @@ func runRewindToInternal(commitID string, logsOnly bool, reset bool) error {
 			return nil
 		}
 	} else {
-		sessionID = extractSessionIDFromMetadata(selectedPoint.MetadataDir)
+		// Prefer SessionID from trailer over path-based extraction
+		sessionID = selectedPoint.SessionID
+		if sessionID == "" {
+			sessionID = extractSessionIDFromMetadata(selectedPoint.MetadataDir)
+		}
 		transcriptFile = filepath.Join(selectedPoint.MetadataDir, paths.TranscriptFileNameLegacy)
 	}
 
@@ -637,16 +646,12 @@ func handleLogsOnlyResetNonInteractive(start strategy.Strategy, point strategy.R
 }
 
 func extractSessionIDFromMetadata(metadataDir string) string {
-	// Metadata dir format varies by strategy:
-	// - manual-commit/commit: .entire/metadata/2025-01-25-<session-id>
-	// - auto-commit: ab/cdef1234.../2025-11-28-<session-id>
-	base := filepath.Base(metadataDir)
-	// Try to extract UUID from the end (format: YYYY-MM-DD-uuid)
-	parts := strings.SplitN(base, "-", 4)
-	if len(parts) >= 4 {
-		return parts[3]
-	}
-	return base
+	// The metadata directory name IS the Entire session ID.
+	// For new format: .entire/metadata/<agent-session-id> (e.g., UUID)
+	// For legacy format: .entire/metadata/<date-prefixed-id>
+	// Date-prefix stripping (for legacy IDs) is handled downstream by
+	// ExtractAgentSessionID/ModelSessionID, so we return the full name here.
+	return filepath.Base(metadataDir)
 }
 
 func restoreSessionTranscript(transcriptFile, sessionID string, agent agentpkg.Agent) error {
