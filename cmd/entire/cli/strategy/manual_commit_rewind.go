@@ -626,7 +626,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 	}
 
 	// Resolve agent from checkpoint metadata (fall back to Claude for old checkpoints)
-	ag, err := resolveAgentForRewind(point.Agent)
+	ag, err := ResolveAgentForRewind(point.Agent)
 	if err != nil {
 		return fmt.Errorf("failed to resolve agent: %w", err)
 	}
@@ -745,11 +745,9 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 	return nil
 }
 
-// resolveAgentForRewind resolves the agent from checkpoint metadata.
+// ResolveAgentForRewind resolves the agent from checkpoint metadata.
 // Falls back to the default agent (Claude) for old checkpoints that lack agent info.
-//
-
-func resolveAgentForRewind(agentType agent.AgentType) (agent.Agent, error) {
+func ResolveAgentForRewind(agentType agent.AgentType) (agent.Agent, error) {
 	if !isSpecificAgentType(agentType) {
 		ag := agent.Default()
 		if ag == nil {

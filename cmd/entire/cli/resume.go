@@ -356,13 +356,26 @@ func checkRemoteMetadata(repo *git.Repository, checkpointID id.CheckpointID) err
 // For multi-session checkpoints, restores ALL sessions and shows commands for each.
 // If force is false, prompts for confirmation when local logs have newer timestamps.
 func resumeSession(sessionID string, checkpointID id.CheckpointID, force bool) error {
-	// Get the current agent (auto-detect or use default)
-	ag, err := agent.Detect()
+	// Read checkpoint metadata first to get agent type (matching rewind pattern)
+	repo, err := openRepository()
 	if err != nil {
-		ag = agent.Default()
-		if ag == nil {
-			return fmt.Errorf("no agent available: %w", err)
-		}
+		return fmt.Errorf("failed to open repository: %w", err)
+	}
+
+	metadataTree, err := strategy.GetMetadataBranchTree(repo)
+	if err != nil {
+		return fmt.Errorf("failed to get metadata branch: %w", err)
+	}
+
+	metadata, err := strategy.ReadCheckpointMetadata(metadataTree, checkpointID.Path())
+	if err != nil {
+		return fmt.Errorf("failed to read checkpoint metadata: %w", err)
+	}
+
+	// Resolve agent from checkpoint metadata (same as rewind)
+	ag, err := strategy.ResolveAgentForRewind(metadata.Agent)
+	if err != nil {
+		return fmt.Errorf("failed to resolve agent: %w", err)
 	}
 
 	// Initialize logging context with agent
@@ -374,8 +387,6 @@ func resumeSession(sessionID string, checkpointID id.CheckpointID, force bool) e
 	)
 
 	// Get repo root for session directory lookup
-	// Use repo root instead of CWD because Claude stores sessions per-repo,
-	// and running from a subdirectory would look up the wrong session directory
 	repoRoot, err := paths.RepoRoot()
 	if err != nil {
 		return fmt.Errorf("failed to get repository root: %w", err)
@@ -396,10 +407,11 @@ func resumeSession(sessionID string, checkpointID id.CheckpointID, force bool) e
 
 	// Use RestoreLogsOnly via LogsOnlyRestorer interface for multi-session support
 	if restorer, ok := strat.(strategy.LogsOnlyRestorer); ok {
-		// Create a logs-only rewind point to trigger full multi-session restore
+		// Create a logs-only rewind point with Agent populated (same as rewind)
 		point := strategy.RewindPoint{
 			IsLogsOnly:   true,
 			CheckpointID: checkpointID,
+			Agent:        metadata.Agent,
 		}
 
 		if err := restorer.RestoreLogsOnly(point, force); err != nil {
