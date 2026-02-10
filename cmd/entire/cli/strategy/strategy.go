@@ -473,7 +473,7 @@ type TurnEndHandler interface {
 type LogsOnlyRestorer interface {
 	// RestoreLogsOnly restores session logs from a logs-only rewind point.
 	// Does not modify the working directory - only restores the transcript
-	// to Claude's project directory.
+	// to the agent's session directory (determined from the rewind point's Agent field).
 	// If force is false, prompts for confirmation when local logs have newer timestamps.
 	RestoreLogsOnly(point RewindPoint, force bool) error
 }

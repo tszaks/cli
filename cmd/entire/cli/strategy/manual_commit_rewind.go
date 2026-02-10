@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/entireio/cli/cmd/entire/cli/agent"
 	cpkg "github.com/entireio/cli/cmd/entire/cli/checkpoint"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
-	"github.com/entireio/cli/cmd/entire/cli/sessionid"
 	"github.com/entireio/cli/cmd/entire/cli/trailers"
 
 	"github.com/charmbracelet/huh"
@@ -617,7 +617,7 @@ func (s *ManualCommitStrategy) PreviewRewind(point RewindPoint) (*RewindPreview,
 }
 
 // RestoreLogsOnly restores session logs from a logs-only rewind point.
-// This fetches the transcript from entire/checkpoints/v1 and writes it to Claude's project directory.
+// This fetches the transcript from entire/checkpoints/v1 and writes it to the agent's session directory.
 // Does not modify the working directory.
 // When multiple sessions were condensed to the same checkpoint, ALL sessions are restored.
 // If force is false, prompts for confirmation when local logs have newer timestamps.
@@ -628,6 +628,12 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 
 	if point.CheckpointID.IsEmpty() {
 		return errors.New("missing checkpoint ID")
+	}
+
+	// Resolve agent from checkpoint metadata (fall back to Claude for old checkpoints)
+	ag, err := resolveAgentForRewind(point.Agent)
+	if err != nil {
+		return fmt.Errorf("failed to resolve agent: %w", err)
 	}
 
 	// Get checkpoint store
@@ -645,25 +651,25 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 		return fmt.Errorf("checkpoint not found: %s", point.CheckpointID)
 	}
 
-	// Get repo root for Claude project path lookup
+	// Get repo root for agent session directory lookup
 	repoRoot, err := paths.RepoRoot()
 	if err != nil {
 		return fmt.Errorf("failed to get repository root: %w", err)
 	}
 
-	claudeProjectDir, err := paths.GetClaudeProjectDir(repoRoot)
+	sessionDir, err := ag.GetSessionDir(repoRoot)
 	if err != nil {
-		return fmt.Errorf("failed to get Claude project directory: %w", err)
+		return fmt.Errorf("failed to get agent session directory: %w", err)
 	}
 
-	// Ensure project directory exists
-	if err := os.MkdirAll(claudeProjectDir, 0o750); err != nil {
-		return fmt.Errorf("failed to create Claude project directory: %w", err)
+	// Ensure session directory exists
+	if err := os.MkdirAll(sessionDir, 0o750); err != nil {
+		return fmt.Errorf("failed to create agent session directory: %w", err)
 	}
 
 	// Check for newer local logs if not forcing
 	if !force {
-		sessions := s.classifySessionsForRestore(context.Background(), claudeProjectDir, store, point.CheckpointID, summary)
+		sessions := s.classifySessionsForRestore(context.Background(), sessionDir, ag, store, point.CheckpointID, summary)
 		hasConflicts := false
 		for _, sess := range sessions {
 			if sess.Status == StatusLocalNewer {
@@ -707,8 +713,8 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 			continue
 		}
 
-		modelSessionID := sessionid.ModelSessionID(sessionID)
-		claudeSessionFile := filepath.Join(claudeProjectDir, modelSessionID+".jsonl")
+		agentSessionID := ag.ExtractAgentSessionID(sessionID)
+		sessionFile := filepath.Join(sessionDir, agentSessionID+".jsonl")
 
 		// Get first prompt for display
 		promptPreview := ExtractFirstPrompt(content.Prompts)
@@ -722,12 +728,12 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 					fmt.Fprintf(os.Stderr, "  Session %d: %s\n", i+1, promptPreview)
 				}
 			}
-			fmt.Fprintf(os.Stderr, "    Writing to: %s\n", claudeSessionFile)
+			fmt.Fprintf(os.Stderr, "    Writing to: %s\n", sessionFile)
 		} else {
-			fmt.Fprintf(os.Stderr, "Writing transcript to: %s\n", claudeSessionFile)
+			fmt.Fprintf(os.Stderr, "Writing transcript to: %s\n", sessionFile)
 		}
 
-		if writeErr := os.WriteFile(claudeSessionFile, content.Transcript, 0o600); writeErr != nil {
+		if writeErr := os.WriteFile(sessionFile, content.Transcript, 0o600); writeErr != nil {
 			if totalSessions > 1 {
 				fmt.Fprintf(os.Stderr, "    Warning: failed to write transcript: %v\n", writeErr)
 				continue
@@ -737,6 +743,25 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 	}
 
 	return nil
+}
+
+// resolveAgentForRewind resolves the agent from checkpoint metadata.
+// Falls back to the default agent (Claude) for old checkpoints that lack agent info.
+//
+//nolint:ireturn // Factory pattern returns interface - agent type determined at runtime
+func resolveAgentForRewind(agentType agent.AgentType) (agent.Agent, error) {
+	if agentType == "" {
+		ag := agent.Default()
+		if ag == nil {
+			return nil, errors.New("no default agent registered")
+		}
+		return ag, nil
+	}
+	ag, err := agent.GetByAgentType(agentType)
+	if err != nil {
+		return nil, fmt.Errorf("resolving agent %q: %w", agentType, err)
+	}
+	return ag, nil
 }
 
 // readSessionPrompt reads the first prompt from the session's prompt.txt file stored in git.
@@ -789,7 +814,7 @@ type SessionRestoreInfo struct {
 
 // classifySessionsForRestore checks all sessions in a checkpoint and returns info
 // about each session, including whether local logs have newer timestamps.
-func (s *ManualCommitStrategy) classifySessionsForRestore(ctx context.Context, claudeProjectDir string, store cpkg.Store, checkpointID id.CheckpointID, summary *cpkg.CheckpointSummary) []SessionRestoreInfo {
+func (s *ManualCommitStrategy) classifySessionsForRestore(ctx context.Context, sessionDir string, ag agent.Agent, store cpkg.Store, checkpointID id.CheckpointID, summary *cpkg.CheckpointSummary) []SessionRestoreInfo {
 	var sessions []SessionRestoreInfo
 
 	totalSessions := len(summary.Sessions)
@@ -805,8 +830,8 @@ func (s *ManualCommitStrategy) classifySessionsForRestore(ctx context.Context, c
 			continue
 		}
 
-		modelSessionID := sessionid.ModelSessionID(sessionID)
-		localPath := filepath.Join(claudeProjectDir, modelSessionID+".jsonl")
+		agentSessionID := ag.ExtractAgentSessionID(sessionID)
+		localPath := filepath.Join(sessionDir, agentSessionID+".jsonl")
 
 		localTime := paths.GetLastTimestampFromFile(localPath)
 		checkpointTime := paths.GetLastTimestampFromBytes(content.Transcript)
