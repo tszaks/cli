@@ -292,9 +292,9 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 	} else {
 		// No new content - check if any session has a LastCheckpointID to reuse
 		// This handles the case where user splits Claude's work across multiple commits
-		// Reuse if: LastCheckpointID exists AND (FilesTouched is empty OR files overlap)
-		// - FilesTouched empty: commits made before session stop, reuse checkpoint
-		// - FilesTouched populated: only reuse if files overlap (prevents unrelated commits from reusing)
+		// Reuse if LastCheckpointID exists AND staged files overlap with session files.
+		// After condensation FilesTouched is nil; we fall back to condensed metadata
+		// so split-commit detection still works.
 
 		// Get current HEAD to filter sessions
 		head, err := repo.Head()
@@ -330,8 +330,19 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 
 		stagedFiles := getStagedFiles(repo)
 		for _, session := range currentSessions {
-			if !session.LastCheckpointID.IsEmpty() &&
-				(len(session.FilesTouched) == 0 || hasOverlappingFiles(stagedFiles, session.FilesTouched)) {
+			if session.LastCheckpointID.IsEmpty() {
+				continue
+			}
+			filesToCheck := session.FilesTouched
+			// After condensation FilesTouched is reset. Fall back to the
+			// condensed metadata's files_touched so split-commit detection
+			// still works (staged files checked against previously-condensed files).
+			if len(filesToCheck) == 0 && session.StepCount == 0 {
+				if condensedFiles := s.getCondensedFilesTouched(repo, session.LastCheckpointID); len(condensedFiles) > 0 {
+					filesToCheck = condensedFiles
+				}
+			}
+			if len(filesToCheck) == 0 || hasOverlappingFiles(stagedFiles, filesToCheck) {
 				checkpointID = session.LastCheckpointID
 				reusedSession = session
 				break
@@ -792,6 +803,7 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 	// Clear attribution tracking — condensation already used these values
 	state.PromptAttributions = nil
 	state.PendingPromptAttribution = nil
+	state.FilesTouched = nil
 
 	// Save checkpoint ID so subsequent commits can reuse it
 	state.LastCheckpointID = checkpointID
@@ -1581,6 +1593,18 @@ func (s *ManualCommitStrategy) hasOtherActiveSessionsOnBranch(currentSessionID, 
 		}
 	}
 	return false
+}
+
+// getCondensedFilesTouched reads the files_touched list from the last condensed
+// checkpoint metadata on entire/checkpoints/v1. Used to check staged-file overlap
+// after FilesTouched has been reset by condensation.
+func (s *ManualCommitStrategy) getCondensedFilesTouched(repo *git.Repository, cpID id.CheckpointID) []string {
+	store := checkpoint.NewGitStore(repo)
+	summary, err := store.ReadCommitted(context.Background(), cpID)
+	if err != nil || summary == nil {
+		return nil
+	}
+	return summary.FilesTouched
 }
 
 // hasOverlappingFiles checks if any file in stagedFiles appears in filesTouched.
