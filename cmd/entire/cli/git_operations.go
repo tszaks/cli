@@ -151,30 +151,6 @@ func ShouldSkipOnDefaultBranch() (bool, string) {
 	return isDefault, branchName
 }
 
-// ShouldSkipOnDefaultBranchForStrategy checks if we're on the default branch and
-// whether the current strategy allows operating on it.
-// Returns (shouldSkip, branchName). If shouldSkip is true, the caller should
-// skip the operation. Shadow strategies return false (allowing main branch).
-func ShouldSkipOnDefaultBranchForStrategy() (bool, string) {
-	isDefault, branchName, err := IsOnDefaultBranch()
-	if err != nil {
-		// If we can't determine, allow the operation
-		return false, ""
-	}
-	if !isDefault {
-		return false, branchName
-	}
-
-	// Check if the current strategy allows main branch
-	start := GetStrategy()
-
-	if start.AllowsMainBranch() {
-		return false, branchName
-	}
-
-	return true, branchName
-}
-
 // GetCurrentBranch returns the name of the current branch.
 // Returns an error if in detached HEAD state or if not in a git repository.
 func GetCurrentBranch() (string, error) {
