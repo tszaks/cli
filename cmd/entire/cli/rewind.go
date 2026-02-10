@@ -738,17 +738,8 @@ func writeTranscriptToAgentSession(content []byte, sessionID string, agent agent
 }
 
 // resolveTranscriptPath determines the correct file path for an agent's session transcript.
-// It first checks the session state for a transcript_path (set by the agent's hook data,
-// e.g. Gemini stores files at a hashed path that GetSessionDir can't reconstruct).
-// Falls back to GetSessionDir + ResolveSessionFile if no session state is available.
+// Delegates to strategy.ResolveSessionFilePath after computing the fallback session directory.
 func resolveTranscriptPath(sessionID string, agent agentpkg.Agent) (string, error) {
-	// Try session state first - it has the exact transcript path from hook data
-	state, err := strategy.LoadSessionState(sessionID)
-	if err == nil && state != nil && state.TranscriptPath != "" {
-		return state.TranscriptPath, nil
-	}
-
-	// Fall back to agent's directory + file resolution
 	repoRoot, err := paths.RepoRoot()
 	if err != nil {
 		return "", fmt.Errorf("failed to get repository root: %w", err)
@@ -759,8 +750,7 @@ func resolveTranscriptPath(sessionID string, agent agentpkg.Agent) (string, erro
 		return "", fmt.Errorf("failed to get agent session directory: %w", err)
 	}
 
-	agentSessionID := agent.ExtractAgentSessionID(sessionID)
-	return agent.ResolveSessionFile(agentSessionDir, agentSessionID), nil
+	return strategy.ResolveSessionFilePath(sessionID, agent, agentSessionDir), nil
 }
 
 // restoreTaskCheckpointTranscript restores a truncated transcript for a task checkpoint.

@@ -708,7 +708,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) er
 			continue
 		}
 
-		sessionFile := resolveSessionFilePath(sessionID, ag, sessionDir)
+		sessionFile := ResolveSessionFilePath(sessionID, ag, sessionDir)
 
 		// Get first prompt for display
 		promptPreview := ExtractFirstPrompt(content.Prompts)
@@ -764,11 +764,11 @@ func resolveAgentForRewind(agentType agent.AgentType) (agent.Agent, error) {
 	return ag, nil
 }
 
-// resolveSessionFilePath determines the correct file path for writing an agent's session transcript.
+// ResolveSessionFilePath determines the correct file path for an agent's session transcript.
 // Checks session state for transcript_path first (needed for agents like Gemini that store
 // transcripts at paths that GetSessionDir can't reconstruct, e.g. SHA-256 hashed directories).
-// Falls back to the agent's GetSessionDir + ResolveSessionFile.
-func resolveSessionFilePath(sessionID string, ag agent.Agent, fallbackSessionDir string) string {
+// Falls back to the agent's ExtractAgentSessionID + ResolveSessionFile with fallbackSessionDir.
+func ResolveSessionFilePath(sessionID string, ag agent.Agent, fallbackSessionDir string) string {
 	state, err := LoadSessionState(sessionID)
 	if err == nil && state != nil && state.TranscriptPath != "" {
 		return state.TranscriptPath
@@ -844,7 +844,7 @@ func (s *ManualCommitStrategy) classifySessionsForRestore(ctx context.Context, s
 			continue
 		}
 
-		localPath := resolveSessionFilePath(sessionID, ag, sessionDir)
+		localPath := ResolveSessionFilePath(sessionID, ag, sessionDir)
 
 		localTime := paths.GetLastTimestampFromFile(localPath)
 		checkpointTime := paths.GetLastTimestampFromBytes(content.Transcript)
