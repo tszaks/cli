@@ -328,6 +328,7 @@ type SessionContent struct {
 
 // CommittedMetadata contains the metadata stored in metadata.json for each checkpoint.
 type CommittedMetadata struct {
+	CLIVersion       string          `json:"cli_version,omitempty"`
 	CheckpointID     id.CheckpointID `json:"checkpoint_id"`
 	SessionID        string          `json:"session_id"`
 	Strategy         string          `json:"strategy"`
@@ -401,6 +402,7 @@ type SessionFilePaths struct {
 //
 //nolint:revive // Named CheckpointSummary to avoid conflict with existing Summary struct
 type CheckpointSummary struct {
+	CLIVersion       string             `json:"cli_version,omitempty"`
 	CheckpointID     id.CheckpointID    `json:"checkpoint_id"`
 	Strategy         string             `json:"strategy"`
 	Branch           string             `json:"branch,omitempty"`
