@@ -162,7 +162,7 @@ Multiple AI sessions can run on the same commit. If you start a second session w
 | `entire enable`  | Enable Entire in your repository (uses `manual-commit` by default)            |
 | `entire explain` | Explain a session or commit                                                   |
 | `entire reset`   | Delete the shadow branch and session state for the current HEAD commit        |
-| `entire resume <branch>` | Switch to a branch, restore latest checkpointed session metadata, and show command(s) to continue |
+| `entire resume`  | Switch to a branch, restore latest checkpointed session metadata, and show command(s) to continue |
 | `entire rewind`  | Rewind to a previous checkpoint                                               |
 | `entire status`  | Show current session and strategy info                                        |
 | `entire version` | Show Entire CLI version                                                       |
@@ -281,7 +281,7 @@ If you run into any issues with Gemini CLI integration, please [open an issue](h
 
 ### SSH Authentication Errors
 
-If you see an error like this when running `entire resume <branch>`:
+If you see an error like this when running `entire resume`:
 
 ```
 Failed to fetch metadata: failed to fetch entire/checkpoints/v1 from origin: ssh: handshake failed: ssh: unable to authenticate, attempted methods [none publickey], no supported methods remain
