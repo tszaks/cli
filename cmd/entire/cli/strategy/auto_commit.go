@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/buildinfo"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 	"github.com/entireio/cli/cmd/entire/cli/logging"
@@ -944,6 +945,7 @@ func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType agent
 	now := time.Now()
 	state := &SessionState{
 		SessionID:           sessionID,
+		CLIVersion:          buildinfo.Version,
 		BaseCommit:          baseCommit,
 		StartedAt:           now,
 		LastInteractionTime: &now,
