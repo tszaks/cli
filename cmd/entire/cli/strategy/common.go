@@ -1105,16 +1105,41 @@ func getTaskTranscriptFromTree(point RewindPoint) ([]byte, error) {
 	return []byte(content), nil
 }
 
+// ErrBranchNotFound is returned by DeleteBranchCLI when the branch does not exist.
+var ErrBranchNotFound = errors.New("branch not found")
+
 // DeleteBranchCLI deletes a git branch using the git CLI.
 // Uses `git branch -D` instead of go-git's RemoveReference because go-git v5
 // doesn't properly persist deletions when refs are packed (.git/packed-refs)
 // or in a worktree context. This is the same class of go-git v5 bug that
 // affects checkout and reset --hard (see HardResetWithProtection).
+//
+// Returns ErrBranchNotFound if the branch does not exist, allowing callers
+// to use errors.Is for idempotent deletion patterns.
 func DeleteBranchCLI(branchName string) error {
 	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, "git", "branch", "-D", branchName)
+
+	// Pre-check: verify the branch exists so callers get a structured error
+	// instead of parsing git's output string (which varies across locales).
+	check := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName) //nolint:gosec // branchName comes from internal shadow branch naming
+	if err := check.Run(); err != nil {
+		return fmt.Errorf("%w: %s", ErrBranchNotFound, branchName)
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "branch", "-D", "--", branchName)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to delete branch %s: %s: %w", branchName, strings.TrimSpace(string(output)), err)
+	}
+	return nil
+}
+
+// branchExistsCLI checks if a branch exists using git CLI.
+// Returns nil if the branch exists, or an error if it does not.
+func branchExistsCLI(branchName string) error {
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName) //nolint:gosec // branchName comes from internal shadow branch naming
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("branch %s not found: %w", branchName, err)
 	}
 	return nil
 }

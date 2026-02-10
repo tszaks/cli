@@ -118,9 +118,9 @@ func (s *ManualCommitStrategy) ResetSession(sessionID string) error {
 	if err := s.cleanupShadowBranchIfUnused(repo, shadowBranchName, sessionID); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to clean up shadow branch %s: %v\n", shadowBranchName, err)
 	} else {
-		// Check if it was actually deleted (branch no longer exists)
-		refName := plumbing.NewBranchReferenceName(shadowBranchName)
-		if _, refErr := repo.Reference(refName, true); refErr != nil {
+		// Check if it was actually deleted via git CLI (go-git's cache
+		// may be stale after CLI-based deletion with packed refs)
+		if err := branchExistsCLI(shadowBranchName); err != nil {
 			fmt.Fprintf(os.Stderr, "Deleted shadow branch %s\n", shadowBranchName)
 		}
 	}

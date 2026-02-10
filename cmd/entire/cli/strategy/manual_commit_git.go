@@ -2,12 +2,12 @@ package strategy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
@@ -353,9 +353,8 @@ func accumulateTokenUsage(existing, incoming *agent.TokenUsage) *agent.TokenUsag
 func deleteShadowBranch(_ *git.Repository, branchName string) error {
 	err := DeleteBranchCLI(branchName)
 	if err != nil {
-		// If the branch doesn't exist, git branch -D returns an error.
-		// Treat this as idempotent - not an error condition.
-		if strings.Contains(err.Error(), "not found") {
+		// If the branch doesn't exist, treat as idempotent - not an error condition.
+		if errors.Is(err, ErrBranchNotFound) {
 			return nil
 		}
 		return err

@@ -3,6 +3,7 @@ package strategy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -622,7 +623,7 @@ func (s *ManualCommitStrategy) cleanupShadowBranchIfUnused(_ *git.Repository, sh
 	// (go-git v5's RemoveReference doesn't persist with packed refs/worktrees)
 	if err := DeleteBranchCLI(shadowBranchName); err != nil {
 		// Branch already gone is not an error
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, ErrBranchNotFound) {
 			return nil
 		}
 		return fmt.Errorf("failed to remove shadow branch: %w", err)
