@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
-	"github.com/entireio/cli/cmd/entire/cli/agent/geminicli"
+
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 	"github.com/entireio/cli/cmd/entire/cli/logging"
@@ -935,40 +935,16 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 
 	if file, fileErr := tree.File(metadataDir + "/" + paths.TranscriptFileName); fileErr == nil {
 		if content, contentErr := file.Contents(); contentErr == nil {
-			transcriptLines = countTranscriptLines(content)
+			transcriptLines = countTranscriptItems(state.AgentType, content)
 		}
 	} else if file, fileErr := tree.File(metadataDir + "/" + paths.TranscriptFileNameLegacy); fileErr == nil {
 		if content, contentErr := file.Contents(); contentErr == nil {
-			transcriptLines = countTranscriptLines(content)
+			transcriptLines = countTranscriptItems(state.AgentType, content)
 		}
 	}
 
 	// Has new content if there are more lines than already condensed
 	return transcriptLines > state.CheckpointTranscriptStart, nil
-}
-
-// countTranscriptLines counts lines/messages in a transcript, matching the counting
-// method used in extractSessionData for consistency.
-// For Gemini (JSON format): returns message count
-// For Claude (JSONL format): returns line count (trimming trailing empty lines)
-func countTranscriptLines(content string) int {
-	// Use isGeminiJSONTranscript for format detection (same as extractSessionData)
-	if isGeminiJSONTranscript(content) {
-		// Parse with geminicli for consistent counting with extractSessionData
-		if transcript, err := geminicli.ParseTranscript([]byte(content)); err == nil {
-			return len(transcript.Messages)
-		}
-		// Fallback if parsing fails - matches extractSessionData behavior
-		return 1
-	}
-
-	// Claude JSONL format - count lines
-	lines := strings.Split(content, "\n")
-	// Trim trailing empty lines (from final \n in JSONL)
-	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
-		lines = lines[:len(lines)-1]
-	}
-	return len(lines)
 }
 
 // sessionHasNewContentFromLiveTranscript checks if a session has new content
@@ -1462,7 +1438,8 @@ func (s *ManualCommitStrategy) getLastPrompt(repo *git.Repository, state *Sessio
 
 	// Extract session data to get prompts for commit message generation
 	// Pass agent type to handle different transcript formats (JSONL for Claude, JSON for Gemini)
-	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, nil, state.AgentType, "")
+	// Pass 0 for checkpointTranscriptStart since we're extracting all prompts, not calculating token usage
+	sessionData, err := s.extractSessionData(repo, ref.Hash(), state.SessionID, nil, state.AgentType, "", 0)
 	if err != nil || len(sessionData.Prompts) == 0 {
 		return ""
 	}

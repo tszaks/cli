@@ -1804,70 +1804,75 @@ func TestInitializeSession_BackfillsUnknownAgentType(t *testing.T) {
 	}
 }
 
-// TestIsGeminiJSONTranscript tests detection of Gemini JSON transcript format.
-func TestIsGeminiJSONTranscript(t *testing.T) {
+// TestCountTranscriptItems tests counting lines/messages in different transcript formats.
+func TestCountTranscriptItems(t *testing.T) {
 	tests := []struct {
-		name     string
-		content  string
-		expected bool
+		name      string
+		agentType agent.AgentType
+		content   string
+		expected  int
 	}{
 		{
-			name: "valid Gemini JSON",
+			name:      "Gemini JSON with messages",
+			agentType: agent.AgentTypeGemini,
 			content: `{
 				"messages": [
 					{"type": "user", "content": "Hello"},
 					{"type": "gemini", "content": "Hi there!"}
 				]
 			}`,
-			expected: true,
+			expected: 2,
 		},
 		{
-			name:     "empty messages array",
-			content:  `{"messages": []}`,
-			expected: true, // Empty array is still Gemini format
+			name:      "Gemini empty messages array",
+			agentType: agent.AgentTypeGemini,
+			content:   `{"messages": []}`,
+			expected:  0,
 		},
 		{
-			name: "JSONL format (Claude Code)",
+			name:      "Claude Code JSONL",
+			agentType: agent.AgentTypeClaudeCode,
 			content: `{"type":"human","message":{"content":"Hello"}}
 {"type":"assistant","message":{"content":"Hi"}}`,
-			expected: false,
+			expected: 2,
 		},
 		{
-			name:     "not JSON",
-			content:  "plain text",
-			expected: false,
+			name:      "Claude Code JSONL with trailing newline",
+			agentType: agent.AgentTypeClaudeCode,
+			content: `{"type":"human","message":{"content":"Hello"}}
+{"type":"assistant","message":{"content":"Hi"}}
+`,
+			expected: 2,
 		},
 		{
-			name:     "JSON without messages field",
-			content:  `{"foo": "bar"}`,
-			expected: false,
-		},
-		{
-			name:     "empty string",
-			content:  "",
-			expected: false,
+			name:      "empty string",
+			agentType: agent.AgentTypeClaudeCode,
+			content:   "",
+			expected:  0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := isGeminiJSONTranscript(tt.content)
+			result := countTranscriptItems(tt.agentType, tt.content)
 			if result != tt.expected {
-				t.Errorf("isGeminiJSONTranscript() = %v, want %v", result, tt.expected)
+				t.Errorf("countTranscriptItems() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
 }
 
-// TestExtractUserPromptsFromGeminiJSON tests extraction of user prompts from Gemini JSON format.
-func TestExtractUserPromptsFromGeminiJSON(t *testing.T) {
+// TestExtractUserPrompts tests extraction of user prompts from different transcript formats.
+func TestExtractUserPrompts(t *testing.T) {
 	tests := []struct {
-		name     string
-		content  string
-		expected []string
+		name      string
+		agentType agent.AgentType
+		content   string
+		expected  []string
 	}{
 		{
-			name: "single user prompt",
+			name:      "Gemini single user prompt",
+			agentType: agent.AgentTypeGemini,
 			content: `{
 				"messages": [
 					{"type": "user", "content": "Create a file called test.txt"}
@@ -1876,7 +1881,8 @@ func TestExtractUserPromptsFromGeminiJSON(t *testing.T) {
 			expected: []string{"Create a file called test.txt"},
 		},
 		{
-			name: "multiple user prompts",
+			name:      "Gemini multiple user prompts",
+			agentType: agent.AgentTypeGemini,
 			content: `{
 				"messages": [
 					{"type": "user", "content": "First prompt"},
@@ -1888,7 +1894,8 @@ func TestExtractUserPromptsFromGeminiJSON(t *testing.T) {
 			expected: []string{"First prompt", "Second prompt"},
 		},
 		{
-			name: "no user messages",
+			name:      "Gemini no user messages",
+			agentType: agent.AgentTypeGemini,
 			content: `{
 				"messages": [
 					{"type": "gemini", "content": "Hello!"}
@@ -1897,44 +1904,26 @@ func TestExtractUserPromptsFromGeminiJSON(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name:     "empty messages",
-			content:  `{"messages": []}`,
-			expected: nil,
-		},
-		{
-			name: "user message with empty content",
-			content: `{
-				"messages": [
-					{"type": "user", "content": ""},
-					{"type": "user", "content": "Valid prompt"}
-				]
-			}`,
-			expected: []string{"Valid prompt"},
-		},
-		{
-			name:     "invalid JSON",
-			content:  "not json",
-			expected: nil,
-		},
-		{
-			name: "mixed message types",
-			content: `{
-				"sessionId": "abc123",
-				"messages": [
-					{"type": "user", "content": "Hello"},
-					{"type": "gemini", "content": "Hi!", "toolCalls": []},
-					{"type": "user", "content": "Goodbye"}
-				]
-			}`,
+			name:      "Claude Code JSONL with user messages",
+			agentType: agent.AgentTypeClaudeCode,
+			content: `{"type":"user","message":{"content":"Hello"}}
+{"type":"assistant","message":{"content":"Hi"}}
+{"type":"user","message":{"content":"Goodbye"}}`,
 			expected: []string{"Hello", "Goodbye"},
+		},
+		{
+			name:      "empty string",
+			agentType: agent.AgentTypeClaudeCode,
+			content:   "",
+			expected:  nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractUserPromptsFromGeminiJSON(tt.content)
+			result := extractUserPrompts(tt.agentType, tt.content)
 			if len(result) != len(tt.expected) {
-				t.Errorf("extractUserPromptsFromGeminiJSON() returned %d prompts, want %d", len(result), len(tt.expected))
+				t.Errorf("extractUserPrompts() returned %d prompts, want %d", len(result), len(tt.expected))
 				return
 			}
 			for i, prompt := range result {
@@ -2463,70 +2452,6 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 	}
 }
 
-func TestCountTranscriptLines(t *testing.T) {
-	t.Parallel()
-	tests := []struct { //nolint:dupl // table-driven test structure, not logic duplication
-		name     string
-		content  string
-		expected int
-	}{
-		{
-			name:     "Claude JSONL - single line",
-			content:  `{"type":"user","message":{"content":"hello"}}`,
-			expected: 1,
-		},
-		{
-			name: "Claude JSONL - multiple lines",
-			content: `{"type":"user","message":{"content":"hello"}}
-{"type":"assistant","message":{"content":"hi"}}
-{"type":"user","message":{"content":"bye"}}`,
-			expected: 3,
-		},
-		{
-			name: "Claude JSONL - with trailing newline",
-			content: `{"type":"user","message":{"content":"hello"}}
-{"type":"assistant","message":{"content":"hi"}}
-`,
-			expected: 2,
-		},
-		{
-			name:     "Gemini JSON - single message",
-			content:  `{"messages":[{"type":"user","content":"hello"}]}`,
-			expected: 1,
-		},
-		{
-			name:     "Gemini JSON - multiple messages",
-			content:  `{"messages":[{"type":"user","content":"hello"},{"type":"gemini","content":"hi"},{"type":"user","content":"bye"}]}`,
-			expected: 3,
-		},
-		{
-			name:     "Gemini JSON - empty messages",
-			content:  `{"messages":[]}`,
-			expected: 0,
-		},
-		{
-			name:     "Gemini JSON - malformed messages (fallback to 1)",
-			content:  `{"messages": [1, 2, 3]}`,
-			expected: 1,
-		},
-		{
-			name:     "empty string",
-			content:  "",
-			expected: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			result := countTranscriptLines(tt.content)
-			if result != tt.expected {
-				t.Errorf("countTranscriptLines() = %d, want %d", result, tt.expected)
-			}
-		})
-	}
-}
-
 // TestCondenseSession_PrefersLiveTranscript verifies that CondenseSession reads the
 // live transcript file when available, rather than the potentially stale shadow branch copy.
 // This reproduces the bug where SaveChanges was skipped (no code changes) but the
@@ -2635,5 +2560,390 @@ func TestCondenseSession_PrefersLiveTranscript(t *testing.T) {
 	}
 	if !strings.Contains(string(content.Transcript), "second prompt") {
 		t.Error("condensed transcript should contain 'second prompt' from live file, but it doesn't")
+	}
+}
+
+// TestCondenseSession_GeminiTranscript verifies that CondenseSession works correctly
+// with Gemini JSON format transcripts, including prompt extraction and format detection.
+func TestCondenseSession_GeminiTranscript(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create initial commit
+	testFile := filepath.Join(dir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("initial content"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if _, err := worktree.Add("test.txt"); err != nil {
+		t.Fatalf("failed to stage file: %v", err)
+	}
+	_, err = worktree.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "2026-02-09-gemini-test"
+
+	// Create metadata directory with Gemini JSON transcript
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
+		t.Fatalf("failed to create metadata dir: %v", err)
+	}
+
+	// Gemini JSON format with IDE tags to test stripping
+	geminiTranscript := `{
+		"sessionId": "test-session",
+		"messages": [
+			{
+				"type": "user",
+				"content": "<ide_opened_file>test.txt</ide_opened_file>Create a new file"
+			},
+			{
+				"type": "gemini",
+				"content": "I'll create the file for you",
+				"tokens": {
+					"input": 50,
+					"output": 20,
+					"cached": 10
+				}
+			}
+		]
+	}`
+
+	if err := os.WriteFile(filepath.Join(metadataDirAbs, paths.TranscriptFileName), []byte(geminiTranscript), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// Create modified file
+	if err := os.WriteFile(testFile, []byte("modified by gemini"), 0o644); err != nil {
+		t.Fatalf("failed to modify file: %v", err)
+	}
+
+	// Save checkpoint (creates shadow branch)
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{"test.txt"},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 1",
+		AuthorName:     "Gemini CLI",
+		AuthorEmail:    "gemini@test.com",
+		AgentType:      agent.AgentTypeGemini,
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() error = %v", err)
+	}
+
+	// Load session state
+	state, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("loadSessionState() error = %v", err)
+	}
+	if state.AgentType != agent.AgentTypeGemini {
+		t.Errorf("AgentType = %q, want %q", state.AgentType, agent.AgentTypeGemini)
+	}
+
+	// Condense the session
+	checkpointID := id.MustCheckpointID("aabbcc112233")
+	result, err := s.CondenseSession(repo, checkpointID, state)
+	if err != nil {
+		t.Fatalf("CondenseSession() error = %v", err)
+	}
+
+	// Verify result
+	if result.CheckpointID != checkpointID {
+		t.Errorf("CheckpointID = %v, want %v", result.CheckpointID, checkpointID)
+	}
+	if result.SessionID != sessionID {
+		t.Errorf("SessionID = %q, want %q", result.SessionID, sessionID)
+	}
+	if len(result.FilesTouched) != 1 || result.FilesTouched[0] != "test.txt" {
+		t.Errorf("FilesTouched = %v, want [test.txt]", result.FilesTouched)
+	}
+
+	// Verify condensed data on entire/checkpoints/v1 branch
+	store := checkpoint.NewGitStore(repo)
+	content, err := store.ReadLatestSessionContent(t.Context(), checkpointID)
+	if err != nil {
+		t.Fatalf("ReadLatestSessionContent() error = %v", err)
+	}
+
+	// Verify transcript was stored
+	if len(content.Transcript) == 0 {
+		t.Error("Transcript should not be empty")
+	}
+
+	// Verify prompts were extracted and IDE tags were stripped
+	if !strings.Contains(content.Prompts, "Create a new file") {
+		t.Errorf("Prompts = %q, should contain %q (IDE tags should be stripped)", content.Prompts, "Create a new file")
+	}
+	if strings.Contains(content.Prompts, "<ide_opened_file>") {
+		t.Error("Prompts should not contain IDE tags")
+	}
+
+	// Verify token usage was calculated
+	if content.Metadata.TokenUsage == nil {
+		t.Fatal("TokenUsage should not be nil for Gemini transcript")
+	}
+	if content.Metadata.TokenUsage.InputTokens != 50 {
+		t.Errorf("InputTokens = %d, want 50", content.Metadata.TokenUsage.InputTokens)
+	}
+	if content.Metadata.TokenUsage.OutputTokens != 20 {
+		t.Errorf("OutputTokens = %d, want 20", content.Metadata.TokenUsage.OutputTokens)
+	}
+	if content.Metadata.TokenUsage.CacheReadTokens != 10 {
+		t.Errorf("CacheReadTokens = %d, want 10", content.Metadata.TokenUsage.CacheReadTokens)
+	}
+}
+
+// TestCondenseSession_GeminiMultiCheckpoint verifies that multi-checkpoint Gemini sessions
+// correctly scope token usage to only the checkpoint portion (not the entire transcript).
+// This is the core bug fix - ensuring CheckpointTranscriptStart is properly used.
+//
+//nolint:maintidx // Integration test with comprehensive verification steps
+func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create initial commit
+	testFile := filepath.Join(dir, "code.go")
+	if err := os.WriteFile(testFile, []byte("package main"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if _, err := worktree.Add("code.go"); err != nil {
+		t.Fatalf("failed to stage file: %v", err)
+	}
+	_, err = worktree.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "2026-02-09-multi-checkpoint"
+
+	// Create metadata directory
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	if err := os.MkdirAll(metadataDirAbs, 0o755); err != nil {
+		t.Fatalf("failed to create metadata dir: %v", err)
+	}
+
+	transcriptPath := filepath.Join(metadataDirAbs, paths.TranscriptFileName)
+
+	// CHECKPOINT 1: Initial work with 2 messages (1 gemini message with tokens)
+	checkpoint1Transcript := `{
+		"sessionId": "multi-test",
+		"messages": [
+			{
+				"type": "user",
+				"content": "Add a main function"
+			},
+			{
+				"type": "gemini",
+				"content": "I'll add a main function",
+				"tokens": {
+					"input": 100,
+					"output": 50,
+					"cached": 20
+				}
+			}
+		]
+	}`
+
+	if err := os.WriteFile(transcriptPath, []byte(checkpoint1Transcript), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// Modify file for checkpoint 1
+	if err := os.WriteFile(testFile, []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("failed to modify file: %v", err)
+	}
+
+	// Save checkpoint 1
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{"code.go"},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 1",
+		AuthorName:     "Gemini CLI",
+		AuthorEmail:    "gemini@test.com",
+		AgentType:      agent.AgentTypeGemini,
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() checkpoint 1 error = %v", err)
+	}
+
+	// Load and verify state after checkpoint 1
+	state, err := s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("loadSessionState() error = %v", err)
+	}
+	if state.CheckpointTranscriptStart != 0 {
+		t.Errorf("CheckpointTranscriptStart after checkpoint 1 = %d, want 0", state.CheckpointTranscriptStart)
+	}
+
+	// CHECKPOINT 2: Add more messages to transcript (simulating continued session)
+	// This adds 2 more messages (indices 2 and 3), with new token counts
+	checkpoint2Transcript := `{
+		"sessionId": "multi-test",
+		"messages": [
+			{
+				"type": "user",
+				"content": "Add a main function"
+			},
+			{
+				"type": "gemini",
+				"content": "I'll add a main function",
+				"tokens": {
+					"input": 100,
+					"output": 50,
+					"cached": 20
+				}
+			},
+			{
+				"type": "user",
+				"content": "Now add error handling"
+			},
+			{
+				"type": "gemini",
+				"content": "I'll add error handling",
+				"tokens": {
+					"input": 200,
+					"output": 75,
+					"cached": 30
+				}
+			}
+		]
+	}`
+
+	if err := os.WriteFile(transcriptPath, []byte(checkpoint2Transcript), 0o644); err != nil {
+		t.Fatalf("failed to update transcript: %v", err)
+	}
+
+	// Modify file for checkpoint 2
+	if err := os.WriteFile(testFile, []byte("package main\n\nfunc main() {\n\tif err := run(); err != nil {\n\t\tpanic(err)\n\t}\n}\n"), 0o644); err != nil {
+		t.Fatalf("failed to modify file: %v", err)
+	}
+
+	// Before checkpoint 2, manually update CheckpointTranscriptStart to simulate
+	// what would happen after condensing checkpoint 1
+	state.CheckpointTranscriptStart = 2 // Start from message index 2 (the second user prompt)
+	state.StepCount = 1                 // Set to 1 (will be incremented to 2 by SaveChanges)
+	if err := s.saveSessionState(state); err != nil {
+		t.Fatalf("failed to update session state: %v", err)
+	}
+
+	// Save checkpoint 2
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{"code.go"},
+		NewFiles:       []string{},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 2",
+		AuthorName:     "Gemini CLI",
+		AuthorEmail:    "gemini@test.com",
+		AgentType:      agent.AgentTypeGemini,
+	})
+	if err != nil {
+		t.Fatalf("SaveChanges() checkpoint 2 error = %v", err)
+	}
+
+	// Reload state to get updated values
+	state, err = s.loadSessionState(sessionID)
+	if err != nil {
+		t.Fatalf("loadSessionState() error = %v", err)
+	}
+
+	// Condense the session - this should calculate token usage ONLY from message index 2 onwards
+	checkpointID := id.MustCheckpointID("ddeeff998877")
+	result, err := s.CondenseSession(repo, checkpointID, state)
+	if err != nil {
+		t.Fatalf("CondenseSession() error = %v", err)
+	}
+
+	// Verify result
+	if result.CheckpointsCount != 2 {
+		t.Errorf("CheckpointsCount = %d, want 2", result.CheckpointsCount)
+	}
+	if result.TotalTranscriptLines != 4 {
+		t.Errorf("TotalTranscriptLines = %d, want 4 (4 messages in Gemini format)", result.TotalTranscriptLines)
+	}
+
+	// Read condensed metadata
+	store := checkpoint.NewGitStore(repo)
+	content, err := store.ReadLatestSessionContent(t.Context(), checkpointID)
+	if err != nil {
+		t.Fatalf("ReadLatestSessionContent() error = %v", err)
+	}
+
+	// CRITICAL VERIFICATION: Token usage should ONLY count from message index 2 onwards
+	// This means ONLY the second gemini message (indices 2-3), NOT the first one (indices 0-1)
+	if content.Metadata.TokenUsage == nil {
+		t.Fatal("TokenUsage should not be nil")
+	}
+
+	// Expected: Only the second gemini message tokens (input=200, output=75, cached=30)
+	// NOT the first gemini message tokens (input=100, output=50, cached=20)
+	if content.Metadata.TokenUsage.InputTokens != 200 {
+		t.Errorf("InputTokens = %d, want 200 (should only count from checkpoint start, not entire transcript)",
+			content.Metadata.TokenUsage.InputTokens)
+	}
+	if content.Metadata.TokenUsage.OutputTokens != 75 {
+		t.Errorf("OutputTokens = %d, want 75 (should only count from checkpoint start, not entire transcript)",
+			content.Metadata.TokenUsage.OutputTokens)
+	}
+	if content.Metadata.TokenUsage.CacheReadTokens != 30 {
+		t.Errorf("CacheReadTokens = %d, want 30 (should only count from checkpoint start, not entire transcript)",
+			content.Metadata.TokenUsage.CacheReadTokens)
+	}
+	if content.Metadata.TokenUsage.APICallCount != 1 {
+		t.Errorf("APICallCount = %d, want 1 (only one gemini message after checkpoint start)",
+			content.Metadata.TokenUsage.APICallCount)
+	}
+
+	// Verify the full transcript is stored (all 4 messages)
+	if len(content.Transcript) == 0 {
+		t.Error("Full transcript should be stored")
+	}
+
+	// Verify both prompts are present (even though tokens only count from second prompt)
+	if !strings.Contains(content.Prompts, "Add a main function") {
+		t.Error("Prompts should contain first prompt")
+	}
+	if !strings.Contains(content.Prompts, "Now add error handling") {
+		t.Error("Prompts should contain second prompt")
 	}
 }
