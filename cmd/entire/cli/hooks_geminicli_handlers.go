@@ -28,38 +28,15 @@ func handleGeminiSessionStart() error {
 
 // handleGeminiSessionEnd handles the SessionEnd hook for Gemini CLI.
 // This fires when the user explicitly exits the session (via "exit" or "logout" commands).
-// Note: The primary checkpoint creation happens in AfterAgent (equivalent to Claude's Stop).
-// SessionEnd serves as a cleanup/fallback - it will commit any uncommitted changes that
-// weren't captured by AfterAgent (e.g., if the user exits mid-response).
-func handleGeminiSessionEnd() error {
-	if skip, branchName := ShouldSkipOnDefaultBranchForStrategy(); skip {
-		fmt.Fprintf(os.Stderr, "Entire: skipping on branch '%s' - create a feature branch to use Entire tracking\n", branchName)
-		return nil
-	}
-
-	// Parse stdin once upfront — all subsequent steps use ctx.sessionID
+// It parses the session-end input and marks the session as ended so that subsequent
+// git hooks (e.g., post-commit) can trigger condensation for ended sessions.
+func handleGeminiSessionEnd() error { // Parse stdin once upfront — all subsequent steps use ctx.sessionID
 	ctx, err := parseGeminiSessionEnd()
 	if err != nil {
 		if errors.Is(err, ErrSessionSkipped) {
 			return nil
 		}
 		return fmt.Errorf("failed to parse session-end input: %w", err)
-	}
-
-	logCtx := logging.WithComponent(context.Background(), "hooks")
-	logging.Info(logCtx, "session-end",
-		slog.String("hook", "session-end"),
-		slog.String("hook_type", "agent"),
-		slog.String("session_id", ctx.sessionID),
-	)
-
-	// Best-effort commit of any uncommitted changes
-	if err := setupGeminiSessionDir(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to setup session dir: %v\n", err)
-	} else if err := extractGeminiMetadata(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to extract metadata: %v\n", err)
-	} else if err := commitGeminiSession(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to commit metadata: %v\n", err)
 	}
 
 	// Mark session as ended using the parsed session ID
