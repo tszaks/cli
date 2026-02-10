@@ -224,11 +224,11 @@ Metadata only, sharded by checkpoint ID. Supports **multiple sessions per checkp
   "files_touched": ["file1.txt", "file2.txt"],
   "sessions": [
     {
-      "metadata": "ab/c123def456/0/metadata.json",
-      "transcript": "ab/c123def456/0/full.jsonl",
-      "context": "ab/c123def456/0/context.md",
-      "content_hash": "ab/c123def456/0/content_hash.txt",
-      "prompt": "ab/c123def456/0/prompt.txt"
+      "metadata": "/ab/c123def456/0/metadata.json",
+      "transcript": "/ab/c123def456/0/full.jsonl",
+      "context": "/ab/c123def456/0/context.md",
+      "content_hash": "/ab/c123def456/0/content_hash.txt",
+      "prompt": "/ab/c123def456/0/prompt.txt"
     }
   ],
   "token_usage": {
