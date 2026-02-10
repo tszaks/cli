@@ -1104,6 +1104,142 @@ func TestTurnEnd_DeferredCondensation_AttributionUsesOriginalBase(t *testing.T) 
 		"attribution TotalCommitted should be non-zero (agent modified test.txt)")
 }
 
+// TestPostCommit_FilesTouched_ResetsAfterCondensation verifies that FilesTouched
+// is reset after condensation, so subsequent condensations only contain the files
+// touched since the last commit — not the accumulated history.
+func TestPostCommit_FilesTouched_ResetsAfterCondensation(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-filestouched-reset"
+
+	// --- Round 1: Save checkpoint touching files A.txt and B.txt ---
+
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	require.NoError(t, os.MkdirAll(metadataDirAbs, 0o755))
+
+	transcript := `{"type":"human","message":{"content":"round 1 prompt"}}
+{"type":"assistant","message":{"content":"round 1 response"}}
+`
+	require.NoError(t, os.WriteFile(
+		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
+		[]byte(transcript), 0o644))
+
+	// Create files A.txt and B.txt
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "A.txt"), []byte("file A"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "B.txt"), []byte("file B"), 0o644))
+
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{},
+		NewFiles:       []string{"A.txt", "B.txt"},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 1: files A and B",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	require.NoError(t, err)
+
+	// Set phase to IDLE so PostCommit triggers immediate condensation
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	state.Phase = session.PhaseIdle
+	require.NoError(t, s.saveSessionState(state))
+
+	// Verify FilesTouched has A.txt and B.txt before condensation
+	assert.ElementsMatch(t, []string{"A.txt", "B.txt"}, state.FilesTouched,
+		"FilesTouched should contain A.txt and B.txt before first condensation")
+
+	// --- Commit and condense (round 1) ---
+	checkpointID1 := "a1a2a3a4a5a6"
+	commitWithCheckpointTrailer(t, repo, dir, checkpointID1)
+
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	// Verify condensation happened
+	_, err = repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	require.NoError(t, err, "entire/checkpoints/v1 should exist after first condensation")
+
+	// Verify first condensation contains A.txt and B.txt
+	store := checkpoint.NewGitStore(repo)
+	cpID1 := id.MustCheckpointID(checkpointID1)
+	summary1, err := store.ReadCommitted(context.Background(), cpID1)
+	require.NoError(t, err)
+	require.NotNil(t, summary1)
+	assert.ElementsMatch(t, []string{"A.txt", "B.txt"}, summary1.FilesTouched,
+		"First condensation should contain A.txt and B.txt")
+
+	// Verify FilesTouched was reset after condensation
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	assert.Nil(t, state.FilesTouched,
+		"FilesTouched should be nil after condensation")
+
+	// --- Round 2: Save checkpoint touching files C.txt and D.txt ---
+
+	// Append to transcript for round 2
+	transcript2 := `{"type":"human","message":{"content":"round 2 prompt"}}
+{"type":"assistant","message":{"content":"round 2 response"}}
+`
+	f, err := os.OpenFile(
+		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
+		os.O_APPEND|os.O_WRONLY, 0o644)
+	require.NoError(t, err)
+	_, err = f.WriteString(transcript2)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	// Create files C.txt and D.txt
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "C.txt"), []byte("file C"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "D.txt"), []byte("file D"), 0o644))
+
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{},
+		NewFiles:       []string{"C.txt", "D.txt"},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 2: files C and D",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	require.NoError(t, err)
+
+	// Set phase to IDLE for immediate condensation
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	state.Phase = session.PhaseIdle
+	require.NoError(t, s.saveSessionState(state))
+
+	// Verify FilesTouched only has C.txt and D.txt (NOT A.txt, B.txt)
+	assert.ElementsMatch(t, []string{"C.txt", "D.txt"}, state.FilesTouched,
+		"FilesTouched should only contain C.txt and D.txt after reset")
+
+	// --- Commit and condense (round 2) ---
+	checkpointID2 := "b1b2b3b4b5b6"
+	commitWithCheckpointTrailer(t, repo, dir, checkpointID2)
+
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	// Verify second condensation contains ONLY C.txt and D.txt
+	cpID2 := id.MustCheckpointID(checkpointID2)
+	summary2, err := store.ReadCommitted(context.Background(), cpID2)
+	require.NoError(t, err)
+	require.NotNil(t, summary2, "Second condensation should exist")
+	assert.ElementsMatch(t, []string{"C.txt", "D.txt"}, summary2.FilesTouched,
+		"Second condensation should only contain C.txt and D.txt, not accumulated files from first condensation")
+}
+
 // setupSessionWithFileChange is like setupSessionWithCheckpoint but also modifies
 // test.txt so the shadow branch checkpoint includes actual file changes.
 // This enables attribution testing: the diff between base commit and the
