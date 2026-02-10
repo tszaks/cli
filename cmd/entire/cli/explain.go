@@ -24,6 +24,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -893,36 +894,18 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 	// Check if we're on the default branch (needed for getReachableTemporaryCheckpoints)
 	isOnDefault, _ := strategy.IsOnDefaultBranch(repo)
 
-	// Precompute main branch commits for filtering (skip commits shared with main on feature branches)
-	reachableFromMain := computeReachableFromMain(repo)
-
-	// Walk first-parent chain to collect checkpoints.
-	// First-parent traversal follows only the "main line" of commits on this branch,
-	// skipping merge parents. This avoids walking into main's full history when main
-	// has been merged into a feature branch.
-	// reachableFromMain filtering skips commits that are on main (before the branch point).
 	var points []strategy.RewindPoint
 
-	err = walkFirstParentCommits(repo, head.Hash(), commitScanLimit, func(c *object.Commit) error {
-		// Once we hit a commit reachable from main on the first-parent chain,
-		// all earlier ancestors are also shared-with-main, so stop scanning.
-		if reachableFromMain[c.Hash] {
-			return errStopIteration
-		}
-
-		// Extract checkpoint ID from Entire-Checkpoint trailer
+	collectCheckpoint := func(c *object.Commit) {
 		cpID, found := trailers.ParseCheckpoint(c.Message)
 		if !found {
-			return nil // No checkpoint trailer, continue
+			return
 		}
-
-		// Look up checkpoint info
 		cpInfo, found := committedByID[cpID]
 		if !found {
-			return nil // Checkpoint not in store, continue
+			return
 		}
 
-		// Create rewind point from committed info
 		message := strings.Split(c.Message, "\n")[0]
 		point := strategy.RewindPoint{
 			ID:               c.Hash.String(),
@@ -938,7 +921,6 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 		// Read session prompt from metadata branch (best-effort)
 		content, _ := store.ReadLatestSessionContent(context.Background(), cpID) //nolint:errcheck  // Best-effort
 		if content != nil {
-			// Scope the transcript to this checkpoint's portion
 			scopedTranscript := scopeTranscriptForCheckpoint(content.Transcript, content.Metadata.GetTranscriptStart())
 			scopedPrompts := extractPromptsFromTranscript(scopedTranscript)
 			if len(scopedPrompts) > 0 && scopedPrompts[0] != "" {
@@ -947,8 +929,44 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 		}
 
 		points = append(points, point)
-		return nil
-	})
+	}
+
+	if isOnDefault {
+		// On the default branch, use full DAG walk to find checkpoint commits
+		// on merged feature branches (second parents of merge commits).
+		iter, iterErr := repo.Log(&git.LogOptions{
+			From:  head.Hash(),
+			Order: git.LogOrderCommitterTime,
+		})
+		if iterErr != nil {
+			return nil, fmt.Errorf("failed to get commit log: %w", iterErr)
+		}
+		defer iter.Close()
+
+		count := 0
+		err = iter.ForEach(func(c *object.Commit) error {
+			if count >= commitScanLimit {
+				return storer.ErrStop
+			}
+			count++
+			collectCheckpoint(c)
+			return nil
+		})
+	} else {
+		// On feature branches, use first-parent walk with branch filtering.
+		// This avoids walking into main's full history through merge commit parents.
+		reachableFromMain := computeReachableFromMain(repo)
+
+		err = walkFirstParentCommits(repo, head.Hash(), commitScanLimit, func(c *object.Commit) error {
+			// Once we hit a commit reachable from main on the first-parent chain,
+			// all earlier ancestors are also shared-with-main, so stop scanning.
+			if reachableFromMain[c.Hash] {
+				return errStopIteration
+			}
+			collectCheckpoint(c)
+			return nil
+		})
+	}
 
 	if err != nil {
 		return nil, fmt.Errorf("error iterating commits: %w", err)
