@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/entireio/cli/cmd/entire/cli/buildinfo"
 	"github.com/entireio/cli/cmd/entire/cli/telemetry"
 	"github.com/entireio/cli/cmd/entire/cli/versioncheck"
 	"github.com/spf13/cobra"
@@ -24,12 +25,6 @@ Environment Variables:
                 mode. This uses simpler text prompts instead of interactive
                 TUI elements, which works better with screen readers.
 `
-
-// Version information (can be set at build time)
-var (
-	Version = "dev"
-	Commit  = "unknown"
-)
 
 func NewRootCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -61,12 +56,12 @@ func NewRootCmd() *cobra.Command {
 				// Use detached tracking (non-blocking)
 				installedAgents := GetAgentsWithHooksInstalled()
 				agentStr := JoinAgentNames(installedAgents)
-				telemetry.TrackCommandDetached(cmd, settings.Strategy, agentStr, settings.Enabled, Version)
+				telemetry.TrackCommandDetached(cmd, settings.Strategy, agentStr, settings.Enabled, buildinfo.Version)
 			}
 
 			// Version check and notification (synchronous with 2s timeout)
 			// Runs AFTER command completes to avoid interfering with interactive modes
-			versioncheck.CheckAndNotify(cmd, Version)
+			versioncheck.CheckAndNotify(cmd, buildinfo.Version)
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
@@ -100,7 +95,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Show build information",
 		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Printf("Entire CLI %s (%s)\n", Version, Commit)
+			fmt.Printf("Entire CLI %s (%s)\n", buildinfo.Version, buildinfo.Commit)
 			fmt.Printf("Go version: %s\n", runtime.Version())
 			fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 		},

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/buildinfo"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
 	"github.com/entireio/cli/cmd/entire/cli/logging"
@@ -346,6 +347,7 @@ func (s *GitStore) writeSessionToSubdirectory(opts WriteCommittedOptions, sessio
 		TokenUsage:                  opts.TokenUsage,
 		InitialAttribution:          opts.InitialAttribution,
 		Summary:                     opts.Summary,
+		CLIVersion:                  buildinfo.Version,
 	}
 
 	metadataJSON, err := jsonutil.MarshalIndentWithNewline(sessionMetadata, "", "  ")
@@ -377,6 +379,7 @@ func (s *GitStore) writeCheckpointSummary(opts WriteCommittedOptions, basePath s
 
 	summary := CheckpointSummary{
 		CheckpointID:     opts.CheckpointID,
+		CLIVersion:       buildinfo.Version,
 		Strategy:         opts.Strategy,
 		Branch:           opts.Branch,
 		CheckpointsCount: checkpointsCount,

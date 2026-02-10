@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/buildinfo"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/trailers"
@@ -2853,5 +2854,120 @@ func TestCopyMetadataDir_RedactsSecrets(t *testing.T) {
 		if !strings.Contains(content, "REDACTED") {
 			t.Errorf("%s should contain REDACTED placeholder", path)
 		}
+	}
+}
+
+// TestWriteCommitted_CLIVersionField verifies that buildinfo.Version is written
+// to both the root CheckpointSummary and session-level CommittedMetadata.
+func TestWriteCommitted_CLIVersionField(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+
+	repo, err := git.PlainInit(tempDir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	readmeFile := filepath.Join(tempDir, "README.md")
+	if err := os.WriteFile(readmeFile, []byte("# Test"), 0o644); err != nil {
+		t.Fatalf("failed to write README: %v", err)
+	}
+	if _, err := worktree.Add("README.md"); err != nil {
+		t.Fatalf("failed to add README: %v", err)
+	}
+	if _, err := worktree.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com"},
+	}); err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	store := NewGitStore(repo)
+
+	checkpointID := id.MustCheckpointID("b1c2d3e4f5a6")
+	sessionID := "test-session-version"
+
+	err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+		CheckpointID: checkpointID,
+		SessionID:    sessionID,
+		Strategy:     "manual-commit",
+		Agent:        agent.AgentTypeClaudeCode,
+		Transcript:   []byte("test transcript"),
+		AuthorName:   "Test Author",
+		AuthorEmail:  "test@example.com",
+	})
+	if err != nil {
+		t.Fatalf("WriteCommitted() error = %v", err)
+	}
+
+	// Read the metadata branch
+	ref, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	if err != nil {
+		t.Fatalf("failed to get metadata branch reference: %v", err)
+	}
+
+	commit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		t.Fatalf("failed to get commit object: %v", err)
+	}
+
+	tree, err := commit.Tree()
+	if err != nil {
+		t.Fatalf("failed to get tree: %v", err)
+	}
+
+	checkpointTree, err := tree.Tree(checkpointID.Path())
+	if err != nil {
+		t.Fatalf("failed to find checkpoint tree at %s: %v", checkpointID.Path(), err)
+	}
+
+	// Verify root metadata.json (CheckpointSummary) has CLIVersion
+	metadataFile, err := checkpointTree.File(paths.MetadataFileName)
+	if err != nil {
+		t.Fatalf("failed to find root metadata.json: %v", err)
+	}
+
+	content, err := metadataFile.Contents()
+	if err != nil {
+		t.Fatalf("failed to read root metadata.json: %v", err)
+	}
+
+	var summary CheckpointSummary
+	if err := json.Unmarshal([]byte(content), &summary); err != nil {
+		t.Fatalf("failed to parse root metadata.json: %v", err)
+	}
+
+	if summary.CLIVersion != buildinfo.Version {
+		t.Errorf("CheckpointSummary.CLIVersion = %q, want %q", summary.CLIVersion, buildinfo.Version)
+	}
+
+	// Verify session-level metadata.json (CommittedMetadata) has CLIVersion
+	sessionTree, err := checkpointTree.Tree("0")
+	if err != nil {
+		t.Fatalf("failed to get session tree: %v", err)
+	}
+
+	sessionMetadataFile, err := sessionTree.File(paths.MetadataFileName)
+	if err != nil {
+		t.Fatalf("failed to find session metadata.json: %v", err)
+	}
+
+	sessionContent, err := sessionMetadataFile.Contents()
+	if err != nil {
+		t.Fatalf("failed to read session metadata.json: %v", err)
+	}
+
+	var sessionMetadata CommittedMetadata
+	if err := json.Unmarshal([]byte(sessionContent), &sessionMetadata); err != nil {
+		t.Fatalf("failed to parse session metadata.json: %v", err)
+	}
+
+	if sessionMetadata.CLIVersion != buildinfo.Version {
+		t.Errorf("CommittedMetadata.CLIVersion = %q, want %q", sessionMetadata.CLIVersion, buildinfo.Version)
 	}
 }

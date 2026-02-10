@@ -27,6 +27,9 @@ type State struct {
 	// SessionID is the unique session identifier
 	SessionID string `json:"session_id"`
 
+	// CLIVersion is the version of the CLI that created this session
+	CLIVersion string `json:"cli_version,omitempty"`
+
 	// BaseCommit tracks the current shadow branch base. Initially set to HEAD when the
 	// session starts, but updated on migration (pull/rebase) and after condensation.
 	// Used for shadow branch naming and checkpoint storage — NOT for attribution.
