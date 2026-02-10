@@ -345,6 +345,9 @@ cd cli
 # Install dependencies (including Go)
 mise install
 
+# Trust the mise configuration (required on first setup)
+mise trust
+
 # Build the CLI
 mise run build
 ```
