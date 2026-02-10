@@ -475,9 +475,10 @@ func getAssociatedCommits(repo *git.Repository, checkpointID id.CheckpointID, se
 	targetID := checkpointID.String()
 
 	err = walkFirstParentCommits(repo, head.Hash(), limit, func(c *object.Commit) error {
-		// Skip commits reachable from main (shared history before branch point)
+		// Once we hit a commit reachable from main on the first-parent chain,
+		// all earlier ancestors are also shared-with-main, so stop scanning.
 		if reachableFromMain[c.Hash] {
-			return nil
+			return errStopIteration
 		}
 
 		// Check for matching checkpoint trailer
@@ -770,9 +771,10 @@ func getCurrentWorktreeHash() string {
 	return checkpoint.HashWorktreeID(worktreeID)
 }
 
-// computeReachableFromMain returns a set of commit hashes reachable from the main/default branch.
+// computeReachableFromMain returns a set of commit hashes on the main/default branch's first-parent chain.
 // On the default branch itself, returns an empty map (no filtering needed).
-// Used to filter out commits shared with main when listing feature branch checkpoints.
+// Only first-parent commits are included — commits from side branches merged into main are excluded,
+// since those could be feature branch commits that shouldn't be filtered out.
 func computeReachableFromMain(repo *git.Repository) map[plumbing.Hash]bool {
 	reachableFromMain := make(map[plumbing.Hash]bool)
 
@@ -835,7 +837,7 @@ func walkFirstParentCommits(repo *git.Repository, from plumbing.Hash, limit int,
 		}
 		current, err = current.Parent(0)
 		if err != nil {
-			return nil //nolint:nilerr // Parent lookup failure means end of traversable chain
+			return fmt.Errorf("failed to load first parent of commit %s: %w", current.Hash, err)
 		}
 	}
 	return nil
@@ -888,9 +890,10 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 	var points []strategy.RewindPoint
 
 	err = walkFirstParentCommits(repo, head.Hash(), commitScanLimit, func(c *object.Commit) error {
-		// Skip commits reachable from main (shared history before branch point)
+		// Once we hit a commit reachable from main on the first-parent chain,
+		// all earlier ancestors are also shared-with-main, so stop scanning.
 		if reachableFromMain[c.Hash] {
-			return nil
+			return errStopIteration
 		}
 
 		// Extract checkpoint ID from Entire-Checkpoint trailer
@@ -966,9 +969,11 @@ func getReachableTemporaryCheckpoints(repo *git.Repository, store *checkpoint.Gi
 
 	shadowBranches, _ := store.ListTemporary(context.Background()) //nolint:errcheck // Best-effort
 	for _, sb := range shadowBranches {
-		// Filter by worktree: only show shadow branches belonging to this worktree
+		// Filter by worktree: only show shadow branches belonging to this worktree.
+		// Skip filtering if currentWorktreeHash is empty (error computing it) to avoid
+		// accidentally filtering out ALL shadow branches.
 		_, branchWorktreeHash, parsed := checkpoint.ParseShadowBranchName(sb.BranchName)
-		if parsed && branchWorktreeHash != "" && branchWorktreeHash != currentWorktreeHash {
+		if currentWorktreeHash != "" && parsed && branchWorktreeHash != "" && branchWorktreeHash != currentWorktreeHash {
 			continue
 		}
 
