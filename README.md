@@ -47,11 +47,15 @@ entire status
 entire enable
 ```
 
-This installs Claude Code and git hooks that automatically capture checkpoints whenever Claude Code makes changes. Your code commits stay clean—all session metadata is stored separately.
+This installs agent and git hooks to work with your AI agent (Claude Code or Gemini CLI). The hooks capture session data at specific points in your workflow. Your code commits stay clean—all session metadata is stored on a separate `entire/checkpoints/v1` branch.
 
-### 2. Work with Claude Code
+**When checkpoints are created** depends on your chosen strategy (default is `manual-commit`):
+- **Manual-commit**: Checkpoints are created when you or the agent make a git commit
+- **Auto-commit**: Checkpoints are created after each agent response
 
-Just use Claude Code normally. Entire runs in the background, creating checkpoints automatically:
+### 2. Work with Your AI Agent
+
+Just use Claude Code or Gemini CLI normally. Entire runs in the background, tracking your session:
 
 ```
 entire status  # Check current session status anytime
@@ -101,7 +105,7 @@ A **checkpoint** is a snapshot within a session that you can rewind to—a "save
 
 **When checkpoints are created:**
 
-- **Manual-commit strategy**: When you make a git commit
+- **Manual-commit strategy**: When you or the agent make a git commit
 - **Auto-commit strategy**: After each agent response
 
 **Checkpoint IDs** are 12-character hex strings (e.g., `a3b2c4d5e6f7`).
