@@ -162,9 +162,6 @@ func (c *ClaudeCodeAgent) ExtractAgentSessionID(entireSessionID string) string {
 	return sessionid.ModelSessionID(entireSessionID)
 }
 
-// SessionFileExtension returns ".jsonl" - Claude stores transcripts as JSONL.
-func (c *ClaudeCodeAgent) SessionFileExtension() string { return ".jsonl" }
-
 // ResolveSessionFile returns the path to a Claude session file.
 // Claude names files directly as <id>.jsonl.
 func (c *ClaudeCodeAgent) ResolveSessionFile(sessionDir, agentSessionID string) string {

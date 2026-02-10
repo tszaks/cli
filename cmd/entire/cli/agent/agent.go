@@ -54,11 +54,6 @@ type Agent interface {
 	//   Cursor: ~/Library/Application Support/Cursor/User/globalStorage/
 	GetSessionDir(repoPath string) (string, error)
 
-	// SessionFileExtension returns the file extension for session transcript files.
-	// Includes the leading dot.
-	// Examples: ".jsonl" (Claude), ".json" (Gemini)
-	SessionFileExtension() string
-
 	// ResolveSessionFile returns the path to the session transcript file for a given
 	// agent session ID. Agents use different naming conventions:
 	//   Claude: <sessionDir>/<id>.jsonl

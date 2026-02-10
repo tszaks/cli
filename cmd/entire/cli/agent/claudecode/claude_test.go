@@ -7,14 +7,6 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 )
 
-func TestSessionFileExtension(t *testing.T) {
-	t.Parallel()
-	ag := &ClaudeCodeAgent{}
-	if ext := ag.SessionFileExtension(); ext != ".jsonl" {
-		t.Errorf("SessionFileExtension() = %q, want %q", ext, ".jsonl")
-	}
-}
-
 func TestResolveSessionFile(t *testing.T) {
 	t.Parallel()
 	ag := &ClaudeCodeAgent{}

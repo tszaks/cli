@@ -404,7 +404,7 @@ func resumeSession(sessionID string, checkpointID id.CheckpointID, force bool) e
 
 		if err := restorer.RestoreLogsOnly(point, force); err != nil {
 			// Fall back to single-session restore
-			return resumeSingleSession(ctx, ag, sessionID, checkpointID, sessionDir, repoRoot, force)
+			return resumeSingleSession(ctx, ag, sessionID, checkpointID, repoRoot, force)
 		}
 
 		// Get checkpoint metadata to show all sessions
@@ -475,13 +475,13 @@ func resumeSession(sessionID string, checkpointID id.CheckpointID, force bool) e
 	}
 
 	// Strategy doesn't support LogsOnlyRestorer, fall back to single session
-	return resumeSingleSession(ctx, ag, sessionID, checkpointID, sessionDir, repoRoot, force)
+	return resumeSingleSession(ctx, ag, sessionID, checkpointID, repoRoot, force)
 }
 
 // resumeSingleSession restores a single session (fallback when multi-session restore fails).
 // Always overwrites existing session logs to ensure consistency with checkpoint state.
 // If force is false, prompts for confirmation when local log has newer timestamps.
-func resumeSingleSession(ctx context.Context, ag agent.Agent, sessionID string, checkpointID id.CheckpointID, _, repoRoot string, force bool) error {
+func resumeSingleSession(ctx context.Context, ag agent.Agent, sessionID string, checkpointID id.CheckpointID, repoRoot string, force bool) error {
 	agentSessionID := ag.ExtractAgentSessionID(sessionID)
 	sessionLogPath, err := resolveTranscriptPath(sessionID, ag)
 	if err != nil {

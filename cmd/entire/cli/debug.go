@@ -74,7 +74,7 @@ func runDebugAutoCommit(w io.Writer, transcriptPath string) error {
 
 	// Auto-detect transcript if not provided
 	if transcriptPath == "" && currentSession != "" {
-		detected, detectErr := findTranscriptForSession(currentSession, repoRoot)
+		detected, detectErr := findTranscriptForSession(currentSession)
 		if detectErr != nil {
 			fmt.Fprintf(w, "\nCould not auto-detect transcript: %v\n", detectErr)
 		} else if detected != "" {
@@ -336,7 +336,7 @@ func getFileChanges() ([]string, []string, []string, []string, error) {
 
 // findTranscriptForSession attempts to find the transcript file for a session.
 // Returns the path if found, empty string if not found, or error on failure.
-func findTranscriptForSession(sessionID, _ string) (string, error) {
+func findTranscriptForSession(sessionID string) (string, error) {
 	// Try to get agent type from session state
 	sessionState, err := strategy.LoadSessionState(sessionID)
 	if err != nil {

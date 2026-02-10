@@ -170,9 +170,6 @@ func (g *GeminiCLIAgent) ExtractAgentSessionID(entireSessionID string) string {
 	return sessionid.ModelSessionID(entireSessionID)
 }
 
-// SessionFileExtension returns ".json" - Gemini stores transcripts as JSON.
-func (g *GeminiCLIAgent) SessionFileExtension() string { return ".json" }
-
 // ProtectedDirs returns directories that Gemini uses for config/state.
 func (g *GeminiCLIAgent) ProtectedDirs() []string { return []string{".gemini"} }
 

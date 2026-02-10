@@ -270,14 +270,6 @@ func TestExtractAgentSessionID(t *testing.T) {
 	}
 }
 
-func TestSessionFileExtension(t *testing.T) {
-	t.Parallel()
-	ag := &GeminiCLIAgent{}
-	if ext := ag.SessionFileExtension(); ext != ".json" {
-		t.Errorf("SessionFileExtension() = %q, want %q", ext, ".json")
-	}
-}
-
 func TestResolveSessionFile(t *testing.T) {
 	t.Parallel()
 

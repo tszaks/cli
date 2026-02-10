@@ -30,7 +30,6 @@ func (m *mockAgent) TransformSessionID(agentID string) string     { return agent
 func (m *mockAgent) ExtractAgentSessionID(entireID string) string { return entireID }
 func (m *mockAgent) ProtectedDirs() []string                      { return nil }
 func (m *mockAgent) GetSessionDir(_ string) (string, error)       { return "", nil }
-func (m *mockAgent) SessionFileExtension() string                 { return ".jsonl" }
 func (m *mockAgent) ResolveSessionFile(sessionDir, agentSessionID string) string {
 	return sessionDir + "/" + agentSessionID + ".jsonl"
 }
