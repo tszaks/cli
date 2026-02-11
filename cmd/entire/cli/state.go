@@ -37,6 +37,21 @@ type PrePromptState struct {
 	LastTranscriptLineCount int `json:"last_transcript_line_count,omitempty"`
 }
 
+// PreUntrackedFiles returns the untracked files list, or nil if the receiver is nil.
+// This nil-vs-empty distinction lets ComputeFileChanges know whether to skip new-file detection.
+// When the receiver is non-nil but UntrackedFiles is nil (e.g., old state files deserialized with
+// "untracked_files": null), returns an empty non-nil slice so that all current untracked files
+// are correctly treated as new.
+func (s *PrePromptState) PreUntrackedFiles() []string {
+	if s == nil {
+		return nil
+	}
+	if s.UntrackedFiles == nil {
+		return []string{}
+	}
+	return s.UntrackedFiles
+}
+
 // normalizePrePromptState migrates deprecated fields after loading from JSON.
 func (s *PrePromptState) normalizePrePromptState() {
 	if s.StepTranscriptStart == 0 && s.LastTranscriptLineCount > 0 {
@@ -210,11 +225,11 @@ func CleanupPrePromptState(sessionID string) error {
 
 // ComputeFileChanges returns new files (created during session) and deleted files
 // (tracked files that were deleted) using a single git status call.
-// This is more efficient than calling ComputeNewFiles and ComputeDeletedFiles separately.
 //
-// If preState is nil, newFiles will be nil but deletedFiles will still be computed
-// (deleted files don't depend on pre-prompt state).
-func ComputeFileChanges(preState *PrePromptState) (newFiles, deletedFiles []string, err error) {
+// preUntrackedFiles is the list of untracked files captured before the session/task started.
+// Pass nil to skip new-file detection (deletedFiles are still computed).
+// Pass a non-nil slice (even empty) to detect new files by diffing against the pre-existing set.
+func ComputeFileChanges(preUntrackedFiles []string) (newFiles, deletedFiles []string, err error) {
 	repo, err := openRepository()
 	if err != nil {
 		return nil, nil, err
@@ -232,9 +247,9 @@ func ComputeFileChanges(preState *PrePromptState) (newFiles, deletedFiles []stri
 
 	// Build set of pre-existing untracked files for quick lookup (only if preState exists)
 	var preExisting map[string]bool
-	if preState != nil {
-		preExisting = make(map[string]bool, len(preState.UntrackedFiles))
-		for _, f := range preState.UntrackedFiles {
+	if preUntrackedFiles != nil {
+		preExisting = make(map[string]bool, len(preUntrackedFiles))
+		for _, f := range preUntrackedFiles {
 			preExisting[f] = true
 		}
 	}
@@ -247,7 +262,7 @@ func ComputeFileChanges(preState *PrePromptState) (newFiles, deletedFiles []stri
 		}
 
 		switch {
-		case st.Worktree == git.Untracked && preState != nil:
+		case st.Worktree == git.Untracked && preExisting != nil:
 			// New file if it wasn't untracked before the session
 			// (only compute if we have preState to compare against)
 			if !preExisting[file] {
@@ -378,6 +393,18 @@ type PreTaskState struct {
 	ToolUseID      string   `json:"tool_use_id"`
 	Timestamp      string   `json:"timestamp"`
 	UntrackedFiles []string `json:"untracked_files"`
+}
+
+// PreUntrackedFiles returns the untracked files list, or nil if the receiver is nil.
+// See PrePromptState.PreUntrackedFiles for the nil-vs-empty semantics.
+func (s *PreTaskState) PreUntrackedFiles() []string {
+	if s == nil {
+		return nil
+	}
+	if s.UntrackedFiles == nil {
+		return []string{}
+	}
+	return s.UntrackedFiles
 }
 
 // CapturePreTaskState captures current untracked files before a Task execution

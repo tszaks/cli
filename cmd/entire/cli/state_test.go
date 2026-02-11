@@ -621,7 +621,7 @@ func TestComputeFileChanges_NewAndDeletedFiles(t *testing.T) {
 	}
 
 	// Call ComputeFileChanges with preState
-	newFiles, deletedFiles, err := ComputeFileChanges(preState)
+	newFiles, deletedFiles, err := ComputeFileChanges(preState.PreUntrackedFiles())
 	if err != nil {
 		t.Fatalf("ComputeFileChanges(preState) error = %v", err)
 	}
@@ -685,7 +685,7 @@ func TestComputeFileChanges_NoChanges(t *testing.T) {
 	}
 
 	// Call ComputeFileChanges - no changes should be detected
-	newFiles, deletedFiles, err := ComputeFileChanges(preState)
+	newFiles, deletedFiles, err := ComputeFileChanges(preState.PreUntrackedFiles())
 	if err != nil {
 		t.Fatalf("ComputeFileChanges(preState) error = %v", err)
 	}

@@ -202,7 +202,7 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 	}
 
 	// Compute new and deleted files (single git status call)
-	newFiles, deletedFiles, err := ComputeFileChanges(preState)
+	newFiles, deletedFiles, err := ComputeFileChanges(preState.PreUntrackedFiles())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to compute file changes: %v\n", err)
 	}

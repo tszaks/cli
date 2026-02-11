@@ -229,7 +229,7 @@ func commitWithMetadata() error { //nolint:maintidx // already present in codeba
 	}
 
 	// Compute new and deleted files (single git status call)
-	newFiles, deletedFiles, err := ComputeFileChanges(preState)
+	newFiles, deletedFiles, err := ComputeFileChanges(preState.PreUntrackedFiles())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to compute file changes: %v\n", err)
 	}
@@ -608,15 +608,11 @@ func handleClaudeCodePostTask() error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load pre-task state: %v\n", err)
 	}
-	newFiles, err := ComputeNewFilesFromTask(preState)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to compute new files: %v\n", err)
-	}
 
-	// Compute deleted files from git status
-	deletedFiles, err := ComputeDeletedFiles()
+	// Compute new and deleted files (single git status call)
+	newFiles, deletedFiles, err := ComputeFileChanges(preState.PreUntrackedFiles())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to compute deleted files: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to compute file changes: %v\n", err)
 	}
 
 	// Get repo root for path conversion (not cwd, since Claude may be in a subdirectory)
