@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -194,6 +195,9 @@ func (s *ManualCommitStrategy) CountOtherActiveSessionsWithCheckpoints(currentSe
 func (s *ManualCommitStrategy) initializeSession(repo *git.Repository, sessionID string, agentType agent.AgentType, transcriptPath string, userPrompt string) (*SessionState, error) {
 	head, err := repo.Head()
 	if err != nil {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			return nil, fmt.Errorf("%w: create an initial commit to enable session checkpoints", ErrEmptyRepository)
+		}
 		return nil, fmt.Errorf("failed to get HEAD: %w", err)
 	}
 

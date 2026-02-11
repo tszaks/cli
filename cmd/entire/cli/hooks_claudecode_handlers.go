@@ -5,6 +5,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -80,7 +81,11 @@ func captureInitialState() error {
 	if initializer, ok := strat.(strategy.SessionInitializer); ok {
 		agentType := hookData.agent.Type()
 		if err := initializer.InitializeSession(hookData.sessionID, agentType, hookData.input.SessionRef, hookData.input.UserPrompt); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to initialize session state: %v\n", err)
+			if errors.Is(err, strategy.ErrEmptyRepository) {
+				fmt.Fprintln(os.Stderr, "Note: Session checkpoints disabled (no commits yet). Create your first commit to enable them.")
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: failed to initialize session state: %v\n", err)
+			}
 		}
 	}
 

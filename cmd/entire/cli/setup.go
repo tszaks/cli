@@ -73,6 +73,13 @@ Strategies: manual-commit (default), auto-commit`,
 				return NewSilentError(errors.New("not a git repository"))
 			}
 
+			// Warn if repo has no commits yet
+			if repo, err := strategy.OpenRepository(); err == nil && strategy.IsEmptyRepository(repo) {
+				fmt.Fprintln(cmd.OutOrStdout(), "Note: This repository has no commits yet. Entire will be configured, but")
+				fmt.Fprintln(cmd.OutOrStdout(), "session checkpoints won't work until you create your first commit.")
+				fmt.Fprintln(cmd.OutOrStdout())
+			}
+
 			if err := validateSetupFlags(useLocalSettings, useProjectSettings); err != nil {
 				return err
 			}
