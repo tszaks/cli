@@ -782,7 +782,7 @@ func TestGetGitAuthorFromRepo(t *testing.T) {
 				}
 			}
 
-			// Create a bare repo to avoid worktree side effects
+			// Create a repo for config resolution
 			dir := t.TempDir()
 			repo, err := git.PlainInit(dir, false)
 			if err != nil {
