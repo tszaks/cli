@@ -704,13 +704,19 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) ([
 			continue
 		}
 
-		sessionAgentDir, dirErr := sessionAgent.GetSessionDir(repoRoot)
-		if dirErr != nil {
-			fmt.Fprintf(os.Stderr, "  Warning: failed to get session dir for session %d: %v\n", i, dirErr)
-			continue
+		// Prefer transcript path from checkpoint metadata (works for all agents).
+		// Fall back to agent-based resolution for old checkpoints without this field.
+		var sessionFile string
+		if resolved := resolveTranscriptPathFromMetadata(content.Metadata.TranscriptPath); resolved != "" {
+			sessionFile = resolved
+		} else {
+			sessionAgentDir, dirErr := sessionAgent.GetSessionDir(repoRoot)
+			if dirErr != nil {
+				fmt.Fprintf(os.Stderr, "  Warning: failed to get session dir for session %d: %v\n", i, dirErr)
+				continue
+			}
+			sessionFile = ResolveSessionFilePath(sessionID, sessionAgent, sessionAgentDir)
 		}
-
-		sessionFile := ResolveSessionFilePath(sessionID, sessionAgent, sessionAgentDir)
 
 		// Get first prompt for display
 		promptPreview := ExtractFirstPrompt(content.Prompts)
@@ -751,6 +757,19 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) ([
 	}
 
 	return restored, nil
+}
+
+// resolveTranscriptPathFromMetadata expands a home-relative transcript path
+// from checkpoint metadata to an absolute path. Returns "" if the path is empty.
+func resolveTranscriptPathFromMetadata(homeRelPath string) string {
+	if homeRelPath == "" {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, homeRelPath)
 }
 
 // ResolveAgentForRewind resolves the agent from checkpoint metadata.
@@ -857,12 +876,17 @@ func (s *ManualCommitStrategy) classifySessionsForRestore(ctx context.Context, r
 			continue
 		}
 
-		sessionAgentDir, dirErr := sessionAgent.GetSessionDir(repoRoot)
-		if dirErr != nil {
-			continue
+		// Prefer transcript path from checkpoint metadata, fall back to agent-based resolution.
+		var localPath string
+		if resolved := resolveTranscriptPathFromMetadata(content.Metadata.TranscriptPath); resolved != "" {
+			localPath = resolved
+		} else {
+			sessionAgentDir, dirErr := sessionAgent.GetSessionDir(repoRoot)
+			if dirErr != nil {
+				continue
+			}
+			localPath = ResolveSessionFilePath(sessionID, sessionAgent, sessionAgentDir)
 		}
-
-		localPath := ResolveSessionFilePath(sessionID, sessionAgent, sessionAgentDir)
 
 		localTime := paths.GetLastTimestampFromFile(localPath)
 		checkpointTime := paths.GetLastTimestampFromBytes(content.Transcript)
