@@ -142,31 +142,21 @@ func InstallGitHook(silent bool) (int, error) {
 	for _, spec := range specs {
 		hookPath := filepath.Join(hooksDir, spec.name)
 		backupPath := hookPath + backupSuffix
-
-		content := spec.content
 		backupExists := fileExists(backupPath)
 
+		// Back up existing non-Entire hooks
 		existing, existingErr := os.ReadFile(hookPath) //nolint:gosec // path is controlled
-		hookExists := existingErr == nil
-
-		if hookExists && strings.Contains(string(existing), entireHookMarker) {
-			// Our hook is already installed - update content if backup exists (chain call may be needed)
-			if backupExists {
-				content = generateChainedContent(spec.content, spec.name)
+		if existingErr == nil && !strings.Contains(string(existing), entireHookMarker) && !backupExists {
+			if err := os.Rename(hookPath, backupPath); err != nil {
+				return installedCount, fmt.Errorf("failed to back up %s: %w", spec.name, err)
 			}
-		} else if hookExists {
-			// Custom hook exists that isn't ours - back it up
-			if !backupExists {
-				if err := os.Rename(hookPath, backupPath); err != nil {
-					return installedCount, fmt.Errorf("failed to back up %s: %w", spec.name, err)
-				}
-				fmt.Fprintf(os.Stderr, "[entire] Backed up existing %s to %s%s\n", spec.name, spec.name, backupSuffix)
-			}
-			content = generateChainedContent(spec.content, spec.name)
+			fmt.Fprintf(os.Stderr, "[entire] Backed up existing %s to %s%s\n", spec.name, spec.name, backupSuffix)
+			backupExists = true
 		}
 
-		// If backup exists but hook doesn't (or hook is ours without chain), ensure chain call
-		if backupExists && !hookExists {
+		// Chain to backup if one exists
+		content := spec.content
+		if backupExists {
 			content = generateChainedContent(spec.content, spec.name)
 		}
 
@@ -204,8 +194,7 @@ func writeHookFile(path, content string) (bool, error) {
 }
 
 // RemoveGitHook removes all Entire CLI git hooks from the repository.
-// If a .pre-entire backup exists, it is restored. Moved hooks (.pre-*) containing
-// the Entire marker are also cleaned up.
+// If a .pre-entire backup exists, it is restored.
 // Returns the number of hooks removed.
 func RemoveGitHook() (int, error) {
 	gitDir, err := GetGitDir()
@@ -237,14 +226,6 @@ func RemoveGitHook() (int, error) {
 				removeErrors = append(removeErrors, fmt.Sprintf("restore %s%s: %v", hook, backupSuffix, err))
 			}
 		}
-
-		// Clean up moved hooks (.pre-*) that contain our marker
-		movedHooks := scanForMovedHooks(hooksDir, hook)
-		for _, moved := range movedHooks {
-			if err := os.Remove(moved); err != nil {
-				removeErrors = append(removeErrors, fmt.Sprintf("cleanup %s: %v", filepath.Base(moved), err))
-			}
-		}
 	}
 
 	if len(removeErrors) > 0 {
@@ -262,33 +243,6 @@ if [ -x "$_entire_hook_dir/%s%s" ]; then
     "$_entire_hook_dir/%s%s" "$@"
 fi
 `, chainComment, hookName, backupSuffix, hookName, backupSuffix)
-}
-
-// scanForMovedHooks finds <hook>.pre-* files (excluding .pre-entire) that contain
-// the Entire hook marker. These are hooks that another tool moved aside using
-// the same backup pattern.
-func scanForMovedHooks(hooksDir, hookName string) []string {
-	pattern := filepath.Join(hooksDir, hookName+".pre-*")
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil
-	}
-
-	var result []string
-	backupPath := filepath.Join(hooksDir, hookName+backupSuffix)
-	for _, match := range matches {
-		if match == backupPath {
-			continue // Skip our own backup
-		}
-		data, err := os.ReadFile(match) //nolint:gosec // path from controlled glob
-		if err != nil {
-			continue
-		}
-		if strings.Contains(string(data), entireHookMarker) {
-			result = append(result, match)
-		}
-	}
-	return result
 }
 
 // isLocalDev reads the local_dev setting from .entire/settings.json
