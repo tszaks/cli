@@ -2948,25 +2948,3 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 		t.Error("Prompts should contain second prompt")
 	}
 }
-
-// TestManualCommit_InitializeSession_EmptyRepo verifies that initializeSession
-// returns ErrEmptyRepository when called on a repo with no commits.
-// Uses t.Chdir (process-global state), so cannot use t.Parallel().
-func TestManualCommit_InitializeSession_EmptyRepo(t *testing.T) {
-	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
-	if err != nil {
-		t.Fatalf("failed to init repo: %v", err)
-	}
-
-	t.Chdir(dir)
-
-	s := &ManualCommitStrategy{}
-	_, err = s.initializeSession(repo, "test-session", agent.AgentTypeClaudeCode, "/tmp/transcript.jsonl", "hello")
-	if err == nil {
-		t.Fatal("initializeSession() should return error for empty repo")
-	}
-	if !errors.Is(err, ErrEmptyRepository) {
-		t.Errorf("initializeSession() error = %v, want ErrEmptyRepository", err)
-	}
-}

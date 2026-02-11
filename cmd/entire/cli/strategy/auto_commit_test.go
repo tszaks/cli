@@ -1,13 +1,11 @@
 package strategy
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/trailers"
 
@@ -1035,27 +1033,5 @@ func TestAutoCommitStrategy_SaveChanges_NoChangesSkipped(t *testing.T) {
 	if sessionsRefAfter.Hash() != sessionsCommitBefore {
 		t.Errorf("entire/checkpoints/v1 should not have new commits when no code changes, before=%s after=%s",
 			sessionsCommitBefore, sessionsRefAfter.Hash())
-	}
-}
-
-// TestAutoCommit_InitializeSession_EmptyRepo verifies that InitializeSession
-// returns ErrEmptyRepository when called on a repo with no commits.
-// Uses t.Chdir (process-global state), so cannot use t.Parallel().
-func TestAutoCommit_InitializeSession_EmptyRepo(t *testing.T) {
-	dir := t.TempDir()
-	_, err := git.PlainInit(dir, false)
-	if err != nil {
-		t.Fatalf("failed to init repo: %v", err)
-	}
-
-	t.Chdir(dir)
-
-	s := &AutoCommitStrategy{}
-	err = s.InitializeSession("test-session", agent.AgentTypeClaudeCode, "/tmp/transcript.jsonl", "hello")
-	if err == nil {
-		t.Fatal("InitializeSession() should return error for empty repo")
-	}
-	if !errors.Is(err, ErrEmptyRepository) {
-		t.Errorf("InitializeSession() error = %v, want ErrEmptyRepository", err)
 	}
 }

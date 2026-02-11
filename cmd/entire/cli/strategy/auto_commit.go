@@ -907,9 +907,6 @@ func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType agent
 	// Get current HEAD commit to track as base
 	head, err := repo.Head()
 	if err != nil {
-		if errors.Is(err, plumbing.ErrReferenceNotFound) {
-			return fmt.Errorf("%w: create an initial commit to enable session checkpoints", ErrEmptyRepository)
-		}
 		return fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
