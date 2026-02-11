@@ -826,6 +826,50 @@ func TestInstallGitHook_InstallRemoveReinstall(t *testing.T) {
 	}
 }
 
+func TestRemoveGitHook_DoesNotOverwriteReplacedHook(t *testing.T) {
+	_, hooksDir := initHooksTestRepo(t)
+
+	// User has custom hook A
+	hookPath := filepath.Join(hooksDir, "prepare-commit-msg")
+	hookAContent := "#!/bin/sh\necho 'hook A'\n"
+	if err := os.WriteFile(hookPath, []byte(hookAContent), 0o755); err != nil {
+		t.Fatalf("failed to create hook A: %v", err)
+	}
+
+	// entire enable: backs up A, installs our hook with chain
+	_, err := InstallGitHook(true)
+	if err != nil {
+		t.Fatalf("InstallGitHook() error = %v", err)
+	}
+
+	// User replaces our hook with their own hook B
+	hookBContent := "#!/bin/sh\necho 'hook B'\n"
+	if err := os.WriteFile(hookPath, []byte(hookBContent), 0o755); err != nil {
+		t.Fatalf("failed to create hook B: %v", err)
+	}
+
+	// entire disable: should NOT overwrite hook B with backup A
+	_, err = RemoveGitHook()
+	if err != nil {
+		t.Fatalf("RemoveGitHook() error = %v", err)
+	}
+
+	// Hook B should still be in place
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatal("hook should still exist")
+	}
+	if string(data) != hookBContent {
+		t.Errorf("hook content = %q, want hook B %q (should not be overwritten by backup)", string(data), hookBContent)
+	}
+
+	// Backup should still exist (not consumed)
+	backupPath := hookPath + backupSuffix
+	if !fileExists(backupPath) {
+		t.Error("backup should be left in place when hook was modified")
+	}
+}
+
 func TestRemoveGitHook_PermissionDenied(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("Test cannot run as root (permission checks are bypassed)")

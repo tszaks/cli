@@ -216,7 +216,10 @@ func RemoveGitHook() (int, error) {
 
 		// Remove the hook if it contains our marker
 		data, err := os.ReadFile(hookPath) //nolint:gosec // path is controlled
-		if err == nil && strings.Contains(string(data), entireHookMarker) {
+		hookIsOurs := err == nil && strings.Contains(string(data), entireHookMarker)
+		hookExists := err == nil
+
+		if hookIsOurs {
 			if err := os.Remove(hookPath); err != nil {
 				removeErrors = append(removeErrors, fmt.Sprintf("%s: %v", hook, err))
 				continue
@@ -226,8 +229,13 @@ func RemoveGitHook() (int, error) {
 
 		// Restore .pre-entire backup if it exists
 		if fileExists(backupPath) {
-			if err := os.Rename(backupPath, hookPath); err != nil {
-				removeErrors = append(removeErrors, fmt.Sprintf("restore %s%s: %v", hook, backupSuffix, err))
+			if hookExists && !hookIsOurs {
+				// A non-Entire hook is present — don't overwrite it with the backup
+				fmt.Fprintf(os.Stderr, "[entire] Warning: %s was modified since install; backup %s%s left in place\n", hook, hook, backupSuffix)
+			} else {
+				if err := os.Rename(backupPath, hookPath); err != nil {
+					removeErrors = append(removeErrors, fmt.Sprintf("restore %s%s: %v", hook, backupSuffix, err))
+				}
 			}
 		}
 	}
