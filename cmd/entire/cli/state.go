@@ -375,7 +375,7 @@ func getUntrackedFilesForState() ([]string, error) {
 		return nil, err //nolint:wrapcheck // already present in codebase
 	}
 
-	var untrackedFiles []string
+	untrackedFiles := []string{}
 	for file, st := range status {
 		if st.Worktree == git.Untracked {
 			// Exclude .entire directory
