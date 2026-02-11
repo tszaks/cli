@@ -441,11 +441,7 @@ func handleGeminiBeforeAgent() error {
 	if initializer, ok := strat.(strategy.SessionInitializer); ok {
 		agentType := ag.Type()
 		if err := initializer.InitializeSession(input.SessionID, agentType, input.SessionRef, input.UserPrompt); err != nil {
-			if errors.Is(err, strategy.ErrEmptyRepository) {
-				fmt.Fprintln(os.Stderr, "Note: Session checkpoints disabled (no commits yet). Create your first commit to enable them.")
-			} else {
-				fmt.Fprintf(os.Stderr, "Warning: failed to initialize session state: %v\n", err)
-			}
+			fmt.Fprintf(os.Stderr, "Warning: failed to initialize session state: %v\n", err)
 		}
 	}
 
