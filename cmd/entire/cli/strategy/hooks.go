@@ -146,11 +146,15 @@ func InstallGitHook(silent bool) (int, error) {
 
 		// Back up existing non-Entire hooks
 		existing, existingErr := os.ReadFile(hookPath) //nolint:gosec // path is controlled
-		if existingErr == nil && !strings.Contains(string(existing), entireHookMarker) && !backupExists {
-			if err := os.Rename(hookPath, backupPath); err != nil {
-				return installedCount, fmt.Errorf("failed to back up %s: %w", spec.name, err)
+		if existingErr == nil && !strings.Contains(string(existing), entireHookMarker) {
+			if !backupExists {
+				if err := os.Rename(hookPath, backupPath); err != nil {
+					return installedCount, fmt.Errorf("failed to back up %s: %w", spec.name, err)
+				}
+				fmt.Fprintf(os.Stderr, "[entire] Backed up existing %s to %s%s\n", spec.name, spec.name, backupSuffix)
+			} else {
+				fmt.Fprintf(os.Stderr, "[entire] Warning: replacing %s (backup %s%s already exists from a previous install)\n", spec.name, spec.name, backupSuffix)
 			}
-			fmt.Fprintf(os.Stderr, "[entire] Backed up existing %s to %s%s\n", spec.name, spec.name, backupSuffix)
 			backupExists = true
 		}
 
