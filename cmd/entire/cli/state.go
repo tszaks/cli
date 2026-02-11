@@ -431,30 +431,6 @@ func CleanupPreTaskState(toolUseID string) error {
 	return nil
 }
 
-// ComputeNewFilesFromTask compares current untracked files with pre-task state
-// to find files that were created during the task.
-func ComputeNewFilesFromTask(preState *PreTaskState) ([]string, error) {
-	if preState == nil {
-		return nil, nil
-	}
-
-	currentUntracked, err := getUntrackedFilesForState()
-	if err != nil {
-		return nil, err
-	}
-
-	return findNewUntrackedFiles(currentUntracked, preState.UntrackedFiles), nil
-}
-
-// computeNewFilesFromTaskState is a helper that doesn't need to query git
-// (used for testing)
-func computeNewFilesFromTaskState(preState *PreTaskState, currentFiles []string) []string {
-	if preState == nil {
-		return nil
-	}
-	return findNewUntrackedFiles(currentFiles, preState.UntrackedFiles)
-}
-
 // preTaskStateFile returns the absolute path to the pre-task state file for a tool use.
 // Works correctly from any subdirectory within the repository.
 func preTaskStateFile(toolUseID string) string {
