@@ -1247,6 +1247,7 @@ func printMultiSessionResumeCommands(sessions []strategy.RestoredSession) {
 	for i, sess := range sessions {
 		ag, err := strategy.ResolveAgentForRewind(sess.Agent)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: could not resolve agent %q for session %s, skipping\n", sess.Agent, sess.SessionID)
 			continue
 		}
 

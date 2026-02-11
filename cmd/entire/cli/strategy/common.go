@@ -210,7 +210,14 @@ func isProtectedPath(relPath string) bool {
 
 // protectedDirs returns the list of directories to protect. This combines
 // static infrastructure dirs with agent-reported dirs from the registry.
-// The result is cached since it's called per-file during filepath.Walk.
+// The result is cached via sync.Once since it's called per-file during filepath.Walk.
+//
+// NOTE: The cache is never invalidated. In production this is fine (the agent registry
+// is populated at init time and never changes). However, tests that mutate the agent
+// registry after the first call to protectedDirs/isProtectedPath will see stale results.
+// If you need to test isProtectedPath with a custom registry, either:
+//   - run those tests in a separate process, or
+//   - call resetProtectedDirsForTest() to clear the cache.
 func protectedDirs() []string {
 	protectedDirsOnce.Do(func() {
 		protectedDirsCache = append([]string{gitDir, entireDir}, agent.AllProtectedDirs()...)

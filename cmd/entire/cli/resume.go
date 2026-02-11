@@ -435,6 +435,7 @@ func resumeSession(sessionID string, checkpointID id.CheckpointID, force bool) e
 		for i, sess := range sessions {
 			sessAg, agErr := strategy.ResolveAgentForRewind(sess.Agent)
 			if agErr != nil {
+				fmt.Fprintf(os.Stderr, "  Warning: could not resolve agent %q for session %s, skipping\n", sess.Agent, sess.SessionID)
 				continue
 			}
 			agentSID := sessAg.ExtractAgentSessionID(sess.SessionID)
