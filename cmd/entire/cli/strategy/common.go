@@ -39,8 +39,9 @@ const (
 var errStop = errors.New("stop iteration")
 
 // IsEmptyRepository returns true if the repository has no commits yet.
-// This is detected by checking if HEAD exists — a freshly git-init'd repo
-// has no HEAD reference until the first commit is created.
+// After git-init, HEAD points to an unborn branch (e.g., refs/heads/main)
+// whose target does not yet exist. repo.Head() returns ErrReferenceNotFound
+// in this case.
 func IsEmptyRepository(repo *git.Repository) bool {
 	_, err := repo.Head()
 	return errors.Is(err, plumbing.ErrReferenceNotFound)

@@ -737,7 +737,9 @@ func TestIsProtectedPath(t *testing.T) {
 }
 
 func TestIsEmptyRepository(t *testing.T) {
+	t.Parallel()
 	t.Run("empty repo returns true", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		repo, err := git.PlainInit(dir, false)
 		if err != nil {
@@ -749,6 +751,7 @@ func TestIsEmptyRepository(t *testing.T) {
 	})
 
 	t.Run("repo with commit returns false", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		repo, err := git.PlainInit(dir, false)
 		if err != nil {

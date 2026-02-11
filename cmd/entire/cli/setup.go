@@ -73,6 +73,10 @@ Strategies: manual-commit (default), auto-commit`,
 				return NewSilentError(errors.New("not a git repository"))
 			}
 
+			if err := validateSetupFlags(useLocalSettings, useProjectSettings); err != nil {
+				return err
+			}
+
 			// Warn if repo has no commits yet
 			if repo, err := strategy.OpenRepository(); err == nil && strategy.IsEmptyRepository(repo) {
 				fmt.Fprintln(cmd.OutOrStdout(), "Note: This repository has no commits yet. Entire will be configured, but")
@@ -80,9 +84,6 @@ Strategies: manual-commit (default), auto-commit`,
 				fmt.Fprintln(cmd.OutOrStdout())
 			}
 
-			if err := validateSetupFlags(useLocalSettings, useProjectSettings); err != nil {
-				return err
-			}
 			// Non-interactive mode if --agent flag is provided
 			if cmd.Flags().Changed("agent") && agentName == "" {
 				printMissingAgentError(cmd.ErrOrStderr())
