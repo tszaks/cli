@@ -229,7 +229,7 @@ func commitWithMetadata() error { //nolint:maintidx // already present in codeba
 	}
 
 	// Compute new and deleted files (single git status call)
-	newFiles, deletedFiles, err := ComputeFileChanges(preState)
+	newFiles, deletedFiles, err := ComputeFileChanges(preState.PreUntrackedFiles())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to compute file changes: %v\n", err)
 	}
@@ -608,9 +608,11 @@ func handleClaudeCodePostTask() error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load pre-task state: %v\n", err)
 	}
-	newFiles, err := ComputeNewFilesFromTask(preState)
+
+	// Compute new and deleted files (single git status call)
+	newFiles, deletedFiles, err := ComputeFileChanges(preState.PreUntrackedFiles())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to compute new files: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to compute file changes: %v\n", err)
 	}
 
 	// Get repo root for path conversion (not cwd, since Claude may be in a subdirectory)
@@ -623,9 +625,10 @@ func handleClaudeCodePostTask() error {
 	// Filter and normalize paths
 	relModifiedFiles := FilterAndNormalizePaths(modifiedFiles, repoRoot)
 	relNewFiles := FilterAndNormalizePaths(newFiles, repoRoot)
+	relDeletedFiles := FilterAndNormalizePaths(deletedFiles, repoRoot)
 
 	// If no file changes, skip creating a checkpoint
-	if len(relModifiedFiles) == 0 && len(relNewFiles) == 0 {
+	if len(relModifiedFiles) == 0 && len(relNewFiles) == 0 && len(relDeletedFiles) == 0 {
 		fmt.Fprintf(os.Stderr, "[entire] No file changes detected, skipping task checkpoint\n")
 		// Cleanup pre-task state (ignore error - cleanup is best-effort)
 		_ = CleanupPreTaskState(input.ToolUseID) //nolint:errcheck // best-effort cleanup
@@ -665,7 +668,7 @@ func handleClaudeCodePostTask() error {
 		AgentID:                input.AgentID,
 		ModifiedFiles:          relModifiedFiles,
 		NewFiles:               relNewFiles,
-		DeletedFiles:           nil, // TODO: compute deleted files
+		DeletedFiles:           relDeletedFiles,
 		TranscriptPath:         input.TranscriptPath,
 		SubagentTranscriptPath: subagentTranscriptPath,
 		CheckpointUUID:         checkpointUUID,

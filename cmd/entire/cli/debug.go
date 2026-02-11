@@ -139,12 +139,12 @@ func printPrePromptState(w io.Writer, sessionID string) {
 	switch {
 	case err != nil:
 		fmt.Fprintf(w, "Pre-prompt state: (error: %v)\n", err)
-	case preState == nil:
-		fmt.Fprintln(w, "Pre-prompt state: (none captured)")
-	default:
+	case preState != nil:
 		fmt.Fprintf(w, "Pre-prompt state: captured at %s\n", preState.Timestamp)
 		fmt.Fprintf(w, "  Pre-existing untracked files: %d\n", len(preState.UntrackedFiles))
 		printUntrackedFilesSummary(w, preState.UntrackedFiles)
+	default:
+		fmt.Fprintln(w, "Pre-prompt state: (none captured)")
 	}
 }
 
@@ -188,7 +188,7 @@ func printTranscriptChanges(w io.Writer, transcriptPath, currentSession, repoRoo
 		}
 	}
 	// Always call ComputeFileChanges - deleted files don't depend on preState
-	newFiles, deletedFiles, err = ComputeFileChanges(preState)
+	newFiles, deletedFiles, err = ComputeFileChanges(preState.PreUntrackedFiles())
 	if err != nil {
 		fmt.Fprintf(w, "  Error computing file changes: %v\n", err)
 	}
