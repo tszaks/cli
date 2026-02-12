@@ -172,6 +172,16 @@ func TestString_PatternDetection(t *testing.T) {
 			input: "key=AKIAYRWQG5EJLPZLBYNP",
 			want:  "key=REDACTED",
 		},
+		{
+			name:  "two AWS keys separated by space produce two REDACTED tokens",
+			input: "key=AKIAYRWQG5EJLPZLBYNP AKIAYRWQG5EJLPZLBYNP",
+			want:  "key=REDACTED REDACTED",
+		},
+		{
+			name:  "adjacent AWS keys without separator merge into single REDACTED",
+			input: "key=AKIAYRWQG5EJLPZLBYNPAKIAYRWQG5EJLPZLBYNP",
+			want:  "key=REDACTED",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
