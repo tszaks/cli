@@ -5,6 +5,7 @@ package integration
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/entireio/cli/cmd/entire/cli/sessionid"
@@ -122,6 +123,130 @@ func TestSession_CreateTranscript(t *testing.T) {
 		// Verify session ID format
 		if session.ID != "test-session-1" {
 			t.Errorf("session ID = %s, want test-session-1", session.ID)
+		}
+	})
+}
+
+// entireHookMarker is the marker used to identify Entire CLI hooks.
+// Must match the constant in strategy/hooks.go.
+const entireHookMarker = "Entire CLI hooks"
+
+// hookNames are the git hooks managed by Entire CLI.
+var hookNames = []string{"prepare-commit-msg", "commit-msg", "post-commit", "pre-push"}
+
+// hasEntireHooks checks if all Entire CLI hooks are installed in the given repo.
+func hasEntireHooks(repoDir string) bool {
+	hooksDir := filepath.Join(repoDir, ".git", "hooks")
+	for _, hook := range hookNames {
+		hookPath := filepath.Join(hooksDir, hook)
+		data, err := os.ReadFile(hookPath)
+		if err != nil {
+			return false
+		}
+		if !strings.Contains(string(data), entireHookMarker) {
+			return false
+		}
+	}
+	return true
+}
+
+// TestUserPromptSubmit_ReinstallsOverwrittenHooks verifies that EnsureSetup is called
+// during user-prompt-submit (start of turn) and reinstalls hooks that were overwritten
+// by third-party tools like lefthook. This ensures hooks are in place before any
+// mid-turn commits the agent might make.
+func TestUserPromptSubmit_ReinstallsOverwrittenHooks(t *testing.T) {
+	t.Parallel()
+	RunForAllStrategiesWithRepoEnv(t, func(t *testing.T, env *TestEnv, strategyName string) {
+		hooksDir := filepath.Join(env.RepoDir, ".git", "hooks")
+
+		// Step 1: First user-prompt-submit installs hooks via EnsureSetup
+		session := env.NewSession()
+		err := env.SimulateUserPromptSubmit(session.ID)
+		if err != nil {
+			t.Fatalf("First SimulateUserPromptSubmit failed: %v", err)
+		}
+
+		// Verify hooks are now installed
+		if !hasEntireHooks(env.RepoDir) {
+			t.Fatal("hooks should be installed after first SimulateUserPromptSubmit")
+		}
+
+		// Step 2: Overwrite hooks with third-party content (simulating lefthook, husky, etc.)
+		for _, hookName := range hookNames {
+			hookPath := filepath.Join(hooksDir, hookName)
+			thirdPartyContent := "#!/bin/sh\n# Third-party hook manager\necho 'Running third-party hook'\n"
+			if err := os.WriteFile(hookPath, []byte(thirdPartyContent), 0o755); err != nil {
+				t.Fatalf("failed to overwrite hook %s: %v", hookName, err)
+			}
+		}
+
+		// Step 3: Verify hooks are no longer Entire hooks
+		if hasEntireHooks(env.RepoDir) {
+			t.Fatal("hooks should NOT be detected as Entire hooks after overwrite")
+		}
+
+		// Step 4: Second user-prompt-submit should reinstall hooks
+		err = env.SimulateUserPromptSubmit(session.ID)
+		if err != nil {
+			t.Fatalf("Second SimulateUserPromptSubmit failed: %v", err)
+		}
+
+		// Step 5: Verify hooks are reinstalled
+		if !hasEntireHooks(env.RepoDir) {
+			t.Error("hooks should be reinstalled after second SimulateUserPromptSubmit")
+		}
+
+		// Step 6: Verify the hooks chain to original hooks (backup should exist)
+		for _, hookName := range hookNames {
+			backupPath := filepath.Join(hooksDir, hookName+".pre-entire")
+			if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+				t.Errorf("backup hook %s.pre-entire should exist", hookName)
+			}
+		}
+	})
+}
+
+// TestUserPromptSubmit_ReinstallsDeletedHooks verifies that EnsureSetup reinstalls
+// hooks that were completely deleted by third-party tools.
+func TestUserPromptSubmit_ReinstallsDeletedHooks(t *testing.T) {
+	t.Parallel()
+	RunForAllStrategiesWithRepoEnv(t, func(t *testing.T, env *TestEnv, strategyName string) {
+		hooksDir := filepath.Join(env.RepoDir, ".git", "hooks")
+
+		// Step 1: First user-prompt-submit installs hooks via EnsureSetup
+		session := env.NewSession()
+		err := env.SimulateUserPromptSubmit(session.ID)
+		if err != nil {
+			t.Fatalf("First SimulateUserPromptSubmit failed: %v", err)
+		}
+
+		// Verify hooks are now installed
+		if !hasEntireHooks(env.RepoDir) {
+			t.Fatal("hooks should be installed after first SimulateUserPromptSubmit")
+		}
+
+		// Step 2: Delete all hooks (simulating aggressive third-party tool)
+		for _, hookName := range hookNames {
+			hookPath := filepath.Join(hooksDir, hookName)
+			if err := os.Remove(hookPath); err != nil && !os.IsNotExist(err) {
+				t.Fatalf("failed to delete hook %s: %v", hookName, err)
+			}
+		}
+
+		// Step 3: Verify hooks are gone
+		if hasEntireHooks(env.RepoDir) {
+			t.Fatal("hooks should NOT be detected after deletion")
+		}
+
+		// Step 4: Second user-prompt-submit should reinstall hooks
+		err = env.SimulateUserPromptSubmit(session.ID)
+		if err != nil {
+			t.Fatalf("Second SimulateUserPromptSubmit failed: %v", err)
+		}
+
+		// Step 5: Verify hooks are reinstalled
+		if !hasEntireHooks(env.RepoDir) {
+			t.Error("hooks should be reinstalled after second SimulateUserPromptSubmit")
 		}
 	})
 }
