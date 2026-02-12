@@ -7,8 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/entireio/cli/cmd/entire/cli/sessionid"
-	"github.com/entireio/cli/cmd/entire/cli/strategy"
+  "github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
 func TestHookRunner_SimulateUserPromptSubmit(t *testing.T) {
@@ -24,8 +23,7 @@ func TestHookRunner_SimulateUserPromptSubmit(t *testing.T) {
 		}
 
 		// Verify pre-prompt state was captured (uses entire session ID with date prefix)
-		entireSessionID := sessionid.EntireSessionID(modelSessionID)
-		statePath := filepath.Join(env.RepoDir, ".entire", "tmp", "pre-prompt-"+entireSessionID+".json")
+		statePath := filepath.Join(env.RepoDir, ".entire", "tmp", "pre-prompt-"+modelSessionID+".json")
 		if _, err := os.Stat(statePath); os.IsNotExist(err) {
 			t.Error("pre-prompt state file should exist")
 		}
