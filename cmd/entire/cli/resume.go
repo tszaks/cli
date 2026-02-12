@@ -433,7 +433,11 @@ func resumeSession(sessionID string, checkpointID id.CheckpointID, force bool) e
 			fmt.Fprintf(os.Stderr, "\nTo continue this session, run:\n")
 		}
 		for i, sess := range sessions {
-			cmd := ag.FormatResumeCommand(sess.SessionID)
+			sessionAgent, err := strategy.ResolveAgentForRewind(sess.Agent)
+			if err != nil {
+				return fmt.Errorf("failed to resolve agent for session %s: %w", sess.SessionID, err)
+			}
+			cmd := sessionAgent.FormatResumeCommand(sess.SessionID)
 
 			if len(sessions) > 1 {
 				if i == len(sessions)-1 {
