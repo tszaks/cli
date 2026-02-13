@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
+	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/validation"
 )
 
@@ -159,6 +161,18 @@ type PromptAttribution struct {
 // NormalizeAfterLoad applies backward-compatible migrations to state loaded from disk.
 // Call this after deserializing a State from JSON.
 func (s *State) NormalizeAfterLoad() {
+	// Normalize legacy phase values. "active_committed" was removed in favor of
+	// the state machine handling commits during ACTIVE phase.
+	if s.Phase == "active_committed" {
+		logCtx := logging.WithComponent(context.Background(), "session")
+		logging.Info(logCtx, "migrating legacy active_committed phase to active",
+			slog.String("session_id", s.SessionID),
+		)
+		s.Phase = PhaseActive
+	}
+	// Also normalize via PhaseFromString to handle any other legacy/unknown values.
+	s.Phase = PhaseFromString(string(s.Phase))
+
 	// Migrate transcript fields: CheckpointTranscriptStart replaces both
 	// CondensedTranscriptLines and TranscriptLinesAtStart from older state files.
 	if s.CheckpointTranscriptStart == 0 {

@@ -1569,8 +1569,19 @@ func (s *ManualCommitStrategy) getLastPrompt(repo *git.Repository, state *Sessio
 //nolint:unparam // error return required by interface but hooks must return nil
 func (s *ManualCommitStrategy) HandleTurnEnd(state *SessionState) error {
 	// Finalize all checkpoints from this turn with the full transcript.
-	// Best-effort: log warnings but don't fail the hook.
-	s.finalizeAllTurnCheckpoints(state)
+	//
+	// IMPORTANT: This is best-effort - errors are logged but don't fail the hook.
+	// Failing here would prevent session cleanup and could leave state inconsistent.
+	// The provisional transcript from PostCommit is already persisted, so the
+	// checkpoint isn't lost - it just won't have the complete transcript.
+	errCount := s.finalizeAllTurnCheckpoints(state)
+	if errCount > 0 {
+		logCtx := logging.WithComponent(context.Background(), "checkpoint")
+		logging.Warn(logCtx, "HandleTurnEnd completed with errors (best-effort)",
+			slog.String("session_id", state.SessionID),
+			slog.Int("error_count", errCount),
+		)
+	}
 	return nil
 }
 
@@ -1580,9 +1591,11 @@ func (s *ManualCommitStrategy) HandleTurnEnd(state *SessionState) error {
 // This is called at turn end (stop hook). During the turn, PostCommit wrote whatever
 // transcript was available at commit time. Now we have the complete transcript and
 // replace it so every checkpoint has the full prompt-to-stop context.
-func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) {
+//
+// Returns the number of errors encountered (best-effort: continues processing on error).
+func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) int {
 	if len(state.TurnCheckpointIDs) == 0 {
-		return // No mid-turn commits to finalize
+		return 0 // No mid-turn commits to finalize
 	}
 
 	logCtx := logging.WithComponent(context.Background(), "checkpoint")
@@ -1592,13 +1605,15 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) {
 		slog.Int("checkpoint_count", len(state.TurnCheckpointIDs)),
 	)
 
+	errCount := 0
+
 	// Read full transcript from live transcript file
 	if state.TranscriptPath == "" {
 		logging.Warn(logCtx, "finalize: no transcript path, skipping",
 			slog.String("session_id", state.SessionID),
 		)
 		state.TurnCheckpointIDs = nil
-		return
+		return 1 // Count as error - all checkpoints will be skipped
 	}
 
 	fullTranscript, err := os.ReadFile(state.TranscriptPath)
@@ -1608,7 +1623,7 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) {
 			slog.String("transcript_path", state.TranscriptPath),
 		)
 		state.TurnCheckpointIDs = nil
-		return
+		return 1 // Count as error - all checkpoints will be skipped
 	}
 
 	// Extract prompts and context from the full transcript
@@ -1625,7 +1640,7 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) {
 			slog.String("error", err.Error()),
 		)
 		state.TurnCheckpointIDs = nil
-		return
+		return 1 // Count as error - all checkpoints will be skipped
 	}
 	for i, p := range prompts {
 		prompts[i] = redact.String(p)
@@ -1639,7 +1654,7 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) {
 			slog.String("error", err.Error()),
 		)
 		state.TurnCheckpointIDs = nil
-		return
+		return 1 // Count as error - all checkpoints will be skipped
 	}
 	store := checkpoint.NewGitStore(repo)
 
@@ -1651,6 +1666,7 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) {
 				slog.String("checkpoint_id", cpIDStr),
 				slog.String("error", parseErr.Error()),
 			)
+			errCount++
 			continue
 		}
 
@@ -1667,6 +1683,7 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) {
 				slog.String("checkpoint_id", cpIDStr),
 				slog.String("error", updateErr.Error()),
 			)
+			errCount++
 			continue
 		}
 
@@ -1680,261 +1697,8 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) {
 	fullTranscriptLines := countTranscriptItems(state.AgentType, string(fullTranscript))
 	state.CheckpointTranscriptStart = fullTranscriptLines
 	state.TurnCheckpointIDs = nil
-}
 
-// filesOverlapWithContent checks if any file in the committed set overlaps with
-// filesTouched AND has matching content in the shadow branch.
-//
-// This prevents linking commits where the user reverted session changes and wrote
-// completely different content. Only files whose committed content matches the
-// shadow branch content (by hash) are considered true overlaps.
-//
-// Falls back to filename-only check if shadow branch is not accessible.
-func filesOverlapWithContent(repo *git.Repository, shadowBranchName string, headCommit *object.Commit, filesTouched []string) bool {
-	logCtx := logging.WithComponent(context.Background(), "checkpoint")
-
-	// Build set of filesTouched for quick lookup
-	touchedSet := make(map[string]bool)
-	for _, f := range filesTouched {
-		touchedSet[f] = true
-	}
-
-	// Get HEAD commit tree (the committed content)
-	headTree, err := headCommit.Tree()
-	if err != nil {
-		logging.Debug(logCtx, "filesOverlapWithContent: failed to get HEAD tree, falling back to filename check",
-			slog.String("error", err.Error()),
-		)
-		return len(filesTouched) > 0 // Fall back: assume overlap if any files touched
-	}
-
-	// Get shadow branch tree (the session's content)
-	refName := plumbing.NewBranchReferenceName(shadowBranchName)
-	shadowRef, err := repo.Reference(refName, true)
-	if err != nil {
-		logging.Debug(logCtx, "filesOverlapWithContent: shadow branch not found, falling back to filename check",
-			slog.String("branch", shadowBranchName),
-			slog.String("error", err.Error()),
-		)
-		return len(filesTouched) > 0 // Fall back: assume overlap if any files touched
-	}
-
-	shadowCommit, err := repo.CommitObject(shadowRef.Hash())
-	if err != nil {
-		logging.Debug(logCtx, "filesOverlapWithContent: failed to get shadow commit, falling back to filename check",
-			slog.String("error", err.Error()),
-		)
-		return len(filesTouched) > 0
-	}
-
-	shadowTree, err := shadowCommit.Tree()
-	if err != nil {
-		logging.Debug(logCtx, "filesOverlapWithContent: failed to get shadow tree, falling back to filename check",
-			slog.String("error", err.Error()),
-		)
-		return len(filesTouched) > 0
-	}
-
-	// Get the parent commit tree to determine if files are modified vs newly created.
-	// For modified files (exist in parent), we count as overlap regardless of content
-	// because the user is editing the session's work.
-	// For newly created files (don't exist in parent), we check content to detect
-	// the "reverted and replaced" scenario where user deleted session's work and
-	// created something completely different.
-	var parentTree *object.Tree
-	if headCommit.NumParents() > 0 {
-		if parent, err := headCommit.Parent(0); err == nil {
-			if pTree, err := parent.Tree(); err == nil {
-				parentTree = pTree
-			}
-		}
-	}
-
-	// Check each file in filesTouched
-	for _, filePath := range filesTouched {
-		// Get file from HEAD tree
-		headFile, err := headTree.File(filePath)
-		if err != nil {
-			// File not in HEAD commit - doesn't count as overlap
-			continue
-		}
-
-		// Check if this is a modified file (exists in parent) or new file
-		isModified := false
-		if parentTree != nil {
-			if _, err := parentTree.File(filePath); err == nil {
-				isModified = true
-			}
-		}
-
-		// Modified files always count as overlap (user edited session's work)
-		if isModified {
-			logging.Debug(logCtx, "filesOverlapWithContent: modified file counts as overlap",
-				slog.String("file", filePath),
-			)
-			return true
-		}
-
-		// For new files, check content against shadow branch
-		shadowFile, err := shadowTree.File(filePath)
-		if err != nil {
-			// File not in shadow branch - this shouldn't happen but skip it
-			logging.Debug(logCtx, "filesOverlapWithContent: file in filesTouched but not in shadow branch",
-				slog.String("file", filePath),
-			)
-			continue
-		}
-
-		// Compare by hash (blob hash) - exact content match required for new files
-		if headFile.Hash == shadowFile.Hash {
-			logging.Debug(logCtx, "filesOverlapWithContent: new file content match found",
-				slog.String("file", filePath),
-				slog.String("hash", headFile.Hash.String()),
-			)
-			return true
-		}
-
-		logging.Debug(logCtx, "filesOverlapWithContent: new file content mismatch (may be reverted & replaced)",
-			slog.String("file", filePath),
-			slog.String("head_hash", headFile.Hash.String()),
-			slog.String("shadow_hash", shadowFile.Hash.String()),
-		)
-	}
-
-	logging.Debug(logCtx, "filesOverlapWithContent: no overlapping files found",
-		slog.Int("files_checked", len(filesTouched)),
-	)
-	return false
-}
-
-// stagedFilesOverlapWithContent checks if any staged file overlaps with filesTouched,
-// distinguishing between modified files (always overlap) and new files (check content).
-//
-// For modified files (already exist in HEAD), we count as overlap because the user
-// is editing the session's work. For new files (don't exist in HEAD), we require
-// content match to detect the "reverted and replaced" scenario.
-//
-// This is used in PrepareCommitMsg for carry-forward scenarios.
-func stagedFilesOverlapWithContent(repo *git.Repository, shadowTree *object.Tree, stagedFiles, filesTouched []string) bool {
-	logCtx := logging.WithComponent(context.Background(), "checkpoint")
-
-	// Build set of filesTouched for quick lookup
-	touchedSet := make(map[string]bool)
-	for _, f := range filesTouched {
-		touchedSet[f] = true
-	}
-
-	// Get HEAD tree to determine if files are being modified or newly created
-	head, err := repo.Head()
-	if err != nil {
-		logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to get HEAD, falling back to filename check",
-			slog.String("error", err.Error()),
-		)
-		return hasOverlappingFiles(stagedFiles, filesTouched)
-	}
-	headCommit, err := repo.CommitObject(head.Hash())
-	if err != nil {
-		logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to get HEAD commit, falling back to filename check",
-			slog.String("error", err.Error()),
-		)
-		return hasOverlappingFiles(stagedFiles, filesTouched)
-	}
-	headTree, err := headCommit.Tree()
-	if err != nil {
-		logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to get HEAD tree, falling back to filename check",
-			slog.String("error", err.Error()),
-		)
-		return hasOverlappingFiles(stagedFiles, filesTouched)
-	}
-
-	// Get the git index to access staged file hashes
-	idx, err := repo.Storer.Index()
-	if err != nil {
-		logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to get index, falling back to filename check",
-			slog.String("error", err.Error()),
-		)
-		return hasOverlappingFiles(stagedFiles, filesTouched)
-	}
-
-	// Check each staged file
-	for _, stagedPath := range stagedFiles {
-		if !touchedSet[stagedPath] {
-			continue // Not in filesTouched, skip
-		}
-
-		// Check if this is a modified file (exists in HEAD) or new file
-		_, headErr := headTree.File(stagedPath)
-		isModified := headErr == nil
-
-		// Modified files always count as overlap (user edited session's work)
-		if isModified {
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: modified file counts as overlap",
-				slog.String("file", stagedPath),
-			)
-			return true
-		}
-
-		// For new files, check content against shadow branch
-		// Find the index entry to get the staged file's hash
-		var stagedHash plumbing.Hash
-		found := false
-		for _, entry := range idx.Entries {
-			if entry.Name == stagedPath {
-				stagedHash = entry.Hash
-				found = true
-				break
-			}
-		}
-		if !found {
-			continue // Not in index (shouldn't happen but be safe)
-		}
-
-		// Get file from shadow branch tree
-		shadowFile, err := shadowTree.File(stagedPath)
-		if err != nil {
-			// File not in shadow branch - doesn't count as content match
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: file not in shadow tree",
-				slog.String("file", stagedPath),
-			)
-			continue
-		}
-
-		// Compare hashes - for new files, require exact content match
-		if stagedHash == shadowFile.Hash {
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: new file content match found",
-				slog.String("file", stagedPath),
-				slog.String("hash", stagedHash.String()),
-			)
-			return true
-		}
-
-		logging.Debug(logCtx, "stagedFilesOverlapWithContent: new file content mismatch (may be reverted & replaced)",
-			slog.String("file", stagedPath),
-			slog.String("staged_hash", stagedHash.String()),
-			slog.String("shadow_hash", shadowFile.Hash.String()),
-		)
-	}
-
-	logging.Debug(logCtx, "stagedFilesOverlapWithContent: no overlapping files found",
-		slog.Int("staged_files", len(stagedFiles)),
-		slog.Int("files_touched", len(filesTouched)),
-	)
-	return false
-}
-
-// hasOverlappingFiles checks if any file in stagedFiles appears in filesTouched.
-func hasOverlappingFiles(stagedFiles, filesTouched []string) bool {
-	touchedSet := make(map[string]bool)
-	for _, f := range filesTouched {
-		touchedSet[f] = true
-	}
-
-	for _, staged := range stagedFiles {
-		if touchedSet[staged] {
-			return true
-		}
-	}
-	return false
+	return errCount
 }
 
 // filesChangedInCommit returns the set of files changed in a commit by diffing against its parent.
