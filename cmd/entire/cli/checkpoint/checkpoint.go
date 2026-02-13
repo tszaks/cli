@@ -311,6 +311,9 @@ type UpdateCommittedOptions struct {
 
 	// Context is the updated context.md content (replaces existing)
 	Context []byte
+
+	// Agent identifies the agent type (needed for transcript chunking)
+	Agent agent.AgentType
 }
 
 // CommittedInfo contains summary information about a committed checkpoint.

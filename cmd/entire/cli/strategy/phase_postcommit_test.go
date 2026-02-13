@@ -642,8 +642,8 @@ func TestTurnEnd_Active_NoActions(t *testing.T) {
 	assert.Empty(t, remaining,
 		"ACTIVE + TurnEnd should not emit strategy-specific actions")
 
-	// Call HandleTurnEnd with empty actions — should be a no-op
-	err = s.HandleTurnEnd(state, remaining)
+	// Call HandleTurnEnd — should be a no-op (no TurnCheckpointIDs)
+	err = s.HandleTurnEnd(state)
 	require.NoError(t, err)
 
 	// Verify state is unchanged

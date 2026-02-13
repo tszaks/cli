@@ -17,7 +17,7 @@ func TestPhaseFromString(t *testing.T) {
 		want  Phase
 	}{
 		{name: "active", input: "active", want: PhaseActive},
-		{name: "active_committed", input: "active_committed", want: PhaseIdle},
+		{name: "active_committed", input: "active_committed", want: PhaseActive},
 		{name: "idle", input: "idle", want: PhaseIdle},
 		{name: "ended", input: "ended", want: PhaseEnded},
 		{name: "empty_string_defaults_to_idle", input: "", want: PhaseIdle},

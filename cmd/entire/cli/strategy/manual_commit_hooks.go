@@ -19,6 +19,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/stringutil"
 	"github.com/entireio/cli/cmd/entire/cli/trailers"
+	"github.com/entireio/cli/redact"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -561,8 +562,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 			switch action {
 			case session.ActionCondense:
 				if hasNew {
-					s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete)
-					condensed = true
+					condensed = s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete)
 					// condenseAndUpdateState updates BaseCommit on success.
 					// On failure, BaseCommit is preserved so the shadow branch remains accessible.
 				} else {
@@ -574,8 +574,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 				// but hasNew is an additional content-level check (transcript has
 				// new content beyond what was previously condensed).
 				if len(state.FilesTouched) > 0 && hasNew {
-					s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete)
-					condensed = true
+					condensed = s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete)
 					// On failure, BaseCommit is preserved (same as ActionCondense).
 				} else {
 					s.updateBaseCommitIfChanged(logCtx, state, newHead)
@@ -655,7 +654,7 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 	head *plumbing.Reference,
 	shadowBranchName string,
 	shadowBranchesToDelete map[string]struct{},
-) {
+) bool {
 	result, err := s.CondenseSession(repo, checkpointID, state)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[entire] Warning: condensation failed for session %s: %v\n",
@@ -664,7 +663,7 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 			slog.String("session_id", state.SessionID),
 			slog.String("error", err.Error()),
 		)
-		return
+		return false
 	}
 
 	// Track this shadow branch for cleanup
@@ -698,6 +697,8 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 		slog.Int("checkpoints_condensed", result.CheckpointsCount),
 		slog.Int("transcript_lines", result.TotalTranscriptLines),
 	)
+
+	return true
 }
 
 // updateBaseCommitIfChanged updates BaseCommit to newHead if it changed.
@@ -1320,7 +1321,7 @@ func (s *ManualCommitStrategy) getLastPrompt(repo *git.Repository, state *Sessio
 // (from prompt to stop event), ensuring every checkpoint has the full context.
 //
 //nolint:unparam // error return required by interface but hooks must return nil
-func (s *ManualCommitStrategy) HandleTurnEnd(state *SessionState, _ []session.Action) error {
+func (s *ManualCommitStrategy) HandleTurnEnd(state *SessionState) error {
 	// Finalize all checkpoints from this turn with the full transcript.
 	// Best-effort: log warnings but don't fail the hook.
 	s.finalizeAllTurnCheckpoints(state)
@@ -1368,6 +1369,23 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) {
 	prompts := extractUserPrompts(state.AgentType, string(fullTranscript))
 	contextBytes := generateContextFromPrompts(prompts)
 
+	// Redact secrets before writing — matches WriteCommitted behavior.
+	// The live transcript on disk contains raw content; redaction must happen
+	// before anything is persisted to the metadata branch.
+	fullTranscript, err = redact.JSONLBytes(fullTranscript)
+	if err != nil {
+		logging.Warn(logCtx, "finalize: transcript redaction failed, skipping",
+			slog.String("session_id", state.SessionID),
+			slog.String("error", err.Error()),
+		)
+		state.TurnCheckpointIDs = nil
+		return
+	}
+	for i, p := range prompts {
+		prompts[i] = redact.String(p)
+	}
+	contextBytes = redact.Bytes(contextBytes)
+
 	// Open repository and create checkpoint store
 	repo, err := OpenRepository()
 	if err != nil {
@@ -1396,6 +1414,7 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) {
 			Transcript:   fullTranscript,
 			Prompts:      prompts,
 			Context:      contextBytes,
+			Agent:        state.AgentType,
 		})
 		if updateErr != nil {
 			logging.Warn(logCtx, "finalize: failed to update checkpoint",

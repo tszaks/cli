@@ -24,15 +24,16 @@ var allPhases = []Phase{PhaseIdle, PhaseActive, PhaseEnded}
 // as PhaseIdle for backward compatibility with pre-state-machine session files.
 func PhaseFromString(s string) Phase {
 	switch Phase(s) {
-	case PhaseActive:
+	case PhaseActive, "active_committed":
+		// "active_committed" was removed but meant "agent active + commit happened".
+		// Normalize to ACTIVE so HandleTurnEnd can finalize any pending checkpoints.
 		return PhaseActive
 	case PhaseIdle:
 		return PhaseIdle
 	case PhaseEnded:
 		return PhaseEnded
 	default:
-		// Backward compat: unknown phases (including removed "active_committed")
-		// normalize to idle.
+		// Backward compat: truly unknown phases normalize to idle.
 		return PhaseIdle
 	}
 }

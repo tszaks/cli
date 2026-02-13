@@ -936,6 +936,7 @@ func (s *AutoCommitStrategy) InitializeSession(sessionID string, agentType agent
 			return fmt.Errorf("failed to generate turn ID: %w", err)
 		}
 		existing.TurnID = turnID.String()
+		existing.TurnCheckpointIDs = nil
 
 		// Backfill FirstPrompt if empty (for sessions
 		// created before the first_prompt field was added, or resumed sessions)

@@ -1075,7 +1075,7 @@ func (s *GitStore) UpdateCommitted(ctx context.Context, opts UpdateCommittedOpti
 
 	// Replace transcript (full replace, not append)
 	if len(opts.Transcript) > 0 {
-		if err := s.replaceTranscript(opts.Transcript, sessionPath, entries); err != nil {
+		if err := s.replaceTranscript(opts.Transcript, opts.Agent, sessionPath, entries); err != nil {
 			return fmt.Errorf("failed to replace transcript: %w", err)
 		}
 	}
@@ -1131,7 +1131,7 @@ func (s *GitStore) UpdateCommitted(ctx context.Context, opts UpdateCommittedOpti
 
 // replaceTranscript writes the full transcript content, replacing any existing transcript.
 // Also removes any chunk files from a previous write and updates the content hash.
-func (s *GitStore) replaceTranscript(transcript []byte, sessionPath string, entries map[string]object.TreeEntry) error {
+func (s *GitStore) replaceTranscript(transcript []byte, agentType agent.AgentType, sessionPath string, entries map[string]object.TreeEntry) error {
 	// Remove existing transcript files (base + any chunks)
 	transcriptBase := sessionPath + paths.TranscriptFileName
 	for key := range entries {
@@ -1140,15 +1140,24 @@ func (s *GitStore) replaceTranscript(transcript []byte, sessionPath string, entr
 		}
 	}
 
-	// Write new transcript blob
-	blobHash, err := CreateBlobFromContent(s.repo, transcript)
+	// Chunk the transcript (matches writeTranscript behavior)
+	chunks, err := agent.ChunkTranscript(transcript, agentType)
 	if err != nil {
-		return fmt.Errorf("failed to create transcript blob: %w", err)
+		return fmt.Errorf("failed to chunk transcript: %w", err)
 	}
-	entries[transcriptBase] = object.TreeEntry{
-		Name: transcriptBase,
-		Mode: filemode.Regular,
-		Hash: blobHash,
+
+	// Write chunk files
+	for i, chunk := range chunks {
+		chunkPath := sessionPath + agent.ChunkFileName(paths.TranscriptFileName, i)
+		blobHash, err := CreateBlobFromContent(s.repo, chunk)
+		if err != nil {
+			return fmt.Errorf("failed to create transcript blob: %w", err)
+		}
+		entries[chunkPath] = object.TreeEntry{
+			Name: chunkPath,
+			Mode: filemode.Regular,
+			Hash: blobHash,
+		}
 	}
 
 	// Update content hash
