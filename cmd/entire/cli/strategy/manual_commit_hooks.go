@@ -964,7 +964,12 @@ func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(repo *git.
 		allFiles, extractErr := claudecode.ExtractAllModifiedFiles(
 			state.TranscriptPath, state.CheckpointTranscriptStart, subagentsDir,
 		)
-		if extractErr == nil && len(allFiles) > len(modifiedFiles) {
+		if extractErr != nil {
+			logging.Debug(logCtx, "live transcript check: failed to extract subagent modified files",
+				slog.String("session_id", state.SessionID),
+				slog.String("error", extractErr.Error()),
+			)
+		} else if len(allFiles) > len(modifiedFiles) {
 			modifiedFiles = allFiles
 		}
 	}

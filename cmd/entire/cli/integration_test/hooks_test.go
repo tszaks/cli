@@ -158,24 +158,9 @@ func TestHookRunner_SimulateStop_SubagentOnlyChanges(t *testing.T) {
 		// Add Task tool use
 		taskToolUseID := mainTranscript.AddTaskToolUse("", "Create the function")
 
-		// Add Task tool result with agentId in the format ExtractSpawnedAgentIDs expects.
-		// Note: We cannot use AddTaskToolResult because it produces "Task completed by agent <id>"
-		// which doesn't match the "agentId: <id>" format that ExtractSpawnedAgentIDs parses.
+		// Add Task tool result with agentId
 		agentID := "sub123abc"
-		mainTranscript.messages = append(mainTranscript.messages, map[string]interface{}{
-			"uuid": "user-taskresult",
-			"type": "user",
-			"message": map[string]interface{}{
-				"content": []map[string]interface{}{
-					{
-						"type":        "tool_result",
-						"tool_use_id": taskToolUseID,
-						"content":     "agentId: " + agentID,
-					},
-				},
-			},
-			"timestamp": "2026-01-01T00:00:00Z",
-		})
+		mainTranscript.AddTaskToolResult(taskToolUseID, agentID)
 
 		mainTranscript.AddAssistantMessage("The subagent completed the task.")
 
