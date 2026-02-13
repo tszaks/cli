@@ -95,7 +95,9 @@ type State struct {
 	// FilesTouched tracks files modified/created/deleted during this session
 	FilesTouched []string `json:"files_touched,omitempty"`
 
-	// LastCheckpointID is the checkpoint ID from last condensation, reused for subsequent commits without new content
+	// LastCheckpointID is the checkpoint ID from the most recent condensation.
+	// Used to restore the Entire-Checkpoint trailer on amend and to identify
+	// sessions that have been condensed at least once. Cleared on new prompt.
 	LastCheckpointID id.CheckpointID `json:"last_checkpoint_id,omitempty"`
 
 	// AgentType identifies the agent that created this session (e.g., "Claude Code", "Gemini CLI", "Cursor")

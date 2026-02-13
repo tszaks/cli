@@ -249,6 +249,12 @@ func (s *AutoCommitStrategy) commitMetadataToMetadataBranch(repo *git.Repository
 	// Combine all file changes into FilesTouched (same as manual-commit)
 	filesTouched := mergeFilesTouched(nil, ctx.ModifiedFiles, ctx.NewFiles, ctx.DeletedFiles)
 
+	// Load TurnID from session state (correlates checkpoints from the same turn)
+	var turnID string
+	if state, loadErr := LoadSessionState(sessionID); loadErr == nil && state != nil {
+		turnID = state.TurnID
+	}
+
 	// Write committed checkpoint using the checkpoint store
 	err = store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
 		CheckpointID:                checkpointID,
@@ -259,6 +265,7 @@ func (s *AutoCommitStrategy) commitMetadataToMetadataBranch(repo *git.Repository
 		AuthorName:                  ctx.AuthorName,
 		AuthorEmail:                 ctx.AuthorEmail,
 		Agent:                       ctx.AgentType,
+		TurnID:                      turnID,
 		TranscriptIdentifierAtStart: ctx.StepTranscriptIdentifier,
 		CheckpointTranscriptStart:   ctx.StepTranscriptStart,
 		TokenUsage:                  ctx.TokenUsage,

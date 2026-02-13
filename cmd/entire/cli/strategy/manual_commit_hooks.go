@@ -593,16 +593,13 @@ func (s *ManualCommitStrategy) PostCommit() error {
 			}
 		}
 
-		// Record checkpoint ID for ACTIVE sessions so HandleTurnEnd can finalize with full transcript.
-		// Only ACTIVE sessions need finalization — IDLE/ENDED sessions already have complete transcripts.
+		// For ACTIVE sessions that were condensed:
+		// 1. Record checkpoint ID so HandleTurnEnd can finalize with full transcript
+		//    (IDLE/ENDED sessions already have complete transcripts)
+		// 2. Carry forward remaining uncommitted files so the next commit gets its own checkpoint
 		if condensed && state.Phase.IsActive() {
 			state.TurnCheckpointIDs = append(state.TurnCheckpointIDs, checkpointID.String())
-		}
 
-		// After condensation, carry forward remaining uncommitted files for ACTIVE sessions.
-		// This ensures that if the agent touched 3 files but only 2 were committed,
-		// the third file still has a shadow branch so the next commit gets its own checkpoint.
-		if condensed && state.Phase.IsActive() {
 			remainingFiles := subtractFiles(filesTouchedBefore, committedFileSet)
 			if len(remainingFiles) > 0 {
 				s.carryForwardToNewShadowBranch(logCtx, repo, state, remainingFiles)
