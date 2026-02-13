@@ -425,17 +425,17 @@ Both strategies use a **12-hex-char random checkpoint ID** (e.g., `a3b2c4d5e6f7`
 **Bidirectional linking:**
 
 ```
-User commit → Metadata (two approaches):
-  Approach 1: Extract "Entire-Checkpoint: a3b2c4d5e6f7" trailer
-              → Look up a3/b2c4d5e6f7/ directory on entire/checkpoints/v1 branch
-
-  Approach 2: Extract "Entire-Checkpoint: a3b2c4d5e6f7" trailer
-              → Search entire/checkpoints/v1 commit history for "Checkpoint: a3b2c4d5e6f7" subject
+User commit → Metadata:
+  Extract "Entire-Checkpoint: a3b2c4d5e6f7" trailer
+  → Read a3/b2c4d5e6f7/ directory from entire/checkpoints/v1 tree at HEAD
 
 Metadata → User commits:
   Given checkpoint ID a3b2c4d5e6f7
   → Search user branch history for commits with "Entire-Checkpoint: a3b2c4d5e6f7" trailer
 ```
+
+Note: Commit subjects on `entire/checkpoints/v1` (e.g., `Checkpoint: a3b2c4d5e6f7`) are
+for human readability in `git log` only. The CLI always reads from the tree at HEAD.
 
 **Example:**
 ```
