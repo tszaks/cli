@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/agent/claudecode"
 
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
@@ -953,6 +954,19 @@ func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(repo *git.
 	modifiedFiles, _, err := analyzer.ExtractModifiedFilesFromOffset(state.TranscriptPath, state.CheckpointTranscriptStart)
 	if err != nil {
 		return false, nil //nolint:nilerr // Error parsing transcript, fail gracefully
+	}
+
+	// Also check subagent transcripts for file modifications (Claude Code specific).
+	// Subagents spawned via the Task tool write to separate transcript files that
+	// the main transcript analyzer doesn't see.
+	if state.AgentType == agent.AgentTypeClaudeCode && state.TranscriptPath != "" {
+		subagentsDir := filepath.Join(filepath.Dir(state.TranscriptPath), state.SessionID, "subagents")
+		allFiles, extractErr := claudecode.ExtractAllModifiedFiles(
+			state.TranscriptPath, state.CheckpointTranscriptStart, subagentsDir,
+		)
+		if extractErr == nil && len(allFiles) > len(modifiedFiles) {
+			modifiedFiles = allFiles
+		}
 	}
 
 	// No file modifications means no new content to checkpoint
