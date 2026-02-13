@@ -86,6 +86,7 @@ func TestPostCommit_IdleSession_Condenses(t *testing.T) {
 	require.NoError(t, err)
 	state.Phase = session.PhaseIdle
 	state.LastInteractionTime = nil
+	state.FilesTouched = []string{"test.txt"}
 	require.NoError(t, s.saveSessionState(state))
 
 	// Record shadow branch name before PostCommit
@@ -200,6 +201,7 @@ func TestPostCommit_ShadowBranch_PreservedWhenUncondensedActiveSessionExists(t *
 	// Set idle session to IDLE phase
 	idleState.Phase = session.PhaseIdle
 	idleState.LastInteractionTime = nil
+	idleState.FilesTouched = []string{"test.txt"}
 	require.NoError(t, s.saveSessionState(idleState))
 
 	// Create a second session with the SAME base commit and worktree (concurrent session).
@@ -274,6 +276,7 @@ func TestPostCommit_CondensationFailure_PreservesShadowBranch(t *testing.T) {
 	require.NoError(t, err)
 	state.Phase = session.PhaseIdle
 	state.LastInteractionTime = nil
+	state.FilesTouched = []string{"test.txt"}
 	require.NoError(t, s.saveSessionState(state))
 
 	// Record original BaseCommit and StepCount before corruption
@@ -713,9 +716,9 @@ func TestPostCommit_FilesTouched_ResetsAfterCondensation(t *testing.T) {
 	assert.ElementsMatch(t, []string{"A.txt", "B.txt"}, state.FilesTouched,
 		"FilesTouched should contain A.txt and B.txt before first condensation")
 
-	// --- Commit and condense (round 1) ---
+	// --- Commit A.txt, B.txt and condense (round 1) ---
 	checkpointID1 := "a1a2a3a4a5a6"
-	commitWithCheckpointTrailer(t, repo, dir, checkpointID1)
+	commitFilesWithTrailer(t, repo, dir, checkpointID1, "A.txt", "B.txt")
 
 	err = s.PostCommit()
 	require.NoError(t, err)
@@ -737,7 +740,7 @@ func TestPostCommit_FilesTouched_ResetsAfterCondensation(t *testing.T) {
 	state, err = s.loadSessionState(sessionID)
 	require.NoError(t, err)
 	assert.Nil(t, state.FilesTouched,
-		"FilesTouched should be nil after condensation")
+		"FilesTouched should be nil after condensation (all files were committed)")
 
 	// --- Round 2: Save checkpoint touching files C.txt and D.txt ---
 
@@ -780,9 +783,9 @@ func TestPostCommit_FilesTouched_ResetsAfterCondensation(t *testing.T) {
 	assert.ElementsMatch(t, []string{"C.txt", "D.txt"}, state.FilesTouched,
 		"FilesTouched should only contain C.txt and D.txt after reset")
 
-	// --- Commit and condense (round 2) ---
+	// --- Commit C.txt, D.txt and condense (round 2) ---
 	checkpointID2 := "b1b2b3b4b5b6"
-	commitWithCheckpointTrailer(t, repo, dir, checkpointID2)
+	commitFilesWithTrailer(t, repo, dir, checkpointID2, "C.txt", "D.txt")
 
 	err = s.PostCommit()
 	require.NoError(t, err)
@@ -1146,10 +1149,11 @@ func TestPostCommit_IdleSession_DoesNotRecordTurnCheckpointIDs(t *testing.T) {
 
 	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
 
-	// Set phase to IDLE
+	// Set phase to IDLE with files touched so overlap check passes
 	state, err := s.loadSessionState(sessionID)
 	require.NoError(t, err)
 	state.Phase = session.PhaseIdle
+	state.FilesTouched = []string{"test.txt"}
 	require.NoError(t, s.saveSessionState(state))
 
 	commitWithCheckpointTrailer(t, repo, dir, "c3d4e5f6a1b2")
@@ -1201,10 +1205,17 @@ func setupSessionWithCheckpoint(t *testing.T, s *ManualCommitStrategy, _ *git.Re
 // after PrepareCommitMsg adds the trailer and the user completes the commit.
 func commitWithCheckpointTrailer(t *testing.T, repo *git.Repository, dir, checkpointIDStr string) {
 	t.Helper()
+	commitFilesWithTrailer(t, repo, dir, checkpointIDStr, "test.txt")
+}
+
+// commitFilesWithTrailer stages the given files and commits with a checkpoint trailer.
+// Files must already exist on disk. A test.txt is also touched to ensure there's always something to commit.
+func commitFilesWithTrailer(t *testing.T, repo *git.Repository, dir, checkpointIDStr string, files ...string) {
+	t.Helper()
 
 	cpID := id.MustCheckpointID(checkpointIDStr)
 
-	// Modify a file so there is something to commit
+	// Always touch test.txt so the commit is never empty
 	testFile := filepath.Join(dir, "test.txt")
 	content := "updated at " + time.Now().String()
 	require.NoError(t, os.WriteFile(testFile, []byte(content), 0o644))
@@ -1214,6 +1225,10 @@ func commitWithCheckpointTrailer(t *testing.T, repo *git.Repository, dir, checkp
 
 	_, err = wt.Add("test.txt")
 	require.NoError(t, err)
+	for _, f := range files {
+		_, err = wt.Add(f)
+		require.NoError(t, err)
+	}
 
 	commitMsg := "test commit\n\n" + trailers.CheckpointTrailerKey + ": " + cpID.String() + "\n"
 	_, err = wt.Commit(commitMsg, &git.CommitOptions{

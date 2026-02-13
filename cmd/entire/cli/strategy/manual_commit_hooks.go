@@ -561,12 +561,20 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		for _, action := range remaining {
 			switch action {
 			case session.ActionCondense:
-				if hasNew {
+				// For ACTIVE sessions, any commit during the turn is session-related.
+				// For IDLE/ENDED sessions (e.g., carry-forward), also require that the
+				// committed files overlap with the session's remaining files — otherwise
+				// an unrelated commit would incorrectly get this session's checkpoint.
+				shouldCondense := hasNew
+				if shouldCondense && !state.Phase.IsActive() {
+					shouldCondense = filesOverlap(committedFileSet, state.FilesTouched)
+				}
+				if shouldCondense {
 					condensed = s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete)
 					// condenseAndUpdateState updates BaseCommit on success.
 					// On failure, BaseCommit is preserved so the shadow branch remains accessible.
 				} else {
-					// No new content to condense — just update BaseCommit
+					// No new content or unrelated commit — just update BaseCommit
 					s.updateBaseCommitIfChanged(logCtx, state, newHead)
 				}
 			case session.ActionCondenseIfFilesTouched:
@@ -593,13 +601,16 @@ func (s *ManualCommitStrategy) PostCommit() error {
 			}
 		}
 
-		// For ACTIVE sessions that were condensed:
-		// 1. Record checkpoint ID so HandleTurnEnd can finalize with full transcript
-		//    (IDLE/ENDED sessions already have complete transcripts)
-		// 2. Carry forward remaining uncommitted files so the next commit gets its own checkpoint
+		// Record checkpoint ID for ACTIVE sessions so HandleTurnEnd can finalize
+		// with full transcript. IDLE/ENDED sessions already have complete transcripts.
 		if condensed && state.Phase.IsActive() {
 			state.TurnCheckpointIDs = append(state.TurnCheckpointIDs, checkpointID.String())
+		}
 
+		// Carry forward remaining uncommitted files so the next commit gets its
+		// own checkpoint ID. This applies to ALL phases — if a user splits their
+		// commit across two `git commit` invocations, each gets a 1:1 checkpoint.
+		if condensed {
 			remainingFiles := subtractFiles(filesTouchedBefore, committedFileSet)
 			if len(remainingFiles) > 0 {
 				s.carryForwardToNewShadowBranch(logCtx, repo, state, remainingFiles)
@@ -1431,6 +1442,16 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) {
 	fullTranscriptLines := countTranscriptItems(state.AgentType, string(fullTranscript))
 	state.CheckpointTranscriptStart = fullTranscriptLines
 	state.TurnCheckpointIDs = nil
+}
+
+// filesOverlap checks if any file in the committed set appears in filesTouched.
+func filesOverlap(committed map[string]struct{}, filesTouched []string) bool {
+	for _, f := range filesTouched {
+		if _, ok := committed[f]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // hasOverlappingFiles checks if any file in stagedFiles appears in filesTouched.
