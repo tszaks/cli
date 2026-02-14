@@ -527,3 +527,114 @@ func (env *TestEnv) RunAgentWithTools(prompt string, tools []string) (*AgentResu
 	//nolint:wrapcheck // test helper, caller handles error
 	return env.Agent.RunPromptWithTools(context.Background(), env.RepoDir, prompt, tools)
 }
+
+// GitStash runs git stash to save uncommitted changes.
+func (env *TestEnv) GitStash() {
+	env.T.Helper()
+
+	//nolint:noctx // test code, no context needed for git stash
+	cmd := exec.Command("git", "stash")
+	cmd.Dir = env.RepoDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		env.T.Fatalf("git stash failed: %v\nOutput: %s", err, output)
+	}
+}
+
+// GitStashPop runs git stash pop to restore stashed changes.
+func (env *TestEnv) GitStashPop() {
+	env.T.Helper()
+
+	//nolint:noctx // test code, no context needed for git stash pop
+	cmd := exec.Command("git", "stash", "pop")
+	cmd.Dir = env.RepoDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		env.T.Fatalf("git stash pop failed: %v\nOutput: %s", err, output)
+	}
+}
+
+// GitCheckoutFile reverts a file to its committed state.
+func (env *TestEnv) GitCheckoutFile(path string) {
+	env.T.Helper()
+
+	//nolint:gosec,noctx // test code, path is from test setup, no context needed
+	cmd := exec.Command("git", "checkout", "--", path)
+	cmd.Dir = env.RepoDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		env.T.Fatalf("git checkout -- %s failed: %v\nOutput: %s", path, err, output)
+	}
+}
+
+// DeleteFile removes a file from the test repo.
+func (env *TestEnv) DeleteFile(path string) {
+	env.T.Helper()
+
+	fullPath := filepath.Join(env.RepoDir, path)
+	if err := os.Remove(fullPath); err != nil {
+		env.T.Fatalf("failed to delete file %s: %v", path, err)
+	}
+}
+
+// GetCommitCount returns the number of commits on the current branch.
+func (env *TestEnv) GetCommitCount() int {
+	env.T.Helper()
+
+	repo, err := git.PlainOpen(env.RepoDir)
+	if err != nil {
+		env.T.Fatalf("failed to open git repo: %v", err)
+	}
+
+	head, err := repo.Head()
+	if err != nil {
+		env.T.Fatalf("failed to get HEAD: %v", err)
+	}
+
+	commitIter, err := repo.Log(&git.LogOptions{From: head.Hash()})
+	if err != nil {
+		env.T.Fatalf("failed to iterate commits: %v", err)
+	}
+
+	count := 0
+	//nolint:errcheck,gosec // ForEach callback doesn't return errors we need to handle
+	commitIter.ForEach(func(c *object.Commit) error {
+		count++
+		return nil
+	})
+
+	return count
+}
+
+// GetAllCheckpointIDsFromHistory walks backwards from HEAD and returns
+// all checkpoint IDs from commits with Entire-Checkpoint trailers.
+func (env *TestEnv) GetAllCheckpointIDsFromHistory() []string {
+	env.T.Helper()
+
+	repo, err := git.PlainOpen(env.RepoDir)
+	if err != nil {
+		env.T.Fatalf("failed to open git repo: %v", err)
+	}
+
+	head, err := repo.Head()
+	if err != nil {
+		env.T.Fatalf("failed to get HEAD: %v", err)
+	}
+
+	commitIter, err := repo.Log(&git.LogOptions{From: head.Hash()})
+	if err != nil {
+		env.T.Fatalf("failed to iterate commits: %v", err)
+	}
+
+	var checkpointIDs []string
+	//nolint:errcheck,gosec // ForEach callback doesn't return errors we need to handle
+	commitIter.ForEach(func(c *object.Commit) error {
+		for _, line := range strings.Split(c.Message, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "Entire-Checkpoint:") {
+				id := strings.TrimSpace(strings.TrimPrefix(line, "Entire-Checkpoint:"))
+				checkpointIDs = append(checkpointIDs, id)
+			}
+		}
+		return nil
+	})
+
+	return checkpointIDs
+}
