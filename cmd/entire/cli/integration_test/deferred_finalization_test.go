@@ -211,6 +211,21 @@ func TestShadow_DeferredTranscriptFinalization(t *testing.T) {
 		t.Errorf("TurnCheckpointIDs should be cleared after finalization, got %v", state.TurnCheckpointIDs)
 	}
 
+	// Comprehensive checkpoint validation
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID:    checkpointID,
+		SessionID:       sess.ID,
+		Strategy:        strategy.StrategyNameManualCommit,
+		FilesTouched:    []string{"feature.go"},
+		ExpectedPrompts: []string{"Create feature function"},
+		ExpectedTranscriptContent: []string{
+			"Create feature function",    // Initial user message
+			"Also add a helper function", // Post-commit user message
+			"helper.go",                  // Tool use for helper file
+			"Done with both changes!",    // Final assistant message
+		},
+	})
+
 	t.Log("DeferredTranscriptFinalization test completed successfully")
 }
 
@@ -299,16 +314,29 @@ func TestShadow_CarryForward_ActiveSession(t *testing.T) {
 			firstCheckpointID, secondCheckpointID)
 	}
 
-	// Verify both checkpoints exist on metadata branch
-	firstPath := CheckpointSummaryPath(firstCheckpointID)
-	if !env.FileExistsInBranch(paths.MetadataBranchName, firstPath) {
-		t.Errorf("First checkpoint metadata should exist at %s", firstPath)
-	}
+	// Validate first checkpoint (file A only)
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID:    firstCheckpointID,
+		SessionID:       sess.ID,
+		Strategy:        strategy.StrategyNameManualCommit,
+		FilesTouched:    []string{"fileA.go"},
+		ExpectedPrompts: []string{"Create files A, B, and C"},
+		ExpectedTranscriptContent: []string{
+			"Create files A, B, and C",
+		},
+	})
 
-	secondPath := CheckpointSummaryPath(secondCheckpointID)
-	if !env.FileExistsInBranch(paths.MetadataBranchName, secondPath) {
-		t.Errorf("Second checkpoint metadata should exist at %s", secondPath)
-	}
+	// Validate second checkpoint (file B)
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID:    secondCheckpointID,
+		SessionID:       sess.ID,
+		Strategy:        strategy.StrategyNameManualCommit,
+		FilesTouched:    []string{"fileB.go"},
+		ExpectedPrompts: []string{"Create files A, B, and C"},
+		ExpectedTranscriptContent: []string{
+			"Create files A, B, and C",
+		},
+	})
 
 	t.Log("CarryForward_ActiveSession test completed successfully")
 }
@@ -489,18 +517,24 @@ func TestShadow_MultipleCommits_SameActiveTurn(t *testing.T) {
 		t.Errorf("TurnCheckpointIDs should be cleared, got %v", state.TurnCheckpointIDs)
 	}
 
-	// Verify all checkpoints exist and have finalized transcripts
+	// Validate all 3 checkpoints with comprehensive checks
+	expectedFiles := [][]string{
+		{"fileA.go"},
+		{"fileB.go"},
+		{"fileC.go"},
+	}
 	for i, cpID := range checkpointIDs {
-		transcriptPath := SessionFilePath(cpID, paths.TranscriptFileName)
-		content, found := env.ReadFileFromBranch(paths.MetadataBranchName, transcriptPath)
-		if !found {
-			t.Errorf("Checkpoint %d transcript should exist at %s", i, transcriptPath)
-			continue
-		}
-		// All transcripts should contain the final message (same constant used above)
-		if !strings.Contains(content, finalMessage) {
-			t.Errorf("Checkpoint %d transcript should be finalized with final message %q", i, finalMessage)
-		}
+		env.ValidateCheckpoint(CheckpointValidation{
+			CheckpointID:    cpID,
+			SessionID:       sess.ID,
+			Strategy:        strategy.StrategyNameManualCommit,
+			FilesTouched:    expectedFiles[i],
+			ExpectedPrompts: []string{"Create files A, B, and C"},
+			ExpectedTranscriptContent: []string{
+				"Create files A, B, and C", // Initial prompt
+				finalMessage,               // Final message (added after stop)
+			},
+		})
 	}
 
 	t.Log("MultipleCommits_SameActiveTurn test completed successfully")

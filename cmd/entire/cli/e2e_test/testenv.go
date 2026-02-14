@@ -4,6 +4,8 @@ package e2e
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -637,4 +639,207 @@ func (env *TestEnv) GetAllCheckpointIDsFromHistory() []string {
 	})
 
 	return checkpointIDs
+}
+
+// ReadFileFromBranch reads a file's content from a specific branch's tree.
+// Returns the content and true if found, empty string and false if not found.
+func (env *TestEnv) ReadFileFromBranch(branchName, filePath string) (string, bool) {
+	env.T.Helper()
+
+	repo, err := git.PlainOpen(env.RepoDir)
+	if err != nil {
+		env.T.Fatalf("failed to open git repo: %v", err)
+	}
+
+	// Get the branch reference
+	ref, err := repo.Reference(plumbing.NewBranchReferenceName(branchName), true)
+	if err != nil {
+		// Try as a remote-style ref
+		ref, err = repo.Reference(plumbing.ReferenceName("refs/heads/"+branchName), true)
+		if err != nil {
+			return "", false
+		}
+	}
+
+	// Get the commit
+	commit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		return "", false
+	}
+
+	// Get the tree
+	tree, err := commit.Tree()
+	if err != nil {
+		return "", false
+	}
+
+	// Get the file
+	file, err := tree.File(filePath)
+	if err != nil {
+		return "", false
+	}
+
+	// Get the content
+	content, err := file.Contents()
+	if err != nil {
+		return "", false
+	}
+
+	return content, true
+}
+
+// CheckpointValidation contains expected values for checkpoint validation.
+type CheckpointValidation struct {
+	// CheckpointID is the expected checkpoint ID
+	CheckpointID string
+
+	// Strategy is the expected strategy name (optional)
+	Strategy string
+
+	// FilesTouched are the expected files in files_touched (optional)
+	FilesTouched []string
+
+	// ExpectedPrompts are strings that should appear in prompt.txt (optional)
+	ExpectedPrompts []string
+
+	// ExpectedTranscriptContent are strings that should appear in full.jsonl (optional)
+	ExpectedTranscriptContent []string
+}
+
+// ValidateCheckpoint performs comprehensive validation of a checkpoint on the metadata branch.
+func (env *TestEnv) ValidateCheckpoint(v CheckpointValidation) {
+	env.T.Helper()
+
+	metadataBranch := "entire/checkpoints/v1"
+
+	// Compute sharded path: <id[:2]>/<id[2:]>/
+	if len(v.CheckpointID) < 3 {
+		env.T.Fatalf("Checkpoint ID too short: %s", v.CheckpointID)
+	}
+	shardedPath := v.CheckpointID[:2] + "/" + v.CheckpointID[2:]
+
+	// Validate root metadata.json exists and has expected fields
+	summaryPath := shardedPath + "/metadata.json"
+	summaryContent, found := env.ReadFileFromBranch(metadataBranch, summaryPath)
+	if !found {
+		env.T.Errorf("CheckpointSummary not found at %s", summaryPath)
+	} else {
+		var summary map[string]any
+		if err := json.Unmarshal([]byte(summaryContent), &summary); err != nil {
+			env.T.Errorf("Failed to parse CheckpointSummary: %v", err)
+		} else {
+			// Validate checkpoint_id
+			if cpID, ok := summary["checkpoint_id"].(string); !ok || cpID != v.CheckpointID {
+				env.T.Errorf("CheckpointSummary.checkpoint_id = %v, want %s", summary["checkpoint_id"], v.CheckpointID)
+			}
+			// Validate strategy if specified
+			if v.Strategy != "" {
+				if strategy, ok := summary["strategy"].(string); !ok || strategy != v.Strategy {
+					env.T.Errorf("CheckpointSummary.strategy = %v, want %s", summary["strategy"], v.Strategy)
+				}
+			}
+			// Validate sessions array exists
+			if sessions, ok := summary["sessions"].([]any); !ok || len(sessions) == 0 {
+				env.T.Error("CheckpointSummary.sessions should have at least one entry")
+			}
+			// Validate files_touched if specified
+			if len(v.FilesTouched) > 0 {
+				if filesTouched, ok := summary["files_touched"].([]any); ok {
+					touchedSet := make(map[string]bool)
+					for _, f := range filesTouched {
+						if s, ok := f.(string); ok {
+							touchedSet[s] = true
+						}
+					}
+					for _, expected := range v.FilesTouched {
+						if !touchedSet[expected] {
+							env.T.Errorf("CheckpointSummary.files_touched missing %q", expected)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Validate session metadata.json exists
+	sessionMetadataPath := shardedPath + "/0/metadata.json"
+	sessionContent, found := env.ReadFileFromBranch(metadataBranch, sessionMetadataPath)
+	if !found {
+		env.T.Errorf("Session metadata not found at %s", sessionMetadataPath)
+	} else {
+		var metadata map[string]any
+		if err := json.Unmarshal([]byte(sessionContent), &metadata); err != nil {
+			env.T.Errorf("Failed to parse session metadata: %v", err)
+		} else {
+			// Validate checkpoint_id matches
+			if cpID, ok := metadata["checkpoint_id"].(string); !ok || cpID != v.CheckpointID {
+				env.T.Errorf("Session metadata.checkpoint_id = %v, want %s", metadata["checkpoint_id"], v.CheckpointID)
+			}
+			// Validate created_at exists
+			if _, ok := metadata["created_at"].(string); !ok {
+				env.T.Error("Session metadata.created_at should exist")
+			}
+		}
+	}
+
+	// Validate transcript is valid JSONL
+	transcriptPath := shardedPath + "/0/full.jsonl"
+	transcriptContent, found := env.ReadFileFromBranch(metadataBranch, transcriptPath)
+	if !found {
+		env.T.Errorf("Transcript not found at %s", transcriptPath)
+	} else {
+		// Check each line is valid JSON
+		lines := strings.Split(transcriptContent, "\n")
+		validLines := 0
+		for i, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			validLines++
+			var obj map[string]any
+			if err := json.Unmarshal([]byte(line), &obj); err != nil {
+				env.T.Errorf("Transcript line %d is not valid JSON: %v", i+1, err)
+			}
+		}
+		if validLines == 0 {
+			env.T.Error("Transcript is empty (no valid JSONL lines)")
+		}
+		// Check expected content
+		for _, expected := range v.ExpectedTranscriptContent {
+			if !strings.Contains(transcriptContent, expected) {
+				env.T.Errorf("Transcript should contain %q", expected)
+			}
+		}
+	}
+
+	// Validate prompt.txt contains expected prompts
+	if len(v.ExpectedPrompts) > 0 {
+		promptPath := shardedPath + "/0/prompt.txt"
+		promptContent, found := env.ReadFileFromBranch(metadataBranch, promptPath)
+		if !found {
+			env.T.Errorf("Prompt file not found at %s", promptPath)
+		} else {
+			for _, expected := range v.ExpectedPrompts {
+				if !strings.Contains(promptContent, expected) {
+					env.T.Errorf("Prompt file should contain %q", expected)
+				}
+			}
+		}
+	}
+
+	// Validate content hash exists and matches transcript
+	hashPath := shardedPath + "/0/content_hash.txt"
+	hashContent, found := env.ReadFileFromBranch(metadataBranch, hashPath)
+	if !found {
+		env.T.Errorf("Content hash not found at %s", hashPath)
+	} else if transcriptContent != "" {
+		// Verify hash matches
+		hash := sha256.Sum256([]byte(transcriptContent))
+		expectedHash := "sha256:" + hex.EncodeToString(hash[:])
+		storedHash := strings.TrimSpace(hashContent)
+		if storedHash != expectedHash {
+			env.T.Errorf("Content hash mismatch:\n  stored:   %s\n  expected: %s", storedHash, expectedHash)
+		}
+	}
 }

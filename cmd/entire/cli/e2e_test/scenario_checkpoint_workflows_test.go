@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -83,6 +84,25 @@ Do each task in order, making the commit after each file creation.`
 	// Verify metadata branch exists
 	assert.True(t, env.BranchExists("entire/checkpoints/v1"),
 		"entire/checkpoints/v1 branch should exist")
+
+	// Validate each checkpoint has proper metadata and content
+	// Note: checkpointIDs are in reverse chronological order (newest first)
+	// So checkpointIDs[0] = file3.go, [1] = file2.go, [2] = file1.go
+	//
+	// With deferred finalization, all checkpoints from the same turn get the
+	// FULL transcript at turn end, so all checkpoints should contain all file names.
+	allFiles := []string{"file1.go", "file2.go", "file3.go"}
+	for i, cpID := range checkpointIDs {
+		fileNum := len(checkpointIDs) - i // Reverse the index to match file numbers
+		fileName := fmt.Sprintf("file%d.go", fileNum)
+		t.Logf("Validating checkpoint %d: %s (files_touched: %s)", i, cpID, fileName)
+		env.ValidateCheckpoint(CheckpointValidation{
+			CheckpointID:              cpID,
+			Strategy:                  "manual-commit",
+			FilesTouched:              []string{fileName},
+			ExpectedTranscriptContent: allFiles, // All checkpoints have full transcript
+		})
+	}
 }
 
 // TestE2E_Scenario4_UserSplitsCommits tests user splitting agent changes into multiple commits.
@@ -153,6 +173,26 @@ Create all four files, no other files or actions.`
 	// Verify metadata branch exists
 	assert.True(t, env.BranchExists("entire/checkpoints/v1"),
 		"entire/checkpoints/v1 branch should exist")
+
+	// Both checkpoints are from the same session where agent created all 4 files.
+	// The transcript should contain all file names since it's the same agent work.
+	allFiles := []string{"fileA.go", "fileB.go", "fileC.go", "fileD.go"}
+
+	// Validate first checkpoint (files A, B committed)
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID:              checkpointAB,
+		Strategy:                  "manual-commit",
+		FilesTouched:              []string{"fileA.go", "fileB.go"},
+		ExpectedTranscriptContent: allFiles, // Full session transcript
+	})
+
+	// Validate second checkpoint (files C, D committed)
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID:              checkpointCD,
+		Strategy:                  "manual-commit",
+		FilesTouched:              []string{"fileC.go", "fileD.go"},
+		ExpectedTranscriptContent: allFiles, // Full session transcript
+	})
 }
 
 // TestE2E_Scenario5_PartialCommitStashNextPrompt tests partial commit, stash, then new prompt.
@@ -223,6 +263,28 @@ Create both files, nothing else.`
 	// Verify metadata branch exists
 	assert.True(t, env.BranchExists("entire/checkpoints/v1"),
 		"entire/checkpoints/v1 branch should exist")
+
+	// Validate checkpoints have proper metadata and transcripts
+	// checkpointIDs[0] is the most recent (D, E commit from prompt 2)
+	// checkpointIDs[1] is the earlier commit (A only from prompt 1)
+	//
+	// These are from DIFFERENT sessions (prompt 1 vs prompt 2), so each has
+	// its own transcript. Prompt 1 created A, B, C (B, C were stashed).
+	// Prompt 2 created D, E.
+	if len(checkpointIDs) >= 2 {
+		env.ValidateCheckpoint(CheckpointValidation{
+			CheckpointID:              checkpointIDs[0],
+			Strategy:                  "manual-commit",
+			FilesTouched:              []string{"stash_d.go", "stash_e.go"},
+			ExpectedTranscriptContent: []string{"stash_d.go", "stash_e.go"}, // Prompt 2 transcript
+		})
+		env.ValidateCheckpoint(CheckpointValidation{
+			CheckpointID:              checkpointIDs[1],
+			Strategy:                  "manual-commit",
+			FilesTouched:              []string{"stash_a.go"},
+			ExpectedTranscriptContent: []string{"stash_a.go", "stash_b.go", "stash_c.go"}, // Full prompt 1 transcript
+		})
+	}
 }
 
 // TestE2E_Scenario6_StashSecondPromptUnstashCommitAll tests stash, new prompt, unstash, commit all.
@@ -304,6 +366,30 @@ Create both files, nothing else.`
 	// Verify metadata branch exists
 	assert.True(t, env.BranchExists("entire/checkpoints/v1"),
 		"entire/checkpoints/v1 branch should exist")
+
+	// Validate checkpoints have proper metadata and transcripts
+	// checkpointIDs[0] is the most recent (B, C, D, E combined commit)
+	// checkpointIDs[1] is the earlier commit (A only)
+	//
+	// Prompt 1 created A, B, C. User committed A, then stashed B, C.
+	// Prompt 2 created D, E. User unstashed B, C, then committed all 4 together.
+	if len(checkpointIDs) >= 2 {
+		// The BCDE commit happens during prompt 2's session, so its transcript
+		// contains prompt 2's work (D, E). B, C are included via carry-forward.
+		env.ValidateCheckpoint(CheckpointValidation{
+			CheckpointID:              checkpointIDs[0],
+			Strategy:                  "manual-commit",
+			FilesTouched:              []string{"combo_b.go", "combo_c.go", "combo_d.go", "combo_e.go"},
+			ExpectedTranscriptContent: []string{"combo_d.go", "combo_e.go"}, // Prompt 2 transcript
+		})
+		// The A commit has full prompt 1 transcript (A, B, C were all created)
+		env.ValidateCheckpoint(CheckpointValidation{
+			CheckpointID:              checkpointIDs[1],
+			Strategy:                  "manual-commit",
+			FilesTouched:              []string{"combo_a.go"},
+			ExpectedTranscriptContent: []string{"combo_a.go", "combo_b.go", "combo_c.go"}, // Full prompt 1 transcript
+		})
+	}
 }
 
 // TestE2E_Scenario7_PartialStagingWithGitAddP tests partial staging with git add -p.
@@ -393,6 +479,25 @@ func Second() int {
 	// Each commit should have its own unique checkpoint ID
 	assert.NotEqual(t, checkpointIDsAfter[0], checkpointIDsAfter[1],
 		"Each commit should have its own unique checkpoint ID")
+
+	// Validate checkpoints have proper metadata and transcripts
+	// checkpointIDsAfter[0] is the most recent (full content commit)
+	// checkpointIDsAfter[1] is the earlier commit (partial content)
+	//
+	// Both commits are from the same session (single prompt), so both have
+	// the same full transcript referencing partial.go and the function names.
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID:              checkpointIDsAfter[0],
+		Strategy:                  "manual-commit",
+		FilesTouched:              []string{"partial.go"},
+		ExpectedTranscriptContent: []string{"partial.go", "First", "Second", "Third", "Fourth"},
+	})
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID:              checkpointIDsAfter[1],
+		Strategy:                  "manual-commit",
+		FilesTouched:              []string{"partial.go"},
+		ExpectedTranscriptContent: []string{"partial.go", "First", "Second", "Third", "Fourth"},
+	})
 }
 
 // TestE2E_ContentAwareOverlap_RevertAndReplace tests content-aware overlap detection
@@ -520,6 +625,14 @@ Create only this file.`
 	// 6. Verify shadow branch was cleaned up and metadata branch exists
 	assert.True(t, env.BranchExists("entire/checkpoints/v1"),
 		"entire/checkpoints/v1 branch should exist after condensation")
+
+	// 7. Validate checkpoint has proper metadata and transcript
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID:              checkpointID,
+		Strategy:                  "manual-commit",
+		FilesTouched:              []string{"scenario1.go"},
+		ExpectedTranscriptContent: []string{"scenario1.go"},
+	})
 }
 
 // TestE2E_Scenario2_AgentCommitsDuringTurn verifies the deferred finalization flow.
@@ -568,5 +681,13 @@ Create the file first, then run the git commands.`
 	if len(checkpointIDs) > 0 {
 		assert.True(t, env.BranchExists("entire/checkpoints/v1"),
 			"entire/checkpoints/v1 branch should exist")
+
+		// Validate checkpoint has proper metadata and transcript
+		env.ValidateCheckpoint(CheckpointValidation{
+			CheckpointID:              checkpointIDs[0],
+			Strategy:                  "manual-commit",
+			FilesTouched:              []string{"agent_commit.go"},
+			ExpectedTranscriptContent: []string{"agent_commit.go"},
+		})
 	}
 }
