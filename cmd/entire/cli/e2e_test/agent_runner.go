@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 )
 
@@ -155,7 +154,10 @@ func (r *ClaudeCodeRunner) RunPromptWithTools(ctx context.Context, workDir strin
 	}
 
 	if len(tools) > 0 {
-		args = append(args, "--allowedTools", strings.Join(tools, ","))
+		// Claude CLI expects each tool as a separate argument after --allowedTools
+		// e.g., --allowedTools Edit Read Bash (not --allowedTools "Edit,Read,Bash")
+		args = append(args, "--allowedTools")
+		args = append(args, tools...)
 	}
 
 	// Create context with timeout

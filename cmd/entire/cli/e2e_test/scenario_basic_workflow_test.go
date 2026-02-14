@@ -42,7 +42,8 @@ func TestE2E_BasicWorkflow(t *testing.T) {
 
 	// 5. Verify checkpoint was created (trailer in commit)
 	t.Log("Step 5: Verifying checkpoint")
-	checkpointID := env.GetLatestCheckpointIDFromHistory()
+	checkpointID, err := env.GetLatestCheckpointIDFromHistory()
+	require.NoError(t, err, "Should find checkpoint in commit history")
 	assert.NotEmpty(t, checkpointID, "Commit should have Entire-Checkpoint trailer")
 	t.Logf("Checkpoint ID: %s", checkpointID)
 
@@ -82,6 +83,7 @@ func TestE2E_MultipleChanges(t *testing.T) {
 	env.GitCommitWithShadowHooks("Add hello world and calculator", "hello.go", "calc.go")
 
 	// 5. Verify checkpoint
-	checkpointID := env.GetLatestCheckpointIDFromHistory()
+	checkpointID, err := env.GetLatestCheckpointIDFromHistory()
+	require.NoError(t, err, "Should find checkpoint in commit history")
 	assert.NotEmpty(t, checkpointID)
 }

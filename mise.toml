@@ -104,5 +104,5 @@ description = "Run E2E tests with Claude Code (haiku model)"
 run = "E2E_AGENT=claude-code go test -tags=e2e -timeout=30m -v ./cmd/entire/cli/e2e_test/..."
 
 [tasks."test:e2e:gemini"]
-description = "Run E2E tests with Gemini CLI (when implemented)"
+description = "Run E2E tests with Gemini CLI (runner not yet implemented - will skip)"
 run = "E2E_AGENT=gemini-cli go test -tags=e2e -timeout=30m -v ./cmd/entire/cli/e2e_test/..."

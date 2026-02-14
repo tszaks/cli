@@ -274,7 +274,11 @@ func (env *TestEnv) GitCommitWithShadowHooks(message string, files ...string) {
 	//nolint:gosec,noctx // test code, args are from trusted test setup, no context needed
 	prepCmd := exec.Command(getTestBinary(), "hooks", "git", "prepare-commit-msg", msgFile, "message")
 	prepCmd.Dir = env.RepoDir
-	prepCmd.Env = append(os.Environ(), "ENTIRE_TEST_TTY=1")
+	prepCmd.Env = append(os.Environ(),
+		"ENTIRE_TEST_TTY=1",
+		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+filepath.Join(env.RepoDir, ".claude"),
+		"ENTIRE_TEST_GEMINI_PROJECT_DIR="+filepath.Join(env.RepoDir, ".gemini"),
+	)
 	if output, err := prepCmd.CombinedOutput(); err != nil {
 		env.T.Logf("prepare-commit-msg output: %s", output)
 	}
@@ -312,6 +316,10 @@ func (env *TestEnv) GitCommitWithShadowHooks(message string, files ...string) {
 	//nolint:gosec,noctx // test code, args are from trusted test setup, no context needed
 	postCmd := exec.Command(getTestBinary(), "hooks", "git", "post-commit")
 	postCmd.Dir = env.RepoDir
+	postCmd.Env = append(os.Environ(),
+		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+filepath.Join(env.RepoDir, ".claude"),
+		"ENTIRE_TEST_GEMINI_PROJECT_DIR="+filepath.Join(env.RepoDir, ".gemini"),
+	)
 	if output, err := postCmd.CombinedOutput(); err != nil {
 		env.T.Logf("post-commit output: %s", output)
 	}
@@ -469,7 +477,8 @@ func (env *TestEnv) GetCommitMessage(hash string) string {
 
 // GetLatestCheckpointIDFromHistory walks backwards from HEAD and returns
 // the checkpoint ID from the first commit with an Entire-Checkpoint trailer.
-func (env *TestEnv) GetLatestCheckpointIDFromHistory() string {
+// Returns an error if no checkpoint trailer is found in any commit.
+func (env *TestEnv) GetLatestCheckpointIDFromHistory() (string, error) {
 	env.T.Helper()
 
 	repo, err := git.PlainOpen(env.RepoDir)
@@ -501,7 +510,20 @@ func (env *TestEnv) GetLatestCheckpointIDFromHistory() string {
 		return nil
 	})
 
-	return checkpointID
+	if checkpointID == "" {
+		return "", errors.New("no commit with Entire-Checkpoint trailer found in history")
+	}
+
+	return checkpointID, nil
+}
+
+// safeIDPrefix returns first 12 chars of ID or the full ID if shorter.
+// Use this when logging checkpoint IDs to avoid index out of bounds panic.
+func safeIDPrefix(id string) string {
+	if len(id) >= 12 {
+		return id[:12]
+	}
+	return id
 }
 
 // RunCLI runs the entire CLI with the given arguments and returns stdout.

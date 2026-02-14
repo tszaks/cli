@@ -58,7 +58,12 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// Add binary to PATH so hooks can find it
+	// Add binary to PATH so hooks can find it.
+	// This is safe because:
+	// 1. TestMain runs once before any tests (no parallel conflict with os.Setenv)
+	// 2. Each test package gets its own TestMain execution
+	// 3. PATH is restored in the same TestMain after m.Run() completes
+	// 4. The binary path is unique per test run (temp dir)
 	origPath := os.Getenv("PATH")
 	os.Setenv("PATH", tmpDir+string(os.PathListSeparator)+origPath)
 

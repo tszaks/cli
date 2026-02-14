@@ -31,7 +31,7 @@ func TestE2E_CheckpointMetadata(t *testing.T) {
 	// They should have metadata directories set
 	for i, p := range points {
 		t.Logf("Rewind point %d: ID=%s, MetadataDir=%s, Message=%s",
-			i, p.ID[:12], p.MetadataDir, p.Message)
+			i, safeIDPrefix(p.ID), p.MetadataDir, p.Message)
 	}
 
 	// 3. User commits
@@ -39,7 +39,8 @@ func TestE2E_CheckpointMetadata(t *testing.T) {
 	env.GitCommitWithShadowHooks("Add config file", "config.json")
 
 	// 4. Verify checkpoint trailer added
-	checkpointID := env.GetLatestCheckpointIDFromHistory()
+	checkpointID, err := env.GetLatestCheckpointIDFromHistory()
+	require.NoError(t, err, "Should find checkpoint ID in commit history")
 	require.NotEmpty(t, checkpointID, "Should have checkpoint ID in commit")
 	t.Logf("Checkpoint ID: %s", checkpointID)
 
@@ -53,7 +54,7 @@ func TestE2E_CheckpointMetadata(t *testing.T) {
 	// After commit, logs-only points from entire/checkpoints/v1 should exist
 	for i, p := range postPoints {
 		t.Logf("Post-commit point %d: ID=%s, IsLogsOnly=%v, CondensationID=%s",
-			i, p.ID[:12], p.IsLogsOnly, p.CondensationID)
+			i, safeIDPrefix(p.ID), p.IsLogsOnly, p.CondensationID)
 	}
 }
 
@@ -72,7 +73,8 @@ func TestE2E_CheckpointIDFormat(t *testing.T) {
 	env.GitCommitWithShadowHooks("Add hello world", "hello.go")
 
 	// 3. Verify checkpoint ID format
-	checkpointID := env.GetLatestCheckpointIDFromHistory()
+	checkpointID, err := env.GetLatestCheckpointIDFromHistory()
+	require.NoError(t, err, "Should find checkpoint ID in commit history")
 	require.NotEmpty(t, checkpointID)
 
 	// Checkpoint ID should be 12 hex characters

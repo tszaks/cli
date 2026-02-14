@@ -26,7 +26,7 @@ func TestE2E_RewindToCheckpoint(t *testing.T) {
 	points1 := env.GetRewindPoints()
 	require.GreaterOrEqual(t, len(points1), 1)
 	firstPointID := points1[0].ID
-	t.Logf("First checkpoint: %s", firstPointID[:12])
+	t.Logf("First checkpoint: %s", safeIDPrefix(firstPointID))
 
 	// Save original content
 	originalContent := env.ReadFile("hello.go")
@@ -95,16 +95,28 @@ func TestE2E_RewindAfterCommit(t *testing.T) {
 	t.Logf("Found %d rewind points", len(points))
 	for i, p := range points {
 		t.Logf("  Point %d: %s (logs_only=%v, condensation_id=%s)",
-			i, p.ID[:12], p.IsLogsOnly, p.CondensationID)
+			i, safeIDPrefix(p.ID), p.IsLogsOnly, p.CondensationID)
 	}
 
 	// 5. Rewind to pre-commit checkpoint
-	t.Log("Step 5: Rewinding to pre-commit checkpoint")
+	// After commit, the pre-commit checkpoint becomes logs-only because the shadow branch
+	// is condensed. Rewinding to a logs-only point should fail with a clear error.
+	t.Log("Step 5: Attempting rewind to pre-commit (logs-only) checkpoint")
 	err = env.Rewind(preCommitPointID)
-	// Note: After commit, rewinding to a pre-commit checkpoint may only restore logs
-	// depending on the checkpoint's state
+
+	// Verify the current file state regardless of rewind result
+	currentContent := env.ReadFile("hello.go")
+
 	if err != nil {
-		t.Logf("Rewind result: %v (may be expected for logs-only points)", err)
+		// Rewind failed as expected for logs-only checkpoint
+		t.Logf("Rewind to logs-only point failed as expected: %v", err)
+		// File should still have the modifications since rewind failed
+		assert.Contains(t, currentContent, "E2E Test",
+			"File should still have modifications after logs-only rewind failure")
+	} else {
+		// If rewind succeeded, the file might have been restored
+		// This could happen if the rewind point wasn't actually logs-only
+		t.Log("Rewind succeeded - checkpoint may not have been logs-only")
 	}
 }
 

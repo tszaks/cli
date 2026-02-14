@@ -70,9 +70,11 @@ var PromptAddMultiplyFunction = PromptTemplate{
 	ExpectedFiles: []string{"calc.go"},
 }
 
-// PromptCreateREADME creates a simple README file.
-var PromptCreateREADME = PromptTemplate{
-	Name: "CreateREADME",
+// PromptCreateDocs creates a simple DOCS.md documentation file.
+// Note: Uses DOCS.md instead of README.md to avoid conflicts with
+// the README.md created by NewFeatureBranchEnv during test setup.
+var PromptCreateDocs = PromptTemplate{
+	Name: "CreateDocs",
 	Prompt: `Create a file called DOCS.md with exactly this content:
 # Documentation
 

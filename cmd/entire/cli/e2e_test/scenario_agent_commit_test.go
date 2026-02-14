@@ -60,8 +60,12 @@ Only run these two commands, nothing else.`
 	env.GitCommitWithShadowHooks("Add calculator", "calc.go")
 
 	// 7. Final verification
-	checkpointID := env.GetLatestCheckpointIDFromHistory()
-	t.Logf("Final checkpoint ID: %s", checkpointID)
+	checkpointID, err := env.GetLatestCheckpointIDFromHistory()
+	if err != nil {
+		t.Logf("No checkpoint ID found: %v", err)
+	} else {
+		t.Logf("Final checkpoint ID: %s", checkpointID)
+	}
 }
 
 // TestE2E_MultipleAgentSessions tests behavior across multiple agent sessions.
@@ -108,6 +112,7 @@ func TestE2E_MultipleAgentSessions(t *testing.T) {
 
 	// Final check: we should have checkpoint IDs in commit history
 	t.Log("Final verification")
-	checkpointID := env.GetLatestCheckpointIDFromHistory()
+	checkpointID, err := env.GetLatestCheckpointIDFromHistory()
+	require.NoError(t, err, "Should find checkpoint in commit history")
 	require.NotEmpty(t, checkpointID, "Should have checkpoint in final commit")
 }

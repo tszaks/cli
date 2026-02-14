@@ -114,9 +114,9 @@ func AssertRewindPointCountAtLeast(t *testing.T, env *TestEnv, minimum int) {
 func AssertCheckpointExists(t *testing.T, env *TestEnv) {
 	t.Helper()
 
-	checkpointID := env.GetLatestCheckpointIDFromHistory()
-	if checkpointID == "" {
-		t.Error("Expected checkpoint trailer in commit history, but none found")
+	checkpointID, err := env.GetLatestCheckpointIDFromHistory()
+	if err != nil || checkpointID == "" {
+		t.Errorf("Expected checkpoint trailer in commit history, but none found: %v", err)
 	}
 }
 
