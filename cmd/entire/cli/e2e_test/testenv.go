@@ -67,12 +67,13 @@ func NewFeatureBranchEnv(t *testing.T, strategyName string) *TestEnv {
 }
 
 // RunEntireEnable runs `entire enable` to set up the project with hooks.
+// Uses the configured defaultAgent (from E2E_AGENT env var or "claude-code").
 func (env *TestEnv) RunEntireEnable(strategyName string) {
 	env.T.Helper()
 
 	args := []string{
 		"enable",
-		"--agent", "claude-code",
+		"--agent", defaultAgent,
 		"--strategy", strategyName,
 		"--telemetry=false",
 		"--force", // Force reinstall hooks in case they exist
@@ -114,41 +115,6 @@ func (env *TestEnv) InitRepo() {
 
 	if err := repo.SetConfig(cfg); err != nil {
 		env.T.Fatalf("failed to set repo config: %v", err)
-	}
-}
-
-// InitEntire initializes the .entire directory with the specified strategy.
-func (env *TestEnv) InitEntire(strategyName string) {
-	env.T.Helper()
-
-	// Create .entire directory structure
-	entireDir := filepath.Join(env.RepoDir, ".entire")
-	//nolint:gosec // test code, permissions are intentionally standard
-	if err := os.MkdirAll(entireDir, 0o755); err != nil {
-		env.T.Fatalf("failed to create .entire directory: %v", err)
-	}
-
-	// Create tmp directory
-	tmpDir := filepath.Join(entireDir, "tmp")
-	//nolint:gosec // test code, permissions are intentionally standard
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
-		env.T.Fatalf("failed to create .entire/tmp directory: %v", err)
-	}
-
-	// Write settings.json
-	settings := map[string]any{
-		"strategy":  strategyName,
-		"local_dev": true, // Use go run for hooks in tests
-	}
-	data, err := json.MarshalIndent(settings, "", "  ")
-	if err != nil {
-		env.T.Fatalf("failed to marshal settings: %v", err)
-	}
-	data = append(data, '\n')
-	settingsPath := filepath.Join(entireDir, "settings.json")
-	//nolint:gosec // test code, permissions are intentionally standard
-	if err := os.WriteFile(settingsPath, data, 0o644); err != nil {
-		env.T.Fatalf("failed to write settings.json: %v", err)
 	}
 }
 

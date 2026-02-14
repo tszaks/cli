@@ -122,8 +122,10 @@ func (r *ClaudeCodeRunner) Name() string {
 	return AgentNameClaudeCode
 }
 
-// IsAvailable checks if Claude CLI is installed and working.
-// Note: Claude Code uses OAuth authentication (via `claude login`), not ANTHROPIC_API_KEY.
+// IsAvailable checks if Claude CLI is installed and responds to --version.
+// Note: This does NOT verify authentication status. Claude Code uses OAuth
+// authentication (via `claude login`), not ANTHROPIC_API_KEY. If the CLI is
+// installed but not logged in, tests will fail at RunPrompt time.
 func (r *ClaudeCodeRunner) IsAvailable() (bool, error) {
 	// Check if claude CLI is in PATH
 	if _, err := exec.LookPath("claude"); err != nil {

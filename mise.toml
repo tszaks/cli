@@ -97,12 +97,13 @@ git diff --cached --name-only -z --diff-filter=ACM | grep -z '\\.go$' | xargs -0
 
 [tasks."test:e2e"]
 description = "Run E2E tests with real agent calls (requires claude CLI)"
-run = "go test -tags=e2e -timeout=30m -v ./cmd/entire/cli/e2e_test/..."
+# -count=1 disables test caching since E2E tests call real external agents
+run = "go test -tags=e2e -count=1 -timeout=30m -v ./cmd/entire/cli/e2e_test/..."
 
 [tasks."test:e2e:claude"]
 description = "Run E2E tests with Claude Code (haiku model)"
-run = "E2E_AGENT=claude-code go test -tags=e2e -timeout=30m -v ./cmd/entire/cli/e2e_test/..."
+run = "E2E_AGENT=claude-code go test -tags=e2e -count=1 -timeout=30m -v ./cmd/entire/cli/e2e_test/..."
 
 [tasks."test:e2e:gemini"]
 description = "Run E2E tests with Gemini CLI (runner not yet implemented - will skip)"
-run = "E2E_AGENT=gemini-cli go test -tags=e2e -timeout=30m -v ./cmd/entire/cli/e2e_test/..."
+run = "E2E_AGENT=gemini-cli go test -tags=e2e -count=1 -timeout=30m -v ./cmd/entire/cli/e2e_test/..."
