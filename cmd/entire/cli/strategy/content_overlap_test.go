@@ -701,3 +701,102 @@ x`,
 		})
 	}
 }
+
+// TestHasSignificantContentOverlap tests the content overlap detection logic.
+func TestHasSignificantContentOverlap(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		stagedContent string
+		shadowContent string
+		wantOverlap   bool
+	}{
+		{
+			name:          "both have matching significant lines",
+			stagedContent: "this is a significant line\nshort",
+			shadowContent: "this is a significant line\nother",
+			wantOverlap:   true,
+		},
+		{
+			name:          "no matching significant lines",
+			stagedContent: "completely different content here",
+			shadowContent: "this is the shadow content now",
+			wantOverlap:   false,
+		},
+		{
+			name:          "both have only short lines - no significant content",
+			stagedContent: "a = 1\nb = 2\nc = 3",
+			shadowContent: "x = 1\ny = 2\nz = 3",
+			wantOverlap:   false,
+		},
+		{
+			name:          "shadow has significant lines but staged has none",
+			stagedContent: "a = 1\nb = 2",
+			shadowContent: "this is significant content from shadow",
+			wantOverlap:   false,
+		},
+		{
+			name:          "staged has significant lines but shadow has none",
+			stagedContent: "this is significant content from staged",
+			shadowContent: "x = 1\ny = 2",
+			wantOverlap:   false,
+		},
+		{
+			name:          "empty strings",
+			stagedContent: "",
+			shadowContent: "",
+			wantOverlap:   false,
+		},
+		{
+			name:          "partial match - some lines overlap",
+			stagedContent: "unique staged line here\nshared significant line",
+			shadowContent: "unique shadow line here\nshared significant line",
+			wantOverlap:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := hasSignificantContentOverlap(tt.stagedContent, tt.shadowContent)
+			if got != tt.wantOverlap {
+				t.Errorf("hasSignificantContentOverlap() = %v, want %v", got, tt.wantOverlap)
+			}
+		})
+	}
+}
+
+// TestTrimLine tests whitespace trimming from lines.
+func TestTrimLine(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"no whitespace", "hello", "hello"},
+		{"leading spaces", "   hello", "hello"},
+		{"trailing spaces", "hello   ", "hello"},
+		{"both leading and trailing spaces", "   hello   ", "hello"},
+		{"leading tabs", "\t\thello", "hello"},
+		{"trailing tabs", "hello\t\t", "hello"},
+		{"mixed whitespace", " \t hello \t ", "hello"},
+		{"only spaces", "     ", ""},
+		{"only tabs", "\t\t\t", ""},
+		{"empty string", "", ""},
+		{"spaces in middle preserved", "hello world", "hello world"},
+		{"tabs in middle preserved", "hello\tworld", "hello\tworld"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := trimLine(tt.line)
+			if got != tt.want {
+				t.Errorf("trimLine(%q) = %q, want %q", tt.line, got, tt.want)
+			}
+		})
+	}
+}
