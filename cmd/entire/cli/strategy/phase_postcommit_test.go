@@ -1168,6 +1168,88 @@ func TestPostCommit_IdleSession_DoesNotRecordTurnCheckpointIDs(t *testing.T) {
 		"TurnCheckpointIDs should not be populated for IDLE sessions")
 }
 
+// TestHandleTurnEnd_PartialFailure verifies that HandleTurnEnd continues
+// processing remaining checkpoints when one UpdateCommitted call fails.
+// This locks the best-effort behavior: valid checkpoints get finalized even
+// when one checkpoint ID is invalid or missing from entire/checkpoints/v1.
+func TestHandleTurnEnd_PartialFailure(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+	sessionID := "test-partial-failure"
+
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID)
+
+	// Set phase to ACTIVE and create a transcript file with updated content
+	state, err := s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	state.Phase = session.PhaseActive
+	state.TurnCheckpointIDs = nil
+	require.NoError(t, s.saveSessionState(state))
+
+	// First commit → creates real checkpoint on entire/checkpoints/v1
+	commitWithCheckpointTrailer(t, repo, dir, "a1b2c3d4e5f6")
+	require.NoError(t, s.PostCommit())
+
+	// Write new content and create a second real checkpoint
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "second.txt"), []byte("second file"), 0o644))
+	setupSessionWithCheckpoint(t, s, repo, dir, sessionID) // refresh shadow branch
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	state.Phase = session.PhaseActive
+	// Preserve TurnCheckpointIDs from the first commit
+	state.TurnCheckpointIDs = []string{"a1b2c3d4e5f6"}
+	require.NoError(t, s.saveSessionState(state))
+
+	commitFilesWithTrailer(t, repo, dir, "b2c3d4e5f6a1", "second.txt")
+	require.NoError(t, s.PostCommit())
+
+	// Verify we now have 2 real checkpoint IDs
+	state, err = s.loadSessionState(sessionID)
+	require.NoError(t, err)
+	require.Len(t, state.TurnCheckpointIDs, 2,
+		"Should have 2 real checkpoint IDs after 2 mid-turn commits")
+
+	// Inject a fake 3rd checkpoint ID that doesn't exist on entire/checkpoints/v1
+	state.TurnCheckpointIDs = append(state.TurnCheckpointIDs, "ffffffffffff")
+
+	// Write a full transcript file for HandleTurnEnd to read
+	fullTranscript := `{"type":"human","message":{"content":"build something"}}
+{"type":"assistant","message":{"content":"done building"}}
+{"type":"human","message":{"content":"now test it"}}
+{"type":"assistant","message":{"content":"tests pass"}}
+`
+	transcriptPath := filepath.Join(dir, ".entire", "metadata", sessionID, "full_transcript.jsonl")
+	require.NoError(t, os.MkdirAll(filepath.Dir(transcriptPath), 0o755))
+	require.NoError(t, os.WriteFile(transcriptPath, []byte(fullTranscript), 0o644))
+	state.TranscriptPath = transcriptPath
+	require.NoError(t, s.saveSessionState(state))
+
+	// Call HandleTurnEnd — should NOT return error (best-effort)
+	err = s.HandleTurnEnd(state)
+	require.NoError(t, err,
+		"HandleTurnEnd should return nil even with partial failures (best-effort)")
+
+	// TurnCheckpointIDs should be cleared regardless of partial failure
+	assert.Empty(t, state.TurnCheckpointIDs,
+		"TurnCheckpointIDs should be cleared after HandleTurnEnd, even with errors")
+
+	// Verify the 2 valid checkpoints were finalized with the full transcript
+	store := checkpoint.NewGitStore(repo)
+	for _, cpIDStr := range []string{"a1b2c3d4e5f6", "b2c3d4e5f6a1"} {
+		cpID := id.MustCheckpointID(cpIDStr)
+		content, readErr := store.ReadSessionContent(context.Background(), cpID, 0)
+		require.NoError(t, readErr,
+			"Should be able to read finalized checkpoint %s", cpIDStr)
+		assert.Contains(t, string(content.Transcript), "now test it",
+			"Checkpoint %s should contain the full transcript (including later messages)", cpIDStr)
+	}
+}
+
 // setupSessionWithCheckpoint initializes a session and creates one checkpoint
 // on the shadow branch so there is content available for condensation.
 // Also modifies test.txt to "agent modified content" and includes it in the checkpoint,

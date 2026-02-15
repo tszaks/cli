@@ -640,6 +640,9 @@ func (s *ManualCommitStrategy) PostCommit() error {
 
 		// Record checkpoint ID for ACTIVE sessions so HandleTurnEnd can finalize
 		// with full transcript. IDLE/ENDED sessions already have complete transcripts.
+		// NOTE: This check runs AFTER TransitionAndLog updated the phase. It relies on
+		// ACTIVE + GitCommit → ACTIVE (phase stays ACTIVE). If that state machine
+		// transition ever changed, this guard would silently stop recording IDs.
 		if condensed && state.Phase.IsActive() {
 			state.TurnCheckpointIDs = append(state.TurnCheckpointIDs, checkpointID.String())
 		}
@@ -1812,6 +1815,9 @@ func (s *ManualCommitStrategy) carryForwardToNewShadowBranch(
 	state.StepCount = 1
 	state.CheckpointTranscriptStart = 0
 	state.LastCheckpointID = ""
+	// NOTE: TurnCheckpointIDs is intentionally NOT cleared here. Those checkpoint
+	// IDs from earlier in the turn still need finalization with the full transcript
+	// when HandleTurnEnd runs at stop time.
 
 	logging.Info(logCtx, "post-commit: carried forward remaining files",
 		slog.String("session_id", state.SessionID),
