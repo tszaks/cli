@@ -892,8 +892,24 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 		return s.sessionHasNewContentFromLiveTranscript(repo, state)
 	}
 
-	// Has new content if there are more lines than already condensed
-	return transcriptLines > state.CheckpointTranscriptStart, nil
+	// Check if transcript has grown since last condensation
+	if transcriptLines <= state.CheckpointTranscriptStart {
+		return false, nil // No new transcript content
+	}
+
+	// Transcript has grown - now check if staged files overlap with session's files
+	// AND have matching content (content-aware check to detect reverted files).
+	if len(state.FilesTouched) > 0 {
+		stagedFiles := getStagedFiles(repo)
+		if len(stagedFiles) > 0 {
+			return stagedFilesOverlapWithContent(repo, tree, stagedFiles, state.FilesTouched), nil
+		}
+		// No staged files but transcript grew - return true (fail open)
+		return true, nil
+	}
+
+	// Transcript grew but no FilesTouched tracked - return true
+	return true, nil
 }
 
 // sessionHasNewContentFromLiveTranscript checks if a session has new content
