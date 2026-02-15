@@ -454,12 +454,13 @@ func subtractFilesByName(filesTouched []string, committedFiles map[string]struct
 }
 
 // hasSignificantContentOverlap checks if two file contents share significant lines.
-// Returns true if the contents share at least 2 non-trivial lines.
 // This distinguishes partial staging (user kept some agent content) from
 // "reverted and replaced" (user wrote completely different content).
 //
-// We require at least 2 matching lines because a single match (like "package main")
-// is likely common boilerplate, not evidence that user kept agent work.
+// For larger files, we require at least 2 matching lines because a single match
+// (like "package main") is likely common boilerplate. For small files (≤ 2
+// significant lines in either file), any single match counts as overlap since
+// there aren't many lines to match anyway.
 //
 // The function filters out trivial lines (short lines < 10 chars like braces,
 // empty lines, etc.) because these commonly appear in many files and don't
@@ -476,14 +477,22 @@ func hasSignificantContentOverlap(stagedContent, shadowContent string) bool {
 		return false
 	}
 
-	// Count matching lines - require at least 2 to count as overlap.
-	// A single match (e.g., "package main") is likely boilerplate, not
-	// evidence that user kept agent work.
+	// For very small files (0-1 significant lines), any single match is meaningful
+	// since requiring 2 matches would be impossible. The 2-line requirement is
+	// mainly to filter out coincidental boilerplate (like "package main") in
+	// larger files where we CAN require multiple matches.
+	isVerySmallFile := len(shadowLines) < 2 || len(stagedLines) < 2
+	requiredMatches := 2
+	if isVerySmallFile {
+		requiredMatches = 1
+	}
+
+	// Count matching lines
 	matchCount := 0
 	for line := range stagedLines {
 		if shadowLines[line] {
 			matchCount++
-			if matchCount >= 2 {
+			if matchCount >= requiredMatches {
 				return true
 			}
 		}

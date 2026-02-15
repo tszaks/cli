@@ -767,6 +767,24 @@ func TestHasSignificantContentOverlap(t *testing.T) {
 			shadowContent: "package main\nfunc SharedFunction() {\nreturn nil",
 			wantOverlap:   true,
 		},
+		{
+			name:          "very small file with single match - overlap (small file exception)",
+			stagedContent: "this is a unique line here\nshort",
+			shadowContent: "this is a unique line here\nshort",
+			wantOverlap:   true, // Shadow has only 1 significant line, so 1 match counts
+		},
+		{
+			name:          "very small file no match - no overlap",
+			stagedContent: "completely different staged content",
+			shadowContent: "short",
+			wantOverlap:   false, // Shadow is very small but no matching lines
+		},
+		{
+			name:          "large staged vs very small shadow with single match - overlap",
+			stagedContent: "line one here\nline two here\nline three here\nshared content line",
+			shadowContent: "shared content line\nshort",
+			wantOverlap:   true, // Shadow has only 1 significant line, so 1 match counts
+		},
 	}
 
 	for _, tt := range tests {

@@ -39,9 +39,11 @@ func TestE2E_SubagentCheckpoint(t *testing.T) {
 	// and available subagent types. Log the result for debugging.
 	if err != nil {
 		t.Logf("Agent completed with error (may be expected): %v", err)
-		t.Logf("Stdout: %s", result.Stdout)
-		t.Logf("Stderr: %s", result.Stderr)
-	} else {
+		if result != nil {
+			t.Logf("Stdout: %s", result.Stdout)
+			t.Logf("Stderr: %s", result.Stderr)
+		}
+	} else if result != nil {
 		t.Logf("Agent completed successfully")
 		t.Logf("Output: %s", result.Stdout)
 	}
@@ -111,7 +113,9 @@ func TestE2E_SubagentCheckpoint_CommitFlow(t *testing.T) {
 	if err != nil {
 		t.Logf("Agent completed with error: %v", err)
 	}
-	t.Logf("Agent output: %s", truncateMessage(result.Stdout, 200))
+	if result != nil {
+		t.Logf("Agent output: %s", truncateMessage(result.Stdout, 200))
+	}
 
 	// 2. Check what files were created
 	var filesToCommit []string
