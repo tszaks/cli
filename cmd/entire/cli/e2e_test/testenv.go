@@ -531,11 +531,12 @@ func (env *TestEnv) RunAgentWithTools(prompt string, tools []string) (*AgentResu
 }
 
 // GitStash runs git stash to save uncommitted changes.
+// Uses -u flag to include untracked files (new files created by agent).
 func (env *TestEnv) GitStash() {
 	env.T.Helper()
 
 	//nolint:noctx // test code, no context needed for git stash
-	cmd := exec.Command("git", "stash")
+	cmd := exec.Command("git", "stash", "-u")
 	cmd.Dir = env.RepoDir
 	if output, err := cmd.CombinedOutput(); err != nil {
 		env.T.Fatalf("git stash failed: %v\nOutput: %s", err, output)
