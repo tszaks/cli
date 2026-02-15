@@ -1119,7 +1119,7 @@ func (s *GitStore) UpdateCommitted(ctx context.Context, opts UpdateCommittedOpti
 	}
 
 	authorName, authorEmail := getGitAuthorFromRepo(s.repo)
-	commitMsg := fmt.Sprintf("Finalize transcript for checkpoint %s", opts.CheckpointID)
+	commitMsg := fmt.Sprintf("Finalize transcript for Checkpoint: %s", opts.CheckpointID)
 	newCommitHash, err := s.createCommit(newTreeHash, ref.Hash(), commitMsg, authorName, authorEmail)
 	if err != nil {
 		return err
