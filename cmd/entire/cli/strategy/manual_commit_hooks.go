@@ -607,7 +607,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 					shouldCondense = filesOverlapWithContent(repo, shadowBranchName, commit, state.FilesTouched)
 				}
 				if shouldCondense {
-					condensed = s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete)
+					condensed = s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete, committedFileSet)
 					// condenseAndUpdateState updates BaseCommit on success.
 					// On failure, BaseCommit is preserved so the shadow branch remains accessible.
 				} else {
@@ -619,7 +619,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 				// but hasNew is an additional content-level check (transcript has
 				// new content beyond what was previously condensed).
 				if len(state.FilesTouched) > 0 && hasNew {
-					condensed = s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete)
+					condensed = s.condenseAndUpdateState(logCtx, repo, checkpointID, state, head, shadowBranchName, shadowBranchesToDelete, committedFileSet)
 					// On failure, BaseCommit is preserved (same as ActionCondense).
 				} else {
 					s.updateBaseCommitIfChanged(logCtx, state, newHead)
@@ -711,8 +711,9 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 	head *plumbing.Reference,
 	shadowBranchName string,
 	shadowBranchesToDelete map[string]struct{},
+	committedFiles map[string]struct{},
 ) bool {
-	result, err := s.CondenseSession(repo, checkpointID, state)
+	result, err := s.CondenseSession(repo, checkpointID, state, committedFiles)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[entire] Warning: condensation failed for session %s: %v\n",
 			state.SessionID, err)

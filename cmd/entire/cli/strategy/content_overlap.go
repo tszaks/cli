@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"context"
+	"io"
 	"log/slog"
 
 	"github.com/entireio/cli/cmd/entire/cli/logging"
@@ -242,7 +243,7 @@ func stagedFilesOverlapWithContent(repo *git.Repository, shadowTree *object.Tree
 			continue
 		}
 
-		// Compare hashes - for new files, require exact content match
+		// Compare hashes - exact match means file is unchanged
 		if stagedHash == shadowFile.Hash {
 			logging.Debug(logCtx, "stagedFilesOverlapWithContent: new file content match found",
 				slog.String("file", stagedPath),
@@ -251,7 +252,55 @@ func stagedFilesOverlapWithContent(repo *git.Repository, shadowTree *object.Tree
 			return true
 		}
 
-		logging.Debug(logCtx, "stagedFilesOverlapWithContent: new file content mismatch (may be reverted & replaced)",
+		// Hashes differ - check if there's significant content overlap.
+		// This distinguishes partial staging (user kept some agent content) from
+		// "reverted and replaced" (user wrote completely different content).
+		shadowContent, shadowErr := shadowFile.Contents()
+		if shadowErr != nil {
+			logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to read shadow content",
+				slog.String("file", stagedPath),
+				slog.String("error", shadowErr.Error()),
+			)
+			continue
+		}
+
+		// Read staged content from object store
+		stagedBlob, blobErr := repo.BlobObject(stagedHash)
+		if blobErr != nil {
+			logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to read staged blob",
+				slog.String("file", stagedPath),
+				slog.String("error", blobErr.Error()),
+			)
+			continue
+		}
+		stagedReader, readerErr := stagedBlob.Reader()
+		if readerErr != nil {
+			logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to get staged reader",
+				slog.String("file", stagedPath),
+				slog.String("error", readerErr.Error()),
+			)
+			continue
+		}
+		stagedBytes, readErr := io.ReadAll(stagedReader)
+		_ = stagedReader.Close() // Best effort close
+		if readErr != nil {
+			logging.Debug(logCtx, "stagedFilesOverlapWithContent: failed to read staged content",
+				slog.String("file", stagedPath),
+				slog.String("error", readErr.Error()),
+			)
+			continue
+		}
+		stagedContent := string(stagedBytes)
+
+		// Check for significant content overlap
+		if hasSignificantContentOverlap(stagedContent, shadowContent) {
+			logging.Debug(logCtx, "stagedFilesOverlapWithContent: new file has partial overlap (partial staging)",
+				slog.String("file", stagedPath),
+			)
+			return true
+		}
+
+		logging.Debug(logCtx, "stagedFilesOverlapWithContent: new file has no significant overlap (reverted & replaced)",
 			slog.String("file", stagedPath),
 			slog.String("staged_hash", stagedHash.String()),
 			slog.String("shadow_hash", shadowFile.Hash.String()),
@@ -401,4 +450,100 @@ func subtractFilesByName(filesTouched []string, committedFiles map[string]struct
 		}
 	}
 	return remaining
+}
+
+// hasSignificantContentOverlap checks if two file contents share significant lines.
+// Returns true if the contents share at least one non-trivial line.
+// This distinguishes partial staging (user kept some agent content) from
+// "reverted and replaced" (user wrote completely different content).
+//
+// The function filters out trivial lines (boilerplate like package declarations,
+// import statements, empty braces, etc.) because these commonly appear in many
+// files and don't indicate meaningful overlap.
+func hasSignificantContentOverlap(stagedContent, shadowContent string) bool {
+	// Build set of significant lines from shadow (agent) content
+	shadowLines := extractSignificantLines(shadowContent)
+
+	// Build set of significant lines from staged (user) content
+	stagedLines := extractSignificantLines(stagedContent)
+
+	// If both have no significant lines, hashes differ so no meaningful overlap
+	if len(shadowLines) == 0 && len(stagedLines) == 0 {
+		return false
+	}
+
+	// If shadow has significant lines but staged doesn't, no overlap
+	if len(shadowLines) > 0 && len(stagedLines) == 0 {
+		return false
+	}
+
+	// If shadow has no significant lines but staged does, no overlap
+	if len(shadowLines) == 0 && len(stagedLines) > 0 {
+		return false
+	}
+
+	// Check if any staged line matches a shadow line
+	for line := range stagedLines {
+		if shadowLines[line] {
+			return true
+		}
+	}
+
+	return false
+}
+
+// extractSignificantLines returns a set of significant (non-trivial) lines from content.
+// Lines are trimmed and must be at least 10 characters and not boilerplate.
+func extractSignificantLines(content string) map[string]bool {
+	lines := make(map[string]bool)
+	for _, line := range splitLines([]byte(content)) {
+		trimmed := trimLine(line)
+		if len(trimmed) >= 10 && !isTrivialLine(trimmed) {
+			lines[trimmed] = true
+		}
+	}
+	return lines
+}
+
+// trimLine removes leading and trailing whitespace from a line.
+func trimLine(line string) string {
+	start := 0
+	end := len(line)
+	for start < end && (line[start] == ' ' || line[start] == '\t') {
+		start++
+	}
+	for end > start && (line[end-1] == ' ' || line[end-1] == '\t') {
+		end--
+	}
+	return line[start:end]
+}
+
+// isTrivialLine returns true for lines that are common boilerplate.
+func isTrivialLine(line string) bool {
+	// Exact matches for very common single tokens
+	switch line {
+	case ")", "{", "}", "(", "};", ");", "],", "});", "]":
+		return true
+	}
+
+	// Prefix matches for common patterns
+	trivialPrefixes := []string{
+		"package ",
+		"import ",
+		"import(",
+		"func ",
+		"return ",
+		"return;",
+		"//", // Comments might be significant, but single-line are usually not
+		"/*", // Start of block comment
+		"* ", // Middle of block comment
+		"*/", // End of block comment
+	}
+	for _, prefix := range trivialPrefixes {
+		if len(line) >= len(prefix) && line[:len(prefix)] == prefix {
+			return true
+		}
+	}
+
+	return false
 }
