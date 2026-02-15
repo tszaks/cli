@@ -885,8 +885,14 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 			// Shadow branch has files from carry-forward - check if staged files overlap
 			// AND have matching content (content-aware check).
 			stagedFiles := getStagedFiles(repo)
-			result := stagedFilesOverlapWithContent(repo, tree, stagedFiles, state.FilesTouched)
-			return result, nil
+			if len(stagedFiles) > 0 {
+				// PrepareCommitMsg context: check staged files overlap with content
+				result := stagedFilesOverlapWithContent(repo, tree, stagedFiles, state.FilesTouched)
+				return result, nil
+			}
+			// PostCommit context: no staged files, but we have carry-forward files.
+			// Return true and let the caller do the overlap check with committed files.
+			return true, nil
 		}
 		// No transcript and no FilesTouched - fall back to live transcript check
 		return s.sessionHasNewContentFromLiveTranscript(repo, state)
@@ -896,8 +902,10 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 	// 1. Transcript has grown since last condensation (new prompts/responses)
 	// 2. FilesTouched has files not yet committed (carry-forward scenario)
 	//
-	// For both cases, we need to verify staged files overlap with session's files
-	// AND have matching content (content-aware check to detect reverted files).
+	// For PrepareCommitMsg context, we verify staged files overlap with session's files
+	// using content-aware matching to detect reverted files.
+	// For PostCommit context, getStagedFiles() is empty (files already committed),
+	// so we return true and let the caller do the overlap check via filesOverlapWithContent.
 
 	hasTranscriptGrowth := transcriptLines > state.CheckpointTranscriptStart
 	hasUncommittedFiles := len(state.FilesTouched) > 0
@@ -906,16 +914,17 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 		return false, nil // No new content and no carry-forward files
 	}
 
-	// Check if staged files overlap with session's files with content-aware matching
-	if hasUncommittedFiles {
-		stagedFiles := getStagedFiles(repo)
-		if len(stagedFiles) > 0 {
-			return stagedFilesOverlapWithContent(repo, tree, stagedFiles, state.FilesTouched), nil
-		}
+	// Check if staged files overlap with session's files with content-aware matching.
+	// This is primarily for PrepareCommitMsg; in PostCommit, stagedFiles is empty.
+	stagedFiles := getStagedFiles(repo)
+	if len(stagedFiles) > 0 {
+		return stagedFilesOverlapWithContent(repo, tree, stagedFiles, state.FilesTouched), nil
 	}
 
-	// Transcript grew but no staged files - return true (fail open)
-	// This handles edge cases like committing via script
+	// No staged files - either PostCommit context or edge case.
+	// Return transcript growth status. For PostCommit with hasTranscriptFile=true,
+	// if there's no transcript growth, the session hasn't done new work since last checkpoint.
+	// (Carry-forward creates a shadow branch WITHOUT transcript, handled in the block above.)
 	return hasTranscriptGrowth, nil
 }
 

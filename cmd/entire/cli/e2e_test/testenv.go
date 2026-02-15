@@ -485,6 +485,36 @@ func (env *TestEnv) GetLatestCheckpointIDFromHistory() (string, error) {
 	return checkpointID, nil
 }
 
+// GetLatestCheckpointID returns the checkpoint ID from HEAD commit, or empty string if none.
+// This is a convenience wrapper that doesn't fail the test on missing checkpoint.
+func (env *TestEnv) GetLatestCheckpointID() string {
+	env.T.Helper()
+
+	repo, err := git.PlainOpen(env.RepoDir)
+	if err != nil {
+		return ""
+	}
+
+	head, err := repo.Head()
+	if err != nil {
+		return ""
+	}
+
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return ""
+	}
+
+	// Look for Entire-Checkpoint trailer in HEAD commit only
+	for _, line := range strings.Split(commit.Message, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Entire-Checkpoint:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "Entire-Checkpoint:"))
+		}
+	}
+	return ""
+}
+
 // safeIDPrefix returns first 12 chars of ID or the full ID if shorter.
 // Use this when logging checkpoint IDs to avoid index out of bounds panic.
 func safeIDPrefix(id string) string {

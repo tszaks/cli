@@ -236,11 +236,13 @@ func stagedFilesOverlapWithContent(repo *git.Repository, shadowTree *object.Tree
 		// Get file from shadow branch tree
 		shadowFile, err := shadowTree.File(stagedPath)
 		if err != nil {
-			// File not in shadow branch - doesn't count as content match
-			logging.Debug(logCtx, "stagedFilesOverlapWithContent: file not in shadow tree",
+			// File not in shadow branch but IS in filesTouched.
+			// This is a carry-forward file: the session tracked it but the shadow
+			// branch was moved/reset after condensation. Trust filesTouched.
+			logging.Debug(logCtx, "stagedFilesOverlapWithContent: carry-forward file (in filesTouched but not shadow tree)",
 				slog.String("file", stagedPath),
 			)
-			continue
+			return true
 		}
 
 		// Compare hashes - exact match means file is unchanged
