@@ -11,6 +11,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
@@ -417,3 +418,196 @@ func TestState_TurnCheckpointIDs_JSON(t *testing.T) {
 		t.Errorf("expected empty JSON, got %s", string(data))
 	}
 }
+
+// TestUpdateCommitted_UsesCorrectAuthor verifies that the "Finalize transcript"
+// commit on entire/checkpoints/v1 gets the correct author from global git config,
+// not "Unknown <unknown@local>".
+func TestUpdateCommitted_UsesCorrectAuthor(t *testing.T) {
+	// Cannot use t.Parallel() because subtests use t.Setenv.
+
+	tests := []struct {
+		name        string
+		localName   string
+		localEmail  string
+		globalName  string
+		globalEmail string
+		wantName    string
+		wantEmail   string
+	}{
+		{
+			name:        "global config only",
+			globalName:  "Global User",
+			globalEmail: "global@example.com",
+			wantName:    "Global User",
+			wantEmail:   "global@example.com",
+		},
+		{
+			name:       "local config takes precedence",
+			localName:  "Local User",
+			localEmail: "local@example.com",
+			globalName: "Global User",
+			wantName:   "Local User",
+			wantEmail:  "local@example.com",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Isolate global git config by pointing HOME to a temp dir
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", "")
+
+			// Write global .gitconfig if needed
+			if tt.globalName != "" || tt.globalEmail != "" {
+				globalCfg := "[user]\n"
+				if tt.globalName != "" {
+					globalCfg += "\tname = " + tt.globalName + "\n"
+				}
+				if tt.globalEmail != "" {
+					globalCfg += "\temail = " + tt.globalEmail + "\n"
+				}
+				if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(globalCfg), 0o644); err != nil {
+					t.Fatalf("failed to write global gitconfig: %v", err)
+				}
+			}
+
+			// Create repo
+			dir := t.TempDir()
+			repo, err := git.PlainInit(dir, false)
+			if err != nil {
+				t.Fatalf("failed to init repo: %v", err)
+			}
+
+			// Set local config if needed
+			if tt.localName != "" || tt.localEmail != "" {
+				cfg, err := repo.Config()
+				if err != nil {
+					t.Fatalf("failed to get repo config: %v", err)
+				}
+				cfg.User.Name = tt.localName
+				cfg.User.Email = tt.localEmail
+				if err := repo.SetConfig(cfg); err != nil {
+					t.Fatalf("failed to set repo config: %v", err)
+				}
+			}
+
+			// Create initial commit so repo has HEAD
+			wt, err := repo.Worktree()
+			if err != nil {
+				t.Fatalf("failed to get worktree: %v", err)
+			}
+			readmeFile := filepath.Join(dir, "README.md")
+			if err := os.WriteFile(readmeFile, []byte("# Test"), 0o644); err != nil {
+				t.Fatalf("failed to write README: %v", err)
+			}
+			if _, err := wt.Add("README.md"); err != nil {
+				t.Fatalf("failed to add README: %v", err)
+			}
+			if _, err := wt.Commit("Initial commit", &git.CommitOptions{
+				Author: &object.Signature{Name: "Setup", Email: "setup@test.com"},
+			}); err != nil {
+				t.Fatalf("failed to commit: %v", err)
+			}
+
+			// Write initial checkpoint
+			store := NewGitStore(repo)
+			cpID := id.MustCheckpointID("a1b2c3d4e5f6")
+			err = store.WriteCommitted(context.Background(), WriteCommittedOptions{
+				CheckpointID: cpID,
+				SessionID:    "session-001",
+				Strategy:     "manual-commit",
+				Transcript:   []byte("provisional\n"),
+				AuthorName:   tt.wantName,
+				AuthorEmail:  tt.wantEmail,
+			})
+			if err != nil {
+				t.Fatalf("WriteCommitted() error = %v", err)
+			}
+
+			// Call UpdateCommitted — this is the operation under test
+			err = store.UpdateCommitted(context.Background(), UpdateCommittedOptions{
+				CheckpointID: cpID,
+				SessionID:    "session-001",
+				Transcript:   []byte("full transcript\n"),
+			})
+			if err != nil {
+				t.Fatalf("UpdateCommitted() error = %v", err)
+			}
+
+			// Read the latest commit on entire/checkpoints/v1 and verify author
+			ref, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+			if err != nil {
+				t.Fatalf("failed to get sessions branch ref: %v", err)
+			}
+			commit, err := repo.CommitObject(ref.Hash())
+			if err != nil {
+				t.Fatalf("failed to get commit: %v", err)
+			}
+
+			if commit.Author.Name != tt.wantName {
+				t.Errorf("commit author name = %q, want %q", commit.Author.Name, tt.wantName)
+			}
+			if commit.Author.Email != tt.wantEmail {
+				t.Errorf("commit author email = %q, want %q", commit.Author.Email, tt.wantEmail)
+			}
+		})
+	}
+}
+
+// TestGetGitAuthorFromRepo_GlobalFallback verifies that GetGitAuthorFromRepo
+// falls back to global git config when local config is empty.
+func TestGetGitAuthorFromRepo_GlobalFallback(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Setenv.
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	// Write global .gitconfig with user info
+	globalCfg := "[user]\n\tname = Global Author\n\temail = global@test.com\n"
+	if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(globalCfg), 0o644); err != nil {
+		t.Fatalf("failed to write global gitconfig: %v", err)
+	}
+
+	// Create repo with NO local user config
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	name, email := GetGitAuthorFromRepo(repo)
+	if name != "Global Author" {
+		t.Errorf("name = %q, want %q", name, "Global Author")
+	}
+	if email != "global@test.com" {
+		t.Errorf("email = %q, want %q", email, "global@test.com")
+	}
+}
+
+// TestGetGitAuthorFromRepo_NoConfig verifies defaults when no config exists.
+func TestGetGitAuthorFromRepo_NoConfig(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Setenv.
+
+	home := t.TempDir() // Empty home — no .gitconfig
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	name, email := GetGitAuthorFromRepo(repo)
+	if name != "Unknown" {
+		t.Errorf("name = %q, want %q", name, "Unknown")
+	}
+	if email != "unknown@local" {
+		t.Errorf("email = %q, want %q", email, "unknown@local")
+	}
+}
+
+// Verify go-git config import is used (compile-time check).
+var _ = config.GlobalScope

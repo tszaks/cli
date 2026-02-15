@@ -26,6 +26,7 @@ import (
 	"github.com/entireio/cli/redact"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/filemode"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -993,7 +994,7 @@ func (s *GitStore) UpdateSummary(ctx context.Context, checkpointID id.Checkpoint
 		return err
 	}
 
-	authorName, authorEmail := getGitAuthorFromRepo(s.repo)
+	authorName, authorEmail := GetGitAuthorFromRepo(s.repo)
 	commitMsg := fmt.Sprintf("Update summary for checkpoint %s (session: %s)", checkpointID, existingMetadata.SessionID)
 	newCommitHash, err := s.createCommit(newTreeHash, ref.Hash(), commitMsg, authorName, authorEmail)
 	if err != nil {
@@ -1118,7 +1119,7 @@ func (s *GitStore) UpdateCommitted(ctx context.Context, opts UpdateCommittedOpti
 		return err
 	}
 
-	authorName, authorEmail := getGitAuthorFromRepo(s.repo)
+	authorName, authorEmail := GetGitAuthorFromRepo(s.repo)
 	commitMsg := fmt.Sprintf("Finalize transcript for Checkpoint: %s", opts.CheckpointID)
 	newCommitHash, err := s.createCommit(newTreeHash, ref.Hash(), commitMsg, authorName, authorEmail)
 	if err != nil {
@@ -1195,7 +1196,7 @@ func (s *GitStore) ensureSessionsBranch() error {
 		return err
 	}
 
-	authorName, authorEmail := getGitAuthorFromRepo(s.repo)
+	authorName, authorEmail := GetGitAuthorFromRepo(s.repo)
 	commitHash, err := s.createCommit(emptyTreeHash, plumbing.ZeroHash, "Initialize sessions branch", authorName, authorEmail)
 	if err != nil {
 		return err
@@ -1359,13 +1360,27 @@ func createRedactedBlobFromFile(repo *git.Repository, filePath, treePath string)
 	return hash, mode, nil
 }
 
-// getGitAuthorFromRepo retrieves the git user.name and user.email from the repository config.
-func getGitAuthorFromRepo(repo *git.Repository) (name, email string) {
+// GetGitAuthorFromRepo retrieves the git user.name and user.email,
+// checking both the repository-local config and the global ~/.gitconfig.
+func GetGitAuthorFromRepo(repo *git.Repository) (name, email string) {
 	// Get repository config (includes local settings)
 	cfg, err := repo.Config()
 	if err == nil {
 		name = cfg.User.Name
 		email = cfg.User.Email
+	}
+
+	// If not found in local config, try global config
+	if name == "" || email == "" {
+		globalCfg, err := config.LoadConfig(config.GlobalScope)
+		if err == nil {
+			if name == "" {
+				name = globalCfg.User.Name
+			}
+			if email == "" {
+				email = globalCfg.User.Email
+			}
+		}
 	}
 
 	// Provide sensible defaults if git user is not configured
