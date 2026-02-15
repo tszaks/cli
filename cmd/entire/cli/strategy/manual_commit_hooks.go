@@ -537,23 +537,15 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		//
 		// For ACTIVE sessions: the commit has a checkpoint trailer (verified above),
 		// meaning PrepareCommitMsg already determined this commit is session-related.
-		// We trust that and assume hasNew = true, bypassing sessionHasNewContent which
-		// would incorrectly return false (uses getStagedFiles, but files are no longer
-		// staged after the commit).
+		// The trailer is only added when either:
+		//   - No TTY (agent/subagent committing) — added unconditionally
+		//   - TTY (human committing) — added after content detection confirmed agent work
+		// In both cases, PrepareCommitMsg already validated this commit. We trust
+		// that decision here. Transcript-based re-validation is unreliable because
+		// subagent transcripts may not be available yet (subagent still running).
 		var hasNew bool
 		if state.Phase.IsActive() {
-			// For ACTIVE sessions, check if this session has any content to condense.
-			// A session with no checkpoints (StepCount=0) and no files touched may exist
-			// concurrently with other sessions that DO have content.
-			// We only condense if this session actually has work.
-			if state.StepCount > 0 || len(state.FilesTouched) > 0 {
-				hasNew = true
-			} else {
-				// No checkpoints and no tracked files - check the live transcript.
-				// Use sessionHasNewContentInCommittedFiles because staged files are empty
-				// after the commit (files have already been committed).
-				hasNew = s.sessionHasNewContentInCommittedFiles(state, committedFileSet)
-			}
+			hasNew = true
 		} else {
 			var contentErr error
 			hasNew, contentErr = s.sessionHasNewContent(repo, state)
@@ -943,45 +935,6 @@ func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(repo *git.
 	return true, nil
 }
 
-// sessionHasNewContentInCommittedFiles checks if a session has content that overlaps with
-// the committed files. This is used in PostCommit for ACTIVE sessions where staged files
-// are empty (already committed). Uses the live transcript to extract modified files and
-// compares against the committed file set.
-//
-// KNOWN LIMITATION: This function relies on transcript analysis to detect file modifications.
-// If the agent makes file modifications via shell commands (e.g., `sed`, `mv`, `cp`) that
-// aren't captured in the transcript's file modification tracking, those modifications may
-// not be detected. This is an acceptable edge case because:
-// 1. Most agent file modifications use the Write/Edit tools which are tracked
-// 2. Shell-based modifications are relatively rare in practice
-// 3. The consequence (missing a checkpoint trailer) is minor - the transcript is still saved
-func (s *ManualCommitStrategy) sessionHasNewContentInCommittedFiles(state *SessionState, committedFiles map[string]struct{}) bool {
-	logCtx := logging.WithComponent(context.Background(), "checkpoint")
-
-	modifiedFiles, ok := s.extractNewModifiedFilesFromLiveTranscript(state)
-	if !ok || len(modifiedFiles) == 0 {
-		return false
-	}
-
-	logging.Debug(logCtx, "committed files check: found file modifications",
-		slog.String("session_id", state.SessionID),
-		slog.Int("modified_files", len(modifiedFiles)),
-		slog.Int("committed_files", len(committedFiles)),
-	)
-
-	// Check if any modified files overlap with committed files
-	for _, f := range modifiedFiles {
-		if _, ok := committedFiles[f]; ok {
-			return true
-		}
-	}
-
-	logging.Debug(logCtx, "committed files check: no overlap between committed and modified files",
-		slog.String("session_id", state.SessionID),
-	)
-	return false
-}
-
 // extractFilesFromLiveTranscript extracts modified file paths from the live transcript.
 // Returns empty slice if extraction fails (fail-open behavior for hooks).
 // Extracts ALL files from the transcript (offset 0) because this is used for carry-forward
@@ -993,7 +946,7 @@ func (s *ManualCommitStrategy) extractFilesFromLiveTranscript(state *SessionStat
 // extractNewModifiedFilesFromLiveTranscript extracts modified files from the live
 // transcript that are NEW since the last condensation. Returns the normalized file list
 // and whether the extraction succeeded. Used by sessionHasNewContentFromLiveTranscript
-// and sessionHasNewContentInCommittedFiles to detect agent work.
+// to detect agent work.
 func (s *ManualCommitStrategy) extractNewModifiedFilesFromLiveTranscript(state *SessionState) ([]string, bool) {
 	logCtx := logging.WithComponent(context.Background(), "checkpoint")
 
