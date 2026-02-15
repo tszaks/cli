@@ -579,3 +579,125 @@ func createShadowBranchWithContent(t *testing.T, repo *git.Repository, baseCommi
 	err = repo.Storer.SetReference(newRef)
 	require.NoError(t, err)
 }
+
+// TestExtractSignificantLines tests the line extraction with length-based filtering.
+// Lines must be >= 10 characters after trimming whitespace.
+func TestExtractSignificantLines(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		content  string
+		wantKeys []string // lines that should be in the result
+		wantNot  []string // lines that should NOT be in the result
+	}{
+		{
+			name: "go function",
+			content: `package main
+
+func hello() {
+	fmt.Println("hello world")
+	return
+}`,
+			wantKeys: []string{
+				"package main",               // 12 chars
+				"func hello() {",             // 14 chars
+				`fmt.Println("hello world")`, // 26 chars
+			},
+			wantNot: []string{
+				"}",      // 1 char
+				"return", // 6 chars
+			},
+		},
+		{
+			name: "python function",
+			content: `def calculate(x, y):
+    result = x + y
+    print(f"Result: {result}")
+    return result`,
+			wantKeys: []string{
+				"def calculate(x, y):",       // 20 chars
+				"result = x + y",             // 14 chars
+				`print(f"Result: {result}")`, // 25 chars
+				"return result",              // 13 chars
+			},
+			wantNot: []string{},
+		},
+		{
+			name: "javascript",
+			content: `const handler = async (req) => {
+  const data = await fetch(url);
+  return data.json();
+};`,
+			wantKeys: []string{
+				"const handler = async (req) => {", // 32 chars
+				"const data = await fetch(url);",   // 30 chars
+				"return data.json();",              // 19 chars
+			},
+			wantNot: []string{
+				"};", // 2 chars
+			},
+		},
+		{
+			name: "short lines filtered",
+			content: `a = 1
+b = 2
+longVariableName = 42`,
+			wantKeys: []string{
+				"longVariableName = 42", // 21 chars
+			},
+			wantNot: []string{
+				"a = 1", // 5 chars
+				"b = 2", // 5 chars
+			},
+		},
+		{
+			name: "structural lines filtered by length",
+			content: `{
+  });
+  ]);
+  },
+}`,
+			wantKeys: []string{},
+			wantNot: []string{
+				"{",   // 1 char
+				"});", // 3 chars
+				"]);", // 3 chars
+				"},",  // 2 chars
+				"}",   // 1 char
+			},
+		},
+		{
+			name: "regex and special chars kept if long enough",
+			content: `short
+/^[a-z0-9]+@[a-z]+\.[a-z]{2,}$/
+x`,
+			wantKeys: []string{
+				"/^[a-z0-9]+@[a-z]+\\.[a-z]{2,}$/", // 32 chars - kept even though mostly non-alpha
+			},
+			wantNot: []string{
+				"short", // 5 chars
+				"x",     // 1 char
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := extractSignificantLines(tt.content)
+
+			for _, want := range tt.wantKeys {
+				if !result[want] {
+					t.Errorf("extractSignificantLines() missing expected line: %q", want)
+				}
+			}
+
+			for _, notWant := range tt.wantNot {
+				if result[notWant] {
+					t.Errorf("extractSignificantLines() should not contain: %q", notWant)
+				}
+			}
+		})
+	}
+}

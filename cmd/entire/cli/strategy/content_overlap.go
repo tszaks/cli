@@ -494,13 +494,18 @@ func hasSignificantContentOverlap(stagedContent, shadowContent string) bool {
 	return false
 }
 
-// extractSignificantLines returns a set of significant (non-trivial) lines from content.
-// Lines are trimmed and must be at least 10 characters and not boilerplate.
+// extractSignificantLines returns a set of significant lines from content.
+// Lines are trimmed and must be at least 10 characters.
+//
+// This simple length-based filter works well because:
+// - Most structural boilerplate is short: `{`, `}`, `});`, `} else {` (all < 10 chars)
+// - Long lines (>= 10 chars) are usually meaningful regardless of language
+// - No language-specific pattern matching needed
 func extractSignificantLines(content string) map[string]bool {
 	lines := make(map[string]bool)
 	for _, line := range splitLines([]byte(content)) {
 		trimmed := trimLine(line)
-		if len(trimmed) >= 10 && !isTrivialLine(trimmed) {
+		if len(trimmed) >= 10 {
 			lines[trimmed] = true
 		}
 	}
@@ -518,34 +523,4 @@ func trimLine(line string) string {
 		end--
 	}
 	return line[start:end]
-}
-
-// isTrivialLine returns true for lines that are common boilerplate.
-func isTrivialLine(line string) bool {
-	// Exact matches for very common single tokens
-	switch line {
-	case ")", "{", "}", "(", "};", ");", "],", "});", "]":
-		return true
-	}
-
-	// Prefix matches for common patterns
-	trivialPrefixes := []string{
-		"package ",
-		"import ",
-		"import(",
-		"func ",
-		"return ",
-		"return;",
-		"//", // Comments might be significant, but single-line are usually not
-		"/*", // Start of block comment
-		"* ", // Middle of block comment
-		"*/", // End of block comment
-	}
-	for _, prefix := range trivialPrefixes {
-		if len(line) >= len(prefix) && line[:len(prefix)] == prefix {
-			return true
-		}
-	}
-
-	return false
 }
