@@ -1001,26 +1001,30 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(state *Ses
 		return nil
 	}
 
-	modifiedFiles, _, err := analyzer.ExtractModifiedFilesFromOffset(state.TranscriptPath, offset)
-	if err != nil {
-		logging.Debug(logCtx, "extractModifiedFilesFromLiveTranscript: main transcript extraction failed",
-			slog.String("transcript_path", state.TranscriptPath),
-			slog.Any("error", err),
-		)
-	}
+	var modifiedFiles []string
 
-	// Also check subagent transcripts (Claude Code specific).
-	// Subagents spawned via the Task tool write to separate transcript files.
+	// For Claude Code, use ExtractAllModifiedFiles which parses the main transcript
+	// AND subagent transcripts in a single pass, avoiding redundant parsing.
 	if state.AgentType == agent.AgentTypeClaudeCode {
 		subagentsDir := filepath.Join(filepath.Dir(state.TranscriptPath), state.SessionID, "subagents")
 		allFiles, extractErr := claudecode.ExtractAllModifiedFiles(state.TranscriptPath, offset, subagentsDir)
 		if extractErr != nil {
-			logging.Debug(logCtx, "extractModifiedFilesFromLiveTranscript: subagent extraction failed",
+			logging.Debug(logCtx, "extractModifiedFilesFromLiveTranscript: extraction failed",
 				slog.String("session_id", state.SessionID),
 				slog.String("error", extractErr.Error()),
 			)
-		} else if len(allFiles) > len(modifiedFiles) {
+		} else {
 			modifiedFiles = allFiles
+		}
+	} else {
+		files, _, err := analyzer.ExtractModifiedFilesFromOffset(state.TranscriptPath, offset)
+		if err != nil {
+			logging.Debug(logCtx, "extractModifiedFilesFromLiveTranscript: main transcript extraction failed",
+				slog.String("transcript_path", state.TranscriptPath),
+				slog.Any("error", err),
+			)
+		} else {
+			modifiedFiles = files
 		}
 	}
 
