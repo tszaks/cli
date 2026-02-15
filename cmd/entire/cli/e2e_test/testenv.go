@@ -65,6 +65,13 @@ func NewFeatureBranchEnv(t *testing.T, strategyName string) *TestEnv {
 	// This sets up .entire/settings.json and .claude/settings.json with hooks
 	env.RunEntireEnable(strategyName)
 
+	// Commit all files created by `entire enable` so they survive git stash -u operations.
+	// Without this, stash operations would stash away the hooks config and entire settings,
+	// causing hooks to not fire for subsequent prompts and stash pop conflicts.
+	// Using "git add ." is safe in test repos since we control all content.
+	env.GitAddAll()
+	env.GitCommit("Add entire and agent config")
+
 	return env
 }
 
@@ -192,6 +199,18 @@ func (env *TestEnv) GitAdd(paths ...string) {
 		if _, err := worktree.Add(path); err != nil {
 			env.T.Fatalf("failed to add file %s: %v", path, err)
 		}
+	}
+}
+
+// GitAddAll stages all files (git add .).
+func (env *TestEnv) GitAddAll() {
+	env.T.Helper()
+
+	//nolint:gosec // test code, "." is safe
+	cmd := exec.Command("git", "add", ".")
+	cmd.Dir = env.RepoDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		env.T.Fatalf("git add . failed: %v\nOutput: %s", err, output)
 	}
 }
 
