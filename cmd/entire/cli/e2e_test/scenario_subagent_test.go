@@ -22,6 +22,11 @@ import (
 func TestE2E_SubagentCheckpoint(t *testing.T) {
 	t.Parallel()
 
+	// Skip for non-Claude agents - Task tool is Claude Code specific
+	if defaultAgent != AgentNameClaudeCode {
+		t.Skipf("Skipping subagent test for %s (Task tool is Claude Code specific)", defaultAgent)
+	}
+
 	env := NewFeatureBranchEnv(t, "manual-commit")
 
 	// Get rewind points before agent action
