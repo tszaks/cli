@@ -21,11 +21,27 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
+// defaultAgent holds the agent to test with, determined in TestMain.
+var defaultAgent string
+
+// testBinaryPath holds the path to the CLI binary built once in TestMain.
+// All tests share this binary to avoid repeated builds.
+var testBinaryPath string
+
 // TestEnv manages an isolated test environment for E2E tests with real agent calls.
 type TestEnv struct {
 	T       *testing.T
 	RepoDir string
 	Agent   AgentRunner
+}
+
+// getTestBinary returns the path to the shared test binary.
+// It panics if TestMain hasn't run (testBinaryPath is empty).
+func getTestBinary() string {
+	if testBinaryPath == "" {
+		panic("testBinaryPath not set - TestMain must run before tests")
+	}
+	return testBinaryPath
 }
 
 // NewTestEnv creates a new isolated E2E test environment.
