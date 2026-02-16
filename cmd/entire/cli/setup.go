@@ -234,17 +234,15 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 		return fmt.Errorf("unknown strategy: %s (use manual-commit or auto-commit)", selectedStrategy)
 	}
 
-	// Detect default agent
-	ag := agent.Default()
-	agentType := string(agent.AgentTypeClaudeCode)
-	if ag != nil {
-		agentType = string(ag.Type())
+	// Detect or select agent
+	ag, err := detectOrSelectAgent(w)
+	if err != nil {
+		return fmt.Errorf("agent selection failed: %w", err)
 	}
-	fmt.Fprintf(w, "Agent: %s (use --agent to change)\n\n", agentType)
 
-	// Setup Claude Code hooks (agent hooks don't depend on settings)
-	if _, err := setupClaudeCodeHook(localDev, forceHooks); err != nil {
-		return fmt.Errorf("failed to setup Claude Code hooks: %w", err)
+	// Setup agent hooks
+	if _, err := setupAgentHooks(ag, localDev, forceHooks); err != nil {
+		return fmt.Errorf("failed to setup %s hooks: %w", ag.Type(), err)
 	}
 
 	// Setup .entire directory
@@ -335,17 +333,15 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 		}
 	}
 
-	// Detect default agent
-	ag := agent.Default()
-	agentType := string(agent.AgentTypeClaudeCode)
-	if ag != nil {
-		agentType = string(ag.Type())
+	// Detect or select agent
+	ag, err := detectOrSelectAgent(w)
+	if err != nil {
+		return fmt.Errorf("agent selection failed: %w", err)
 	}
-	fmt.Fprintf(w, "Agent: %s (use --agent to change)\n\n", agentType)
 
-	// Setup Claude Code hooks (agent hooks don't depend on settings)
-	if _, err := setupClaudeCodeHook(localDev, forceHooks); err != nil {
-		return fmt.Errorf("failed to setup Claude Code hooks: %w", err)
+	// Setup agent hooks
+	if _, err := setupAgentHooks(ag, localDev, forceHooks); err != nil {
+		return fmt.Errorf("failed to setup %s hooks: %w", ag.Type(), err)
 	}
 
 	// Setup .entire directory
@@ -497,26 +493,110 @@ func checkDisabledGuard(w io.Writer) bool {
 	return false
 }
 
-// setupClaudeCodeHook sets up Claude Code hooks.
-// This is a convenience wrapper that uses the agent package.
+// setupAgentHooks sets up hooks for a given agent.
 // Returns the number of hooks installed (0 if already installed).
-func setupClaudeCodeHook(localDev, forceHooks bool) (int, error) { //nolint:unparam // already present in codebase
-	ag, err := agent.Get(agent.AgentNameClaudeCode)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get claude-code agent: %w", err)
-	}
-
+func setupAgentHooks(ag agent.Agent, localDev, forceHooks bool) (int, error) { //nolint:unparam // return value used by setupAgentHooksNonInteractive
 	hookAgent, ok := ag.(agent.HookSupport)
 	if !ok {
-		return 0, errors.New("claude-code agent does not support hooks")
+		return 0, fmt.Errorf("agent %s does not support hooks", ag.Name())
 	}
 
 	count, err := hookAgent.InstallHooks(localDev, forceHooks)
 	if err != nil {
-		return 0, fmt.Errorf("failed to install claude-code hooks: %w", err)
+		return 0, fmt.Errorf("failed to install %s hooks: %w", ag.Name(), err)
 	}
 
 	return count, nil
+}
+
+// detectOrSelectAgent tries to auto-detect an agent, or prompts the user to select one.
+// Returns the detected/selected agent and any error.
+// If no agent is detected and no TTY is available, falls back to the default agent.
+func detectOrSelectAgent(w io.Writer) (agent.Agent, error) {
+	// Try auto-detection first
+	ag, err := agent.Detect()
+	if err == nil {
+		fmt.Fprintf(w, "Detected agent: %s\n\n", ag.Type())
+		return ag, nil
+	}
+
+	// No agent detected - check if we can prompt interactively
+	if !canPromptInteractively() {
+		// No TTY available (e.g., running in CI or tests) - fall back to default agent
+		defaultAgent := agent.Default()
+		if defaultAgent == nil {
+			return nil, errors.New("no default agent available")
+		}
+		fmt.Fprintf(w, "Agent: %s (use --agent to change)\n\n", defaultAgent.Type())
+		return defaultAgent, nil
+	}
+
+	// Show message and prompt for selection
+	fmt.Fprintln(w, "No agent configuration detected (e.g., .claude or .gemini directory).")
+	fmt.Fprintln(w, "This is normal - some agents don't require a config directory.")
+	fmt.Fprintln(w)
+
+	// Build options from registered agents
+	agentNames := agent.List()
+	options := make([]huh.Option[string], 0, len(agentNames))
+	for _, name := range agentNames {
+		ag, err := agent.Get(name)
+		if err != nil {
+			continue
+		}
+		// Only show agents that support hooks
+		if _, ok := ag.(agent.HookSupport); !ok {
+			continue
+		}
+		label := string(ag.Type())
+		if name == agent.DefaultAgentName {
+			label += " (default)"
+		}
+		options = append(options, huh.NewOption(label, string(name)))
+	}
+
+	if len(options) == 0 {
+		return nil, errors.New("no agents with hook support available")
+	}
+
+	var selectedAgentName string
+	form := NewAccessibleForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Which agent are you using?").
+				Options(options...).
+				Value(&selectedAgentName),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("agent selection cancelled: %w", err)
+	}
+
+	selectedAgent, err := agent.Get(agent.AgentName(selectedAgentName))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get selected agent: %w", err)
+	}
+
+	fmt.Fprintf(w, "\nSelected agent: %s\n\n", selectedAgent.Type())
+	return selectedAgent, nil
+}
+
+// canPromptInteractively checks if we can show interactive prompts.
+// Returns false when running in CI, tests, or other non-interactive environments.
+func canPromptInteractively() bool {
+	// Check for test environment
+	if os.Getenv("ENTIRE_TEST_TTY") != "" {
+		return os.Getenv("ENTIRE_TEST_TTY") == "1"
+	}
+
+	// Check if /dev/tty is available
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		return false
+	}
+	_ = tty.Close()
+	return true
 }
 
 // printAgentError writes an error message followed by available agents and usage.
