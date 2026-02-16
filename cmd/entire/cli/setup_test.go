@@ -878,3 +878,175 @@ func TestEnableCmd_AgentFlagEmptyValue(t *testing.T) {
 		t.Error("should not contain default cobra/pflag error message")
 	}
 }
+
+// Tests for canPromptInteractively
+
+func TestCanPromptInteractively_EnvVar_True(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Setenv
+	t.Setenv("ENTIRE_TEST_TTY", "1")
+
+	if !canPromptInteractively() {
+		t.Error("canPromptInteractively() = false, want true when ENTIRE_TEST_TTY=1")
+	}
+}
+
+func TestCanPromptInteractively_EnvVar_False(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Setenv
+	t.Setenv("ENTIRE_TEST_TTY", "0")
+
+	if canPromptInteractively() {
+		t.Error("canPromptInteractively() = true, want false when ENTIRE_TEST_TTY=0")
+	}
+}
+
+func TestCanPromptInteractively_EnvVar_OtherValue(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Setenv
+	t.Setenv("ENTIRE_TEST_TTY", "yes") // Not "1", so should be false
+
+	if canPromptInteractively() {
+		t.Error("canPromptInteractively() = true, want false when ENTIRE_TEST_TTY is set but not '1'")
+	}
+}
+
+// Tests for detectOrSelectAgent
+
+func TestDetectOrSelectAgent_AgentDetected(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir
+	setupTestRepo(t)
+
+	// Create .claude directory so Claude Code agent is detected
+	if err := os.MkdirAll(".claude", 0o755); err != nil {
+		t.Fatalf("Failed to create .claude directory: %v", err)
+	}
+
+	var buf bytes.Buffer
+	ag, err := detectOrSelectAgent(&buf)
+	if err != nil {
+		t.Fatalf("detectOrSelectAgent() error = %v", err)
+	}
+
+	// Should detect Claude Code
+	if ag.Name() != agent.AgentNameClaudeCode {
+		t.Errorf("detectOrSelectAgent() agent name = %v, want %v", ag.Name(), agent.AgentNameClaudeCode)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Detected agent:") {
+		t.Errorf("Expected output to contain 'Detected agent:', got: %s", output)
+	}
+	if !strings.Contains(output, string(agent.AgentTypeClaudeCode)) {
+		t.Errorf("Expected output to contain '%s', got: %s", agent.AgentTypeClaudeCode, output)
+	}
+}
+
+func TestDetectOrSelectAgent_GeminiDetected(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir
+	setupTestRepo(t)
+
+	// Create .gemini directory so Gemini agent is detected
+	if err := os.MkdirAll(".gemini", 0o755); err != nil {
+		t.Fatalf("Failed to create .gemini directory: %v", err)
+	}
+
+	var buf bytes.Buffer
+	ag, err := detectOrSelectAgent(&buf)
+	if err != nil {
+		t.Fatalf("detectOrSelectAgent() error = %v", err)
+	}
+
+	// Should detect Gemini
+	if ag.Name() != agent.AgentNameGemini {
+		t.Errorf("detectOrSelectAgent() agent name = %v, want %v", ag.Name(), agent.AgentNameGemini)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Detected agent:") {
+		t.Errorf("Expected output to contain 'Detected agent:', got: %s", output)
+	}
+}
+
+func TestDetectOrSelectAgent_NoDetection_NoTTY_FallsBackToDefault(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
+	setupTestRepo(t)
+	t.Setenv("ENTIRE_TEST_TTY", "0") // No TTY available
+
+	// No .claude or .gemini directory - detection will fail
+
+	var buf bytes.Buffer
+	ag, err := detectOrSelectAgent(&buf)
+	if err != nil {
+		t.Fatalf("detectOrSelectAgent() error = %v", err)
+	}
+
+	// Should fall back to default agent (Claude Code)
+	if ag.Name() != agent.DefaultAgentName {
+		t.Errorf("detectOrSelectAgent() agent name = %v, want default %v", ag.Name(), agent.DefaultAgentName)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Agent:") {
+		t.Errorf("Expected output to contain 'Agent:', got: %s", output)
+	}
+	if !strings.Contains(output, "(use --agent to change)") {
+		t.Errorf("Expected output to contain '(use --agent to change)', got: %s", output)
+	}
+}
+
+func TestDetectOrSelectAgent_NoDetection_WithTTY_ShowsPromptMessages(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
+	setupTestRepo(t)
+	t.Setenv("ENTIRE_TEST_TTY", "1") // TTY available (but form will fail since no real TTY)
+
+	// No .claude or .gemini directory - detection will fail
+
+	var buf bytes.Buffer
+	_, err := detectOrSelectAgent(&buf)
+
+	// The form.Run() will fail because there's no actual TTY
+	// But we can verify the messages printed before the form
+	if err == nil {
+		t.Fatal("Expected error when form cannot run (no real TTY)")
+	}
+
+	// Verify the error is about form cancellation
+	if !strings.Contains(err.Error(), "agent selection cancelled") {
+		t.Errorf("Expected 'agent selection cancelled' error, got: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "No agent configuration detected") {
+		t.Errorf("Expected output to contain 'No agent configuration detected', got: %s", output)
+	}
+	if !strings.Contains(output, "This is normal") {
+		t.Errorf("Expected output to contain 'This is normal', got: %s", output)
+	}
+}
+
+func TestDetectOrSelectAgent_BothDirectoriesExist_DetectsFirst(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir
+	setupTestRepo(t)
+
+	// Create both .claude and .gemini directories
+	if err := os.MkdirAll(".claude", 0o755); err != nil {
+		t.Fatalf("Failed to create .claude directory: %v", err)
+	}
+	if err := os.MkdirAll(".gemini", 0o755); err != nil {
+		t.Fatalf("Failed to create .gemini directory: %v", err)
+	}
+
+	var buf bytes.Buffer
+	ag, err := detectOrSelectAgent(&buf)
+	if err != nil {
+		t.Fatalf("detectOrSelectAgent() error = %v", err)
+	}
+
+	// Should detect one of them (order depends on map iteration, but should succeed)
+	if ag == nil {
+		t.Error("detectOrSelectAgent() returned nil agent")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Detected agent:") {
+		t.Errorf("Expected output to contain 'Detected agent:', got: %s", output)
+	}
+}
