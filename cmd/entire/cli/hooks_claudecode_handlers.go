@@ -18,6 +18,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/transcript"
 )
 
 // hookInputData contains parsed hook input and session identifiers.
@@ -186,26 +187,26 @@ func commitWithMetadata() error { //nolint:maintidx // already present in codeba
 
 	// Parse transcript (optionally from offset for strategies that track transcript position)
 	// When transcriptOffset > 0, only parse NEW lines since the last checkpoint
-	var transcript []transcriptLine
+	var transcriptLines []transcriptLine
 	var totalLines int
 	if transcriptOffset > 0 {
 		// Parse only NEW lines since last checkpoint
-		transcript, totalLines, err = parseTranscriptFromLine(transcriptPath, transcriptOffset)
+		transcriptLines, totalLines, err = transcript.ParseFromFileAtLine(transcriptPath, transcriptOffset)
 		if err != nil {
 			return fmt.Errorf("failed to parse transcript from line %d: %w", transcriptOffset, err)
 		}
-		fmt.Fprintf(os.Stderr, "Parsed %d new transcript lines (total: %d)\n", len(transcript), totalLines)
+		fmt.Fprintf(os.Stderr, "Parsed %d new transcript lines (total: %d)\n", len(transcriptLines), totalLines)
 	} else {
 		// First prompt or no session state - parse entire transcript
-		// Use parseTranscriptFromLine with offset 0 to also get totalLines
-		transcript, totalLines, err = parseTranscriptFromLine(transcriptPath, 0)
+		// Use ParseFromFileAtLine with offset 0 to also get totalLines
+		transcriptLines, totalLines, err = transcript.ParseFromFileAtLine(transcriptPath, 0)
 		if err != nil {
 			return fmt.Errorf("failed to parse transcript: %w", err)
 		}
 	}
 
 	// Extract all prompts since last checkpoint for prompt file
-	allPrompts := extractUserPrompts(transcript)
+	allPrompts := extractUserPrompts(transcriptLines)
 	promptFile := filepath.Join(sessionDirAbs, paths.PromptFileName)
 	promptContent := strings.Join(allPrompts, "\n\n---\n\n")
 	if err := os.WriteFile(promptFile, []byte(promptContent), 0o600); err != nil {
@@ -215,7 +216,7 @@ func commitWithMetadata() error { //nolint:maintidx // already present in codeba
 
 	// Extract summary
 	summaryFile := filepath.Join(sessionDirAbs, paths.SummaryFileName)
-	summary := extractLastAssistantMessage(transcript)
+	summary := extractLastAssistantMessage(transcriptLines)
 	if err := os.WriteFile(summaryFile, []byte(summary), 0o600); err != nil {
 		return fmt.Errorf("failed to write summary file: %w", err)
 	}
@@ -228,7 +229,7 @@ func commitWithMetadata() error { //nolint:maintidx // already present in codeba
 	if subagentErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to extract modified files with subagents: %v\n", subagentErr)
 		// Fall back to main transcript only
-		modifiedFiles = extractModifiedFiles(transcript)
+		modifiedFiles = extractModifiedFiles(transcriptLines)
 	}
 
 	// Generate commit message from last user prompt
@@ -297,7 +298,7 @@ func commitWithMetadata() error { //nolint:maintidx // already present in codeba
 
 	// Create context file before saving changes
 	contextFile := filepath.Join(sessionDirAbs, paths.ContextFileName)
-	if err := createContextFileMinimal(contextFile, commitMessage, sessionID, promptFile, summaryFile, transcript); err != nil {
+	if err := createContextFileMinimal(contextFile, commitMessage, sessionID, promptFile, summaryFile, transcriptLines); err != nil {
 		return fmt.Errorf("failed to create context file: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "Created context file: %s\n", sessionDir+"/"+paths.ContextFileName)
@@ -598,19 +599,19 @@ func handleClaudeCodePostTask() error {
 	var modifiedFiles []string
 	if subagentTranscriptPath != "" {
 		// Use subagent transcript if available
-		transcript, err := parseTranscript(subagentTranscriptPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to parse subagent transcript: %v\n", err)
+		parsed, _, parseErr := transcript.ParseFromFileAtLine(subagentTranscriptPath, 0)
+		if parseErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse subagent transcript: %v\n", parseErr)
 		} else {
-			modifiedFiles = extractModifiedFiles(transcript)
+			modifiedFiles = extractModifiedFiles(parsed)
 		}
 	} else {
 		// Fall back to main transcript
-		transcript, err := parseTranscript(input.TranscriptPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to parse transcript: %v\n", err)
+		parsed, _, parseErr := transcript.ParseFromFileAtLine(input.TranscriptPath, 0)
+		if parseErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse transcript: %v\n", parseErr)
 		} else {
-			modifiedFiles = extractModifiedFiles(transcript)
+			modifiedFiles = extractModifiedFiles(parsed)
 		}
 	}
 
@@ -650,8 +651,8 @@ func handleClaudeCodePostTask() error {
 	}
 
 	// Find checkpoint UUID from main transcript (best-effort, ignore errors)
-	transcript, _ := parseTranscript(input.TranscriptPath) //nolint:errcheck // best-effort extraction
-	checkpointUUID, _ := FindCheckpointUUID(transcript, input.ToolUseID)
+	mainLines, _, _ := transcript.ParseFromFileAtLine(input.TranscriptPath, 0) //nolint:errcheck // best-effort extraction
+	checkpointUUID, _ := FindCheckpointUUID(mainLines, input.ToolUseID)
 
 	// Get git author
 	author, err := GetGitAuthor()
