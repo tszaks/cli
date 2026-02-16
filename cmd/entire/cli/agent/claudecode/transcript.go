@@ -1,11 +1,9 @@
 package claudecode
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -22,29 +20,6 @@ type (
 	assistantMessage = transcript.AssistantMessage
 	toolInput        = transcript.ToolInput
 )
-
-// Scanner buffer size for large transcript files (10MB)
-const scannerBufferSize = 10 * 1024 * 1024
-
-// ParseTranscript parses raw JSONL content into transcript lines
-func ParseTranscript(data []byte) ([]TranscriptLine, error) {
-	var lines []TranscriptLine
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 0, scannerBufferSize), scannerBufferSize)
-
-	for scanner.Scan() {
-		var line TranscriptLine
-		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
-			continue // Skip malformed lines
-		}
-		lines = append(lines, line)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed to scan transcript: %w", err)
-	}
-	return lines, nil
-}
 
 // SerializeTranscript converts transcript lines back to JSONL bytes
 func SerializeTranscript(lines []TranscriptLine) ([]byte, error) {
@@ -251,46 +226,12 @@ func CalculateTokenUsageFromFile(path string, startLine int) (*agent.TokenUsage,
 		return &agent.TokenUsage{}, nil
 	}
 
-	transcript, err := parseTranscriptFromLine(path, startLine)
+	lines, _, err := transcript.ParseFromFileAtLine(path, startLine)
 	if err != nil {
-		return nil, err
+		return nil, err //nolint:wrapcheck // caller adds context
 	}
 
-	return CalculateTokenUsage(transcript), nil
-}
-
-// parseTranscriptFromLine parses a transcript file starting from a specific line.
-func parseTranscriptFromLine(path string, startLine int) ([]TranscriptLine, error) {
-	file, err := os.Open(path) //nolint:gosec // Path comes from Claude Code transcript location
-	if err != nil {
-		return nil, fmt.Errorf("failed to open transcript file: %w", err)
-	}
-	defer file.Close()
-
-	var lines []TranscriptLine
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, scannerBufferSize), scannerBufferSize)
-
-	lineNum := 0
-	for scanner.Scan() {
-		if lineNum < startLine {
-			lineNum++
-			continue
-		}
-		lineNum++
-
-		var line TranscriptLine
-		if err := json.Unmarshal(scanner.Bytes(), &line); err != nil {
-			continue // Skip malformed lines
-		}
-		lines = append(lines, line)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed to scan transcript: %w", err)
-	}
-
-	return lines, nil
+	return CalculateTokenUsage(lines), nil
 }
 
 // ExtractSpawnedAgentIDs extracts agent IDs from Task tool results in a transcript.
@@ -393,16 +334,16 @@ func CalculateTotalTokenUsage(transcriptPath string, startLine int, subagentsDir
 	}
 
 	// Parse transcript ONCE
-	transcript, err := parseTranscriptFromLine(transcriptPath, startLine)
+	parsed, _, err := transcript.ParseFromFileAtLine(transcriptPath, startLine)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse transcript: %w", err)
 	}
 
 	// Calculate token usage from parsed transcript
-	mainUsage := CalculateTokenUsage(transcript)
+	mainUsage := CalculateTokenUsage(parsed)
 
 	// Extract spawned agent IDs from the same parsed transcript
-	agentIDs := ExtractSpawnedAgentIDs(transcript)
+	agentIDs := ExtractSpawnedAgentIDs(parsed)
 
 	// Calculate subagent token usage
 	if len(agentIDs) > 0 {
@@ -439,7 +380,7 @@ func ExtractAllModifiedFiles(transcriptPath string, startLine int, subagentsDir 
 	}
 
 	// Parse main transcript once
-	transcript, err := parseTranscriptFromLine(transcriptPath, startLine)
+	parsed, _, err := transcript.ParseFromFileAtLine(transcriptPath, startLine)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse transcript: %w", err)
 	}
@@ -447,7 +388,7 @@ func ExtractAllModifiedFiles(transcriptPath string, startLine int, subagentsDir 
 	// Collect modified files from main agent
 	fileSet := make(map[string]bool)
 	var files []string
-	for _, f := range ExtractModifiedFiles(transcript) {
+	for _, f := range ExtractModifiedFiles(parsed) {
 		if !fileSet[f] {
 			fileSet[f] = true
 			files = append(files, f)
@@ -455,15 +396,15 @@ func ExtractAllModifiedFiles(transcriptPath string, startLine int, subagentsDir 
 	}
 
 	// Find spawned subagents and collect their modified files
-	agentIDs := ExtractSpawnedAgentIDs(transcript)
+	agentIDs := ExtractSpawnedAgentIDs(parsed)
 	for agentID := range agentIDs {
 		agentPath := filepath.Join(subagentsDir, fmt.Sprintf("agent-%s.jsonl", agentID))
-		agentTranscript, err := parseTranscriptFromLine(agentPath, 0)
-		if err != nil {
+		agentLines, _, agentErr := transcript.ParseFromFileAtLine(agentPath, 0)
+		if agentErr != nil {
 			// Subagent transcript may not exist yet or may have been cleaned up
 			continue
 		}
-		for _, f := range ExtractModifiedFiles(agentTranscript) {
+		for _, f := range ExtractModifiedFiles(agentLines) {
 			if !fileSet[f] {
 				fileSet[f] = true
 				files = append(files, f)

@@ -16,13 +16,13 @@ func TestParseTranscript(t *testing.T) {
 {"type":"assistant","uuid":"a1","message":{"content":[{"type":"text","text":"hi"}]}}
 `)
 
-	lines, err := ParseTranscript(data)
+	lines, err := transcript.ParseFromBytes(data)
 	if err != nil {
-		t.Fatalf("ParseTranscript() error = %v", err)
+		t.Fatalf("ParseFromBytes() error = %v", err)
 	}
 
 	if len(lines) != 2 {
-		t.Errorf("ParseTranscript() got %d lines, want 2", len(lines))
+		t.Errorf("ParseFromBytes() got %d lines, want 2", len(lines))
 	}
 
 	if lines[0].Type != transcript.TypeUser || lines[0].UUID != "u1" {
@@ -42,14 +42,14 @@ not valid json
 {"type":"assistant","uuid":"a1","message":{"content":[]}}
 `)
 
-	lines, err := ParseTranscript(data)
+	lines, err := transcript.ParseFromBytes(data)
 	if err != nil {
-		t.Fatalf("ParseTranscript() error = %v", err)
+		t.Fatalf("ParseFromBytes() error = %v", err)
 	}
 
 	// Should skip the malformed line
 	if len(lines) != 2 {
-		t.Errorf("ParseTranscript() got %d lines, want 2 (skipping malformed)", len(lines))
+		t.Errorf("ParseFromBytes() got %d lines, want 2 (skipping malformed)", len(lines))
 	}
 }
 
@@ -67,9 +67,9 @@ func TestSerializeTranscript(t *testing.T) {
 	}
 
 	// Parse back to verify round-trip
-	parsed, err := ParseTranscript(data)
+	parsed, err := transcript.ParseFromBytes(data)
 	if err != nil {
-		t.Fatalf("ParseTranscript(serialized) error = %v", err)
+		t.Fatalf("ParseFromBytes(serialized) error = %v", err)
 	}
 
 	if len(parsed) != 2 {
@@ -86,9 +86,9 @@ func TestExtractModifiedFiles(t *testing.T) {
 {"type":"assistant","uuid":"a4","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"foo.go"}}]}}
 `)
 
-	lines, err := ParseTranscript(data)
+	lines, err := transcript.ParseFromBytes(data)
 	if err != nil {
-		t.Fatalf("ParseTranscript() error = %v", err)
+		t.Fatalf("ParseFromBytes() error = %v", err)
 	}
 	files := ExtractModifiedFiles(lines)
 
@@ -144,9 +144,9 @@ func TestExtractLastUserPrompt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			lines, err := ParseTranscript([]byte(tt.data))
+			lines, err := transcript.ParseFromBytes([]byte(tt.data))
 			if err != nil && tt.data != "" {
-				t.Fatalf("ParseTranscript() error = %v", err)
+				t.Fatalf("ParseFromBytes() error = %v", err)
 			}
 			got := ExtractLastUserPrompt(lines)
 			if got != tt.want {
@@ -165,9 +165,9 @@ func TestTruncateAtUUID(t *testing.T) {
 {"type":"assistant","uuid":"a2","message":{}}
 `)
 
-	lines, err := ParseTranscript(data)
+	lines, err := transcript.ParseFromBytes(data)
 	if err != nil {
-		t.Fatalf("ParseTranscript() error = %v", err)
+		t.Fatalf("ParseFromBytes() error = %v", err)
 	}
 
 	tests := []struct {
@@ -207,9 +207,9 @@ func TestFindCheckpointUUID(t *testing.T) {
 {"type":"user","uuid":"u2","message":{"content":[{"type":"tool_result","tool_use_id":"tool2"}]}}
 `)
 
-	lines, err := ParseTranscript(data)
+	lines, err := transcript.ParseFromBytes(data)
 	if err != nil {
-		t.Fatalf("ParseTranscript() error = %v", err)
+		t.Fatalf("ParseFromBytes() error = %v", err)
 	}
 
 	tests := []struct {
