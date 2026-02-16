@@ -71,8 +71,8 @@ func captureInitialState() error {
 		return err
 	}
 
-	// CLI captures state directly (including transcript position)
-	if err := CapturePrePromptState(hookData.sessionID, hookData.input.SessionRef); err != nil {
+	// CLI captures state directly (including transcript position via TranscriptAnalyzer)
+	if err := CapturePrePromptState(hookData.agent, hookData.sessionID, hookData.input.SessionRef); err != nil {
 		return err
 	}
 
@@ -170,8 +170,8 @@ func commitWithMetadata() error { //nolint:maintidx // already present in codeba
 	// Pre-prompt state has the offset when the transcript path was available at prompt time.
 	// Session state has the offset updated after each successful checkpoint save (auto-commit).
 	var transcriptOffset int
-	if preState != nil && preState.StepTranscriptStart > 0 {
-		transcriptOffset = preState.StepTranscriptStart
+	if preState != nil && preState.TranscriptOffset > 0 {
+		transcriptOffset = preState.TranscriptOffset
 		fmt.Fprintf(os.Stderr, "Pre-prompt state found: parsing transcript from line %d\n", transcriptOffset)
 	} else {
 		// Fall back to session state (e.g., auto-commit strategy updates it after each save)
@@ -329,7 +329,7 @@ func commitWithMetadata() error { //nolint:maintidx // already present in codeba
 	var transcriptLinesAtStart int
 	if preState != nil {
 		transcriptIdentifierAtStart = preState.LastTranscriptIdentifier
-		transcriptLinesAtStart = preState.StepTranscriptStart
+		transcriptLinesAtStart = preState.TranscriptOffset
 	}
 
 	// Calculate token usage for this checkpoint (Claude Code specific)

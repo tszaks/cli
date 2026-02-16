@@ -179,13 +179,13 @@ func commitGeminiSession(ctx *geminiSessionContext) error {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load pre-prompt state: %v\n", err)
 	}
 	if preState != nil {
-		fmt.Fprintf(os.Stderr, "Loaded pre-prompt state: %d pre-existing untracked files, start message index: %d\n", len(preState.UntrackedFiles), preState.StartMessageIndex)
+		fmt.Fprintf(os.Stderr, "Loaded pre-prompt state: %d pre-existing untracked files, transcript offset: %d\n", len(preState.UntrackedFiles), preState.TranscriptOffset)
 	}
 
 	// Get transcript position from pre-prompt state
 	var startMessageIndex int
 	if preState != nil {
-		startMessageIndex = preState.StartMessageIndex
+		startMessageIndex = preState.TranscriptOffset
 	}
 
 	// Calculate token usage for this prompt/response cycle (Gemini-specific)
@@ -426,10 +426,10 @@ func handleGeminiBeforeAgent() error {
 		return errors.New("no session_id in input")
 	}
 
-	// Capture pre-prompt state with transcript position (Gemini-specific)
+	// Capture pre-prompt state with transcript position (unified, uses TranscriptAnalyzer)
 	// This captures both untracked files and the current transcript message count
 	// so we can calculate token usage for just this prompt/response cycle
-	if err := CaptureGeminiPrePromptState(input.SessionID, input.SessionRef); err != nil {
+	if err := CapturePrePromptState(ag, input.SessionID, input.SessionRef); err != nil {
 		return fmt.Errorf("failed to capture pre-prompt state: %w", err)
 	}
 

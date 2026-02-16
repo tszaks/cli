@@ -362,9 +362,12 @@ func (c *ClaudeCodeAgent) GetTranscriptPosition(path string) (int, error) {
 	lineCount := 0
 
 	for {
-		_, err := reader.ReadBytes('\n')
+		line, err := reader.ReadBytes('\n')
 		if err != nil {
 			if err == io.EOF {
+				if len(line) > 0 {
+					lineCount++ // Count final line without trailing newline
+				}
 				break
 			}
 			return 0, fmt.Errorf("failed to read transcript: %w", err)

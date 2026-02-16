@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
@@ -261,7 +262,8 @@ func getHookType(hookName string) string {
 }
 
 // newAgentHookVerbCmdWithLogging creates a command for a specific hook verb with structured logging.
-// It logs hook invocation at DEBUG level and completion with duration at INFO level.
+// It uses the lifecycle dispatcher (ParseHookEvent → DispatchLifecycleEvent) as the primary path,
+// falling back to the legacy handler registry for hooks that return nil events (e.g., PostTodo).
 func newAgentHookVerbCmdWithLogging(agentName agent.AgentName, hookName string) *cobra.Command {
 	return &cobra.Command{
 		Use:    hookName,
@@ -270,6 +272,12 @@ func newAgentHookVerbCmdWithLogging(agentName agent.AgentName, hookName string) 
 		RunE: func(_ *cobra.Command, _ []string) error {
 			// Skip silently if not in a git repository - hooks shouldn't prevent the agent from working
 			if _, err := paths.RepoRoot(); err != nil {
+				return nil
+			}
+
+			// Skip if Entire is not enabled
+			enabled, err := IsEnabled()
+			if err == nil && !enabled {
 				return nil
 			}
 
@@ -290,21 +298,37 @@ func newAgentHookVerbCmdWithLogging(agentName agent.AgentName, hookName string) 
 				slog.String("strategy", strategyName),
 			)
 
-			handler := GetHookHandler(agentName, hookName)
-			if handler == nil {
-				logging.Error(ctx, "no handler registered",
-					slog.String("hook", hookName),
-					slog.String("hook_type", hookType),
-				)
-				return fmt.Errorf("no handler registered for %s/%s", agentName, hookName)
-			}
-
-			// Set the current hook agent so handlers can retrieve it
-			// without guessing from directory presence
+			// Set the current hook agent so legacy handlers can retrieve it
 			currentHookAgentName = agentName
 			defer func() { currentHookAgentName = "" }()
 
-			hookErr := handler()
+			// Try the lifecycle dispatcher path: ParseHookEvent → DispatchLifecycleEvent.
+			// Falls back to legacy handler registry if agent is unresolved or event is nil.
+			var hookErr error
+			ag, agentErr := agent.Get(agentName)
+			if agentErr == nil {
+				event, parseErr := ag.ParseHookEvent(hookName, os.Stdin)
+				if parseErr != nil {
+					return fmt.Errorf("failed to parse hook event: %w", parseErr)
+				}
+				if event != nil {
+					// Lifecycle event — use the generic dispatcher
+					hookErr = DispatchLifecycleEvent(ag, event)
+				} else {
+					// No lifecycle event — fall back to registered handler (e.g., PostTodo)
+					handler := GetHookHandler(agentName, hookName)
+					if handler != nil {
+						hookErr = handler()
+					}
+				}
+			} else {
+				// Agent not found — fall back to legacy handler registry
+				handler := GetHookHandler(agentName, hookName)
+				if handler == nil {
+					return fmt.Errorf("no handler for %s/%s and agent not found: %w", agentName, hookName, agentErr)
+				}
+				hookErr = handler()
+			}
 
 			logging.LogDuration(ctx, slog.LevelDebug, "hook completed", start,
 				slog.String("hook", hookName),
