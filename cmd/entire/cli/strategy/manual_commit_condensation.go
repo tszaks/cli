@@ -534,7 +534,7 @@ func calculateTokenUsage(agentType agent.AgentType, data []byte, startOffset int
 	}
 
 	// Claude Code and other JSONL-based agents
-	lines, err := claudecode.ParseTranscript(data)
+	lines, err := transcript.ParseFromBytes(data)
 	if err != nil || len(lines) == 0 {
 		return &agent.TokenUsage{}
 	}
