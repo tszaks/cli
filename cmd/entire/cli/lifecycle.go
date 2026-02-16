@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/logging"
@@ -366,27 +367,36 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error { //nolint
 	return nil
 }
 
-// handleLifecycleCompaction handles context compaction: saves like TurnEnd,
-// then resets the transcript offset since the transcript may be truncated.
+// handleLifecycleCompaction handles context compaction: saves current progress
+// but stays in ACTIVE phase (unlike TurnEnd which transitions to IDLE).
+// Also resets the transcript offset since the transcript may be truncated.
 func handleLifecycleCompaction(ag agent.Agent, event *agent.Event) error {
-	// Compaction triggers the same save logic as TurnEnd
-	if err := handleLifecycleTurnEnd(ag, event); err != nil {
-		return err
-	}
+	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "lifecycle"), ag.Name())
+	logging.Info(logCtx, "compaction",
+		slog.String("event", event.Type.String()),
+		slog.String("session_id", event.SessionID),
+	)
 
-	// Reset transcript offset in session state since the transcript may be reorganized
-	sessionState, err := strategy.LoadSessionState(event.SessionID)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to load session state for compaction reset: %v\n", err)
-		return nil
+	// Fire EventCompaction to trigger ActionCondenseIfFilesTouched (stays in ACTIVE)
+	sessionID := event.SessionID
+	sessionState, loadErr := strategy.LoadSessionState(sessionID)
+	if loadErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load session state for compaction: %v\n", loadErr)
 	}
 	if sessionState != nil {
+		if transErr := strategy.TransitionAndLog(sessionState, session.EventCompaction, session.TransitionContext{}, session.NoOpActionHandler{}); transErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: compaction transition failed: %v\n", transErr)
+		}
+
+		// Reset transcript offset since the transcript may be truncated/reorganized
 		sessionState.CheckpointTranscriptStart = 0
+
 		if saveErr := strategy.SaveSessionState(sessionState); saveErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to reset transcript offset after compaction: %v\n", saveErr)
+			fmt.Fprintf(os.Stderr, "Warning: failed to save session state after compaction: %v\n", saveErr)
 		}
 	}
 
+	fmt.Fprintf(os.Stderr, "Context compaction: transcript offset reset\n")
 	return nil
 }
 
@@ -640,4 +650,75 @@ func parseTranscriptForCheckpointUUID(transcriptPath string) ([]transcriptLine, 
 		return nil, 0, fmt.Errorf("parsing transcript for checkpoint UUID: %w", err)
 	}
 	return lines, total, nil
+}
+
+// transitionSessionTurnEnd transitions the session phase to IDLE and dispatches turn-end actions.
+func transitionSessionTurnEnd(sessionID string) {
+	turnState, loadErr := strategy.LoadSessionState(sessionID)
+	if loadErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to load session state for turn end: %v\n", loadErr)
+		return
+	}
+	if turnState == nil {
+		return
+	}
+	if err := strategy.TransitionAndLog(turnState, session.EventTurnEnd, session.TransitionContext{}, session.NoOpActionHandler{}); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: turn-end transition failed: %v\n", err)
+	}
+
+	// Always dispatch to strategy for turn-end handling. The strategy reads
+	// work items from state (e.g. TurnCheckpointIDs), not the action list.
+	strat := GetStrategy()
+	if handler, ok := strat.(strategy.TurnEndHandler); ok {
+		if err := handler.HandleTurnEnd(turnState); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: turn-end action dispatch failed: %v\n", err)
+		}
+	}
+
+	if updateErr := strategy.SaveSessionState(turnState); updateErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to update session phase on turn end: %v\n", updateErr)
+	}
+}
+
+// markSessionEnded transitions the session to ENDED phase via the state machine.
+func markSessionEnded(sessionID string) error {
+	state, err := strategy.LoadSessionState(sessionID)
+	if err != nil {
+		return fmt.Errorf("failed to load session state: %w", err)
+	}
+	if state == nil {
+		return nil // No state file, nothing to update
+	}
+
+	if transErr := strategy.TransitionAndLog(state, session.EventSessionStop, session.TransitionContext{}, session.NoOpActionHandler{}); transErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: session stop transition failed: %v\n", transErr)
+	}
+
+	now := time.Now()
+	state.EndedAt = &now
+
+	if err := strategy.SaveSessionState(state); err != nil {
+		return fmt.Errorf("failed to save session state: %w", err)
+	}
+	return nil
+}
+
+// logFileChanges logs the files modified, created, and deleted during a session.
+func logFileChanges(modified, newFiles, deleted []string) {
+	fmt.Fprintf(os.Stderr, "Files modified during session (%d):\n", len(modified))
+	for _, file := range modified {
+		fmt.Fprintf(os.Stderr, "  - %s\n", file)
+	}
+	if len(newFiles) > 0 {
+		fmt.Fprintf(os.Stderr, "New files created (%d):\n", len(newFiles))
+		for _, file := range newFiles {
+			fmt.Fprintf(os.Stderr, "  - %s\n", file)
+		}
+	}
+	if len(deleted) > 0 {
+		fmt.Fprintf(os.Stderr, "Files deleted (%d):\n", len(deleted))
+		for _, file := range deleted {
+			fmt.Fprintf(os.Stderr, "  - %s\n", file)
+		}
+	}
 }

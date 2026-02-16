@@ -508,11 +508,10 @@ func TestDispatchLifecycleEvent_RoutesToCorrectHandler(t *testing.T) {
 			errorSubstr: "transcript file not found",
 		},
 		{
-			name:        "Compaction with empty transcript",
+			name:        "Compaction with empty transcript is no-op",
 			eventType:   agent.Compaction,
 			sessionID:   "test",
-			expectError: true,
-			errorSubstr: "transcript file not found",
+			expectError: false, // Compaction just resets offset; doesn't read transcript
 		},
 		{
 			name:        "SessionEnd with empty session ID is no-op",
