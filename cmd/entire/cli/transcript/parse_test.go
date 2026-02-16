@@ -265,7 +265,7 @@ func TestParseFromFileAtLine_ValidMixedMessages(t *testing.T) {
 	if lines[0].Type != TypeUser || lines[0].UUID != "user-1" {
 		t.Errorf("first line mismatch: got type=%s uuid=%s", lines[0].Type, lines[0].UUID)
 	}
-	if lines[1].Type != "assistant" || lines[1].UUID != "asst-1" {
+	if lines[1].Type != TypeAssistant || lines[1].UUID != "asst-1" {
 		t.Errorf("second line mismatch: got type=%s uuid=%s", lines[1].Type, lines[1].UUID)
 	}
 	if lines[2].Type != TypeUser || lines[2].UUID != "user-2" {
