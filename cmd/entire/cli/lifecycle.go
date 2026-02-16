@@ -142,7 +142,9 @@ func handleLifecycleTurnStart(ag agent.Agent, event *agent.Event) error {
 
 // handleLifecycleTurnEnd handles turn end: validates transcript, extracts metadata,
 // detects file changes, saves step + checkpoint, transitions phase.
-func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error { //nolint:maintidx // consolidated from two large handlers
+//
+//nolint:maintidx // high complexity due to sequential orchestration of 8 steps (validation, extraction, file detection, filtering, token calc, step save, phase transition, cleanup) - splitting would obscure the flow
+func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 	logCtx := logging.WithAgent(logging.WithComponent(context.Background(), "lifecycle"), ag.Name())
 	logging.Info(logCtx, "turn-end",
 		slog.String("event", event.Type.String()),
@@ -262,12 +264,14 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error { //nolint
 		return fmt.Errorf("failed to get repo root: %w", err)
 	}
 
+	var preUntrackedFiles []string
 	if preState != nil {
 		fmt.Fprintf(os.Stderr, "Pre-prompt state: %d pre-existing untracked files\n", len(preState.UntrackedFiles))
+		preUntrackedFiles = preState.PreUntrackedFiles()
 	}
 
 	// Detect file changes via git status
-	changes, err := DetectFileChanges(preState.PreUntrackedFiles())
+	changes, err := DetectFileChanges(preUntrackedFiles)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to compute file changes: %v\n", err)
 	}

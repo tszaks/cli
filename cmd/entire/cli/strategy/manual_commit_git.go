@@ -11,6 +11,7 @@ import (
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/trailers"
@@ -201,8 +202,8 @@ func (s *ManualCommitStrategy) SaveTaskStep(ctx TaskStepContext) error {
 
 	// Generate commit message
 	shortToolUseID := ctx.ToolUseID
-	if len(shortToolUseID) > 12 {
-		shortToolUseID = shortToolUseID[:12]
+	if len(shortToolUseID) > id.ShortIDLength {
+		shortToolUseID = shortToolUseID[:id.ShortIDLength]
 	}
 
 	var messageSubject string

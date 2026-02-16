@@ -582,8 +582,8 @@ func (s *AutoCommitStrategy) commitTaskCodeToActive(repo *git.Repository, ctx Ta
 
 	// Build commit message with checkpoint trailer
 	shortToolUseID := ctx.ToolUseID
-	if len(shortToolUseID) > 12 {
-		shortToolUseID = shortToolUseID[:12]
+	if len(shortToolUseID) > id.ShortIDLength {
+		shortToolUseID = shortToolUseID[:id.ShortIDLength]
 	}
 
 	var subject string
@@ -635,8 +635,8 @@ func (s *AutoCommitStrategy) commitTaskMetadataToMetadataBranch(repo *git.Reposi
 
 	// Format commit subject line for better git log readability
 	shortToolUseID := ctx.ToolUseID
-	if len(shortToolUseID) > 12 {
-		shortToolUseID = shortToolUseID[:12]
+	if len(shortToolUseID) > id.ShortIDLength {
+		shortToolUseID = shortToolUseID[:id.ShortIDLength]
 	}
 
 	var messageSubject string
