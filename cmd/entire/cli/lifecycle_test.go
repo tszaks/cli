@@ -201,7 +201,7 @@ func TestHandleLifecycleTurnEnd_EmptyTranscriptRef(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for empty transcript ref, got nil")
 	}
-	if !strings.Contains(err.Error(), "transcript file not found or empty") {
+	if !strings.Contains(err.Error(), "transcript file not found") {
 		t.Errorf("expected error about transcript file, got: %v", err)
 	}
 }
@@ -220,7 +220,7 @@ func TestHandleLifecycleTurnEnd_NonexistentTranscript(t *testing.T) {
 	if err == nil {
 		t.Error("expected error for nonexistent transcript, got nil")
 	}
-	if !strings.Contains(err.Error(), "transcript file not found or empty") {
+	if !strings.Contains(err.Error(), "transcript file not found") {
 		t.Errorf("expected error about transcript file, got: %v", err)
 	}
 }
@@ -309,21 +309,23 @@ func TestHandleLifecycleCompaction_ResetsTranscriptOffset(t *testing.T) {
 		SessionRef: transcriptPath,
 	}
 
-	// Note: handleLifecycleCompaction calls handleLifecycleTurnEnd first, which may
-	// fail for various reasons in this minimal test setup. We're specifically testing
-	// that IF TurnEnd succeeds, the transcript offset is reset.
-	// For now, we test the error case and verify the reset logic is attempted.
-	//nolint:errcheck // We deliberately ignore errors here as we're testing partial behavior
-	_ = handleLifecycleCompaction(ag, event)
+	// handleLifecycleCompaction resets the transcript offset regardless of other operations.
+	// It fires EventCompaction which stays in ACTIVE phase and resets CheckpointTranscriptStart.
+	err := handleLifecycleCompaction(ag, event)
+	if err != nil {
+		t.Logf("handleLifecycleCompaction returned error (expected in minimal test): %v", err)
+	}
 
-	// Load session state and check if offset was reset
-	// (In a real scenario with full setup, this would verify reset to 0)
-	//nolint:errcheck // Error doesn't affect test assertions
-	loadedState, _ := strategy.LoadSessionState(sessionID)
-	if loadedState != nil && loadedState.CheckpointTranscriptStart != 0 {
-		// The compaction handler resets the offset to 0 after successful TurnEnd
-		// Due to test setup limitations, TurnEnd may fail, but we're testing the structure
-		t.Logf("Note: CheckpointTranscriptStart=%d (reset may not happen due to TurnEnd failure in test)",
+	// Verify CheckpointTranscriptStart was reset to 0
+	loadedState, loadErr := strategy.LoadSessionState(sessionID)
+	if loadErr != nil {
+		t.Fatalf("Failed to load session state after compaction: %v", loadErr)
+	}
+	if loadedState == nil {
+		t.Fatal("Session state is nil after compaction")
+	}
+	if loadedState.CheckpointTranscriptStart != 0 {
+		t.Errorf("CheckpointTranscriptStart = %d, want 0 (should be reset on compaction)",
 			loadedState.CheckpointTranscriptStart)
 	}
 }

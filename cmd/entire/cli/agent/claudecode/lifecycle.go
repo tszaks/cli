@@ -307,8 +307,12 @@ func checkStopSentinel(path string, tailBytes int64, hookStartTime time.Time, ma
 				continue
 			}
 		}
-		cutoff := hookStartTime.Add(-maxSkew)
-		if ts.After(cutoff) {
+		// Validate timestamp is within acceptable range:
+		// - Not too far in the past (before hook started minus skew)
+		// - Not too far in the future (after hook started plus skew)
+		lowerBound := hookStartTime.Add(-maxSkew)
+		upperBound := hookStartTime.Add(maxSkew)
+		if ts.After(lowerBound) && ts.Before(upperBound) {
 			return true
 		}
 	}

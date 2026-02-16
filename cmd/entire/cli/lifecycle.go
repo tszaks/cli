@@ -159,7 +159,7 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 
 	transcriptRef := event.SessionRef
 	if transcriptRef == "" || !fileExists(transcriptRef) {
-		return fmt.Errorf("transcript file not found or empty: %s", transcriptRef)
+		return fmt.Errorf("transcript file not found: %s", transcriptRef)
 	}
 
 	// Early check: bail out quickly if the repo has no commits yet.
@@ -211,6 +211,9 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 	var modifiedFiles []string
 	var newTranscriptPosition int
 
+	// Compute subagents directory for agents that support subagent extraction
+	subagentsDir := filepath.Join(filepath.Dir(transcriptRef), "subagents")
+
 	if analyzer, ok := ag.(agent.TranscriptAnalyzer); ok {
 		// Extract prompts
 		if prompts, promptErr := analyzer.ExtractPrompts(transcriptRef, transcriptOffset); promptErr != nil {
@@ -226,12 +229,25 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 			summary = s
 		}
 
-		// Extract modified files (agent handles its own format)
-		if files, pos, fileErr := analyzer.ExtractModifiedFilesFromOffset(transcriptRef, transcriptOffset); fileErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to extract modified files: %v\n", fileErr)
+		// Extract modified files - prefer SubagentAwareExtractor if available to include subagent files
+		if subagentExtractor, subOk := ag.(agent.SubagentAwareExtractor); subOk {
+			if files, fileErr := subagentExtractor.ExtractAllModifiedFiles(transcriptRef, transcriptOffset, subagentsDir); fileErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to extract modified files (with subagents): %v\n", fileErr)
+			} else {
+				modifiedFiles = files
+			}
+			// Get position from basic analyzer
+			if _, pos, posErr := analyzer.ExtractModifiedFilesFromOffset(transcriptRef, transcriptOffset); posErr == nil {
+				newTranscriptPosition = pos
+			}
 		} else {
-			modifiedFiles = files
-			newTranscriptPosition = pos
+			// Fall back to basic extraction (main transcript only)
+			if files, pos, fileErr := analyzer.ExtractModifiedFilesFromOffset(transcriptRef, transcriptOffset); fileErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to extract modified files: %v\n", fileErr)
+			} else {
+				modifiedFiles = files
+				newTranscriptPosition = pos
+			}
 		}
 	}
 
@@ -324,9 +340,17 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 		transcriptLinesAtStart = preState.TranscriptOffset
 	}
 
-	// Calculate token usage (optional interface)
+	// Calculate token usage - prefer SubagentAwareExtractor to include subagent tokens
 	var tokenUsage *agent.TokenUsage
-	if calculator, ok := ag.(agent.TokenCalculator); ok {
+	if subagentExtractor, ok := ag.(agent.SubagentAwareExtractor); ok {
+		usage, tokenErr := subagentExtractor.CalculateTotalTokenUsage(transcriptRef, transcriptLinesAtStart, subagentsDir)
+		if tokenErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to calculate token usage (with subagents): %v\n", tokenErr)
+		} else {
+			tokenUsage = usage
+		}
+	} else if calculator, ok := ag.(agent.TokenCalculator); ok {
+		// Fall back to basic token calculation (main transcript only)
 		usage, tokenErr := calculator.CalculateTokenUsage(transcriptRef, transcriptLinesAtStart)
 		if tokenErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to calculate token usage: %v\n", tokenErr)

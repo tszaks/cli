@@ -9,6 +9,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -22,7 +23,12 @@ import (
 // Creates a checkpoint if we're in a subagent context (active pre-task file exists).
 // Skips silently if not in subagent context (main agent).
 func handleClaudeCodePostTodo() error {
-	input, err := parseSubagentCheckpointHookInput(os.Stdin)
+	return handleClaudeCodePostTodoFromReader(os.Stdin)
+}
+
+// handleClaudeCodePostTodoFromReader is the testable version that accepts an io.Reader.
+func handleClaudeCodePostTodoFromReader(reader io.Reader) error {
+	input, err := parseSubagentCheckpointHookInput(reader)
 	if err != nil {
 		return fmt.Errorf("failed to parse PostToolUse[TodoWrite] input: %w", err)
 	}
