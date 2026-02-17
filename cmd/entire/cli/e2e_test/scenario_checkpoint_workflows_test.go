@@ -193,6 +193,16 @@ Create all four files, no other files or actions.`
 		FilesTouched:              []string{"fileC.go", "fileD.go"},
 		ExpectedTranscriptContent: allFiles, // Full session transcript
 	})
+
+	// CRITICAL: After all carry-forward files are committed, no shadow branches
+	// should remain. Only entire/checkpoints/v1 should exist. Extra shadow
+	// branches (entire/<hash>-<hash>) indicate a regression in carry-forward cleanup.
+	entireBranches := env.ListBranchesWithPrefix("entire/")
+	for _, b := range entireBranches {
+		assert.Equal(t, "entire/checkpoints/v1", b,
+			"Unexpected shadow branch after all files committed: %s", b)
+	}
+	t.Logf("Entire branches after all commits: %v", entireBranches)
 }
 
 // TestE2E_Scenario5_PartialCommitStashNextPrompt tests partial commit, stash, then new prompt.

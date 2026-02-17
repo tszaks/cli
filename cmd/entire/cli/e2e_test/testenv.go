@@ -460,6 +460,33 @@ func (env *TestEnv) BranchExists(branchName string) bool {
 	return found
 }
 
+// ListBranchesWithPrefix returns all branches that start with the given prefix.
+func (env *TestEnv) ListBranchesWithPrefix(prefix string) []string {
+	env.T.Helper()
+
+	repo, err := git.PlainOpen(env.RepoDir)
+	if err != nil {
+		env.T.Fatalf("failed to open git repo: %v", err)
+	}
+
+	refs, err := repo.References()
+	if err != nil {
+		env.T.Fatalf("failed to get references: %v", err)
+	}
+
+	var branches []string
+	//nolint:errcheck,gosec // ForEach callback doesn't return errors we need to handle
+	refs.ForEach(func(ref *plumbing.Reference) error {
+		name := ref.Name().Short()
+		if strings.HasPrefix(name, prefix) {
+			branches = append(branches, name)
+		}
+		return nil
+	})
+
+	return branches
+}
+
 // GetCommitMessage returns the commit message for the given commit hash.
 func (env *TestEnv) GetCommitMessage(hash string) string {
 	env.T.Helper()
