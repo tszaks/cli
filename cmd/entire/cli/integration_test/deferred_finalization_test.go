@@ -464,6 +464,133 @@ func TestShadow_CarryForward_IdleSession(t *testing.T) {
 	t.Log("CarryForward_IdleSession test completed successfully")
 }
 
+// TestShadow_AgentCommitsMidTurn_UserCommitsRemainder tests the scenario where:
+//  1. Agent creates files A, B, C during a turn
+//  2. Agent commits B and C mid-turn (each getting its own checkpoint)
+//  3. Turn ends (session becomes IDLE)
+//  4. User commits remaining file A
+//  5. User's commit should get a checkpoint trailer AND the checkpoint must exist
+//     on entire/checkpoints/v1
+//
+// This reproduces a real-world bug where the user's commit gets a trailer added
+// by prepare-commit-msg, but post-commit fails to condense the checkpoint to
+// entire/checkpoints/v1 — leaving a "phantom" trailer pointing to nothing.
+func TestShadow_AgentCommitsMidTurn_UserCommitsRemainder(t *testing.T) {
+	t.Parallel()
+
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
+
+	sess := env.NewSession()
+
+	// Start session (ACTIVE)
+	if err := env.SimulateUserPromptSubmitWithTranscriptPath(sess.ID, sess.TranscriptPath); err != nil {
+		t.Fatalf("user-prompt-submit failed: %v", err)
+	}
+
+	// Create all three files
+	env.WriteFile("fileA.go", "package main\n\nfunc A() {}\n")
+	env.WriteFile("fileB.go", "package main\n\nfunc B() {}\n")
+	env.WriteFile("fileC.go", "package main\n\nfunc C() {}\n")
+
+	// Create transcript reflecting agent creating all files
+	sess.CreateTranscript("Create files A, B, and C", []FileChange{
+		{Path: "fileA.go", Content: "package main\n\nfunc A() {}\n"},
+		{Path: "fileB.go", Content: "package main\n\nfunc B() {}\n"},
+		{Path: "fileC.go", Content: "package main\n\nfunc C() {}\n"},
+	})
+
+	// Agent commits B mid-turn (no TTY — agent subprocess)
+	env.GitCommitWithShadowHooksAsAgent("Add file B", "fileB.go")
+	firstCommitHash := env.GetHeadHash()
+	firstCheckpointID := env.GetCheckpointIDFromCommitMessage(firstCommitHash)
+	if firstCheckpointID == "" {
+		t.Fatal("Agent's first mid-turn commit should have checkpoint trailer")
+	}
+	t.Logf("Agent commit 1 (B): checkpoint=%s", firstCheckpointID)
+
+	// Agent commits C mid-turn
+	env.GitCommitWithShadowHooksAsAgent("Add file C", "fileC.go")
+	secondCommitHash := env.GetHeadHash()
+	secondCheckpointID := env.GetCheckpointIDFromCommitMessage(secondCommitHash)
+	if secondCheckpointID == "" {
+		t.Fatal("Agent's second mid-turn commit should have checkpoint trailer")
+	}
+	t.Logf("Agent commit 2 (C): checkpoint=%s", secondCheckpointID)
+
+	// Turn ends — session becomes IDLE, transcript is finalized
+	if err := env.SimulateStop(sess.ID, sess.TranscriptPath); err != nil {
+		t.Fatalf("SimulateStop failed: %v", err)
+	}
+
+	// Verify session is IDLE
+	state, err := env.GetSessionState(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSessionState failed: %v", err)
+	}
+	if state.Phase != session.PhaseIdle {
+		t.Errorf("Expected IDLE phase after stop, got %s", state.Phase)
+	}
+	t.Logf("After stop: phase=%s, FilesTouched=%v, CheckpointTranscriptStart=%d",
+		state.Phase, state.FilesTouched, state.CheckpointTranscriptStart)
+
+	// Log branches before user commit
+	branchesBefore := env.ListBranchesWithPrefix("entire/")
+	t.Logf("Branches before user commit: %v", branchesBefore)
+
+	// User commits remaining file A
+	env.GitCommitWithShadowHooks("Add file A", "fileA.go")
+	userCommitHash := env.GetHeadHash()
+	userCheckpointID := env.GetCheckpointIDFromCommitMessage(userCommitHash)
+
+	t.Logf("User commit (A): hash=%s, checkpoint=%s", userCommitHash[:7], userCheckpointID)
+
+	// CRITICAL: User's commit should have a checkpoint trailer
+	if userCheckpointID == "" {
+		t.Fatal("User's commit of remaining file should have checkpoint trailer")
+	}
+
+	// All three checkpoint IDs must be unique
+	if userCheckpointID == firstCheckpointID || userCheckpointID == secondCheckpointID {
+		t.Errorf("User checkpoint ID should be unique.\n"+
+			"Agent 1: %s\nAgent 2: %s\nUser: %s",
+			firstCheckpointID, secondCheckpointID, userCheckpointID)
+	}
+
+	// CRITICAL: The user's checkpoint must exist on entire/checkpoints/v1.
+	// This is the bug: prepare-commit-msg adds the trailer, but post-commit
+	// doesn't condense, leaving a "phantom" trailer pointing to nothing.
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID:    userCheckpointID,
+		SessionID:       sess.ID,
+		Strategy:        strategy.StrategyNameManualCommit,
+		FilesTouched:    []string{"fileA.go"},
+		ExpectedPrompts: []string{"Create files A, B, and C"},
+	})
+
+	// Verify agent checkpoints also exist
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID: firstCheckpointID,
+		SessionID:    sess.ID,
+		Strategy:     strategy.StrategyNameManualCommit,
+		FilesTouched: []string{"fileB.go"},
+	})
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID: secondCheckpointID,
+		SessionID:    sess.ID,
+		Strategy:     strategy.StrategyNameManualCommit,
+		FilesTouched: []string{"fileC.go"},
+	})
+
+	// No shadow branches should remain after all files are committed
+	branchesAfter := env.ListBranchesWithPrefix("entire/")
+	for _, b := range branchesAfter {
+		if b != paths.MetadataBranchName {
+			t.Errorf("Unexpected shadow branch after all files committed: %s", b)
+		}
+	}
+	t.Logf("Branches after all commits: %v", branchesAfter)
+}
+
 // TestShadow_MultipleCommits_SameActiveTurn tests that multiple commits
 // during a single ACTIVE turn each get unique checkpoint IDs, and all
 // are finalized when the turn ends.

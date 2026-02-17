@@ -265,6 +265,12 @@ func commitWithMetadata() error { //nolint:maintidx // already present in codeba
 		relDeletedFiles = FilterAndNormalizePaths(changes.Deleted, repoRoot)
 	}
 
+	// Filter transcript-extracted files to exclude files already committed to HEAD.
+	// When an agent commits files mid-turn, those files are condensed by PostCommit
+	// and should not be re-added to FilesTouched by SaveChanges. A file is "committed"
+	// if it exists in HEAD with the same content as the working tree.
+	relModifiedFiles = filterToUncommittedFiles(relModifiedFiles, repoRoot)
+
 	// Check if there are any changes to commit
 	totalChanges := len(relModifiedFiles) + len(relNewFiles) + len(relDeletedFiles)
 	if totalChanges == 0 {

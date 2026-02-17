@@ -1729,9 +1729,11 @@ func (s *ManualCommitStrategy) finalizeAllTurnCheckpoints(state *SessionState) i
 		)
 	}
 
-	// Update transcript start and clear turn checkpoint IDs
-	fullTranscriptLines := countTranscriptItems(state.AgentType, string(fullTranscript))
-	state.CheckpointTranscriptStart = fullTranscriptLines
+	// Clear turn checkpoint IDs. Do NOT update CheckpointTranscriptStart here — it was
+	// already set correctly by PostCommit: condenseAndUpdateState sets it to the total
+	// transcript lines when condensing, and carryForwardToNewShadowBranch resets it to 0
+	// when carry-forward is active. Overwriting here would break carry-forward by making
+	// sessionHasNewContent think the transcript is fully consumed (no growth).
 	state.TurnCheckpointIDs = nil
 
 	return errCount
