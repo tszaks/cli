@@ -494,6 +494,15 @@ func (h *postCommitActionHandler) HandleCondense(state *session.State) error {
 	if shouldCondense && !state.Phase.IsActive() {
 		shouldCondense = filesOverlapWithContent(h.repo, h.shadowBranchName, h.commit, state.FilesTouched)
 	}
+
+	logging.Debug(h.logCtx, "post-commit: HandleCondense decision",
+		slog.String("session_id", state.SessionID),
+		slog.String("phase", string(state.Phase)),
+		slog.Bool("has_new", h.hasNew),
+		slog.Bool("should_condense", shouldCondense),
+		slog.String("shadow_branch", h.shadowBranchName),
+	)
+
 	if shouldCondense {
 		h.condensed = h.s.condenseAndUpdateState(h.logCtx, h.repo, h.checkpointID, state, h.head, h.shadowBranchName, h.shadowBranchesToDelete, h.committedFileSet)
 	} else {
@@ -503,7 +512,18 @@ func (h *postCommitActionHandler) HandleCondense(state *session.State) error {
 }
 
 func (h *postCommitActionHandler) HandleCondenseIfFilesTouched(state *session.State) error {
-	if len(state.FilesTouched) > 0 && h.hasNew {
+	shouldCondense := len(state.FilesTouched) > 0 && h.hasNew
+
+	logging.Debug(h.logCtx, "post-commit: HandleCondenseIfFilesTouched decision",
+		slog.String("session_id", state.SessionID),
+		slog.String("phase", string(state.Phase)),
+		slog.Bool("has_new", h.hasNew),
+		slog.Int("files_touched", len(state.FilesTouched)),
+		slog.Bool("should_condense", shouldCondense),
+		slog.String("shadow_branch", h.shadowBranchName),
+	)
+
+	if shouldCondense {
 		h.condensed = h.s.condenseAndUpdateState(h.logCtx, h.repo, h.checkpointID, state, h.head, h.shadowBranchName, h.shadowBranchesToDelete, h.committedFileSet)
 	} else {
 		h.s.updateBaseCommitIfChanged(h.logCtx, state, h.newHead)
@@ -655,6 +675,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 			committedFileSet:       committedFileSet,
 			hasNew:                 hasNew,
 		}
+
 		if err := TransitionAndLog(state, session.EventGitCommit, transitionCtx, handler); err != nil {
 			fmt.Fprintf(os.Stderr, "[entire] Warning: post-commit action handler error: %v\n", err)
 		}
@@ -682,6 +703,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 				slog.Int("committed_files", len(committedFileSet)),
 				slog.Int("remaining_files", len(remainingFiles)),
 				slog.Any("remaining", remainingFiles),
+				slog.Any("committed_files", committedFileSet),
 			)
 			if len(remainingFiles) > 0 {
 				s.carryForwardToNewShadowBranch(logCtx, repo, state, remainingFiles)
@@ -789,6 +811,10 @@ func (s *ManualCommitStrategy) updateBaseCommitIfChanged(logCtx context.Context,
 	// Only update ACTIVE sessions. IDLE/ENDED sessions are kept around for
 	// LastCheckpointID reuse and should not be advanced to HEAD.
 	if !state.Phase.IsActive() {
+		logging.Debug(logCtx, "post-commit: updateBaseCommitIfChanged skipped non-active session",
+			slog.String("session_id", state.SessionID),
+			slog.String("phase", string(state.Phase)),
+		)
 		return
 	}
 	if state.BaseCommit != newHead {
@@ -870,6 +896,8 @@ func (s *ManualCommitStrategy) filterSessionsWithNewContent(repo *git.Repository
 // sessionHasNewContent checks if a session has new transcript content
 // beyond what was already condensed.
 func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state *SessionState) (bool, error) {
+	logCtx := logging.WithComponent(context.Background(), "manual-commit")
+
 	// Get shadow branch
 	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
@@ -878,6 +906,10 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 		// No shadow branch means no Stop has happened since the last condensation.
 		// However, the agent may have done work (including commits) without a Stop.
 		// Check the live transcript to detect this scenario.
+		logging.Debug(logCtx, "sessionHasNewContent: no shadow branch, checking live transcript",
+			slog.String("session_id", state.SessionID),
+			slog.String("shadow_branch", shadowBranchName),
+		)
 		return s.sessionHasNewContentFromLiveTranscript(repo, state)
 	}
 
@@ -918,13 +950,26 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 			if len(stagedFiles) > 0 {
 				// PrepareCommitMsg context: check staged files overlap with content
 				result := stagedFilesOverlapWithContent(repo, tree, stagedFiles, state.FilesTouched)
+				logging.Debug(logCtx, "sessionHasNewContent: no transcript, carry-forward with staged files",
+					slog.String("session_id", state.SessionID),
+					slog.Int("files_touched", len(state.FilesTouched)),
+					slog.Int("staged_files", len(stagedFiles)),
+					slog.Bool("result", result),
+				)
 				return result, nil
 			}
 			// PostCommit context: no staged files, but we have carry-forward files.
 			// Return true and let the caller do the overlap check with committed files.
+			logging.Debug(logCtx, "sessionHasNewContent: no transcript, carry-forward without staged files (post-commit context)",
+				slog.String("session_id", state.SessionID),
+				slog.Int("files_touched", len(state.FilesTouched)),
+			)
 			return true, nil
 		}
 		// No transcript and no FilesTouched - fall back to live transcript check
+		logging.Debug(logCtx, "sessionHasNewContent: no transcript and no files touched, checking live transcript",
+			slog.String("session_id", state.SessionID),
+		)
 		return s.sessionHasNewContentFromLiveTranscript(repo, state)
 	}
 
@@ -940,6 +985,14 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 	hasTranscriptGrowth := transcriptLines > state.CheckpointTranscriptStart
 	hasUncommittedFiles := len(state.FilesTouched) > 0
 
+	logging.Debug(logCtx, "sessionHasNewContent: transcript check",
+		slog.String("session_id", state.SessionID),
+		slog.Int("transcript_lines", transcriptLines),
+		slog.Int("checkpoint_transcript_start", state.CheckpointTranscriptStart),
+		slog.Bool("has_transcript_growth", hasTranscriptGrowth),
+		slog.Bool("has_uncommitted_files", hasUncommittedFiles),
+	)
+
 	if !hasTranscriptGrowth && !hasUncommittedFiles {
 		return false, nil // No new content and no carry-forward files
 	}
@@ -948,7 +1001,13 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 	// This is primarily for PrepareCommitMsg; in PostCommit, stagedFiles is empty.
 	stagedFiles := getStagedFiles(repo)
 	if len(stagedFiles) > 0 {
-		return stagedFilesOverlapWithContent(repo, tree, stagedFiles, state.FilesTouched), nil
+		result := stagedFilesOverlapWithContent(repo, tree, stagedFiles, state.FilesTouched)
+		logging.Debug(logCtx, "sessionHasNewContent: staged files overlap check",
+			slog.String("session_id", state.SessionID),
+			slog.Int("staged_files", len(stagedFiles)),
+			slog.Bool("result", result),
+		)
+		return result, nil
 	}
 
 	// No staged files - either PostCommit context or edge case.
