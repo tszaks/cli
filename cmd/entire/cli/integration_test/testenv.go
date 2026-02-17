@@ -1154,7 +1154,7 @@ func (env *TestEnv) GitRm(paths ...string) {
 // Use this after GitRm or when files are already staged.
 func (env *TestEnv) GitCommitStagedWithShadowHooks(message string) {
 	env.T.Helper()
-	env.gitCommitStagedWithShadowHooks(message, false)
+	env.gitCommitStagedWithShadowHooks(message, true)
 }
 
 // gitCommitStagedWithShadowHooks is the shared implementation for committing staged changes with hooks.

@@ -1292,13 +1292,9 @@ Create only this file.`
 	t.Log("Committing manual edit")
 	env.GitCommitWithShadowHooks("Manual edit to depleted.go", "depleted.go")
 
-	// This commit should NOT have a checkpoint (session is depleted, new edit is manual)
+	// This commit should NOT have a new checkpoint — the session is depleted
+	// (all agent files were already committed) and the new edit is purely manual.
 	allCheckpointIDs := env.GetAllCheckpointIDsFromHistory()
-	if len(allCheckpointIDs) > len(checkpointIDs) {
-		t.Logf("Manual edit got a checkpoint: %s (content-aware overlap may have matched)", allCheckpointIDs[0])
-		// This is acceptable for modified files (always-overlap behavior),
-		// but log it so we know
-	} else {
-		t.Log("Manual edit correctly has no checkpoint (session depleted)")
-	}
+	assert.Equal(t, len(checkpointIDs), len(allCheckpointIDs),
+		"Manual edit after session depletion should not create a new checkpoint")
 }
