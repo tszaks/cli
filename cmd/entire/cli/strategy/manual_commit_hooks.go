@@ -675,7 +675,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 		// partial changes, the file still has remaining agent changes to carry forward.
 		if handler.condensed {
 			remainingFiles := filesWithRemainingAgentChanges(repo, shadowBranchName, commit, filesTouchedBefore, committedFileSet)
-			state.FilesTouched = append([]string{}, remainingFiles...)
+			state.FilesTouched = remainingFiles
 			logging.Debug(logCtx, "post-commit: carry-forward decision (content-aware)",
 				slog.String("session_id", state.SessionID),
 				slog.Int("files_touched_before", len(filesTouchedBefore)),
@@ -955,7 +955,12 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 	// Return transcript growth status. For PostCommit with hasTranscriptFile=true,
 	// if there's no transcript growth, the session hasn't done new work since last checkpoint.
 	// (Carry-forward creates a shadow branch WITHOUT transcript, handled in the block above.)
-	return hasTranscriptGrowth, nil
+	logging.Debug(logCtx, "sessionHasNewContent: no staged files, returning transcript growth",
+		slog.String("session_id", state.SessionID),
+		slog.Bool("has_transcript_growth", hasTranscriptGrowth),
+		slog.Bool("has_uncommitted_files", hasUncommittedFiles),
+	)
+	return hasTranscriptGrowth || hasUncommittedFiles, nil
 }
 
 // sessionHasNewContentFromLiveTranscript checks if a session has new content
