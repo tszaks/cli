@@ -234,15 +234,17 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 		return fmt.Errorf("unknown strategy: %s (use manual-commit or auto-commit)", selectedStrategy)
 	}
 
-	// Detect or select agent
-	ag, err := detectOrSelectAgent(w)
+	// Detect or select agents
+	agents, err := detectOrSelectAgent(w)
 	if err != nil {
 		return fmt.Errorf("agent selection failed: %w", err)
 	}
 
-	// Setup agent hooks
-	if _, err := setupAgentHooks(ag, localDev, forceHooks); err != nil {
-		return fmt.Errorf("failed to setup %s hooks: %w", ag.Type(), err)
+	// Setup agent hooks for all selected agents
+	for _, ag := range agents {
+		if _, err := setupAgentHooks(ag, localDev, forceHooks); err != nil {
+			return fmt.Errorf("failed to setup %s hooks: %w", ag.Type(), err)
+		}
 	}
 
 	// Setup .entire directory
@@ -333,15 +335,17 @@ func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProject
 		}
 	}
 
-	// Detect or select agent
-	ag, err := detectOrSelectAgent(w)
+	// Detect or select agents
+	agents, err := detectOrSelectAgent(w)
 	if err != nil {
 		return fmt.Errorf("agent selection failed: %w", err)
 	}
 
-	// Setup agent hooks
-	if _, err := setupAgentHooks(ag, localDev, forceHooks); err != nil {
-		return fmt.Errorf("failed to setup %s hooks: %w", ag.Type(), err)
+	// Setup agent hooks for all selected agents
+	for _, ag := range agents {
+		if _, err := setupAgentHooks(ag, localDev, forceHooks); err != nil {
+			return fmt.Errorf("failed to setup %s hooks: %w", ag.Type(), err)
+		}
 	}
 
 	// Setup .entire directory
@@ -509,32 +513,59 @@ func setupAgentHooks(ag agent.Agent, localDev, forceHooks bool) (int, error) { /
 	return count, nil
 }
 
-// detectOrSelectAgent tries to auto-detect an agent, or prompts the user to select one.
-// Returns the detected/selected agent and any error.
+// detectOrSelectAgent tries to auto-detect agents, or prompts the user to select.
+// Returns the detected/selected agents and any error.
+// When exactly one agent is detected, it is used automatically.
+// When multiple agents are detected, the user is prompted to confirm.
 // If no agent is detected and no TTY is available, falls back to the default agent.
-func detectOrSelectAgent(w io.Writer) (agent.Agent, error) {
+func detectOrSelectAgent(w io.Writer) ([]agent.Agent, error) {
 	// Try auto-detection first
-	ag, err := agent.Detect()
-	if err == nil {
-		fmt.Fprintf(w, "Detected agent: %s\n\n", ag.Type())
-		return ag, nil
+	detected := agent.DetectAll()
+
+	switch {
+	case len(detected) == 1:
+		// Single agent detected — use it directly
+		fmt.Fprintf(w, "Detected agent: %s\n\n", detected[0].Type())
+		return detected, nil
+
+	case len(detected) > 1:
+		// Multiple agents detected — prompt the user to confirm which to enable
+		agentTypes := make([]string, 0, len(detected))
+		for _, ag := range detected {
+			agentTypes = append(agentTypes, string(ag.Type()))
+		}
+		fmt.Fprintf(w, "Detected multiple agents: %s\n", strings.Join(agentTypes, ", "))
+		fmt.Fprintln(w)
+		// Fall through to the interactive multi-select below
 	}
 
-	// No agent detected - check if we can prompt interactively
+	// No agent detected (or multiple detected) — check if we can prompt interactively
 	if !canPromptInteractively() {
+		if len(detected) > 0 {
+			// Multiple agents detected but no TTY — use all of them
+			return detected, nil
+		}
 		// No TTY available (e.g., running in CI or tests) - fall back to default agent
 		defaultAgent := agent.Default()
 		if defaultAgent == nil {
 			return nil, errors.New("no default agent available")
 		}
 		fmt.Fprintf(w, "Agent: %s (use --agent to change)\n\n", defaultAgent.Type())
-		return defaultAgent, nil
+		return []agent.Agent{defaultAgent}, nil
 	}
 
-	// Show message and prompt for selection
-	fmt.Fprintln(w, "No agent configuration detected (e.g., .claude or .gemini directory).")
-	fmt.Fprintln(w, "This is normal - some agents don't require a config directory.")
-	fmt.Fprintln(w)
+	if len(detected) == 0 {
+		// Show message only when nothing was detected
+		fmt.Fprintln(w, "No agent configuration detected (e.g., .claude or .gemini directory).")
+		fmt.Fprintln(w, "This is normal - some agents don't require a config directory.")
+		fmt.Fprintln(w)
+	}
+
+	// Build a set of detected agent names for pre-selection
+	detectedSet := make(map[agent.AgentName]struct{}, len(detected))
+	for _, ag := range detected {
+		detectedSet[ag.Name()] = struct{}{}
+	}
 
 	// Build options from registered agents
 	agentNames := agent.List()
@@ -552,20 +583,25 @@ func detectOrSelectAgent(w io.Writer) (agent.Agent, error) {
 		if name == agent.DefaultAgentName {
 			label += " (default)"
 		}
-		options = append(options, huh.NewOption(label, string(name)))
+		opt := huh.NewOption(label, string(name))
+		if _, isDetected := detectedSet[name]; isDetected {
+			opt = opt.Selected(true)
+		}
+		options = append(options, opt)
 	}
 
 	if len(options) == 0 {
 		return nil, errors.New("no agents with hook support available")
 	}
 
-	var selectedAgentName string
+	var selectedAgentNames []string
 	form := NewAccessibleForm(
 		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Which agent are you using?").
+			huh.NewMultiSelect[string]().
+				Title("Which agents are you using?").
+				Description("Use space to select, enter to confirm.").
 				Options(options...).
-				Value(&selectedAgentName),
+				Value(&selectedAgentNames),
 		),
 	)
 
@@ -573,13 +609,25 @@ func detectOrSelectAgent(w io.Writer) (agent.Agent, error) {
 		return nil, fmt.Errorf("agent selection cancelled: %w", err)
 	}
 
-	selectedAgent, err := agent.Get(agent.AgentName(selectedAgentName))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get selected agent: %w", err)
+	if len(selectedAgentNames) == 0 {
+		return nil, errors.New("no agents selected")
 	}
 
-	fmt.Fprintf(w, "\nSelected agent: %s\n\n", selectedAgent.Type())
-	return selectedAgent, nil
+	selectedAgents := make([]agent.Agent, 0, len(selectedAgentNames))
+	for _, name := range selectedAgentNames {
+		selectedAgent, err := agent.Get(agent.AgentName(name))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get selected agent %s: %w", name, err)
+		}
+		selectedAgents = append(selectedAgents, selectedAgent)
+	}
+
+	agentTypes := make([]string, 0, len(selectedAgents))
+	for _, ag := range selectedAgents {
+		agentTypes = append(agentTypes, string(ag.Type()))
+	}
+	fmt.Fprintf(w, "\nSelected agents: %s\n\n", strings.Join(agentTypes, ", "))
+	return selectedAgents, nil
 }
 
 // canPromptInteractively checks if we can show interactive prompts.

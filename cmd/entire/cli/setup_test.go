@@ -920,14 +920,17 @@ func TestDetectOrSelectAgent_AgentDetected(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	ag, err := detectOrSelectAgent(&buf)
+	agents, err := detectOrSelectAgent(&buf)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
 
 	// Should detect Claude Code
-	if ag.Name() != agent.AgentNameClaudeCode {
-		t.Errorf("detectOrSelectAgent() agent name = %v, want %v", ag.Name(), agent.AgentNameClaudeCode)
+	if len(agents) != 1 {
+		t.Fatalf("detectOrSelectAgent() returned %d agents, want 1", len(agents))
+	}
+	if agents[0].Name() != agent.AgentNameClaudeCode {
+		t.Errorf("detectOrSelectAgent() agent name = %v, want %v", agents[0].Name(), agent.AgentNameClaudeCode)
 	}
 
 	output := buf.String()
@@ -949,14 +952,17 @@ func TestDetectOrSelectAgent_GeminiDetected(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	ag, err := detectOrSelectAgent(&buf)
+	agents, err := detectOrSelectAgent(&buf)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
 
 	// Should detect Gemini
-	if ag.Name() != agent.AgentNameGemini {
-		t.Errorf("detectOrSelectAgent() agent name = %v, want %v", ag.Name(), agent.AgentNameGemini)
+	if len(agents) != 1 {
+		t.Fatalf("detectOrSelectAgent() returned %d agents, want 1", len(agents))
+	}
+	if agents[0].Name() != agent.AgentNameGemini {
+		t.Errorf("detectOrSelectAgent() agent name = %v, want %v", agents[0].Name(), agent.AgentNameGemini)
 	}
 
 	output := buf.String()
@@ -973,14 +979,17 @@ func TestDetectOrSelectAgent_NoDetection_NoTTY_FallsBackToDefault(t *testing.T) 
 	// No .claude or .gemini directory - detection will fail
 
 	var buf bytes.Buffer
-	ag, err := detectOrSelectAgent(&buf)
+	agents, err := detectOrSelectAgent(&buf)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
 
 	// Should fall back to default agent (Claude Code)
-	if ag.Name() != agent.DefaultAgentName {
-		t.Errorf("detectOrSelectAgent() agent name = %v, want default %v", ag.Name(), agent.DefaultAgentName)
+	if len(agents) != 1 {
+		t.Fatalf("detectOrSelectAgent() returned %d agents, want 1", len(agents))
+	}
+	if agents[0].Name() != agent.DefaultAgentName {
+		t.Errorf("detectOrSelectAgent() agent name = %v, want default %v", agents[0].Name(), agent.DefaultAgentName)
 	}
 
 	output := buf.String()
@@ -1022,9 +1031,10 @@ func TestDetectOrSelectAgent_NoDetection_WithTTY_ShowsPromptMessages(t *testing.
 	}
 }
 
-func TestDetectOrSelectAgent_BothDirectoriesExist_DetectsFirst(t *testing.T) {
-	// Cannot use t.Parallel() because we use t.Chdir
+func TestDetectOrSelectAgent_BothDirectoriesExist_PromptsUser(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
 	setupTestRepo(t)
+	t.Setenv("ENTIRE_TEST_TTY", "1") // TTY available (but form will fail since no real TTY)
 
 	// Create both .claude and .gemini directories
 	if err := os.MkdirAll(".claude", 0o755); err != nil {
@@ -1035,18 +1045,47 @@ func TestDetectOrSelectAgent_BothDirectoriesExist_DetectsFirst(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	ag, err := detectOrSelectAgent(&buf)
+	_, err := detectOrSelectAgent(&buf)
+
+	// The form.Run() will fail because there's no actual TTY,
+	// but we can verify the multi-agent detection message was printed
+	if err == nil {
+		t.Fatal("Expected error when form cannot run (no real TTY)")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Detected multiple agents:") {
+		t.Errorf("Expected output to contain 'Detected multiple agents:', got: %s", output)
+	}
+	if !strings.Contains(output, "Claude Code") {
+		t.Errorf("Expected output to mention Claude Code, got: %s", output)
+	}
+	if !strings.Contains(output, "Gemini CLI") {
+		t.Errorf("Expected output to mention Gemini CLI, got: %s", output)
+	}
+}
+
+func TestDetectOrSelectAgent_BothDirectoriesExist_NoTTY_UsesAll(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
+	setupTestRepo(t)
+	t.Setenv("ENTIRE_TEST_TTY", "0") // No TTY available
+
+	// Create both .claude and .gemini directories
+	if err := os.MkdirAll(".claude", 0o755); err != nil {
+		t.Fatalf("Failed to create .claude directory: %v", err)
+	}
+	if err := os.MkdirAll(".gemini", 0o755); err != nil {
+		t.Fatalf("Failed to create .gemini directory: %v", err)
+	}
+
+	var buf bytes.Buffer
+	agents, err := detectOrSelectAgent(&buf)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
 
-	// Should detect one of them (order depends on map iteration, but should succeed)
-	if ag == nil {
-		t.Error("detectOrSelectAgent() returned nil agent")
-	}
-
-	output := buf.String()
-	if !strings.Contains(output, "Detected agent:") {
-		t.Errorf("Expected output to contain 'Detected agent:', got: %s", output)
+	// With no TTY and multiple detected, should return all detected agents
+	if len(agents) != 2 {
+		t.Errorf("detectOrSelectAgent() returned %d agents, want 2", len(agents))
 	}
 }
