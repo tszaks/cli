@@ -165,7 +165,10 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 	}
 
 	transcriptRef := event.SessionRef
-	if transcriptRef == "" || !fileExists(transcriptRef) {
+	if transcriptRef == "" {
+		return errors.New("transcript file not specified")
+	}
+	if !fileExists(transcriptRef) {
 		return fmt.Errorf("transcript file not found: %s", transcriptRef)
 	}
 
@@ -218,8 +221,9 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 	var modifiedFiles []string
 	var newTranscriptPosition int
 
-	// Compute subagents directory for agents that support subagent extraction
-	subagentsDir := filepath.Join(filepath.Dir(transcriptRef), "subagents")
+	// Compute subagents directory for agents that support subagent extraction.
+	// Subagent transcripts live in <transcriptDir>/<modelSessionID>/subagents/
+	subagentsDir := filepath.Join(filepath.Dir(transcriptRef), event.SessionID, "subagents")
 
 	if analyzer, ok := ag.(agent.TranscriptAnalyzer); ok {
 		// Extract prompts
@@ -306,6 +310,12 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 		relNewFiles = FilterAndNormalizePaths(changes.New, repoRoot)
 		relDeletedFiles = FilterAndNormalizePaths(changes.Deleted, repoRoot)
 	}
+
+	// Filter transcript-extracted files to exclude files already committed to HEAD.
+	// When an agent commits files mid-turn, those files are condensed by PostCommit
+	// and should not be re-added to FilesTouched by SaveStep. A file is "committed"
+	// if it exists in HEAD with the same content as the working tree.
+	relModifiedFiles = filterToUncommittedFiles(relModifiedFiles, repoRoot)
 
 	// Check if there are any changes
 	totalChanges := len(relModifiedFiles) + len(relNewFiles) + len(relDeletedFiles)
