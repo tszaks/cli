@@ -2342,7 +2342,7 @@ func TestCondenseSession_AttributionWithoutShadowBranch(t *testing.T) {
 		t.Fatal("InitialAttribution should be present even without shadow branch")
 	}
 
-	// Agent created all 3 lines, no human edits
+	// Agent created all content (10 lines across 2 files), no human edits
 	if metadata.InitialAttribution.AgentLines == 0 {
 		t.Error("AgentLines should be > 0 (agent created the file)")
 	}
