@@ -135,14 +135,7 @@ func CheckAndWarnHookManagers(w io.Writer) {
 		return
 	}
 
-	var cmdPrefix string
-	if isLocalDev() {
-		cmdPrefix = "go run ./cmd/entire/main.go"
-	} else {
-		cmdPrefix = "entire"
-	}
-
-	warning := hookManagerWarning(managers, cmdPrefix)
+	warning := hookManagerWarning(managers, hookCmdPrefix())
 	if warning != "" {
 		fmt.Fprintln(w)
 		fmt.Fprint(w, warning)
