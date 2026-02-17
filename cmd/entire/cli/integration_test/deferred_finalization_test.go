@@ -338,6 +338,55 @@ func TestShadow_CarryForward_ActiveSession(t *testing.T) {
 		},
 	})
 
+	// Third commit: file C (last remaining carry-forward file)
+	env.GitAdd("fileC.go")
+	env.GitCommitWithShadowHooks("Add file C", "fileC.go")
+	thirdCommitHash := env.GetHeadHash()
+	thirdCheckpointID := env.GetCheckpointIDFromCommitMessage(thirdCommitHash)
+	if thirdCheckpointID == "" {
+		t.Fatal("Third commit should have checkpoint trailer")
+	}
+	t.Logf("Third checkpoint ID: %s", thirdCheckpointID)
+
+	// All three checkpoint IDs must be unique
+	if thirdCheckpointID == firstCheckpointID || thirdCheckpointID == secondCheckpointID {
+		t.Errorf("Third checkpoint ID should be unique.\n"+
+			"First: %s\nSecond: %s\nThird: %s",
+			firstCheckpointID, secondCheckpointID, thirdCheckpointID)
+	}
+
+	// After all files are committed, FilesTouched should be empty
+	state, err = env.GetSessionState(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSessionState failed: %v", err)
+	}
+	if len(state.FilesTouched) > 0 {
+		t.Errorf("FilesTouched should be empty after all files committed, got %v", state.FilesTouched)
+	}
+
+	// CRITICAL: No shadow branches should remain after all files are committed.
+	// Only entire/checkpoints/v1 should exist. Extra shadow branches (entire/<hash>-<hash>)
+	// indicate a regression in carry-forward cleanup.
+	branchesAfterAll := env.ListBranchesWithPrefix("entire/")
+	for _, b := range branchesAfterAll {
+		if b != paths.MetadataBranchName {
+			t.Errorf("Unexpected shadow branch after all files committed: %s", b)
+		}
+	}
+	t.Logf("Entire branches after all commits: %v", branchesAfterAll)
+
+	// Validate third checkpoint (file C)
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID:    thirdCheckpointID,
+		SessionID:       sess.ID,
+		Strategy:        strategy.StrategyNameManualCommit,
+		FilesTouched:    []string{"fileC.go"},
+		ExpectedPrompts: []string{"Create files A, B, and C"},
+		ExpectedTranscriptContent: []string{
+			"Create files A, B, and C",
+		},
+	})
+
 	t.Log("CarryForward_ActiveSession test completed successfully")
 }
 

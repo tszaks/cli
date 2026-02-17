@@ -1019,7 +1019,7 @@ func (s *ManualCommitStrategy) sessionHasNewContent(repo *git.Repository, state 
 		slog.Bool("has_transcript_growth", hasTranscriptGrowth),
 		slog.Bool("has_uncommitted_files", hasUncommittedFiles),
 	)
-	return hasTranscriptGrowth || hasUncommittedFiles, nil
+	return hasTranscriptGrowth, nil
 }
 
 // sessionHasNewContentFromLiveTranscript checks if a session has new content
@@ -1071,8 +1071,8 @@ func (s *ManualCommitStrategy) sessionHasNewContentFromLiveTranscript(repo *git.
 
 // extractFilesFromLiveTranscript extracts modified file paths from the live transcript.
 // Returns empty slice if extraction fails (fail-open behavior for hooks).
-// Extracts ALL files from the transcript (offset 0) because this is used for carry-forward
-// computation which needs to know all files touched, not just new ones.
+// Extracts files from the transcript starting at CheckpointTranscriptStart, which gives
+// files touched since the last condensation — used for carry-forward computation.
 func (s *ManualCommitStrategy) extractFilesFromLiveTranscript(state *SessionState) []string {
 	return s.extractModifiedFilesFromLiveTranscript(state, state.CheckpointTranscriptStart)
 }
@@ -1843,6 +1843,7 @@ func (s *ManualCommitStrategy) carryForwardToNewShadowBranch(
 	// An alternative would be incremental checkpoints (only new content since last condensation),
 	// but this would complicate checkpoint retrieval and require careful tracking of dependencies.
 	state.StepCount = 1
+	state.CheckpointTranscriptStart = 0
 	state.LastCheckpointID = ""
 	// NOTE: TurnCheckpointIDs is intentionally NOT cleared here. Those checkpoint
 	// IDs from earlier in the turn still need finalization with the full transcript
