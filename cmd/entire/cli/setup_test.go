@@ -357,9 +357,10 @@ func TestRunEnableWithStrategy_PreservesExistingSettings(t *testing.T) {
 	}`
 	writeSettings(t, initialSettings)
 
-	// Run enable with a different strategy
+	// Run enable with a different strategy — pass agents directly (no TTY needed)
+	defaultAgent := agent.Default()
 	var stdout bytes.Buffer
-	err := runEnableWithStrategy(&stdout, "auto-commit", false, false, false, true, false, false, false)
+	err := runEnableWithStrategy(&stdout, []agent.Agent{defaultAgent}, "auto-commit", false, false, true, false, false, false)
 	if err != nil {
 		t.Fatalf("runEnableWithStrategy() error = %v", err)
 	}
@@ -401,9 +402,10 @@ func TestRunEnableWithStrategy_PreservesLocalSettings(t *testing.T) {
 	}`
 	writeLocalSettings(t, localSettings)
 
-	// Run enable with --local flag
+	// Run enable with --local flag — pass agents directly (no TTY needed)
+	defaultAgent := agent.Default()
 	var stdout bytes.Buffer
-	err := runEnableWithStrategy(&stdout, "auto-commit", false, false, true, false, false, false, false)
+	err := runEnableWithStrategy(&stdout, []agent.Agent{defaultAgent}, "auto-commit", false, true, false, false, false, false)
 	if err != nil {
 		t.Fatalf("runEnableWithStrategy() error = %v", err)
 	}
@@ -920,7 +922,7 @@ func TestDetectOrSelectAgent_AgentDetected(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf)
+	agents, err := detectOrSelectAgent(&buf, nil)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -952,7 +954,7 @@ func TestDetectOrSelectAgent_GeminiDetected(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf)
+	agents, err := detectOrSelectAgent(&buf, nil)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -979,7 +981,7 @@ func TestDetectOrSelectAgent_NoDetection_NoTTY_FallsBackToDefault(t *testing.T) 
 	// No .claude or .gemini directory - detection will fail
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf)
+	agents, err := detectOrSelectAgent(&buf, nil)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -1004,18 +1006,21 @@ func TestDetectOrSelectAgent_NoDetection_NoTTY_FallsBackToDefault(t *testing.T) 
 func TestDetectOrSelectAgent_NoDetection_WithTTY_ShowsPromptMessages(t *testing.T) {
 	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
 	setupTestRepo(t)
-	t.Setenv("ENTIRE_TEST_TTY", "1") // TTY available
-
-	// Mock the prompt to avoid blocking on interactive form.Run()
-	agentPromptFunc = func() ([]string, error) {
-		return []string{string(agent.AgentNameClaudeCode)}, nil
-	}
-	t.Cleanup(func() { agentPromptFunc = nil })
+	t.Setenv("ENTIRE_TEST_TTY", "1")
 
 	// No .claude or .gemini directory - detection will fail
 
+	// Inject selector to avoid blocking on interactive form.Run().
+	// The selector receives available agent names so tests can validate the options.
+	selectFn := func(available []string) ([]string, error) {
+		if len(available) == 0 {
+			t.Error("selectFn received no available agents")
+		}
+		return []string{string(agent.AgentNameClaudeCode)}, nil
+	}
+
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf)
+	agents, err := detectOrSelectAgent(&buf, selectFn)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -1040,10 +1045,48 @@ func TestDetectOrSelectAgent_NoDetection_WithTTY_ShowsPromptMessages(t *testing.
 	}
 }
 
+func TestDetectOrSelectAgent_SelectionCancelled(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
+	setupTestRepo(t)
+	t.Setenv("ENTIRE_TEST_TTY", "1")
+
+	selectFn := func(_ []string) ([]string, error) {
+		return nil, errors.New("user cancelled")
+	}
+
+	var buf bytes.Buffer
+	_, err := detectOrSelectAgent(&buf, selectFn)
+	if err == nil {
+		t.Fatal("expected error when selection is cancelled")
+	}
+	if !strings.Contains(err.Error(), "user cancelled") {
+		t.Errorf("expected 'user cancelled' in error, got: %v", err)
+	}
+}
+
+func TestDetectOrSelectAgent_NoneSelected(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
+	setupTestRepo(t)
+	t.Setenv("ENTIRE_TEST_TTY", "1")
+
+	selectFn := func(_ []string) ([]string, error) {
+		return []string{}, nil // user deselected everything
+	}
+
+	var buf bytes.Buffer
+	_, err := detectOrSelectAgent(&buf, selectFn)
+	if err == nil {
+		t.Fatal("expected error when no agents selected")
+	}
+	if !strings.Contains(err.Error(), "no agents selected") {
+		t.Errorf("expected 'no agents selected' in error, got: %v", err)
+	}
+}
+
 func TestDetectOrSelectAgent_BothDirectoriesExist_PromptsUser(t *testing.T) {
 	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
 	setupTestRepo(t)
-	t.Setenv("ENTIRE_TEST_TTY", "1") // TTY available
+	t.Setenv("ENTIRE_TEST_TTY", "1")
 
 	// Create both .claude and .gemini directories
 	if err := os.MkdirAll(".claude", 0o755); err != nil {
@@ -1053,14 +1096,16 @@ func TestDetectOrSelectAgent_BothDirectoriesExist_PromptsUser(t *testing.T) {
 		t.Fatalf("Failed to create .gemini directory: %v", err)
 	}
 
-	// Mock the prompt to avoid blocking on interactive form.Run()
-	agentPromptFunc = func() ([]string, error) {
+	// Inject selector — receives available names, returns both
+	selectFn := func(available []string) ([]string, error) {
+		if len(available) < 2 {
+			t.Errorf("expected at least 2 available agents, got %d", len(available))
+		}
 		return []string{string(agent.AgentNameClaudeCode), string(agent.AgentNameGemini)}, nil
 	}
-	t.Cleanup(func() { agentPromptFunc = nil })
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf)
+	agents, err := detectOrSelectAgent(&buf, selectFn)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -1099,7 +1144,7 @@ func TestDetectOrSelectAgent_BothDirectoriesExist_NoTTY_UsesAll(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf)
+	agents, err := detectOrSelectAgent(&buf, nil)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}

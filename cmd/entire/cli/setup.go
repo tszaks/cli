@@ -98,11 +98,32 @@ Strategies: manual-commit (default), auto-commit`,
 				}
 				return setupAgentHooksNonInteractive(cmd.OutOrStdout(), ag, strategyFlag, localDev, forceHooks, skipPushSessions, telemetry)
 			}
-			// If strategy is specified via flag, skip interactive selection
-			if strategyFlag != "" {
-				return runEnableWithStrategy(cmd.OutOrStdout(), strategyFlag, localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry)
+			// Check if already fully enabled before prompting for agents.
+			// Only applies to interactive path (no --strategy flag) with no config flags.
+			if strategyFlag == "" {
+				hasConfigFlags := forceHooks || skipPushSessions || !telemetry || useLocalSettings || useProjectSettings || localDev
+				if !hasConfigFlags {
+					if fullyEnabled, agentDesc, configPath := isFullyEnabled(); fullyEnabled {
+						w := cmd.OutOrStdout()
+						fmt.Fprintln(w, "Already enabled. Everything looks good.")
+						fmt.Fprintln(w)
+						fmt.Fprintf(w, "  Agent: %s\n", agentDesc)
+						fmt.Fprintf(w, "  Config: %s\n", configPath)
+						return nil
+					}
+				}
 			}
-			return runEnableInteractive(cmd.OutOrStdout(), localDev, ignoreUntracked, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry)
+
+			// Detect or prompt for agents
+			agents, err := detectOrSelectAgent(cmd.OutOrStdout(), nil)
+			if err != nil {
+				return fmt.Errorf("agent selection failed: %w", err)
+			}
+
+			if strategyFlag != "" {
+				return runEnableWithStrategy(cmd.OutOrStdout(), agents, strategyFlag, localDev, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry)
+			}
+			return runEnableInteractive(cmd.OutOrStdout(), agents, localDev, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry)
 		},
 	}
 
@@ -221,7 +242,8 @@ func isFullyEnabled() (enabled bool, agentDesc string, configPath string) {
 // runEnableWithStrategy enables Entire with a specified strategy (non-interactive).
 // The selectedStrategy can be either a display name (manual-commit, auto-commit)
 // or an internal name (manual-commit, auto-commit).
-func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry bool) error {
+// agents must be provided by the caller (via detectOrSelectAgent).
+func runEnableWithStrategy(w io.Writer, agents []agent.Agent, selectedStrategy string, localDev, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry bool) error {
 	// Map the strategy to internal name if it's a display name
 	internalStrategy := selectedStrategy
 	if mapped, ok := strategyDisplayToInternal[selectedStrategy]; ok {
@@ -232,12 +254,6 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 	strat, err := strategy.Get(internalStrategy)
 	if err != nil {
 		return fmt.Errorf("unknown strategy: %s (use manual-commit or auto-commit)", selectedStrategy)
-	}
-
-	// Detect or select agents
-	agents, err := detectOrSelectAgent(w)
-	if err != nil {
-		return fmt.Errorf("agent selection failed: %w", err)
 	}
 
 	// Setup agent hooks for all selected agents
@@ -321,26 +337,9 @@ func runEnableWithStrategy(w io.Writer, selectedStrategy string, localDev, _, us
 }
 
 // runEnableInteractive runs the interactive enable flow.
-func runEnableInteractive(w io.Writer, localDev, _, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry bool) error {
-	// Check if already fully enabled — show summary and return early.
-	// Skip early return if any configuration flags are set (user wants to reconfigure).
-	hasConfigFlags := forceHooks || skipPushSessions || !telemetry || useLocalSettings || useProjectSettings || localDev
-	if !hasConfigFlags {
-		if fullyEnabled, agentDesc, configPath := isFullyEnabled(); fullyEnabled {
-			fmt.Fprintln(w, "Already enabled. Everything looks good.")
-			fmt.Fprintln(w)
-			fmt.Fprintf(w, "  Agent: %s\n", agentDesc)
-			fmt.Fprintf(w, "  Config: %s\n", configPath)
-			return nil
-		}
-	}
-
-	// Detect or select agents
-	agents, err := detectOrSelectAgent(w)
-	if err != nil {
-		return fmt.Errorf("agent selection failed: %w", err)
-	}
-
+// agents must be provided by the caller (via detectOrSelectAgent).
+// The isFullyEnabled check is handled by the caller before agent detection.
+func runEnableInteractive(w io.Writer, agents []agent.Agent, localDev, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry bool) error {
 	// Setup agent hooks for all selected agents
 	for _, ag := range agents {
 		if _, err := setupAgentHooks(ag, localDev, forceHooks); err != nil {
@@ -513,40 +512,15 @@ func setupAgentHooks(ag agent.Agent, localDev, forceHooks bool) (int, error) { /
 	return count, nil
 }
 
-// agentPromptFunc can be overridden in tests to avoid blocking on interactive form.Run().
-// When nil (default), the real interactive form is used.
-// Returns selected agent name strings.
-var agentPromptFunc func() ([]string, error)
-
-// runAgentSelectForm runs the interactive multi-select form for agent selection.
-func runAgentSelectForm(options []huh.Option[string]) ([]string, error) {
-	var selectedAgentNames []string
-	form := NewAccessibleForm(
-		huh.NewGroup(
-			huh.NewMultiSelect[string]().
-				Title("Which agents are you using?").
-				Description("Use space to select, enter to confirm.").
-				Options(options...).
-				Value(&selectedAgentNames),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		return nil, fmt.Errorf("agent selection cancelled: %w", err)
-	}
-
-	if len(selectedAgentNames) == 0 {
-		return nil, errors.New("no agents selected")
-	}
-	return selectedAgentNames, nil
-}
-
 // detectOrSelectAgent tries to auto-detect agents, or prompts the user to select.
 // Returns the detected/selected agents and any error.
 // When exactly one agent is detected, it is used automatically.
 // When multiple agents are detected, the user is prompted to confirm.
 // If no agent is detected and no TTY is available, falls back to the default agent.
-func detectOrSelectAgent(w io.Writer) ([]agent.Agent, error) {
+//
+// selectFn overrides the interactive prompt for testing. When nil, the real form is used.
+// It receives available agent names and returns the selected names.
+func detectOrSelectAgent(w io.Writer, selectFn func(available []string) ([]string, error)) ([]agent.Agent, error) {
 	// Try auto-detection first
 	detected := agent.DetectAll()
 
@@ -622,16 +596,36 @@ func detectOrSelectAgent(w io.Writer) ([]agent.Agent, error) {
 		return nil, errors.New("no agents with hook support available")
 	}
 
-	selectFn := agentPromptFunc
-	if selectFn == nil {
-		selectFn = func() ([]string, error) {
-			return runAgentSelectForm(options)
+	// Collect available agent names for the selector
+	availableNames := make([]string, 0, len(options))
+	for _, opt := range options {
+		availableNames = append(availableNames, opt.Value)
+	}
+
+	var selectedAgentNames []string
+	if selectFn != nil {
+		var err error
+		selectedAgentNames, err = selectFn(availableNames)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		form := NewAccessibleForm(
+			huh.NewGroup(
+				huh.NewMultiSelect[string]().
+					Title("Which agents are you using?").
+					Description("Use space to select, enter to confirm.").
+					Options(options...).
+					Value(&selectedAgentNames),
+			),
+		)
+		if err := form.Run(); err != nil {
+			return nil, fmt.Errorf("agent selection cancelled: %w", err)
 		}
 	}
 
-	selectedAgentNames, err := selectFn()
-	if err != nil {
-		return nil, err
+	if len(selectedAgentNames) == 0 {
+		return nil, errors.New("no agents selected")
 	}
 
 	selectedAgents := make([]agent.Agent, 0, len(selectedAgentNames))
