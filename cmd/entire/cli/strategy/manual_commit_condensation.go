@@ -177,7 +177,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 	// Get author info
 	authorName, authorEmail := GetGitAuthorFromRepo(repo)
 	// Calculate attribution. When no shadow branch exists (agent committed mid-turn
-	// before SaveChanges), pass nil ref — the function uses HEAD as the shadow tree
+	// before SaveStep), pass nil ref — the function uses HEAD as the shadow tree
 	// since the agent's commit IS HEAD (no user edits between agent work and commit).
 	attribution := calculateSessionAttributions(repo, ref, sessionData, state)
 	// Get current branch name
@@ -253,7 +253,7 @@ func calculateSessionAttributions(repo *git.Repository, shadowRef *plumbing.Refe
 	// This uses user edits captured at each prompt start (before agent works),
 	// plus any user edits after the final checkpoint (shadow → head).
 	//
-	// When shadowRef is nil (agent committed mid-turn before SaveChanges),
+	// When shadowRef is nil (agent committed mid-turn before SaveStep),
 	// HEAD is used as the shadow tree. This is correct because the agent's
 	// commit IS HEAD — there are no user edits between agent work and commit.
 	logCtx := logging.WithComponent(context.Background(), "attribution")
