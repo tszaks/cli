@@ -43,7 +43,7 @@ Every agent must implement all 19 methods on the `Agent` interface:
 | Interface | Methods | When to implement |
 |-----------|---------|-------------------|
 | `HookSupport` | `InstallHooks`, `UninstallHooks`, `AreHooksInstalled`, `GetSupportedHooks` | Agent uses a config file for hook registration (e.g., `settings.json`) |
-| `HookHandler` | `GetHookNames` | Backward compat - delegates to `HookNames()` |
+| `HookHandler` | `GetHookNames` | **Required for CLI hook registration** — `entire hooks <agent> <verb>` subcommands are only created for agents implementing this interface. Typically delegates to `HookNames()`. |
 | `TranscriptAnalyzer` | `GetTranscriptPosition`, `ExtractModifiedFilesFromOffset`, `ExtractPrompts`, `ExtractSummary` | You want richer checkpoints with transcript-derived file lists and prompts |
 | `TranscriptPreparer` | `PrepareTranscript` | Agent writes transcripts asynchronously and needs a flush/sync step |
 | `TokenCalculator` | `CalculateTokenUsage` | Agent's transcript contains token usage data |
@@ -74,8 +74,6 @@ Define structs matching your agent's native hook JSON payloads:
 
 ```go
 package youragent
-
-import "encoding/json"
 
 // Settings file structure (for HookSupport)
 type YourAgentSettings struct {
@@ -131,7 +129,6 @@ import (
     "io"
     "os"
     "path/filepath"
-    "time"
 
     "github.com/entireio/cli/cmd/entire/cli/agent"
     "github.com/entireio/cli/cmd/entire/cli/paths"
@@ -194,8 +191,17 @@ func (a *YourAgent) SupportsHooks() bool                           { return true
 func (a *YourAgent) GetSessionID(input *agent.HookInput) string    { return input.SessionID }
 func (a *YourAgent) FormatResumeCommand(sessionID string) string   { return "youragent --resume " + sessionID }
 
-func (a *YourAgent) ParseHookInput(_ agent.HookType, _ io.Reader) (*agent.HookInput, error) {
-    return nil, errors.New("use ParseHookEvent instead")
+// ParseHookInput is part of the Agent interface and is called by integration tests.
+// Provide a real implementation that populates at least SessionID and SessionRef.
+func (a *YourAgent) ParseHookInput(hookType agent.HookType, r io.Reader) (*agent.HookInput, error) {
+    raw, err := agent.ReadAndParseHookInput[sessionInfoRaw](r)
+    if err != nil {
+        return nil, err
+    }
+    return &agent.HookInput{
+        SessionID:  raw.SessionID,
+        SessionRef: raw.TranscriptPath,
+    }, nil
 }
 
 func (a *YourAgent) GetSessionDir(_ string) (string, error) {
@@ -307,7 +313,7 @@ func (a *YourAgent) ParseHookEvent(hookName string, stdin io.Reader) (*agent.Eve
 Key decisions in `ParseHookEvent`:
 
 - **Return `nil, nil`** for hooks with no lifecycle significance (pass-through hooks). This is not an error - it tells the framework to do nothing.
-- **Every event must have `SessionID` and `SessionRef`**. The framework validates these.
+- **Every event must include the required fields for its `EventType`** (see the [Event Field Requirements](#event-field-requirements) table). `SessionID` is always required; `SessionRef` is required for most event types but optional for `Compaction` and `SessionEnd`.
 - **`TurnStart` should include `Prompt`** if available - it's used for commit message generation.
 - **Use `agent.ReadAndParseHookInput[T]`** - the generic helper reads stdin and unmarshals JSON in one step.
 - **Set `Timestamp` to `time.Now()`** - the framework uses this for ordering.
@@ -375,9 +381,13 @@ func (a *YourAgent) InstallHooks(localDev bool, force bool) (int, error) {
     // ... read and parse ...
 
     // 3. Build hook commands
+    // localDev mode uses an agent-specific env var (e.g., ${CLAUDE_PROJECT_DIR},
+    // ${GEMINI_PROJECT_DIR}) that the agent expands at runtime. Choose a name
+    // for your agent and add it to entireHookPrefixes so existing hooks can be
+    // detected/removed during install/uninstall.
     var cmdPrefix string
     if localDev {
-        cmdPrefix = "go run ${PROJECT_DIR}/cmd/entire/main.go hooks your-agent "
+        cmdPrefix = "go run ${YOUR_AGENT_PROJECT_DIR}/cmd/entire/main.go hooks your-agent "
     } else {
         cmdPrefix = "entire hooks your-agent "
     }
@@ -393,7 +403,7 @@ func (a *YourAgent) AreHooksInstalled() bool        { /* check settings file */ 
 func (a *YourAgent) GetSupportedHooks() []agent.HookType { /* list supported types */ }
 ```
 
-Also implement `HookHandler` for backward compatibility:
+Also implement `HookHandler` — this is required for the CLI to register `entire hooks <agent> <verb>` subcommands:
 
 ```go
 func (a *YourAgent) GetHookNames() []string {
@@ -856,7 +866,13 @@ func (a *YourAgent) ReassembleTranscript(chunks [][]byte) ([]byte, error) {
 // --- Session Management ---
 func (a *YourAgent) GetHookConfigPath() string                                          { return "" }
 func (a *YourAgent) SupportsHooks() bool                                                { return true }
-func (a *YourAgent) ParseHookInput(_ agent.HookType, _ io.Reader) (*agent.HookInput, error) { return nil, errors.New("use ParseHookEvent") }
+func (a *YourAgent) ParseHookInput(_ agent.HookType, r io.Reader) (*agent.HookInput, error) {
+	raw, err := agent.ReadAndParseHookInput[sessionInfoRaw](r)
+	if err != nil {
+		return nil, err
+	}
+	return &agent.HookInput{SessionID: raw.SessionID, SessionRef: raw.TranscriptPath}, nil
+}
 func (a *YourAgent) GetSessionID(input *agent.HookInput) string                         { return input.SessionID }
 func (a *YourAgent) GetSessionDir(_ string) (string, error)                             { return "", errors.New("not implemented") }
 func (a *YourAgent) ResolveSessionFile(dir, id string) string                           { return filepath.Join(dir, id+".jsonl") }
