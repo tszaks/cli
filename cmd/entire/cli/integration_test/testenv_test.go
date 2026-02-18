@@ -56,7 +56,7 @@ func TestTestEnv_InitEntire(t *testing.T) {
 			t.Error(".entire directory should exist")
 		}
 
-		// Verify settings file exists and contains strategy
+		// Verify settings file exists and contains enabled
 		settingsPath := filepath.Join(entireDir, paths.SettingsFileName)
 		data, err := os.ReadFile(settingsPath)
 		if err != nil {
@@ -64,9 +64,8 @@ func TestTestEnv_InitEntire(t *testing.T) {
 		}
 
 		settingsContent := string(data)
-		expectedStrategy := `"strategy": "` + strategyName + `"`
-		if !strings.Contains(settingsContent, expectedStrategy) {
-			t.Errorf("settings.json should contain %s, got: %s", expectedStrategy, settingsContent)
+		if !strings.Contains(settingsContent, `"enabled"`) {
+			t.Errorf("settings.json should contain enabled field, got: %s", settingsContent)
 		}
 
 		// Verify tmp directory exists
@@ -211,12 +210,12 @@ func TestNewFeatureBranchEnv(t *testing.T) {
 func TestAllStrategies(t *testing.T) {
 	t.Parallel()
 	strategies := AllStrategies()
-	if len(strategies) != 2 {
+	if len(strategies) != 1 {
 		t.Errorf("AllStrategies() returned %d strategies, want 2", len(strategies))
 	}
 
 	// Verify expected strategies are present
-	expected := []string{"auto-commit", "manual-commit"}
+	expected := []string{"manual-commit"}
 	for _, exp := range expected {
 		found := false
 		for _, s := range strategies {

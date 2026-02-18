@@ -290,17 +290,9 @@ func TestSubagentCheckpoints_NoPreTaskFile(t *testing.T) {
 func verifyCheckpointStorage(t *testing.T, env *TestEnv, strategyName, sessionID, taskToolUseID string) {
 	t.Helper()
 
-	switch strategyName {
-	case strategy.StrategyNameManualCommit:
-		// Shadow strategy stores checkpoints in git tree on shadow branch (entire/<head-hash>)
-		// We need to verify that checkpoint data exists in the shadow branch tree
-		verifyShadowCheckpointStorage(t, env, sessionID, taskToolUseID)
-
-	case strategy.StrategyNameAutoCommit:
-		// Dual strategy stores metadata on orphan entire/checkpoints/v1 branch
-		// Verify that commits were created (incremental + final)
-		t.Logf("Note: auto-commit strategy stores checkpoints in entire/checkpoints/v1 branch")
-	}
+	// Manual-commit stores checkpoints in git tree on shadow branch (entire/<head-hash>)
+	// We need to verify that checkpoint data exists in the shadow branch tree
+	verifyShadowCheckpointStorage(t, env, sessionID, taskToolUseID)
 }
 
 // verifyShadowCheckpointStorage verifies that checkpoints are stored in the shadow branch git tree.

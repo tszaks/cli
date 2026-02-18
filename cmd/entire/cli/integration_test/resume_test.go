@@ -20,18 +20,11 @@ import (
 
 const masterBranch = "master"
 
-// Note: Resume tests only run with auto-commit strategy because:
-// - Auto-commit strategy creates commits with Entire-Checkpoint trailers and metadata on entire/checkpoints/v1
-//   immediately during SimulateStop
-// - Manual-commit strategy only creates this structure after user commits (via prepare-commit-msg
-//   and post-commit hooks), which requires the full workflow tested in manual_commit_workflow_test.go
-// Both strategies share the same resume code path once the structure exists.
-
 // TestResume_SwitchBranchWithSession tests the resume command when switching to a branch
 // that has a commit with an Entire-Checkpoint trailer.
 func TestResume_SwitchBranchWithSession(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create a session on the feature branch
 	session := env.NewSession()
@@ -93,7 +86,7 @@ func TestResume_SwitchBranchWithSession(t *testing.T) {
 // TestResume_AlreadyOnBranch tests that resume works when already on the target branch.
 func TestResume_AlreadyOnBranch(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create a session on the feature branch
 	session := env.NewSession()
@@ -130,7 +123,7 @@ func TestResume_AlreadyOnBranch(t *testing.T) {
 // any Entire-Checkpoint trailer in their history gracefully.
 func TestResume_NoCheckpointOnBranch(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create a branch directly from master (which has no checkpoints)
 	// Switch to master first
@@ -169,7 +162,7 @@ func TestResume_NoCheckpointOnBranch(t *testing.T) {
 // TestResume_BranchDoesNotExist tests that resume returns an error for non-existent branches.
 func TestResume_BranchDoesNotExist(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Try to resume a non-existent branch
 	output, err := env.RunResume("nonexistent-branch")
@@ -188,7 +181,7 @@ func TestResume_BranchDoesNotExist(t *testing.T) {
 // TestResume_UncommittedChanges tests that resume fails when there are uncommitted changes.
 func TestResume_UncommittedChanges(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create another branch
 	env.GitCheckoutNewBranch("feature/target")
@@ -220,7 +213,7 @@ func TestResume_UncommittedChanges(t *testing.T) {
 // with the checkpoint's version. This ensures consistency when resuming from a different device.
 func TestResume_SessionLogAlreadyExists(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create a session
 	session := env.NewSession()
@@ -284,7 +277,7 @@ func TestResume_SessionLogAlreadyExists(t *testing.T) {
 // ensuring it uses the session from the last commit.
 func TestResume_MultipleSessionsOnBranch(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create first session
 	session1 := env.NewSession()
@@ -348,7 +341,7 @@ func TestResume_MultipleSessionsOnBranch(t *testing.T) {
 // This can happen if the metadata branch was corrupted or reset.
 func TestResume_CheckpointWithoutMetadata(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// First create a real session so the entire/checkpoints/v1 branch exists
 	session := env.NewSession()
@@ -404,7 +397,7 @@ func TestResume_CheckpointWithoutMetadata(t *testing.T) {
 // Since the only "newer" commits are merge commits, no confirmation should be required.
 func TestResume_AfterMergingMain(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create a session on the feature branch
 	session := env.NewSession()
@@ -580,7 +573,7 @@ func (env *TestEnv) GitCheckoutBranch(branchName string) {
 // and does NOT overwrite the local log. This ensures safe behavior in CI environments.
 func TestResume_LocalLogNewerTimestamp_RequiresForce(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create a session with a specific timestamp
 	session := env.NewSession()
@@ -638,7 +631,7 @@ func TestResume_LocalLogNewerTimestamp_RequiresForce(t *testing.T) {
 // and overwrites the local log.
 func TestResume_LocalLogNewerTimestamp_ForceOverwrites(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create a session with a specific timestamp
 	session := env.NewSession()
@@ -697,7 +690,7 @@ func TestResume_LocalLogNewerTimestamp_ForceOverwrites(t *testing.T) {
 // confirms the overwrite prompt interactively, the local log is overwritten.
 func TestResume_LocalLogNewerTimestamp_UserConfirmsOverwrite(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create a session with a specific timestamp
 	session := env.NewSession()
@@ -761,7 +754,7 @@ func TestResume_LocalLogNewerTimestamp_UserConfirmsOverwrite(t *testing.T) {
 // declines the overwrite prompt interactively, the local log is preserved.
 func TestResume_LocalLogNewerTimestamp_UserDeclinesOverwrite(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create a session with a specific timestamp
 	session := env.NewSession()
@@ -826,7 +819,7 @@ func TestResume_LocalLogNewerTimestamp_UserDeclinesOverwrite(t *testing.T) {
 // than local log, resume proceeds without requiring --force.
 func TestResume_CheckpointNewerTimestamp(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create a session
 	session := env.NewSession()
@@ -992,7 +985,7 @@ func TestResume_MultiSessionMixedTimestamps(t *testing.T) {
 // resume proceeds without requiring --force (treated as new).
 func TestResume_LocalLogNoTimestamp(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
 
 	// Create a session
 	session := env.NewSession()

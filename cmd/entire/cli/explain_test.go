@@ -454,7 +454,7 @@ func TestFormatSessionInfo_WithSourceRef(t *testing.T) {
 	session := &strategy.Session{
 		ID:          "2025-12-09-test-session-abc",
 		Description: "Test description",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{
 			{
@@ -509,7 +509,7 @@ func TestFormatSessionInfo_CheckpointNumberingReversed(t *testing.T) {
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-09-test-session",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now.Add(-2 * time.Hour),
 		Checkpoints: []strategy.Checkpoint{}, // Not used for format test
 	}
@@ -595,7 +595,7 @@ func TestFormatSessionInfo_CheckpointWithTaskMarker(t *testing.T) {
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-09-task-session",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -626,7 +626,7 @@ func TestFormatSessionInfo_CheckpointWithDate(t *testing.T) {
 	timestamp := time.Date(2025, 12, 10, 14, 35, 0, 0, time.UTC)
 	session := &strategy.Session{
 		ID:          "2025-12-10-dated-session",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   timestamp,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -653,7 +653,7 @@ func TestFormatSessionInfo_ShowsMessageWhenNoInteractions(t *testing.T) {
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-12-incremental-session",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -691,7 +691,7 @@ func TestFormatSessionInfo_ShowsMessageAndFilesWhenNoInteractions(t *testing.T) 
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-12-incremental-with-files",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -730,7 +730,7 @@ func TestFormatSessionInfo_DoesNotShowMessageWhenHasInteractions(t *testing.T) {
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-12-full-checkpoint",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -3542,7 +3542,7 @@ func TestGetBranchCheckpoints_DefaultBranchFindsMergedCheckpoints(t *testing.T) 
 	if err := store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
 		CheckpointID: cpID,
 		SessionID:    "test-session",
-		Strategy:     "auto-commit",
+		Strategy:     "manual-commit",
 		FilesTouched: []string{"test.txt"},
 		Prompts:      []string{"add feature"},
 	}); err != nil {

@@ -67,8 +67,6 @@ body:
       description: "Which strategy is configured? (check `.entire/settings.json` or `entire status`)"
       options:
         - manual-commit (default)
-        - auto-commit
-        - Not sure
     validations:
       required: true
 

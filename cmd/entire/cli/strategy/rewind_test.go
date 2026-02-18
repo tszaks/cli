@@ -248,39 +248,6 @@ func TestShadowStrategy_PreviewRewind_LogsOnly(t *testing.T) {
 	}
 }
 
-func TestDualStrategy_PreviewRewind(t *testing.T) {
-	dir := t.TempDir()
-	_, err := git.PlainInit(dir, false)
-	if err != nil {
-		t.Fatalf("failed to init git repo: %v", err)
-	}
-
-	t.Chdir(dir)
-
-	s := &AutoCommitStrategy{}
-
-	// Dual strategy uses git reset which doesn't delete untracked files
-	point := RewindPoint{
-		ID:      "abc123",
-		Message: "Checkpoint",
-		Date:    time.Now(),
-	}
-
-	preview, err := s.PreviewRewind(point)
-	if err != nil {
-		t.Fatalf("PreviewRewind() error = %v", err)
-	}
-
-	if preview == nil {
-		t.Fatal("PreviewRewind() returned nil preview")
-	}
-
-	// Should be empty since git reset doesn't delete untracked files
-	if len(preview.FilesToDelete) > 0 {
-		t.Errorf("Dual strategy preview should have no files to delete, got: %v", preview.FilesToDelete)
-	}
-}
-
 func TestResolveAgentForRewind(t *testing.T) {
 	t.Parallel()
 

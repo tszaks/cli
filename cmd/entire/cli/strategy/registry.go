@@ -50,27 +50,3 @@ func List() []string {
 	sort.Strings(names)
 	return names
 }
-
-// Strategy name constants
-const (
-	StrategyNameManualCommit = "manual-commit"
-	StrategyNameAutoCommit   = "auto-commit"
-)
-
-// DefaultStrategyName is the name of the default strategy.
-// Manual-commit is the recommended strategy for most workflows.
-const DefaultStrategyName = StrategyNameManualCommit
-
-// Default returns the default strategy.
-// Falls back to returning nil if no strategies are registered.
-func Default() Strategy {
-	s, err := Get(DefaultStrategyName)
-	if err != nil {
-		// Fallback: return the first registered strategy
-		names := List()
-		if len(names) > 0 {
-			s, _ = Get(names[0]) //nolint:errcheck // Fallback to first strategy, error already handled above
-		}
-	}
-	return s
-}

@@ -252,7 +252,7 @@ func TestRunStatus_NotGitRepository(t *testing.T) {
 
 func TestRunStatus_LocalSettingsOnly(t *testing.T) {
 	setupTestRepo(t)
-	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": true}`)
+	writeLocalSettings(t, `{"enabled": true}`)
 
 	var stdout bytes.Buffer
 	if err := runStatus(&stdout, true); err != nil {
@@ -263,9 +263,6 @@ func TestRunStatus_LocalSettingsOnly(t *testing.T) {
 	// Should show effective status first (dot + Enabled + separator + strategy)
 	if !strings.Contains(output, "Enabled") {
 		t.Errorf("Expected output to show 'Enabled', got: %s", output)
-	}
-	if !strings.Contains(output, "auto-commit") {
-		t.Errorf("Expected output to show 'auto-commit', got: %s", output)
 	}
 	// Should show per-file details
 	if !strings.Contains(output, "Local") || !strings.Contains(output, "enabled") {
@@ -279,10 +276,10 @@ func TestRunStatus_LocalSettingsOnly(t *testing.T) {
 func TestRunStatus_BothProjectAndLocal(t *testing.T) {
 	setupTestRepo(t)
 	// Project: enabled=true, strategy=manual-commit
-	// Local: enabled=false, strategy=auto-commit
+	// Local: enabled=false, strategy=manual-commit
 	// Detailed mode shows effective status first, then each file separately
-	writeSettings(t, `{"strategy": "manual-commit", "enabled": true}`)
-	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": false}`)
+	writeSettings(t, `{"enabled": true}`)
+	writeLocalSettings(t, `{"enabled": false}`)
 
 	var stdout bytes.Buffer
 	if err := runStatus(&stdout, true); err != nil {
@@ -306,10 +303,10 @@ func TestRunStatus_BothProjectAndLocal(t *testing.T) {
 func TestRunStatus_BothProjectAndLocal_Short(t *testing.T) {
 	setupTestRepo(t)
 	// Project: enabled=true, strategy=manual-commit
-	// Local: enabled=false, strategy=auto-commit
+	// Local: enabled=false, strategy=manual-commit
 	// Short mode shows merged/effective settings
-	writeSettings(t, `{"strategy": "manual-commit", "enabled": true}`)
-	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": false}`)
+	writeSettings(t, `{"enabled": true}`)
+	writeLocalSettings(t, `{"enabled": false}`)
 
 	var stdout bytes.Buffer
 	if err := runStatus(&stdout, false); err != nil {
@@ -323,24 +320,9 @@ func TestRunStatus_BothProjectAndLocal_Short(t *testing.T) {
 	}
 }
 
-func TestRunStatus_ShowsStrategy(t *testing.T) {
-	setupTestRepo(t)
-	writeSettings(t, `{"strategy": "auto-commit", "enabled": true}`)
-
-	var stdout bytes.Buffer
-	if err := runStatus(&stdout, false); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
-	}
-
-	output := stdout.String()
-	if !strings.Contains(output, "auto-commit") {
-		t.Errorf("Expected output to show strategy 'auto-commit', got: %s", output)
-	}
-}
-
 func TestRunStatus_ShowsManualCommitStrategy(t *testing.T) {
 	setupTestRepo(t)
-	writeSettings(t, `{"strategy": "manual-commit", "enabled": false}`)
+	writeSettings(t, `{"enabled": false}`)
 
 	var stdout bytes.Buffer
 	if err := runStatus(&stdout, true); err != nil {

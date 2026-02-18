@@ -131,12 +131,11 @@ func handleLifecycleTurnStart(ag agent.Agent, event *agent.Event) error {
 	}
 
 	// Ensure strategy setup and initialize session
-	strat := GetStrategy()
-
-	if err := strat.EnsureSetup(); err != nil {
+	if err := strategy.EnsureSetup(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to ensure strategy setup: %v\n", err)
 	}
 
+	strat := GetStrategy()
 	if initializer, ok := strat.(strategy.SessionInitializer); ok {
 		agentType := ag.Type()
 		if err := initializer.InitializeSession(sessionID, agentType, event.SessionRef, event.Prompt); err != nil {
@@ -219,7 +218,6 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 	var allPrompts []string
 	var summary string
 	var modifiedFiles []string
-	var newTranscriptPosition int
 
 	// Compute subagents directory for agents that support subagent extraction.
 	// Subagent transcripts live in <transcriptDir>/<modelSessionID>/subagents/
@@ -247,17 +245,12 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 			} else {
 				modifiedFiles = files
 			}
-			// Get position from basic analyzer
-			if _, pos, posErr := analyzer.ExtractModifiedFilesFromOffset(transcriptRef, transcriptOffset); posErr == nil {
-				newTranscriptPosition = pos
-			}
 		} else {
 			// Fall back to basic extraction (main transcript only)
-			if files, pos, fileErr := analyzer.ExtractModifiedFilesFromOffset(transcriptRef, transcriptOffset); fileErr != nil {
+			if files, _, fileErr := analyzer.ExtractModifiedFilesFromOffset(transcriptRef, transcriptOffset); fileErr != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to extract modified files: %v\n", fileErr)
 			} else {
 				modifiedFiles = files
-				newTranscriptPosition = pos
 			}
 		}
 	}
@@ -398,12 +391,7 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 		return fmt.Errorf("failed to save step: %w", err)
 	}
 
-	// Update session state transcript position for auto-commit strategy
-	if strat.Name() == strategy.StrategyNameAutoCommit && newTranscriptPosition > 0 {
-		updateAutoCommitTranscriptPosition(sessionID, newTranscriptPosition)
-	}
-
-	// Transition session phase and cleanup pre-prompt state
+	// Transition session phase and cleanup
 	transitionSessionTurnEnd(sessionID)
 	if cleanupErr := CleanupPrePromptState(sessionID); cleanupErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup pre-prompt state: %v\n", cleanupErr)
@@ -626,7 +614,7 @@ func resolveTranscriptOffset(preState *PrePromptState, sessionID string) int {
 		return preState.TranscriptOffset
 	}
 
-	// Fall back to session state (e.g., auto-commit strategy updates it after each save)
+	// Fall back to session state
 	sessionState, loadErr := strategy.LoadSessionState(sessionID)
 	if loadErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load session state: %v\n", loadErr)
@@ -638,29 +626,6 @@ func resolveTranscriptOffset(preState *PrePromptState, sessionID string) int {
 	}
 
 	return 0
-}
-
-// updateAutoCommitTranscriptPosition updates the session state with the new transcript position
-// for the auto-commit strategy.
-func updateAutoCommitTranscriptPosition(sessionID string, newPosition int) {
-	sessionState, loadErr := strategy.LoadSessionState(sessionID)
-	if loadErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to load session state: %v\n", loadErr)
-		return
-	}
-	if sessionState == nil {
-		sessionState = &strategy.SessionState{
-			SessionID: sessionID,
-		}
-	}
-	sessionState.CheckpointTranscriptStart = newPosition
-	sessionState.StepCount++
-	if updateErr := strategy.SaveSessionState(sessionState); updateErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to update session state: %v\n", updateErr)
-	} else {
-		fmt.Fprintf(os.Stderr, "Updated session state: transcript position=%d, checkpoint=%d\n",
-			newPosition, sessionState.StepCount)
-	}
 }
 
 // createContextFile creates a context.md file for the session checkpoint.

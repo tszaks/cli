@@ -22,8 +22,6 @@ func newResetCmd() *cobra.Command {
 
 This allows starting fresh without existing checkpoints on your current commit.
 
-Only works with the manual-commit strategy. For auto-commit strategy,
-use Git directly: git reset --hard <commit>
 
 The command will:
   - Find all sessions where base_commit matches the current HEAD

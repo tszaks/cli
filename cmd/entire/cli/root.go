@@ -5,6 +5,7 @@ import (
 	"runtime"
 
 	"github.com/entireio/cli/cmd/entire/cli/buildinfo"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 	"github.com/entireio/cli/cmd/entire/cli/telemetry"
 	"github.com/entireio/cli/cmd/entire/cli/versioncheck"
 	"github.com/spf13/cobra"
@@ -58,7 +59,7 @@ func NewRootCmd() *cobra.Command {
 				// Use detached tracking (non-blocking)
 				installedAgents := GetAgentsWithHooksInstalled()
 				agentStr := JoinAgentNames(installedAgents)
-				telemetry.TrackCommandDetached(cmd, settings.Strategy, agentStr, settings.Enabled, buildinfo.Version)
+				telemetry.TrackCommandDetached(cmd, strategy.StrategyNameManualCommit, agentStr, settings.Enabled, buildinfo.Version)
 			}
 
 			// Version check and notification (synchronous with 2s timeout)
@@ -81,7 +82,6 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newHooksCmd())
 	cmd.AddCommand(newVersionCmd())
 	cmd.AddCommand(newExplainCmd())
-	cmd.AddCommand(newDebugCmd())
 	cmd.AddCommand(newDoctorCmd())
 	cmd.AddCommand(newSendAnalyticsCmd())
 	cmd.AddCommand(newCurlBashPostInstallCmd())

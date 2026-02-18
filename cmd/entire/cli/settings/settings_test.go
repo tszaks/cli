@@ -19,7 +19,7 @@ func TestLoad_RejectsUnknownKeys(t *testing.T) {
 
 	// Create settings.json with an unknown key
 	settingsFile := filepath.Join(entireDir, "settings.json")
-	settingsContent := `{"strategy": "manual-commit", "unknown_key": "value"}`
+	settingsContent := `{"enabled": true, "unknown_key": "value"}`
 	if err := os.WriteFile(settingsFile, []byte(settingsContent), 0644); err != nil {
 		t.Fatalf("failed to write settings file: %v", err)
 	}
@@ -54,7 +54,6 @@ func TestLoad_AcceptsValidKeys(t *testing.T) {
 	// Create settings.json with all valid keys
 	settingsFile := filepath.Join(entireDir, "settings.json")
 	settingsContent := `{
-		"strategy": "auto-commit",
 		"enabled": true,
 		"local_dev": false,
 		"log_level": "debug",
@@ -80,9 +79,6 @@ func TestLoad_AcceptsValidKeys(t *testing.T) {
 	}
 
 	// Verify values
-	if settings.Strategy != "auto-commit" {
-		t.Errorf("expected strategy 'auto-commit', got %q", settings.Strategy)
-	}
 	if !settings.Enabled {
 		t.Error("expected enabled to be true")
 	}
@@ -106,7 +102,7 @@ func TestLoad_LocalSettingsRejectsUnknownKeys(t *testing.T) {
 
 	// Create valid settings.json
 	settingsFile := filepath.Join(entireDir, "settings.json")
-	settingsContent := `{"strategy": "manual-commit"}`
+	settingsContent := `{"enabled": true}`
 	if err := os.WriteFile(settingsFile, []byte(settingsContent), 0644); err != nil {
 		t.Fatalf("failed to write settings file: %v", err)
 	}

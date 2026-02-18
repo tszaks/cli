@@ -145,13 +145,6 @@ func (s *ManualCommitStrategy) CondenseSession(
 ) (*CondenseResult, error)
 ```
 
-**Auto-commit** writes committed checkpoints directly:
-
-```go
-// SaveChanges creates a commit on the active branch and writes metadata.
-func (s *AutoCommitStrategy) SaveChanges(ctx SaveContext) error
-```
-
 ## Storage
 
 | Type | Location | Contents |

@@ -16,6 +16,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/settings"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 	"github.com/entireio/cli/cmd/entire/cli/stringutil"
 
 	"github.com/spf13/cobra"
@@ -133,10 +134,7 @@ func runStatusDetailed(w io.Writer, sty statusStyles, settingsPath, localSetting
 // formatSettingsStatusShort formats a short settings status line.
 // Output format: "● Enabled · manual-commit · branch main" or "○ Disabled · auto-commit"
 func formatSettingsStatusShort(s *EntireSettings, sty statusStyles) string {
-	displayName := s.Strategy
-	if dn, ok := strategyInternalToDisplay[s.Strategy]; ok {
-		displayName = dn
-	}
+	displayName := strategy.StrategyNameManualCommit
 
 	var b strings.Builder
 
@@ -168,10 +166,7 @@ func formatSettingsStatusShort(s *EntireSettings, sty statusStyles) string {
 // formatSettingsStatus formats a settings status line with source prefix.
 // Output format: "Project · enabled · manual-commit" or "Local · disabled · auto-commit"
 func formatSettingsStatus(prefix string, s *EntireSettings, sty statusStyles) string {
-	displayName := s.Strategy
-	if dn, ok := strategyInternalToDisplay[s.Strategy]; ok {
-		displayName = dn
-	}
+	displayName := strategy.StrategyNameManualCommit
 
 	var b strings.Builder
 	b.WriteString(sty.render(sty.bold, prefix))

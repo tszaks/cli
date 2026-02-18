@@ -142,9 +142,6 @@ func TestHookRunner_SimulateStop_SubagentOnlyChanges(t *testing.T) {
 			t.Fatalf("SimulateUserPromptSubmit failed: %v", err)
 		}
 
-		// Record initial state for comparison
-		commitsBefore := env.GetGitLog()
-
 		// Create a file on disk (simulating what a subagent would write)
 		env.WriteFile("subagent_output.go", "package main\n\nfunc SubagentWork() {}\n")
 
@@ -193,34 +190,22 @@ func TestHookRunner_SimulateStop_SubagentOnlyChanges(t *testing.T) {
 			t.Fatalf("SimulateStop failed: %v", err)
 		}
 
-		// Verify checkpoint was created based on strategy type
-		switch strategyName {
-		case strategy.StrategyNameAutoCommit:
-			// Auto-commit creates a new commit on the active branch
-			commitsAfter := env.GetGitLog()
-			if len(commitsAfter) <= len(commitsBefore) {
-				t.Errorf("auto-commit: expected new commit to be created; commits before=%d, after=%d",
-					len(commitsBefore), len(commitsAfter))
-			}
+		// Verify checkpoint was created (manual-commit stores checkpoint data on the shadow branch)
+		shadowBranch := env.GetShadowBranchName()
+		if !env.BranchExists(shadowBranch) {
+			t.Errorf("shadow branch %s should exist after checkpoint", shadowBranch)
+		}
 
-		case strategy.StrategyNameManualCommit:
-			// Manual-commit stores checkpoint data on the shadow branch
-			shadowBranch := env.GetShadowBranchName()
-			if !env.BranchExists(shadowBranch) {
-				t.Errorf("manual-commit: shadow branch %s should exist after checkpoint", shadowBranch)
-			}
-
-			// Verify session state was updated with checkpoint count
-			state, stateErr := env.GetSessionState(session.ID)
-			if stateErr != nil {
-				t.Fatalf("failed to get session state: %v", stateErr)
-			}
-			if state == nil {
-				t.Fatal("manual-commit: session state should exist after checkpoint")
-			}
-			if state.StepCount == 0 {
-				t.Error("manual-commit: session state should have non-zero step count")
-			}
+		// Verify session state was updated with checkpoint count
+		state, stateErr := env.GetSessionState(session.ID)
+		if stateErr != nil {
+			t.Fatalf("failed to get session state: %v", stateErr)
+		}
+		if state == nil {
+			t.Fatal("session state should exist after checkpoint")
+		}
+		if state.StepCount == 0 {
+			t.Error("session state should have non-zero step count")
 		}
 	})
 }

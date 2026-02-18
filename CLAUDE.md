@@ -289,8 +289,7 @@ All strategies implement:
 
 | Strategy | Main Branch | Metadata Storage | Use Case |
 |----------|-------------|------------------|----------|
-| **manual-commit** (default) | Unchanged (no commits) | `entire/<HEAD-hash>-<worktreeHash>` branches + `entire/checkpoints/v1` | Recommended for most workflows |
-| **auto-commit** | Creates clean commits | Orphan `entire/checkpoints/v1` branch | Teams that want code commits from sessions |
+| **manual-commit** (default) | Unchanged (no commits) | `entire/<HEAD-hash>-<worktreeHash>` branches + `entire/checkpoints/v1` | Session management without modifying active branch |
 
 #### Strategy Details
 
@@ -309,16 +308,6 @@ All strategies implement:
 - PrePush hook can push `entire/checkpoints/v1` branch alongside user pushes
 - `AllowsMainBranch() = true` - safe to use on main/master since it never modifies commit history
 
-**Auto-Commit Strategy** (`auto_commit.go`)
-- Code commits to active branch with **clean history** (commits have `Entire-Checkpoint` trailer only)
-- Metadata stored on orphan `entire/checkpoints/v1` branch at sharded paths: `<id[:2]>/<id[2:]>/`
-- Uses `checkpoint.WriteCommitted()` for metadata storage
-- Checkpoint ID (12-hex-char) links code commits to metadata on `entire/checkpoints/v1`
-- Full rewind allowed if commit is only on current branch (not in main); otherwise logs-only
-- Rewind via `git reset --hard`
-- PrePush hook can push `entire/checkpoints/v1` branch alongside user pushes
-- `AllowsMainBranch() = true` - creates commits on active branch, safe to use on main/master
-
 #### Key Files
 
 - `strategy.go` - Interface definition and context structs (`StepContext`, `TaskStepContext`, `RewindPoint`, etc.)
@@ -336,7 +325,6 @@ All strategies implement:
 - `manual_commit_hooks.go` - Git hook handlers (prepare-commit-msg, post-commit, pre-push)
 - `manual_commit_reset.go` - Shadow branch reset/cleanup functionality
 - `session_state.go` - Package-level session state functions (`LoadSessionState`, `SaveSessionState`, `ListSessionStates`, `FindMostRecentSession`)
-- `auto_commit.go` - Auto-commit strategy implementation
 - `hooks.go` - Git hook installation
 
 #### Checkpoint Package (`cmd/entire/cli/checkpoint/`)
@@ -434,10 +422,9 @@ Both strategies use a **12-hex-char random checkpoint ID** (e.g., `a3b2c4d5e6f7`
 
 **How checkpoint IDs work:**
 
-1. **Generated once per checkpoint**: Either when saving (auto-commit) or when condensing (manual-commit)
+1. **Generated once per checkpoint**: When condensing session metadata to the metadata branch
 
 2. **Added to user commits** via `Entire-Checkpoint` trailer:
-   - **Auto-commit**: Added programmatically when creating the commit
    - **Manual-commit**: Added via `prepare-commit-msg` hook (user can remove it before committing)
 
 3. **Used for directory sharding** on `entire/checkpoints/v1` branch:
@@ -502,12 +489,12 @@ Commit subject: `Checkpoint: <checkpoint-id>` (or custom subject for task checkp
 
 Trailers:
 - `Entire-Session: <session-id>` - Session identifier
-- `Entire-Strategy: <strategy>` - Strategy name (manual-commit or auto-commit)
+- `Entire-Strategy: <strategy>` - Strategy name (manual-commit)
 - `Entire-Agent: <agent-name>` - Agent name (optional, e.g., "Claude Code")
-- `Ephemeral-branch: <branch>` - Shadow branch name (optional, manual-commit only)
+- `Ephemeral-branch: <branch>` - Shadow branch name (optional)
 - `Entire-Metadata-Task: <path>` - Task metadata path (optional, for task checkpoints)
 
-**Note:** Both strategies keep active branch history **clean** - the only addition to user commits is the single `Entire-Checkpoint` trailer. Manual-commit never creates commits on the active branch (user creates them manually). Auto-commit creates commits but only adds the checkpoint trailer. All detailed session data (transcripts, prompts, context) is stored on the `entire/checkpoints/v1` orphan branch or shadow branches.
+**Note:** Manual-commit keeps active branch history clean - the only addition to user commits is the single `Entire-Checkpoint` trailer. Manual-commit never creates commits on the active branch (user creates them manually). All detailed session data (transcripts, prompts, context) is stored on the `entire/checkpoints/v1` orphan branch or shadow branches.
 
 #### Multi-Session Behavior
 

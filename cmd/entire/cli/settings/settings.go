@@ -14,10 +14,6 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
-// DefaultStrategyName is the default strategy when none is configured.
-// This is duplicated here to avoid importing the strategy package (which would create a cycle).
-const DefaultStrategyName = "manual-commit"
-
 const (
 	// EntireSettingsFile is the path to the Entire settings file
 	EntireSettingsFile = ".entire/settings.json"
@@ -27,8 +23,6 @@ const (
 
 // EntireSettings represents the .entire/settings.json configuration
 type EntireSettings struct {
-	// Strategy is the name of the git strategy to use
-	Strategy string `json:"strategy"`
 
 	// Enabled indicates whether Entire is active. When false, CLI commands
 	// show a disabled message and hooks exit silently. Defaults to true.
@@ -85,8 +79,6 @@ func Load() (*EntireSettings, error) {
 		}
 	}
 
-	applyDefaults(settings)
-
 	return settings, nil
 }
 
@@ -101,8 +93,7 @@ func LoadFromFile(filePath string) (*EntireSettings, error) {
 // Returns default settings if the file doesn't exist.
 func loadFromFile(filePath string) (*EntireSettings, error) {
 	settings := &EntireSettings{
-		Strategy: DefaultStrategyName,
-		Enabled:  true, // Default to enabled
+		Enabled: true, // Default to enabled
 	}
 
 	data, err := os.ReadFile(filePath) //nolint:gosec // path is from caller
@@ -118,7 +109,6 @@ func loadFromFile(filePath string) (*EntireSettings, error) {
 	if err := dec.Decode(settings); err != nil {
 		return nil, fmt.Errorf("parsing settings file: %w", err)
 	}
-	applyDefaults(settings)
 
 	return settings, nil
 }
@@ -138,17 +128,6 @@ func mergeJSON(settings *EntireSettings, data []byte) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("parsing JSON: %w", err)
-	}
-
-	// Override strategy if present and non-empty
-	if strategyRaw, ok := raw["strategy"]; ok {
-		var s string
-		if err := json.Unmarshal(strategyRaw, &s); err != nil {
-			return fmt.Errorf("parsing strategy field: %w", err)
-		}
-		if s != "" {
-			settings.Strategy = s
-		}
 	}
 
 	// Override enabled if present
@@ -205,12 +184,6 @@ func mergeJSON(settings *EntireSettings, data []byte) error {
 	}
 
 	return nil
-}
-
-func applyDefaults(settings *EntireSettings) {
-	if settings.Strategy == "" {
-		settings.Strategy = DefaultStrategyName
-	}
 }
 
 // IsSetUp returns true if Entire has been set up in the current repository.

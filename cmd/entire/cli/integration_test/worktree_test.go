@@ -22,9 +22,9 @@ import (
 //
 // NOTE: This test uses os.Chdir() so it cannot use t.Parallel().
 func TestWorktreeCommitPersistence(t *testing.T) {
-	// Only test auto-commit strategy - it creates commits on the working branch
+	// Test worktree commit persistence with manual-commit strategy
 	worktreeStrategies := []string{
-		strategy.StrategyNameAutoCommit,
+		strategy.StrategyNameManualCommit,
 	}
 
 	RunForStrategiesSequential(t, worktreeStrategies, func(t *testing.T, strat string) {

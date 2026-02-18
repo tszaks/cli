@@ -349,17 +349,15 @@ type Strategy interface {
 
 	// PreviewRewind returns what will happen if rewinding to the given point.
 	// This allows showing warnings about files that will be deleted before the rewind.
-	// Returns nil if preview is not supported (e.g., auto-commit strategy).
+	// Returns nil if preview is not supported
 	PreviewRewind(point RewindPoint) (*RewindPreview, error)
 
 	// GetTaskCheckpoint returns the task checkpoint for a given rewind point.
-	// For strategies that store checkpoints in git (auto-commit), this reads from the branch.
 	// For strategies that store checkpoints on disk (commit, manual-commit), this reads from the filesystem.
 	// Returns nil, nil if not a task checkpoint or checkpoint not found.
 	GetTaskCheckpoint(point RewindPoint) (*TaskCheckpoint, error)
 
 	// GetTaskCheckpointTranscript returns the session transcript for a task checkpoint.
-	// For strategies that store transcripts in git (auto-commit), this reads from the branch.
 	// For strategies that store transcripts on disk (commit, manual-commit), this reads from the filesystem.
 	GetTaskCheckpointTranscript(point RewindPoint) ([]byte, error)
 
@@ -367,11 +365,6 @@ type Strategy interface {
 	// This is used by the context command to generate trailers.
 	// Returns ErrNoSession if no session info is available.
 	GetSessionInfo() (*SessionInfo, error)
-
-	// EnsureSetup ensures the strategy's required setup is in place,
-	// installing any missing pieces (git hooks, gitignore entries, etc.).
-	// Returns nil if setup is complete or was successfully installed.
-	EnsureSetup() error
 
 	// NOTE: ListSessions and GetSession are standalone functions in session.go.
 	// They read from entire/checkpoints/v1 and merge with SessionSource if implemented.
@@ -391,7 +384,7 @@ type Strategy interface {
 	GetSessionContext(sessionID string) string
 
 	// GetCheckpointLog returns the session transcript for a specific checkpoint.
-	// For strategies that store transcripts in git branches (auto-commit, manual-commit),
+	// For strategies that store transcripts in git branches (manual-commit),
 	// this reads from the checkpoint's commit tree.
 	// For strategies that store on disk (commit), reads from the filesystem.
 	// Returns ErrNoMetadata if transcript is not available.
