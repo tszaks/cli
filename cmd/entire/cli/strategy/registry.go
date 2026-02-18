@@ -24,11 +24,8 @@ func Register(name string, factory Factory) {
 
 // Get retrieves a strategy by name.
 // Returns an error if the strategy is not registered.
-<<<<<<< HEAD
 //
 
-=======
->>>>>>> 97115036 (update entire enable experience)
 func Get(name string) (Strategy, error) {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
