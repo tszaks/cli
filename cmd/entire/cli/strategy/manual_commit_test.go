@@ -2213,7 +2213,7 @@ func TestCondenseSession_IncludesInitialAttribution(t *testing.T) {
 }
 
 // TestCondenseSession_AttributionWithoutShadowBranch verifies that when an agent
-// commits mid-turn (before SaveChanges), attribution is still calculated using HEAD
+// commits mid-turn (before SaveStep), attribution is still calculated using HEAD
 // as the shadow tree. This reproduces the bug where agent_lines=0 for mid-turn commits.
 func TestCondenseSession_AttributionWithoutShadowBranch(t *testing.T) {
 	dir := t.TempDir()
@@ -2236,7 +2236,7 @@ func TestCondenseSession_AttributionWithoutShadowBranch(t *testing.T) {
 		t.Fatalf("failed to create initial commit: %v", err)
 	}
 
-	// Agent creates files in nested directories and commits (mid-turn, no SaveChanges)
+	// Agent creates files in nested directories and commits (mid-turn, no SaveStep)
 	srcDir := filepath.Join(dir, "src")
 	if err := os.MkdirAll(srcDir, 0o755); err != nil {
 		t.Fatalf("failed to create src dir: %v", err)
@@ -2279,7 +2279,7 @@ func TestCondenseSession_AttributionWithoutShadowBranch(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	// Construct session state manually (no SaveChanges was called, so no shadow branch)
+	// Construct session state manually (no SaveStep was called, so no shadow branch)
 	state := &SessionState{
 		SessionID:             "test-no-shadow",
 		BaseCommit:            initialHash.String(),
@@ -2413,7 +2413,7 @@ func TestCondenseSession_AttributionWithoutShadowBranch_MixedHumanAgent(t *testi
 		t.Fatalf("failed to write agent file: %v", err)
 	}
 
-	// Agent stages everything and commits (mid-turn, no SaveChanges)
+	// Agent stages everything and commits (mid-turn, no SaveStep)
 	if _, err := wt.Add("docs/notes.md"); err != nil {
 		t.Fatalf("failed to stage: %v", err)
 	}

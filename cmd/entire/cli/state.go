@@ -247,7 +247,7 @@ func DetectFileChanges(previouslyUntracked []string) (*FileChanges, error) {
 
 // filterToUncommittedFiles removes files from the list that are already committed to HEAD
 // with matching content. This prevents re-adding files that an agent committed mid-turn
-// (already condensed by PostCommit) back to FilesTouched via SaveChanges. Files not in
+// (already condensed by PostCommit) back to FilesTouched via SaveStep. Files not in
 // HEAD or with different content in the working tree are kept. Fails open: if any git
 // operation errors, returns the original list unchanged.
 func filterToUncommittedFiles(files []string, repoRoot string) []string {
