@@ -286,9 +286,10 @@ type WriteCommittedOptions struct {
 	//   - the checkpoint predates the summarization feature
 	Summary *Summary
 
-	// SessionTranscriptPath is the home-relative path to the session transcript file.
-	// Persisted in CommittedMetadata so restore can write the transcript back to
-	// the correct location without reconstructing agent-specific paths.
+	// SessionTranscriptPath is DEPRECATED. Do not write to this field.
+	// Transcript paths are now always computed from the current repo location at restore time
+	// using agent.GetSessionDir(repoRoot), which handles repo moves and cross-machine portability.
+	// This field is kept for backward compatibility with old checkpoints only.
 	SessionTranscriptPath string
 }
 
@@ -403,9 +404,10 @@ type CommittedMetadata struct {
 	// InitialAttribution is line-level attribution calculated at commit time
 	InitialAttribution *InitialAttribution `json:"initial_attribution,omitempty"`
 
-	// TranscriptPath is the home-relative path to the session transcript file.
-	// Persisted so restore can write the transcript back to the correct location
-	// without needing to reconstruct agent-specific paths (e.g. SHA-256 hashed dirs for Gemini).
+	// TranscriptPath is DEPRECATED. Do not use this field for new checkpoints.
+	// Transcript paths are now always computed from the current repo location at restore time
+	// using agent.GetSessionDir(repoRoot), which handles repo moves and cross-machine portability.
+	// This field is kept for backward compatibility with old checkpoints only.
 	TranscriptPath string `json:"transcript_path,omitempty"`
 }
 

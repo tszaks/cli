@@ -704,19 +704,17 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) ([
 			continue
 		}
 
-		// Prefer transcript path from checkpoint metadata (works for all agents).
-		// Fall back to agent-based resolution for old checkpoints without this field.
-		var sessionFile string
-		if resolved := resolveTranscriptPathFromMetadata(content.Metadata.TranscriptPath); resolved != "" {
-			sessionFile = resolved
-		} else {
-			sessionAgentDir, dirErr := sessionAgent.GetSessionDir(repoRoot)
-			if dirErr != nil {
-				fmt.Fprintf(os.Stderr, "  Warning: failed to get session dir for session %d: %v\n", i, dirErr)
-				continue
-			}
-			sessionFile = ResolveSessionFilePath(sessionID, sessionAgent, sessionAgentDir)
+		// Compute transcript path from current repo location.
+		// Always use the current repo location to handle repo moves and cross-machine portability.
+		// Use agent.ResolveSessionFile directly (not ResolveSessionFilePath) because
+		// ResolveSessionFilePath reads .git/entire-sessions/ state which may contain
+		// stale absolute paths from the original repo location.
+		sessionAgentDir, dirErr := sessionAgent.GetSessionDir(repoRoot)
+		if dirErr != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: failed to get session dir for session %d: %v\n", i, dirErr)
+			continue
 		}
+		sessionFile := sessionAgent.ResolveSessionFile(sessionAgentDir, sessionID)
 
 		// Get first prompt for display
 		promptPreview := ExtractFirstPrompt(content.Prompts)
@@ -757,19 +755,6 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) ([
 	}
 
 	return restored, nil
-}
-
-// resolveTranscriptPathFromMetadata expands a home-relative transcript path
-// from checkpoint metadata to an absolute path. Returns "" if the path is empty.
-func resolveTranscriptPathFromMetadata(homeRelPath string) string {
-	if homeRelPath == "" {
-		return ""
-	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return ""
-	}
-	return filepath.Join(home, homeRelPath)
 }
 
 // ResolveAgentForRewind resolves the agent from checkpoint metadata.
@@ -875,17 +860,16 @@ func (s *ManualCommitStrategy) classifySessionsForRestore(ctx context.Context, r
 			continue
 		}
 
-		// Prefer transcript path from checkpoint metadata, fall back to agent-based resolution.
-		var localPath string
-		if resolved := resolveTranscriptPathFromMetadata(content.Metadata.TranscriptPath); resolved != "" {
-			localPath = resolved
-		} else {
-			sessionAgentDir, dirErr := sessionAgent.GetSessionDir(repoRoot)
-			if dirErr != nil {
-				continue
-			}
-			localPath = ResolveSessionFilePath(sessionID, sessionAgent, sessionAgentDir)
+		// Compute transcript path from current repo location.
+		// Always use the current repo location to handle repo moves and cross-machine portability.
+		// Use agent.ResolveSessionFile directly (not ResolveSessionFilePath) because
+		// ResolveSessionFilePath reads .git/entire-sessions/ state which may contain
+		// stale absolute paths from the original repo location.
+		sessionAgentDir, dirErr := sessionAgent.GetSessionDir(repoRoot)
+		if dirErr != nil {
+			continue
 		}
+		localPath := sessionAgent.ResolveSessionFile(sessionAgentDir, sessionID)
 
 		localTime := paths.GetLastTimestampFromFile(localPath)
 		checkpointTime := paths.GetLastTimestampFromBytes(content.Transcript)
