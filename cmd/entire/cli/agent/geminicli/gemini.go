@@ -47,6 +47,8 @@ func (g *GeminiCLIAgent) Description() string {
 	return "Gemini CLI - Google's AI coding assistant"
 }
 
+func (g *GeminiCLIAgent) IsPreview() bool { return true }
+
 // DetectPresence checks if Gemini CLI is configured in the repository.
 func (g *GeminiCLIAgent) DetectPresence() (bool, error) {
 	// Get repo root to check for .gemini directory
