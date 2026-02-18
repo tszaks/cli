@@ -285,12 +285,6 @@ type WriteCommittedOptions struct {
 	//   - the transcript was empty or too short to summarize
 	//   - the checkpoint predates the summarization feature
 	Summary *Summary
-
-	// SessionTranscriptPath is DEPRECATED. Do not write to this field.
-	// Transcript paths are now always computed from the current repo location at restore time
-	// using agent.GetSessionDir(repoRoot), which handles repo moves and cross-machine portability.
-	// This field is kept for backward compatibility with old checkpoints only.
-	SessionTranscriptPath string
 }
 
 // UpdateCommittedOptions contains options for updating an existing committed checkpoint.
@@ -403,12 +397,6 @@ type CommittedMetadata struct {
 
 	// InitialAttribution is line-level attribution calculated at commit time
 	InitialAttribution *InitialAttribution `json:"initial_attribution,omitempty"`
-
-	// TranscriptPath is DEPRECATED. Do not use this field for new checkpoints.
-	// Transcript paths are now always computed from the current repo location at restore time
-	// using agent.GetSessionDir(repoRoot), which handles repo moves and cross-machine portability.
-	// This field is kept for backward compatibility with old checkpoints only.
-	TranscriptPath string `json:"transcript_path,omitempty"`
 }
 
 // GetTranscriptStart returns the transcript line offset at which this checkpoint's data begins.
