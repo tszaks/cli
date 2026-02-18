@@ -1004,22 +1004,28 @@ func TestDetectOrSelectAgent_NoDetection_NoTTY_FallsBackToDefault(t *testing.T) 
 func TestDetectOrSelectAgent_NoDetection_WithTTY_ShowsPromptMessages(t *testing.T) {
 	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
 	setupTestRepo(t)
-	t.Setenv("ENTIRE_TEST_TTY", "1") // TTY available (but form will fail since no real TTY)
+	t.Setenv("ENTIRE_TEST_TTY", "1") // TTY available
+
+	// Mock the prompt to avoid blocking on interactive form.Run()
+	agentPromptFunc = func() ([]string, error) {
+		return []string{string(agent.AgentNameClaudeCode)}, nil
+	}
+	t.Cleanup(func() { agentPromptFunc = nil })
 
 	// No .claude or .gemini directory - detection will fail
 
 	var buf bytes.Buffer
-	_, err := detectOrSelectAgent(&buf)
-
-	// The form.Run() will fail because there's no actual TTY
-	// But we can verify the messages printed before the form
-	if err == nil {
-		t.Fatal("Expected error when form cannot run (no real TTY)")
+	agents, err := detectOrSelectAgent(&buf)
+	if err != nil {
+		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
 
-	// Verify the error is about form cancellation
-	if !strings.Contains(err.Error(), "agent selection cancelled") {
-		t.Errorf("Expected 'agent selection cancelled' error, got: %v", err)
+	// Should return the mock-selected agent
+	if len(agents) != 1 {
+		t.Fatalf("detectOrSelectAgent() returned %d agents, want 1", len(agents))
+	}
+	if agents[0].Name() != agent.AgentNameClaudeCode {
+		t.Errorf("detectOrSelectAgent() agent = %v, want %v", agents[0].Name(), agent.AgentNameClaudeCode)
 	}
 
 	output := buf.String()
@@ -1029,12 +1035,15 @@ func TestDetectOrSelectAgent_NoDetection_WithTTY_ShowsPromptMessages(t *testing.
 	if !strings.Contains(output, "This is normal") {
 		t.Errorf("Expected output to contain 'This is normal', got: %s", output)
 	}
+	if !strings.Contains(output, "Selected agents:") {
+		t.Errorf("Expected output to contain 'Selected agents:', got: %s", output)
+	}
 }
 
 func TestDetectOrSelectAgent_BothDirectoriesExist_PromptsUser(t *testing.T) {
 	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
 	setupTestRepo(t)
-	t.Setenv("ENTIRE_TEST_TTY", "1") // TTY available (but form will fail since no real TTY)
+	t.Setenv("ENTIRE_TEST_TTY", "1") // TTY available
 
 	// Create both .claude and .gemini directories
 	if err := os.MkdirAll(".claude", 0o755); err != nil {
@@ -1044,13 +1053,21 @@ func TestDetectOrSelectAgent_BothDirectoriesExist_PromptsUser(t *testing.T) {
 		t.Fatalf("Failed to create .gemini directory: %v", err)
 	}
 
-	var buf bytes.Buffer
-	_, err := detectOrSelectAgent(&buf)
+	// Mock the prompt to avoid blocking on interactive form.Run()
+	agentPromptFunc = func() ([]string, error) {
+		return []string{string(agent.AgentNameClaudeCode), string(agent.AgentNameGemini)}, nil
+	}
+	t.Cleanup(func() { agentPromptFunc = nil })
 
-	// The form.Run() will fail because there's no actual TTY,
-	// but we can verify the multi-agent detection message was printed
-	if err == nil {
-		t.Fatal("Expected error when form cannot run (no real TTY)")
+	var buf bytes.Buffer
+	agents, err := detectOrSelectAgent(&buf)
+	if err != nil {
+		t.Fatalf("detectOrSelectAgent() error = %v", err)
+	}
+
+	// Should return both selected agents
+	if len(agents) != 2 {
+		t.Fatalf("detectOrSelectAgent() returned %d agents, want 2", len(agents))
 	}
 
 	output := buf.String()
@@ -1062,6 +1079,9 @@ func TestDetectOrSelectAgent_BothDirectoriesExist_PromptsUser(t *testing.T) {
 	}
 	if !strings.Contains(output, "Gemini CLI") {
 		t.Errorf("Expected output to mention Gemini CLI, got: %s", output)
+	}
+	if !strings.Contains(output, "Selected agents:") {
+		t.Errorf("Expected output to contain 'Selected agents:', got: %s", output)
 	}
 }
 

@@ -513,6 +513,34 @@ func setupAgentHooks(ag agent.Agent, localDev, forceHooks bool) (int, error) { /
 	return count, nil
 }
 
+// agentPromptFunc can be overridden in tests to avoid blocking on interactive form.Run().
+// When nil (default), the real interactive form is used.
+// Returns selected agent name strings.
+var agentPromptFunc func() ([]string, error)
+
+// runAgentSelectForm runs the interactive multi-select form for agent selection.
+func runAgentSelectForm(options []huh.Option[string]) ([]string, error) {
+	var selectedAgentNames []string
+	form := NewAccessibleForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Which agents are you using?").
+				Description("Use space to select, enter to confirm.").
+				Options(options...).
+				Value(&selectedAgentNames),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return nil, fmt.Errorf("agent selection cancelled: %w", err)
+	}
+
+	if len(selectedAgentNames) == 0 {
+		return nil, errors.New("no agents selected")
+	}
+	return selectedAgentNames, nil
+}
+
 // detectOrSelectAgent tries to auto-detect agents, or prompts the user to select.
 // Returns the detected/selected agents and any error.
 // When exactly one agent is detected, it is used automatically.
@@ -594,23 +622,16 @@ func detectOrSelectAgent(w io.Writer) ([]agent.Agent, error) {
 		return nil, errors.New("no agents with hook support available")
 	}
 
-	var selectedAgentNames []string
-	form := NewAccessibleForm(
-		huh.NewGroup(
-			huh.NewMultiSelect[string]().
-				Title("Which agents are you using?").
-				Description("Use space to select, enter to confirm.").
-				Options(options...).
-				Value(&selectedAgentNames),
-		),
-	)
-
-	if err := form.Run(); err != nil {
-		return nil, fmt.Errorf("agent selection cancelled: %w", err)
+	selectFn := agentPromptFunc
+	if selectFn == nil {
+		selectFn = func() ([]string, error) {
+			return runAgentSelectForm(options)
+		}
 	}
 
-	if len(selectedAgentNames) == 0 {
-		return nil, errors.New("no agents selected")
+	selectedAgentNames, err := selectFn()
+	if err != nil {
+		return nil, err
 	}
 
 	selectedAgents := make([]agent.Agent, 0, len(selectedAgentNames))
