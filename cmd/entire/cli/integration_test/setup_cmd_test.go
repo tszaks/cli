@@ -72,8 +72,8 @@ func TestEnableDisable(t *testing.T) {
 			t.Errorf("Expected status to show 'Enabled', got: %s", stdout)
 		}
 
-		// Disable
-		stdout = env.RunCLI("disable")
+		// Disable (using --project so re-enable can override cleanly)
+		stdout = env.RunCLI("disable", "--project")
 		if !strings.Contains(stdout, "disabled") {
 			t.Errorf("Expected disable output to contain 'disabled', got: %s", stdout)
 		}
@@ -84,8 +84,8 @@ func TestEnableDisable(t *testing.T) {
 			t.Errorf("Expected status to show 'Disabled', got: %s", stdout)
 		}
 
-		// Re-enable (using --strategy flag for non-interactive mode)
-		stdout = env.RunCLI("enable", "--strategy", strategyName)
+		// Re-enable (using --agent for non-interactive mode)
+		stdout = env.RunCLI("enable", "--agent", "claude-code", "--telemetry=false")
 		if !strings.Contains(stdout, "Ready.") {
 			t.Errorf("Expected enable output to contain 'Ready.', got: %s", stdout)
 		}
@@ -161,8 +161,8 @@ func TestEnableWhenDisabled(t *testing.T) {
 		// Disable Entire
 		env.SetEnabled(false)
 
-		// Enable command should work (using --strategy flag for non-interactive mode)
-		stdout := env.RunCLI("enable", "--strategy", strategyName)
+		// Enable command should work (using --agent for non-interactive mode)
+		stdout := env.RunCLI("enable", "--agent", "claude-code", "--telemetry=false")
 		if !strings.Contains(stdout, "Ready.") {
 			t.Errorf("Expected enable output to contain 'Ready.', got: %s", stdout)
 		}
@@ -192,7 +192,7 @@ func TestEnableDefaultStrategy(t *testing.T) {
 		t.Errorf("Expected output to contain 'Ready.', got: %s", stdout)
 	}
 
-	// Verify settings file has manual-commit strategy
+	// Verify settings file exists and has enabled field
 	settingsPath := filepath.Join(env.RepoDir, ".entire", paths.SettingsFileName)
 	data, err := os.ReadFile(settingsPath)
 	if err != nil {
@@ -204,16 +204,16 @@ func TestEnableDefaultStrategy(t *testing.T) {
 		t.Fatalf("Failed to parse settings: %v", err)
 	}
 
-	strategy, ok := settings["strategy"].(string)
+	enabled, ok := settings["enabled"].(bool)
 	if !ok {
-		t.Fatalf("Strategy not found in settings: %v", settings)
+		t.Fatalf("Enabled not found in settings: %v", settings)
 	}
 
-	if strategy != "manual-commit" {
-		t.Errorf("Expected default strategy to be 'manual-commit', got: %s", strategy)
+	if !enabled {
+		t.Error("Expected enabled to be true")
 	}
 
-	// Also verify via status command
+	// Verify status shows manual-commit (the only strategy)
 	stdout = env.RunCLI("status")
 	if !strings.Contains(stdout, "manual-commit") {
 		t.Errorf("Expected status to show 'manual-commit', got: %s", stdout)

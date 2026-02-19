@@ -43,6 +43,9 @@ func TestResume_SwitchBranchWithSession(t *testing.T) {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
 
+	// Commit the session's changes (manual-commit requires user to commit)
+	env.GitCommitWithShadowHooks("Create a hello script", "hello.rb")
+
 	// Remember the feature branch name
 	featureBranch := env.GetCurrentBranch()
 
@@ -104,6 +107,9 @@ func TestResume_AlreadyOnBranch(t *testing.T) {
 	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
+
+	// Commit the session's changes (manual-commit requires user to commit)
+	env.GitCommitWithShadowHooks("Create a test script", "test.js")
 
 	currentBranch := env.GetCurrentBranch()
 
@@ -232,6 +238,9 @@ func TestResume_SessionLogAlreadyExists(t *testing.T) {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
 
+	// Commit the session's changes (manual-commit requires user to commit)
+	env.GitCommitWithShadowHooks("Create hello method", "hello.rb")
+
 	featureBranch := env.GetCurrentBranch()
 
 	// Pre-create a session log in Claude project dir with different content
@@ -313,6 +322,9 @@ func TestResume_MultipleSessionsOnBranch(t *testing.T) {
 		t.Fatalf("SimulateStop session2 failed: %v", err)
 	}
 
+	// Commit the sessions' changes (manual-commit requires user to commit)
+	env.GitCommitWithShadowHooks("Update to version 2", "file.txt")
+
 	featureBranch := env.GetCurrentBranch()
 
 	// Switch to main
@@ -324,8 +336,8 @@ func TestResume_MultipleSessionsOnBranch(t *testing.T) {
 		t.Fatalf("resume failed: %v\nOutput: %s", err, output)
 	}
 
-	// Should show session info (from the most recent session)
-	if !strings.Contains(output, "Session:") {
+	// Should show session info (multi-session output says "Restored N sessions")
+	if !strings.Contains(output, "Restored 2 sessions") && !strings.Contains(output, "Session:") {
 		t.Errorf("output should contain session info, got: %s", output)
 	}
 
@@ -357,6 +369,9 @@ func TestResume_CheckpointWithoutMetadata(t *testing.T) {
 	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
+
+	// Commit the session's changes (manual-commit requires user to commit)
+	env.GitCommitWithShadowHooks("Create real file", "real.txt")
 
 	// Create a new branch for the orphan checkpoint test
 	env.GitCheckoutNewBranch("feature/orphan-checkpoint")
@@ -415,6 +430,9 @@ func TestResume_AfterMergingMain(t *testing.T) {
 	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
+
+	// Commit the session's changes (manual-commit requires user to commit)
+	env.GitCommitWithShadowHooks("Create a hello script", "hello.rb")
 
 	// Remember the feature branch name
 	featureBranch := env.GetCurrentBranch()
@@ -592,6 +610,9 @@ func TestResume_LocalLogNewerTimestamp_RequiresForce(t *testing.T) {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
 
+	// Commit the session's changes (manual-commit requires user to commit)
+	env.GitCommitWithShadowHooks("Create hello method", "hello.rb")
+
 	featureBranch := env.GetCurrentBranch()
 
 	// Create a local log with a NEWER timestamp than the checkpoint
@@ -649,6 +670,9 @@ func TestResume_LocalLogNewerTimestamp_ForceOverwrites(t *testing.T) {
 	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
+
+	// Commit the session's changes (manual-commit requires user to commit)
+	env.GitCommitWithShadowHooks("Create hello method", "hello.rb")
 
 	featureBranch := env.GetCurrentBranch()
 
@@ -708,6 +732,9 @@ func TestResume_LocalLogNewerTimestamp_UserConfirmsOverwrite(t *testing.T) {
 	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
+
+	// Commit the session's changes (manual-commit requires user to commit)
+	env.GitCommitWithShadowHooks("Create hello method", "hello.rb")
 
 	featureBranch := env.GetCurrentBranch()
 
@@ -773,6 +800,9 @@ func TestResume_LocalLogNewerTimestamp_UserDeclinesOverwrite(t *testing.T) {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
 
+	// Commit the session's changes (manual-commit requires user to commit)
+	env.GitCommitWithShadowHooks("Create hello method", "hello.rb")
+
 	featureBranch := env.GetCurrentBranch()
 
 	// Create a local log with a NEWER timestamp than the checkpoint
@@ -837,6 +867,9 @@ func TestResume_CheckpointNewerTimestamp(t *testing.T) {
 	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
+
+	// Commit the session's changes (manual-commit requires user to commit)
+	env.GitCommitWithShadowHooks("Create hello method", "hello.rb")
 
 	featureBranch := env.GetCurrentBranch()
 
@@ -1003,6 +1036,9 @@ func TestResume_LocalLogNoTimestamp(t *testing.T) {
 	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
+
+	// Commit the session's changes (manual-commit requires user to commit)
+	env.GitCommitWithShadowHooks("Create hello method", "hello.rb")
 
 	featureBranch := env.GetCurrentBranch()
 

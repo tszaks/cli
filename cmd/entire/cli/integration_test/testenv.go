@@ -331,7 +331,7 @@ func (env *TestEnv) initEntireInternal(strategyName string, strategyOptions map[
 	// the agent from installed hooks (detect presence) or checkpoint metadata.
 	// The settings parser uses DisallowUnknownFields(), so only recognized fields are allowed.
 	settings := map[string]any{
-		"strategy":  strategyName,
+		"enabled":   true,
 		"local_dev": true, // Note: git-triggered hooks won't work (path is relative); tests call hooks via getTestBinary() instead
 	}
 	if strategyOptions != nil {
