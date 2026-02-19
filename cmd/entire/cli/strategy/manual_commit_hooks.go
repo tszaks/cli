@@ -486,7 +486,7 @@ type postCommitActionHandler struct {
 }
 
 func (h *postCommitActionHandler) HandleCondense(state *session.State) error {
-	shouldCondense := h.shouldCondenseWithOverlapCheck()
+	shouldCondense := h.shouldCondenseWithOverlapCheck(state.Phase.IsActive())
 
 	logging.Debug(h.logCtx, "post-commit: HandleCondense decision",
 		slog.String("session_id", state.SessionID),
@@ -505,7 +505,7 @@ func (h *postCommitActionHandler) HandleCondense(state *session.State) error {
 }
 
 func (h *postCommitActionHandler) HandleCondenseIfFilesTouched(state *session.State) error {
-	shouldCondense := len(state.FilesTouched) > 0 && h.shouldCondenseWithOverlapCheck()
+	shouldCondense := len(state.FilesTouched) > 0 && h.shouldCondenseWithOverlapCheck(state.Phase.IsActive())
 
 	logging.Debug(h.logCtx, "post-commit: HandleCondenseIfFilesTouched decision",
 		slog.String("session_id", state.SessionID),
@@ -536,14 +536,17 @@ func (h *postCommitActionHandler) HandleCondenseIfFilesTouched(state *session.St
 //   - state.FilesTouched for IDLE/ENDED sessions (set by SaveChanges)
 //   - transcript extraction for ACTIVE sessions with empty FilesTouched
 //
-// When filesTouchedBefore is empty (transcript extraction failed + no SaveChanges
-// yet), we trust hasNew to avoid data loss for mid-turn commits.
-func (h *postCommitActionHandler) shouldCondenseWithOverlapCheck() bool {
+// When filesTouchedBefore is empty:
+//   - For ACTIVE sessions: fail-open (trust hasNew) because the agent may be
+//     mid-turn before any files are saved to state.
+//   - For IDLE/ENDED sessions: return false because there are no files to
+//     overlap with the commit.
+func (h *postCommitActionHandler) shouldCondenseWithOverlapCheck(isActive bool) bool {
 	if !h.hasNew {
 		return false
 	}
 	if len(h.filesTouchedBefore) == 0 {
-		return true // Fail-open: no file list to check against
+		return isActive // ACTIVE: fail-open; IDLE/ENDED: no files = no overlap
 	}
 	// Only check files that were actually changed in this commit.
 	// Without this, files that exist in the tree but weren't changed

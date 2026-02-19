@@ -1773,3 +1773,68 @@ func TestPostCommit_StaleActiveSession_NotCondensed(t *testing.T) {
 	require.NoError(t, err,
 		"entire/checkpoints/v1 should exist (new session was condensed)")
 }
+
+// TestPostCommit_IdleSessionEmptyFilesTouched_NotCondensed verifies that an IDLE
+// session with hasNew=true but empty FilesTouched is NOT condensed into a commit.
+//
+// This can happen for conversation-only sessions where the transcript grew but no
+// files were modified. Previously, filesOverlapWithContent was called with an empty
+// list and returned false. The shouldCondenseWithOverlapCheck method must also
+// return false when filesTouchedBefore is empty.
+func TestPostCommit_IdleSessionEmptyFilesTouched_NotCondensed(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+
+	// --- Create an IDLE session with a checkpoint but no files touched ---
+	idleSessionID := "idle-no-files-session"
+	setupSessionWithCheckpoint(t, s, repo, dir, idleSessionID)
+
+	idleState, err := s.loadSessionState(idleSessionID)
+	require.NoError(t, err)
+	idleState.Phase = session.PhaseIdle
+	// Clear FilesTouched to simulate a conversation-only session
+	idleState.FilesTouched = nil
+	// CheckpointTranscriptStart=0 so sessionHasNewContent returns true
+	idleState.CheckpointTranscriptStart = 0
+	require.NoError(t, s.saveSessionState(idleState))
+
+	idleOriginalStepCount := idleState.StepCount
+
+	// --- Make a commit with an unrelated file ---
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "other-work.txt"), []byte("other work"), 0o644))
+	_, err = wt.Add("other-work.txt")
+	require.NoError(t, err)
+
+	cpID := "f1f2f3f4f5f6"
+	commitMsg := "other work\n\n" + trailers.CheckpointTrailerKey + ": " + cpID + "\n"
+	_, err = wt.Commit(commitMsg, &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	require.NoError(t, err)
+
+	head, err := repo.Head()
+	require.NoError(t, err)
+	newHead := head.Hash().String()
+
+	// Run PostCommit
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	// --- Verify: IDLE session with no files was NOT condensed ---
+	idleState, err = s.loadSessionState(idleSessionID)
+	require.NoError(t, err)
+
+	assert.Equal(t, idleOriginalStepCount, idleState.StepCount,
+		"IDLE session with empty FilesTouched should NOT be condensed")
+	assert.Equal(t, session.PhaseIdle, idleState.Phase,
+		"IDLE session should remain IDLE")
+	// BaseCommit is NOT updated for non-ACTIVE sessions (updateBaseCommitIfChanged skips them)
+	_ = newHead
+}
