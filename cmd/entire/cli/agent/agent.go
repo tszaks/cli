@@ -116,16 +116,6 @@ type HookSupport interface {
 	GetSupportedHooks() []HookType
 }
 
-// HookHandler is implemented by agents that define their own hook vocabulary.
-// HookNames() is now part of the core Agent interface.
-// This interface is kept for backward compatibility during migration.
-type HookHandler interface {
-	Agent
-
-	// GetHookNames returns the hook verbs this agent supports.
-	GetHookNames() []string
-}
-
 // FileWatcher is implemented by agents that use file-based detection.
 // Agents like Aider that don't support hooks can use file watching
 // to detect session activity.

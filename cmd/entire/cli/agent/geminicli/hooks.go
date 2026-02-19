@@ -11,11 +11,8 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
-// Ensure GeminiCLIAgent implements HookSupport and HookHandler
-var (
-	_ agent.HookSupport = (*GeminiCLIAgent)(nil)
-	_ agent.HookHandler = (*GeminiCLIAgent)(nil)
-)
+// Ensure GeminiCLIAgent implements HookSupport
+var _ agent.HookSupport = (*GeminiCLIAgent)(nil)
 
 // Gemini CLI hook names - these become subcommands under `entire hooks gemini`
 const (
@@ -39,24 +36,6 @@ const GeminiSettingsFileName = "settings.json"
 var entireHookPrefixes = []string{
 	"entire ",
 	"go run ${GEMINI_PROJECT_DIR}/cmd/entire/main.go ",
-}
-
-// GetHookNames returns the hook verbs Gemini CLI supports.
-// These become subcommands: entire hooks gemini <verb>
-func (g *GeminiCLIAgent) GetHookNames() []string {
-	return []string{
-		HookNameSessionStart,
-		HookNameSessionEnd,
-		HookNameBeforeAgent,
-		HookNameAfterAgent,
-		HookNameBeforeModel,
-		HookNameAfterModel,
-		HookNameBeforeToolSelection,
-		HookNameBeforeTool,
-		HookNameAfterTool,
-		HookNamePreCompress,
-		HookNameNotification,
-	}
 }
 
 // InstallHooks installs Gemini CLI hooks in .gemini/settings.json.
