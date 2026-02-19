@@ -704,11 +704,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) ([
 			continue
 		}
 
-		// Compute transcript path from current repo location.
-		// Always use the current repo location to handle repo moves and cross-machine portability.
-		// Use agent.ResolveSessionFile directly (not ResolveSessionFilePath) because
-		// ResolveSessionFilePath reads .git/entire-sessions/ state which may contain
-		// stale absolute paths from the original repo location.
+		// Compute transcript path from current repo location for cross-machine portability.
 		sessionAgentDir, dirErr := sessionAgent.GetSessionDir(repoRoot)
 		if dirErr != nil {
 			fmt.Fprintf(os.Stderr, "  Warning: failed to get session dir for session %d: %v\n", i, dirErr)
@@ -847,11 +843,7 @@ func (s *ManualCommitStrategy) classifySessionsForRestore(ctx context.Context, r
 			continue
 		}
 
-		// Compute transcript path from current repo location.
-		// Always use the current repo location to handle repo moves and cross-machine portability.
-		// Use agent.ResolveSessionFile directly (not ResolveSessionFilePath) because
-		// ResolveSessionFilePath reads .git/entire-sessions/ state which may contain
-		// stale absolute paths from the original repo location.
+		// Compute transcript path from current repo location for cross-machine portability.
 		sessionAgentDir, dirErr := sessionAgent.GetSessionDir(repoRoot)
 		if dirErr != nil {
 			continue

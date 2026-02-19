@@ -259,7 +259,7 @@ func extractModifiedFiles(transcript []transcriptLine) []string {
 }
 
 // resolveTranscriptPath determines the correct file path for an agent's session transcript.
-// Delegates to strategy.ResolveSessionFilePath after computing the fallback session directory.
+// Computes the path dynamically from the current repo location for cross-machine portability.
 func resolveTranscriptPath(sessionID string, agent agentpkg.Agent) (string, error) {
 	repoRoot, err := paths.RepoRoot()
 	if err != nil {
