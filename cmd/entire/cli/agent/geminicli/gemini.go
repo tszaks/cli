@@ -73,11 +73,6 @@ func (g *GeminiCLIAgent) DetectPresence() (bool, error) {
 	return false, nil
 }
 
-// GetHookConfigPath returns the path to Gemini's hook config file.
-func (g *GeminiCLIAgent) GetHookConfigPath() string {
-	return ".gemini/settings.json"
-}
-
 // SupportsHooks returns true as Gemini CLI supports lifecycle hooks.
 func (g *GeminiCLIAgent) SupportsHooks() bool {
 	return true
