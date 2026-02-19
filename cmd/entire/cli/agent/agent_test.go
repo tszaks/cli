@@ -19,10 +19,6 @@ func (m *mockAgent) Description() string           { return "Mock agent for test
 func (m *mockAgent) IsPreview() bool               { return false }
 func (m *mockAgent) DetectPresence() (bool, error) { return false, nil }
 
-//nolint:nilnil // Mock implementation
-func (m *mockAgent) ParseHookInput(_ HookType, _ io.Reader) (*HookInput, error) {
-	return nil, nil
-}
 func (m *mockAgent) GetSessionID(_ *HookInput) string { return "" }
 func (m *mockAgent) ProtectedDirs() []string          { return nil }
 func (m *mockAgent) HookNames() []string              { return nil }

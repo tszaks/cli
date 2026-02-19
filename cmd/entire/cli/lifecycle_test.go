@@ -36,11 +36,6 @@ func (m *mockLifecycleAgent) HookNames() []string                    { return ni
 func (m *mockLifecycleAgent) GetSessionID(_ *agent.HookInput) string { return "" }
 
 //nolint:nilnil // Mock implementation
-func (m *mockLifecycleAgent) ParseHookInput(_ agent.HookType, _ io.Reader) (*agent.HookInput, error) {
-	return nil, nil
-}
-
-//nolint:nilnil // Mock implementation
 func (m *mockLifecycleAgent) ParseHookEvent(_ string, _ io.Reader) (*agent.Event, error) {
 	return nil, nil
 }

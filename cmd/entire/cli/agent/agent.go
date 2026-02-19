@@ -69,9 +69,6 @@ type Agent interface {
 
 	// --- Legacy methods (will move to optional interfaces in Phase 4) ---
 
-	// ParseHookInput parses hook callback input from stdin.
-	ParseHookInput(hookType HookType, reader io.Reader) (*HookInput, error)
-
 	// GetSessionID extracts session ID from hook input.
 	GetSessionID(input *HookInput) string
 
