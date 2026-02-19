@@ -479,20 +479,45 @@ type postCommitActionHandler struct {
 	shadowBranchesToDelete map[string]struct{}
 	committedFileSet       map[string]struct{}
 	hasNew                 bool
+	filesTouchedBefore     []string
 
 	// Output: set by handler methods, read by caller after TransitionAndLog.
 	condensed bool
 }
 
 func (h *postCommitActionHandler) HandleCondense(state *session.State) error {
-	// For ACTIVE sessions, any commit during the turn is session-related.
-	// For IDLE/ENDED sessions (e.g., carry-forward), also require that the
-	// committed files overlap with the session's remaining files AND have
-	// matching content — otherwise an unrelated commit (or a commit with
-	// completely replaced content) would incorrectly get this session's checkpoint.
+	// Require that the committed files overlap with the session's files AND
+	// have matching content — otherwise an unrelated commit would incorrectly
+	// get this session's checkpoint.
+	//
+	// This applies to ALL sessions including ACTIVE ones. A stale ACTIVE session
+	// (agent killed without Stop hook) would otherwise be condensed into every
+	// commit because hasNew=true unconditionally for ACTIVE sessions.
+	//
+	// filesTouchedBefore is populated from:
+	//   - state.FilesTouched for IDLE/ENDED sessions (set by SaveChanges)
+	//   - transcript extraction for ACTIVE sessions with empty FilesTouched
+	//
+	// When filesTouchedBefore is empty (transcript extraction failed + no
+	// SaveChanges yet), we trust hasNew to avoid data loss for mid-turn commits.
 	shouldCondense := h.hasNew
-	if shouldCondense && !state.Phase.IsActive() {
-		shouldCondense = filesOverlapWithContent(h.repo, h.shadowBranchName, h.commit, state.FilesTouched)
+	if shouldCondense && len(h.filesTouchedBefore) > 0 {
+		// Only check files that were actually changed in this commit.
+		// Without this, files that exist in the tree but weren't changed
+		// would pass the "modified file" check in filesOverlapWithContent
+		// (because the file exists in the parent tree), causing stale
+		// sessions to be incorrectly condensed.
+		var committedTouchedFiles []string
+		for _, f := range h.filesTouchedBefore {
+			if _, ok := h.committedFileSet[f]; ok {
+				committedTouchedFiles = append(committedTouchedFiles, f)
+			}
+		}
+		if len(committedTouchedFiles) > 0 {
+			shouldCondense = filesOverlapWithContent(h.repo, h.shadowBranchName, h.commit, committedTouchedFiles)
+		} else {
+			shouldCondense = false
+		}
 	}
 	if shouldCondense {
 		h.condensed = h.s.condenseAndUpdateState(h.logCtx, h.repo, h.checkpointID, state, h.head, h.shadowBranchName, h.shadowBranchesToDelete, h.committedFileSet)
@@ -654,6 +679,7 @@ func (s *ManualCommitStrategy) PostCommit() error {
 			shadowBranchesToDelete: shadowBranchesToDelete,
 			committedFileSet:       committedFileSet,
 			hasNew:                 hasNew,
+			filesTouchedBefore:     filesTouchedBefore,
 		}
 		if err := TransitionAndLog(state, session.EventGitCommit, transitionCtx, handler); err != nil {
 			fmt.Fprintf(os.Stderr, "[entire] Warning: post-commit action handler error: %v\n", err)

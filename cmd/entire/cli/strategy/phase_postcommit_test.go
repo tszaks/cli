@@ -20,6 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testNewActiveSessionID = "new-active-session"
+
 // TestPostCommit_ActiveSession_CondensesImmediately verifies that PostCommit on
 // an ACTIVE session condenses immediately and stays ACTIVE.
 // With the 1:1 checkpoint model, each commit gets its own checkpoint right away.
@@ -1191,9 +1193,24 @@ func TestHandleTurnEnd_PartialFailure(t *testing.T) {
 	commitWithCheckpointTrailer(t, repo, dir, "a1b2c3d4e5f6")
 	require.NoError(t, s.PostCommit())
 
-	// Write new content and create a second real checkpoint
+	// Write new content and create a second checkpoint on the shadow branch.
+	// Use SaveChanges directly (instead of setupSessionWithCheckpoint) so that
+	// second.txt is included in FilesTouched — the overlap check needs it.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "second.txt"), []byte("second file"), 0o644))
-	setupSessionWithCheckpoint(t, s, repo, dir, sessionID) // refresh shadow branch
+	metadataDir := ".entire/metadata/" + sessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	err = s.SaveChanges(SaveContext{
+		SessionID:      sessionID,
+		ModifiedFiles:  []string{"test.txt"},
+		NewFiles:       []string{"second.txt"},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint 2",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	require.NoError(t, err, "SaveChanges should succeed for second checkpoint")
 	state, err = s.loadSessionState(sessionID)
 	require.NoError(t, err)
 	state.Phase = session.PhaseActive
@@ -1370,7 +1387,7 @@ func TestPostCommit_OldIdleSession_BaseCommitNotUpdated(t *testing.T) {
 	require.NoError(t, err)
 
 	// --- Create a NEW ACTIVE session at the new HEAD ---
-	newSessionID := "new-active-session"
+	newSessionID := testNewActiveSessionID
 	setupSessionWithCheckpoint(t, s, repo, dir, newSessionID)
 
 	newState, err := s.loadSessionState(newSessionID)
@@ -1453,7 +1470,7 @@ func TestPostCommit_OldEndedSession_BaseCommitNotUpdated(t *testing.T) {
 	require.NoError(t, err)
 
 	// --- Create a NEW ACTIVE session at the new HEAD ---
-	newSessionID := "new-active-session"
+	newSessionID := testNewActiveSessionID
 	setupSessionWithCheckpoint(t, s, repo, dir, newSessionID)
 
 	newState, err := s.loadSessionState(newSessionID)
@@ -1486,4 +1503,143 @@ func TestPostCommit_OldEndedSession_BaseCommitNotUpdated(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, newHead, newState.BaseCommit,
 		"NEW ACTIVE session's BaseCommit should be updated after condensation")
+}
+
+// TestPostCommit_StaleActiveSession_NotCondensed verifies that a stale ACTIVE
+// session (agent killed without Stop hook) is NOT condensed into an unrelated
+// commit from a different session.
+//
+// Root cause: when an agent is killed without the Stop hook firing, its session
+// remains in ACTIVE phase permanently. Previously, PostCommit unconditionally
+// set hasNew=true for ACTIVE sessions and skipped the filesOverlapWithContent
+// check, so stale ACTIVE sessions got condensed into every commit.
+//
+// The fix applies the overlap check to ALL sessions (including ACTIVE) using
+// filesTouchedBefore, so stale sessions with unrelated files are filtered out.
+func TestPostCommit_StaleActiveSession_NotCondensed(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	s := &ManualCommitStrategy{}
+
+	// --- Create a stale ACTIVE session from an old commit ---
+	// This simulates an agent that was killed without the Stop hook firing.
+	staleSessionID := "stale-active-session"
+	setupSessionWithCheckpoint(t, s, repo, dir, staleSessionID)
+
+	staleState, err := s.loadSessionState(staleSessionID)
+	require.NoError(t, err)
+	staleState.Phase = session.PhaseActive
+	// The stale session touched "test.txt" (set by setupSessionWithCheckpoint)
+	// but the new commit will modify a different file.
+	staleState.FilesTouched = []string{"test.txt"}
+	require.NoError(t, s.saveSessionState(staleState))
+
+	staleOriginalBaseCommit := staleState.BaseCommit
+	staleOriginalStepCount := staleState.StepCount
+
+	// Move HEAD forward with an unrelated commit (no trailer)
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "unrelated.txt"), []byte("unrelated work"), 0o644))
+	_, err = wt.Add("unrelated.txt")
+	require.NoError(t, err)
+	_, err = wt.Commit("unrelated commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	require.NoError(t, err)
+
+	// --- Create a NEW ACTIVE session at the new HEAD ---
+	newSessionID := testNewActiveSessionID
+
+	// Create a new file for the new session (different from stale session's test.txt)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "new-feature.txt"), []byte("new feature content"), 0o644))
+
+	metadataDir := ".entire/metadata/" + newSessionID
+	metadataDirAbs := filepath.Join(dir, metadataDir)
+	require.NoError(t, os.MkdirAll(metadataDirAbs, 0o755))
+
+	transcript := `{"type":"human","message":{"content":"add new feature"}}
+{"type":"assistant","message":{"content":"adding new feature"}}
+`
+	require.NoError(t, os.WriteFile(
+		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
+		[]byte(transcript), 0o644))
+
+	err = s.SaveChanges(SaveContext{
+		SessionID:      newSessionID,
+		ModifiedFiles:  []string{},
+		NewFiles:       []string{"new-feature.txt"},
+		DeletedFiles:   []string{},
+		MetadataDir:    metadataDir,
+		MetadataDirAbs: metadataDirAbs,
+		CommitMessage:  "Checkpoint: new feature",
+		AuthorName:     "Test",
+		AuthorEmail:    "test@test.com",
+	})
+	require.NoError(t, err)
+
+	newState, err := s.loadSessionState(newSessionID)
+	require.NoError(t, err)
+	newState.Phase = session.PhaseActive
+	require.NoError(t, s.saveSessionState(newState))
+
+	// --- Commit ONLY new-feature.txt (not test.txt) with checkpoint trailer ---
+	wt, err = repo.Worktree()
+	require.NoError(t, err)
+	_, err = wt.Add("new-feature.txt")
+	require.NoError(t, err)
+
+	cpID := "de1de2de3de4"
+	commitMsg := "add new feature\n\n" + trailers.CheckpointTrailerKey + ": " + cpID + "\n"
+	_, err = wt.Commit(commitMsg, &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	require.NoError(t, err)
+
+	head, err := repo.Head()
+	require.NoError(t, err)
+	newHead := head.Hash().String()
+
+	// Run PostCommit
+	err = s.PostCommit()
+	require.NoError(t, err)
+
+	// --- Verify: stale ACTIVE session was NOT condensed ---
+	staleState, err = s.loadSessionState(staleSessionID)
+	require.NoError(t, err)
+
+	// StepCount should be unchanged (not reset by condensation)
+	assert.Equal(t, staleOriginalStepCount, staleState.StepCount,
+		"Stale ACTIVE session StepCount should NOT be reset (no condensation)")
+
+	// BaseCommit IS updated for ACTIVE sessions (updateBaseCommitIfChanged)
+	assert.Equal(t, newHead, staleState.BaseCommit,
+		"Stale ACTIVE session BaseCommit should be updated (ACTIVE sessions always get BaseCommit updated)")
+	assert.NotEqual(t, staleOriginalBaseCommit, staleState.BaseCommit,
+		"Stale ACTIVE session BaseCommit should have changed")
+
+	// Phase stays ACTIVE
+	assert.Equal(t, session.PhaseActive, staleState.Phase,
+		"Stale ACTIVE session should remain ACTIVE")
+
+	// --- Verify: new ACTIVE session WAS condensed ---
+	newState, err = s.loadSessionState(newSessionID)
+	require.NoError(t, err)
+
+	// StepCount reset to 0 by condensation
+	assert.Equal(t, 0, newState.StepCount,
+		"New ACTIVE session StepCount should be reset by condensation")
+
+	// BaseCommit updated to new HEAD
+	assert.Equal(t, newHead, newState.BaseCommit,
+		"New ACTIVE session BaseCommit should be updated after condensation")
+
+	// Verify entire/checkpoints/v1 exists (new session was condensed)
+	_, err = repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	require.NoError(t, err,
+		"entire/checkpoints/v1 should exist (new session was condensed)")
 }
