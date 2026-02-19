@@ -69,9 +69,6 @@ type Agent interface {
 
 	// --- Legacy methods (will move to optional interfaces in Phase 4) ---
 
-	// GetHookConfigPath returns path to hook config file (empty if none).
-	GetHookConfigPath() string
-
 	// SupportsHooks returns true if agent supports lifecycle hooks.
 	SupportsHooks() bool
 

@@ -80,14 +80,6 @@ func TestDetectPresence(t *testing.T) {
 	})
 }
 
-func TestGetHookConfigPath(t *testing.T) {
-	ag := &GeminiCLIAgent{}
-	path := ag.GetHookConfigPath()
-	if path != ".gemini/settings.json" {
-		t.Errorf("GetHookConfigPath() = %q, want .gemini/settings.json", path)
-	}
-}
-
 func TestSupportsHooks(t *testing.T) {
 	ag := &GeminiCLIAgent{}
 	if !ag.SupportsHooks() {

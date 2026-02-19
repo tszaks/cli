@@ -72,11 +72,6 @@ func (c *ClaudeCodeAgent) DetectPresence() (bool, error) {
 	return false, nil
 }
 
-// GetHookConfigPath returns the path to Claude's hook config file.
-func (c *ClaudeCodeAgent) GetHookConfigPath() string {
-	return ".claude/settings.json"
-}
-
 // SupportsHooks returns true as Claude Code supports lifecycle hooks.
 func (c *ClaudeCodeAgent) SupportsHooks() bool {
 	return true
