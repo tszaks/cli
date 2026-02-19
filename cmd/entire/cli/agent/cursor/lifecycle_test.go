@@ -1,0 +1,389 @@
+package cursor
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+)
+
+func TestParseHookEvent_SessionStart(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+	input := `{"session_id": "test-session-123", "transcript_path": "/tmp/transcript.jsonl"}`
+
+	event, err := ag.ParseHookEvent(HookNameSessionStart, strings.NewReader(input))
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event == nil {
+		t.Fatal("expected event, got nil")
+	}
+	if event.Type != agent.SessionStart {
+		t.Errorf("expected event type %v, got %v", agent.SessionStart, event.Type)
+	}
+	if event.SessionID != "test-session-123" {
+		t.Errorf("expected session_id 'test-session-123', got %q", event.SessionID)
+	}
+	if event.SessionRef != "/tmp/transcript.jsonl" {
+		t.Errorf("expected session_ref '/tmp/transcript.jsonl', got %q", event.SessionRef)
+	}
+	if event.Timestamp.IsZero() {
+		t.Error("expected non-zero timestamp")
+	}
+}
+
+func TestParseHookEvent_TurnStart(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+	input := `{"session_id": "sess-456", "transcript_path": "/tmp/t.jsonl", "prompt": "Hello world"}`
+
+	event, err := ag.ParseHookEvent(HookNameBeforeSubmitPrompt, strings.NewReader(input))
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event == nil {
+		t.Fatal("expected event, got nil")
+	}
+	if event.Type != agent.TurnStart {
+		t.Errorf("expected event type %v, got %v", agent.TurnStart, event.Type)
+	}
+	if event.SessionID != "sess-456" {
+		t.Errorf("expected session_id 'sess-456', got %q", event.SessionID)
+	}
+	if event.Prompt != "Hello world" {
+		t.Errorf("expected prompt 'Hello world', got %q", event.Prompt)
+	}
+}
+
+func TestParseHookEvent_TurnEnd(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+	input := `{"session_id": "sess-789", "transcript_path": "/tmp/stop.jsonl"}`
+
+	event, err := ag.ParseHookEvent(HookNameStop, strings.NewReader(input))
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event == nil {
+		t.Fatal("expected event, got nil")
+	}
+	if event.Type != agent.TurnEnd {
+		t.Errorf("expected event type %v, got %v", agent.TurnEnd, event.Type)
+	}
+	if event.SessionID != "sess-789" {
+		t.Errorf("expected session_id 'sess-789', got %q", event.SessionID)
+	}
+}
+
+func TestParseHookEvent_SessionEnd(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+	input := `{"session_id": "ending-session", "transcript_path": "/tmp/end.jsonl"}`
+
+	event, err := ag.ParseHookEvent(HookNameSessionEnd, strings.NewReader(input))
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event == nil {
+		t.Fatal("expected event, got nil")
+	}
+	if event.Type != agent.SessionEnd {
+		t.Errorf("expected event type %v, got %v", agent.SessionEnd, event.Type)
+	}
+	if event.SessionID != "ending-session" {
+		t.Errorf("expected session_id 'ending-session', got %q", event.SessionID)
+	}
+}
+
+func TestParseHookEvent_SubagentStart(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+	toolInput := json.RawMessage(`{"description": "test task", "prompt": "do something"}`)
+	inputData := map[string]any{
+		"session_id":      "main-session",
+		"transcript_path": "/tmp/main.jsonl",
+		"tool_use_id":     "toolu_abc123",
+		"tool_input":      toolInput,
+	}
+	inputBytes, marshalErr := json.Marshal(inputData)
+	if marshalErr != nil {
+		t.Fatalf("failed to marshal test input: %v", marshalErr)
+	}
+
+	event, err := ag.ParseHookEvent(HookNamePreTask, strings.NewReader(string(inputBytes)))
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event == nil {
+		t.Fatal("expected event, got nil")
+	}
+	if event.Type != agent.SubagentStart {
+		t.Errorf("expected event type %v, got %v", agent.SubagentStart, event.Type)
+	}
+	if event.SessionID != "main-session" {
+		t.Errorf("expected session_id 'main-session', got %q", event.SessionID)
+	}
+	if event.ToolUseID != "toolu_abc123" {
+		t.Errorf("expected tool_use_id 'toolu_abc123', got %q", event.ToolUseID)
+	}
+	if event.ToolInput == nil {
+		t.Error("expected tool_input to be set")
+	}
+}
+
+func TestParseHookEvent_SubagentEnd(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+	inputData := map[string]any{
+		"session_id":      "main-session",
+		"transcript_path": "/tmp/main.jsonl",
+		"tool_use_id":     "toolu_xyz789",
+		"tool_input":      json.RawMessage(`{"prompt": "task done"}`),
+		"tool_response": map[string]string{
+			"agentId": "agent-subagent-001",
+		},
+	}
+	inputBytes, marshalErr := json.Marshal(inputData)
+	if marshalErr != nil {
+		t.Fatalf("failed to marshal test input: %v", marshalErr)
+	}
+
+	event, err := ag.ParseHookEvent(HookNamePostTask, strings.NewReader(string(inputBytes)))
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event == nil {
+		t.Fatal("expected event, got nil")
+	}
+	if event.Type != agent.SubagentEnd {
+		t.Errorf("expected event type %v, got %v", agent.SubagentEnd, event.Type)
+	}
+	if event.ToolUseID != "toolu_xyz789" {
+		t.Errorf("expected tool_use_id 'toolu_xyz789', got %q", event.ToolUseID)
+	}
+	if event.SubagentID != "agent-subagent-001" {
+		t.Errorf("expected subagent_id 'agent-subagent-001', got %q", event.SubagentID)
+	}
+}
+
+func TestParseHookEvent_PostTodo_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+	input := `{"session_id": "todo-session", "transcript_path": "/tmp/todo.jsonl"}`
+
+	event, err := ag.ParseHookEvent(HookNamePostTodo, strings.NewReader(input))
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event != nil {
+		t.Errorf("expected nil event for post-todo, got %+v", event)
+	}
+}
+
+func TestParseHookEvent_UnknownHook_ReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+	input := `{"session_id": "unknown", "transcript_path": "/tmp/unknown.jsonl"}`
+
+	event, err := ag.ParseHookEvent("unknown-hook-name", strings.NewReader(input))
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event != nil {
+		t.Errorf("expected nil event for unknown hook, got %+v", event)
+	}
+}
+
+func TestParseHookEvent_EmptyInput_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+
+	_, err := ag.ParseHookEvent(HookNameSessionStart, strings.NewReader(""))
+
+	if err == nil {
+		t.Fatal("expected error for empty input, got nil")
+	}
+	if !strings.Contains(err.Error(), "empty hook input") {
+		t.Errorf("expected 'empty hook input' error, got: %v", err)
+	}
+}
+
+func TestParseHookEvent_ConversationIDFallback(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+
+	t.Run("uses session_id when present", func(t *testing.T) {
+		t.Parallel()
+		input := `{"session_id": "preferred-id", "conversation_id": "fallback-id", "transcript_path": "/tmp/t.jsonl"}`
+
+		event, err := ag.ParseHookEvent(HookNameSessionStart, strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if event.SessionID != "preferred-id" {
+			t.Errorf("expected session_id 'preferred-id', got %q", event.SessionID)
+		}
+	})
+
+	t.Run("falls back to conversation_id", func(t *testing.T) {
+		t.Parallel()
+		input := `{"conversation_id": "fallback-id", "transcript_path": "/tmp/t.jsonl"}`
+
+		event, err := ag.ParseHookEvent(HookNameSessionStart, strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if event.SessionID != "fallback-id" {
+			t.Errorf("expected session_id 'fallback-id' (from conversation_id), got %q", event.SessionID)
+		}
+	})
+
+	t.Run("conversation_id fallback for turn start", func(t *testing.T) {
+		t.Parallel()
+		input := `{"conversation_id": "conv-123", "transcript_path": "/tmp/t.jsonl", "prompt": "hi"}`
+
+		event, err := ag.ParseHookEvent(HookNameBeforeSubmitPrompt, strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if event.SessionID != "conv-123" {
+			t.Errorf("expected session_id 'conv-123', got %q", event.SessionID)
+		}
+	})
+
+	t.Run("conversation_id fallback for subagent start", func(t *testing.T) {
+		t.Parallel()
+		input := `{"conversation_id": "conv-sub", "transcript_path": "/tmp/t.jsonl", "tool_use_id": "t1", "tool_input": {}}`
+
+		event, err := ag.ParseHookEvent(HookNamePreTask, strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if event.SessionID != "conv-sub" {
+			t.Errorf("expected session_id 'conv-sub', got %q", event.SessionID)
+		}
+	})
+
+	t.Run("conversation_id fallback for subagent end", func(t *testing.T) {
+		t.Parallel()
+		input := `{"conversation_id": "conv-end", "transcript_path": "/tmp/t.jsonl", "tool_use_id": "t2", "tool_input": {}, "tool_response": {}}`
+
+		event, err := ag.ParseHookEvent(HookNamePostTask, strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if event.SessionID != "conv-end" {
+			t.Errorf("expected session_id 'conv-end', got %q", event.SessionID)
+		}
+	})
+}
+
+func TestParseHookEvent_MalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	ag := &CursorAgent{}
+	input := `{"session_id": "test", "transcript_path": INVALID}`
+
+	_, err := ag.ParseHookEvent(HookNameSessionStart, strings.NewReader(input))
+
+	if err == nil {
+		t.Fatal("expected error for malformed JSON, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to parse hook input") {
+		t.Errorf("expected 'failed to parse hook input' error, got: %v", err)
+	}
+}
+
+func TestParseHookEvent_AllHookTypes(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		hookName      string
+		expectedType  agent.EventType
+		expectNil     bool
+		inputTemplate string
+	}{
+		{
+			hookName:      HookNameSessionStart,
+			expectedType:  agent.SessionStart,
+			inputTemplate: `{"session_id": "s1", "transcript_path": "/t"}`,
+		},
+		{
+			hookName:      HookNameBeforeSubmitPrompt,
+			expectedType:  agent.TurnStart,
+			inputTemplate: `{"session_id": "s2", "transcript_path": "/t", "prompt": "hi"}`,
+		},
+		{
+			hookName:      HookNameStop,
+			expectedType:  agent.TurnEnd,
+			inputTemplate: `{"session_id": "s3", "transcript_path": "/t"}`,
+		},
+		{
+			hookName:      HookNameSessionEnd,
+			expectedType:  agent.SessionEnd,
+			inputTemplate: `{"session_id": "s4", "transcript_path": "/t"}`,
+		},
+		{
+			hookName:      HookNamePreTask,
+			expectedType:  agent.SubagentStart,
+			inputTemplate: `{"session_id": "s5", "transcript_path": "/t", "tool_use_id": "t1", "tool_input": {}}`,
+		},
+		{
+			hookName:      HookNamePostTask,
+			expectedType:  agent.SubagentEnd,
+			inputTemplate: `{"session_id": "s6", "transcript_path": "/t", "tool_use_id": "t2", "tool_input": {}, "tool_response": {}}`,
+		},
+		{
+			hookName:      HookNamePostTodo,
+			expectNil:     true,
+			inputTemplate: `{"session_id": "s7", "transcript_path": "/t"}`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.hookName, func(t *testing.T) {
+			t.Parallel()
+
+			ag := &CursorAgent{}
+			event, err := ag.ParseHookEvent(tc.hookName, strings.NewReader(tc.inputTemplate))
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if tc.expectNil {
+				if event != nil {
+					t.Errorf("expected nil event, got %+v", event)
+				}
+				return
+			}
+
+			if event == nil {
+				t.Fatal("expected event, got nil")
+			}
+			if event.Type != tc.expectedType {
+				t.Errorf("expected event type %v, got %v", tc.expectedType, event.Type)
+			}
+		})
+	}
+}
