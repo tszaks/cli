@@ -95,6 +95,18 @@ echo "Checking staged files for duplication..."
 git diff --cached --name-only -z --diff-filter=ACM | grep -z '\\.go$' | xargs -0 golangci-lint run --enable-only dupl --new=false --max-issues-per-linter=0 --max-same-issues=0
 """
 
+[tasks.bench]
+description = "Run all benchmarks"
+run = "go test -bench=. -benchmem -run='^$' -timeout=10m ./..."
+
+[tasks."bench:cpu"]
+description = "Run benchmarks with CPU profile"
+run = "go test -bench=. -benchmem -run='^$' -cpuprofile=cpu.prof -timeout=10m ./... && echo 'Profile saved to cpu.prof. View with: go tool pprof -http=:8080 cpu.prof'"
+
+[tasks."bench:mem"]
+description = "Run benchmarks with memory profile"
+run = "go test -bench=. -benchmem -run='^$' -memprofile=mem.prof -timeout=10m ./... && echo 'Profile saved to mem.prof. View with: go tool pprof -http=:8080 mem.prof'"
+
 [tasks."test:e2e"]
 description = "Run E2E tests with real agent calls (requires claude CLI)"
 # -count=1 disables test caching since E2E tests call real external agents
