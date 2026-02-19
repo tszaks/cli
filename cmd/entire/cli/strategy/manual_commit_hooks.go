@@ -486,40 +486,7 @@ type postCommitActionHandler struct {
 }
 
 func (h *postCommitActionHandler) HandleCondense(state *session.State) error {
-	// Require that the committed files overlap with the session's files AND
-	// have matching content — otherwise an unrelated commit would incorrectly
-	// get this session's checkpoint.
-	//
-	// This applies to ALL sessions including ACTIVE ones. A stale ACTIVE session
-	// (agent killed without Stop hook) would otherwise be condensed into every
-	// commit because hasNew=true unconditionally for ACTIVE sessions.
-	//
-	// filesTouchedBefore is populated from:
-	//   - state.FilesTouched for IDLE/ENDED sessions (set by SaveChanges)
-	//   - transcript extraction for ACTIVE sessions with empty FilesTouched
-	//
-	// When filesTouchedBefore is empty (transcript extraction failed + no
-	// SaveChanges yet), we trust hasNew to avoid data loss for mid-turn commits.
-	shouldCondense := h.hasNew
-	if shouldCondense && len(h.filesTouchedBefore) > 0 {
-		// Only check files that were actually changed in this commit.
-		// Without this, files that exist in the tree but weren't changed
-		// would pass the "modified file" check in filesOverlapWithContent
-		// (because the file exists in the parent tree), causing stale
-		// sessions to be incorrectly condensed.
-		var committedTouchedFiles []string
-		for _, f := range h.filesTouchedBefore {
-			if _, ok := h.committedFileSet[f]; ok {
-				committedTouchedFiles = append(committedTouchedFiles, f)
-			}
-		}
-		if len(committedTouchedFiles) > 0 {
-			shouldCondense = filesOverlapWithContent(h.repo, h.shadowBranchName, h.commit, committedTouchedFiles)
-		} else {
-			shouldCondense = false
-		}
-	}
-	if shouldCondense {
+	if h.shouldCondenseWithOverlapCheck() {
 		h.condensed = h.s.condenseAndUpdateState(h.logCtx, h.repo, h.checkpointID, state, h.head, h.shadowBranchName, h.shadowBranchesToDelete, h.committedFileSet)
 	} else {
 		h.s.updateBaseCommitIfChanged(h.logCtx, state, h.newHead)
@@ -528,12 +495,50 @@ func (h *postCommitActionHandler) HandleCondense(state *session.State) error {
 }
 
 func (h *postCommitActionHandler) HandleCondenseIfFilesTouched(state *session.State) error {
-	if len(state.FilesTouched) > 0 && h.hasNew {
+	if len(state.FilesTouched) > 0 && h.shouldCondenseWithOverlapCheck() {
 		h.condensed = h.s.condenseAndUpdateState(h.logCtx, h.repo, h.checkpointID, state, h.head, h.shadowBranchName, h.shadowBranchesToDelete, h.committedFileSet)
 	} else {
 		h.s.updateBaseCommitIfChanged(h.logCtx, state, h.newHead)
 	}
 	return nil
+}
+
+// shouldCondenseWithOverlapCheck returns true if the session should be condensed
+// into this commit. Requires both that hasNew is true AND that the session's files
+// overlap with the committed files with matching content.
+//
+// This prevents stale sessions (ACTIVE sessions where the agent was killed, or
+// ENDED/IDLE sessions with carry-forward files) from being condensed into every
+// unrelated commit.
+//
+// filesTouchedBefore is populated from:
+//   - state.FilesTouched for IDLE/ENDED sessions (set by SaveChanges)
+//   - transcript extraction for ACTIVE sessions with empty FilesTouched
+//
+// When filesTouchedBefore is empty (transcript extraction failed + no SaveChanges
+// yet), we trust hasNew to avoid data loss for mid-turn commits.
+func (h *postCommitActionHandler) shouldCondenseWithOverlapCheck() bool {
+	if !h.hasNew {
+		return false
+	}
+	if len(h.filesTouchedBefore) == 0 {
+		return true // Fail-open: no file list to check against
+	}
+	// Only check files that were actually changed in this commit.
+	// Without this, files that exist in the tree but weren't changed
+	// would pass the "modified file" check in filesOverlapWithContent
+	// (because the file exists in the parent tree), causing stale
+	// sessions to be incorrectly condensed.
+	var committedTouchedFiles []string
+	for _, f := range h.filesTouchedBefore {
+		if _, ok := h.committedFileSet[f]; ok {
+			committedTouchedFiles = append(committedTouchedFiles, f)
+		}
+	}
+	if len(committedTouchedFiles) == 0 {
+		return false
+	}
+	return filesOverlapWithContent(h.repo, h.shadowBranchName, h.commit, committedTouchedFiles)
 }
 
 func (h *postCommitActionHandler) HandleDiscardIfNoFiles(state *session.State) error {
