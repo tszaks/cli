@@ -691,7 +691,7 @@ func TestPostCommit_FilesTouched_ResetsAfterCondensation(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "A.txt"), []byte("file A"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "B.txt"), []byte("file B"), 0o644))
 
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{"A.txt", "B.txt"},
@@ -758,7 +758,7 @@ func TestPostCommit_FilesTouched_ResetsAfterCondensation(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "C.txt"), []byte("file C"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "D.txt"), []byte("file D"), 0o644))
 
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{"C.txt", "D.txt"},
@@ -950,7 +950,7 @@ func TestPostCommit_ActiveSession_CarryForward_PartialCommit(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "C.txt"), []byte("file C"), 0o644))
 
 	// Save checkpoint with all three files
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{"A.txt", "B.txt", "C.txt"},
@@ -1046,7 +1046,7 @@ func TestPostCommit_ActiveSession_CarryForward_AllCommitted(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "A.txt"), []byte("file A"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "B.txt"), []byte("file B"), 0o644))
 
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{"A.txt", "B.txt"},
@@ -1194,12 +1194,12 @@ func TestHandleTurnEnd_PartialFailure(t *testing.T) {
 	require.NoError(t, s.PostCommit())
 
 	// Write new content and create a second checkpoint on the shadow branch.
-	// Use SaveChanges directly (instead of setupSessionWithCheckpoint) so that
+	// Use SaveStep directly (instead of setupSessionWithCheckpoint) so that
 	// second.txt is included in FilesTouched — the overlap check needs it.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "second.txt"), []byte("second file"), 0o644))
 	metadataDir := ".entire/metadata/" + sessionID
 	metadataDirAbs := filepath.Join(dir, metadataDir)
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"test.txt"},
 		NewFiles:       []string{"second.txt"},
@@ -1210,7 +1210,7 @@ func TestHandleTurnEnd_PartialFailure(t *testing.T) {
 		AuthorName:     "Test",
 		AuthorEmail:    "test@test.com",
 	})
-	require.NoError(t, err, "SaveChanges should succeed for second checkpoint")
+	require.NoError(t, err, "SaveStep should succeed for second checkpoint")
 	state, err = s.loadSessionState(sessionID)
 	require.NoError(t, err)
 	state.Phase = session.PhaseActive
@@ -1287,9 +1287,9 @@ func setupSessionWithCheckpoint(t *testing.T, s *ManualCommitStrategy, _ *git.Re
 		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
 		[]byte(transcript), 0o644))
 
-	// SaveChanges creates the shadow branch and checkpoint
+	// SaveStep creates the shadow branch and checkpoint
 	// Include test.txt as a modified file so it's saved to the shadow branch
-	err := s.SaveChanges(SaveContext{
+	err := s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"test.txt"},
 		NewFiles:       []string{},
@@ -1300,7 +1300,7 @@ func setupSessionWithCheckpoint(t *testing.T, s *ManualCommitStrategy, _ *git.Re
 		AuthorName:     "Test",
 		AuthorEmail:    "test@test.com",
 	})
-	require.NoError(t, err, "SaveChanges should succeed to create shadow branch content")
+	require.NoError(t, err, "SaveStep should succeed to create shadow branch content")
 }
 
 // commitWithCheckpointTrailer creates a commit on the current branch with the
@@ -1567,7 +1567,7 @@ func TestPostCommit_EndedSessionCarryForward_NotCondensedIntoUnrelatedCommit(t *
 		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
 		[]byte(transcript), 0o644))
 
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      newSessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{"new-feature.txt"},
@@ -1699,7 +1699,7 @@ func TestPostCommit_StaleActiveSession_NotCondensed(t *testing.T) {
 		filepath.Join(metadataDirAbs, paths.TranscriptFileName),
 		[]byte(transcript), 0o644))
 
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      newSessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{"new-feature.txt"},
