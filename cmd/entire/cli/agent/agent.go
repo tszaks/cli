@@ -69,9 +69,6 @@ type Agent interface {
 
 	// --- Legacy methods (will move to optional interfaces in Phase 4) ---
 
-	// SupportsHooks returns true if agent supports lifecycle hooks.
-	SupportsHooks() bool
-
 	// ParseHookInput parses hook callback input from stdin.
 	ParseHookInput(hookType HookType, reader io.Reader) (*HookInput, error)
 

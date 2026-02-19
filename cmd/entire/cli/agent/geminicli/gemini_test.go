@@ -80,13 +80,6 @@ func TestDetectPresence(t *testing.T) {
 	})
 }
 
-func TestSupportsHooks(t *testing.T) {
-	ag := &GeminiCLIAgent{}
-	if !ag.SupportsHooks() {
-		t.Error("SupportsHooks() = false, want true")
-	}
-}
-
 func TestParseHookInput_SessionStart(t *testing.T) {
 	ag := &GeminiCLIAgent{}
 

@@ -18,7 +18,6 @@ func (m *mockAgent) Type() AgentType               { return mockAgentType }
 func (m *mockAgent) Description() string           { return "Mock agent for testing" }
 func (m *mockAgent) IsPreview() bool               { return false }
 func (m *mockAgent) DetectPresence() (bool, error) { return false, nil }
-func (m *mockAgent) SupportsHooks() bool           { return false }
 
 //nolint:nilnil // Mock implementation
 func (m *mockAgent) ParseHookInput(_ HookType, _ io.Reader) (*HookInput, error) {

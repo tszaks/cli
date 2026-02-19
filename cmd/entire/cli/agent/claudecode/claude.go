@@ -72,11 +72,6 @@ func (c *ClaudeCodeAgent) DetectPresence() (bool, error) {
 	return false, nil
 }
 
-// SupportsHooks returns true as Claude Code supports lifecycle hooks.
-func (c *ClaudeCodeAgent) SupportsHooks() bool {
-	return true
-}
-
 // ParseHookInput parses Claude Code hook input from stdin.
 func (c *ClaudeCodeAgent) ParseHookInput(hookType agent.HookType, reader io.Reader) (*agent.HookInput, error) {
 	data, err := io.ReadAll(reader)
