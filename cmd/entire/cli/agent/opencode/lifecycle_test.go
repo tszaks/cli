@@ -159,6 +159,29 @@ func TestParseHookEvent_MalformedJSON(t *testing.T) {
 	}
 }
 
+func TestFormatResumeCommand(t *testing.T) {
+	t.Parallel()
+
+	ag := &OpenCodeAgent{}
+	cmd := ag.FormatResumeCommand("sess-abc123")
+
+	expected := "opencode -s sess-abc123"
+	if cmd != expected {
+		t.Errorf("expected %q, got %q", expected, cmd)
+	}
+}
+
+func TestFormatResumeCommand_Empty(t *testing.T) {
+	t.Parallel()
+
+	ag := &OpenCodeAgent{}
+	cmd := ag.FormatResumeCommand("")
+
+	if cmd != "opencode" {
+		t.Errorf("expected %q, got %q", "opencode", cmd)
+	}
+}
+
 func TestHookNames(t *testing.T) {
 	t.Parallel()
 

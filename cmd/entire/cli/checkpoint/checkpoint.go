@@ -357,6 +357,12 @@ type SessionContent struct {
 
 	// Context is the context.md content
 	Context string
+
+	// ExportData holds the agent's native export format (e.g., OpenCode export JSON).
+	// Used by agents whose primary storage isn't file-based (OpenCode uses SQLite).
+	// At resume/rewind time, this is imported back into the agent's storage.
+	// Empty for agents where the transcript file is sufficient (Claude, Gemini).
+	ExportData []byte
 }
 
 // CommittedMetadata contains the metadata stored in metadata.json for each checkpoint.

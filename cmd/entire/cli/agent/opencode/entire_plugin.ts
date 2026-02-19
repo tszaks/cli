@@ -21,6 +21,8 @@ export const EntirePlugin: Plugin = async ({ client, directory, $ }) => {
   // partStore: keyed by message ID, stores accumulated parts from message.part.updated events
   const partStore = new Map<string, any[]>()
   let currentSessionID: string | null = null
+  // Full session info from session.created — needed for OpenCode export format on resume/rewind
+  let currentSessionInfo: any = null
 
   // Ensure transcript directory exists
   await $`mkdir -p ${transcriptDir}`.quiet().nothrow()
@@ -125,6 +127,31 @@ export const EntirePlugin: Plugin = async ({ client, directory, $ }) => {
     }
   }
 
+  /**
+   * Write session in OpenCode's native export format (JSON).
+   * This file is used by `opencode import` during resume/rewind to restore
+   * the session into OpenCode's SQLite database with the original session ID.
+   */
+  async function writeExportJSON(sessionID: string): Promise<string> {
+    const exportPath = `${transcriptDir}/${sessionID}.export.json`
+    try {
+      const messages = Array.from(messageStore.values())
+        .sort((a, b) => (a.time?.created ?? 0) - (b.time?.created ?? 0))
+
+      const exportData = {
+        info: currentSessionInfo ?? { id: sessionID },
+        messages: messages.map(msg => ({
+          info: msg,
+          parts: (partStore.get(msg.id) ?? []),
+        })),
+      }
+      await Bun.write(exportPath, JSON.stringify(exportData))
+    } catch {
+      // Silently ignore — plugin failures must not crash OpenCode
+    }
+    return exportPath
+  }
+
   return {
     event: async ({ event }) => {
       switch (event.type) {
@@ -132,6 +159,7 @@ export const EntirePlugin: Plugin = async ({ client, directory, $ }) => {
           const session = (event as any).properties?.info
           if (!session?.id) break
           currentSessionID = session.id
+          currentSessionInfo = session
           await callHook("session-start", {
             session_id: session.id,
             transcript_path: `${transcriptDir}/${session.id}.jsonl`,
@@ -183,6 +211,7 @@ export const EntirePlugin: Plugin = async ({ client, directory, $ }) => {
           const sessionID = (event as any).properties?.sessionID
           if (!sessionID) break
           const transcriptPath = await writeTranscriptWithFallback(sessionID)
+          await writeExportJSON(sessionID)
           await callHook("turn-end", {
             session_id: sessionID,
             transcript_path: transcriptPath,
@@ -203,14 +232,16 @@ export const EntirePlugin: Plugin = async ({ client, directory, $ }) => {
         case "session.deleted": {
           const session = (event as any).properties?.info
           if (!session?.id) break
-          // Write final transcript before signaling session end
+          // Write final transcript + export JSON before signaling session end
           if (messageStore.size > 0) {
             await writeTranscriptFromMemory(session.id)
+            await writeExportJSON(session.id)
           }
           seenUserMessages.clear()
           messageStore.clear()
           partStore.clear()
           currentSessionID = null
+          currentSessionInfo = null
           await callHook("session-end", {
             session_id: session.id,
             transcript_path: `${transcriptDir}/${session.id}.jsonl`,

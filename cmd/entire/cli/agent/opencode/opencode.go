@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
@@ -147,6 +148,8 @@ func (a *OpenCodeAgent) WriteSession(session *agent.AgentSession) error {
 	if len(session.NativeData) == 0 {
 		return errors.New("no session data to write")
 	}
+
+	// 1. Write JSONL file (for Entire's internal checkpoint use)
 	dir := filepath.Dir(session.SessionRef)
 	//nolint:gosec // G301: Session directory needs standard permissions
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -155,11 +158,59 @@ func (a *OpenCodeAgent) WriteSession(session *agent.AgentSession) error {
 	if err := os.WriteFile(session.SessionRef, session.NativeData, 0o600); err != nil {
 		return fmt.Errorf("failed to write session data: %w", err)
 	}
+
+	// 2. If we have export data, import the session into OpenCode's SQLite.
+	//    This enables `opencode -s <id>` for both resume and rewind.
+	if len(session.ExportData) == 0 {
+		return nil // No export data — skip SQLite import (graceful degradation)
+	}
+
+	if err := a.importSessionIntoSQLite(session.SessionID, session.ExportData); err != nil {
+		// Non-fatal: SQLite import is best-effort. The JSONL file is written,
+		// and the user can always run `opencode import <file>` manually.
+		fmt.Fprintf(os.Stderr, "warning: could not import session into OpenCode: %v\n", err)
+	}
+
 	return nil
 }
 
+// importSessionIntoSQLite writes the export JSON to a temp file and runs
+// `opencode import` to restore the session into OpenCode's SQLite database.
+// For rewind (session already exists), messages are deleted first so the
+// reimport replaces them with the checkpoint-state messages.
+func (a *OpenCodeAgent) importSessionIntoSQLite(sessionID string, exportData []byte) error {
+	// If the session already exists in SQLite, delete its messages first.
+	// opencode import uses ON CONFLICT DO NOTHING, so existing messages
+	// would be skipped without this step (breaking rewind).
+	if sessionExistsInSQLite(sessionID) {
+		if err := deleteMessagesFromSQLite(sessionID); err != nil {
+			return fmt.Errorf("failed to clear existing messages: %w", err)
+		}
+	}
+
+	// Write export JSON to a temp file for opencode import
+	tmpFile, err := os.CreateTemp("", "entire-opencode-export-*.json")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.Write(exportData); err != nil {
+		_ = tmpFile.Close()
+		return fmt.Errorf("failed to write export data: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	return runOpenCodeImport(tmpFile.Name())
+}
+
 func (a *OpenCodeAgent) FormatResumeCommand(sessionID string) string {
-	return "opencode --session " + sessionID
+	if strings.TrimSpace(sessionID) == "" {
+		return "opencode"
+	}
+	return "opencode -s " + sessionID
 }
 
 // nonAlphanumericRegex matches any non-alphanumeric character.

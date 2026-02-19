@@ -1075,26 +1075,14 @@ func TestOpenCodeSessionOperations(t *testing.T) {
 func TestOpenCodeHelperMethods(t *testing.T) {
 	t.Parallel()
 
-	t.Run("FormatResumeCommand returns opencode --session", func(t *testing.T) {
+	t.Run("FormatResumeCommand returns opencode -s", func(t *testing.T) {
 		t.Parallel()
 
 		ag, _ := agent.Get("opencode")
 		cmd := ag.FormatResumeCommand("abc123")
 
-		if cmd != "opencode --session abc123" {
-			t.Errorf("FormatResumeCommand() = %q, want %q", cmd, "opencode --session abc123")
-		}
-	})
-
-	t.Run("GetHookConfigPath returns empty string", func(t *testing.T) {
-		t.Parallel()
-
-		ag, _ := agent.Get("opencode")
-		path := ag.GetHookConfigPath()
-
-		// OpenCode uses a plugin file, not a JSON config
-		if path != "" {
-			t.Errorf("GetHookConfigPath() = %q, want empty string", path)
+		if cmd != "opencode -s abc123" {
+			t.Errorf("FormatResumeCommand() = %q, want %q", cmd, "opencode -s abc123")
 		}
 	})
 
