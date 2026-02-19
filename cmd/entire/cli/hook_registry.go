@@ -132,8 +132,13 @@ func newAgentHookVerbCmdWithLogging(agentName agent.AgentName, hookName string) 
 				return fmt.Errorf("failed to get agent %q: %w", agentName, agentErr)
 			}
 
+			handler, ok := ag.(agent.HookSupport)
+			if !ok {
+				return fmt.Errorf("agent %q does not support hooks", agentName)
+			}
+
 			// Use cmd.InOrStdin() to support testing with cmd.SetIn()
-			event, parseErr := ag.ParseHookEvent(hookName, cmd.InOrStdin())
+			event, parseErr := handler.ParseHookEvent(hookName, cmd.InOrStdin())
 			if parseErr != nil {
 				return fmt.Errorf("failed to parse hook event: %w", parseErr)
 			}

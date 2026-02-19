@@ -41,13 +41,6 @@ type Agent interface {
 	// Examples: [".claude"] for Claude, [".gemini"] for Gemini.
 	ProtectedDirs() []string
 
-	// --- Event Mapping ---
-
-	// ParseHookEvent translates an agent-native hook into a normalized lifecycle Event.
-	// Returns nil if the hook has no lifecycle significance (e.g., pass-through hooks).
-	// This is the core contribution surface for new agent implementations.
-	ParseHookEvent(hookName string, stdin io.Reader) (*Event, error)
-
 	// --- Transcript Storage ---
 
 	// ReadTranscript reads the raw transcript bytes for a session.
@@ -93,6 +86,11 @@ type HookSupport interface {
 	// These become subcommands under `entire hooks <agent>`.
 	// e.g., ["stop", "user-prompt-submit", "session-start", "session-end"]
 	HookNames() []string
+
+	// ParseHookEvent translates an agent-native hook into a normalized lifecycle Event.
+	// Returns nil if the hook has no lifecycle significance (e.g., pass-through hooks).
+	// This is the core contribution surface for new agent implementations.
+	ParseHookEvent(hookName string, stdin io.Reader) (*Event, error)
 
 	// InstallHooks installs agent-specific hooks.
 	// If localDev is true, hooks point to local development build.
