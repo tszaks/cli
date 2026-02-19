@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
 )
 
 const (
@@ -128,7 +127,7 @@ func TestIsEnabled(t *testing.T) {
 	}
 
 	// Test 3: Settings with enabled: true - should return true
-	settingsContent = `{"enabled": true}`
+	settingsContent = testSettingsEnabled
 	if err := os.WriteFile(EntireSettingsFile, []byte(settingsContent), 0o644); err != nil {
 		t.Fatalf("Failed to write settings file: %v", err)
 	}
@@ -162,7 +161,7 @@ func TestLoadEntireSettings_LocalOverridesStrategy(t *testing.T) {
 		t.Fatalf("Failed to write settings file: %v", err)
 	}
 
-	localSettings := `{"enabled": true}`
+	localSettings := testSettingsEnabled
 	if err := os.WriteFile(EntireSettingsLocalFile, []byte(localSettings), 0o644); err != nil {
 		t.Fatalf("Failed to write local settings file: %v", err)
 	}
@@ -253,7 +252,7 @@ func TestLoadEntireSettings_OnlyLocalFileExists(t *testing.T) {
 	setupLocalOverrideTestDir(t)
 
 	// No base settings file
-	localSettings := `{"enabled": true}`
+	localSettings := testSettingsEnabled
 	if err := os.WriteFile(EntireSettingsLocalFile, []byte(localSettings), 0o644); err != nil {
 		t.Fatalf("Failed to write local settings file: %v", err)
 	}
