@@ -534,31 +534,6 @@ func ReadAllSessionPromptsFromTree(tree *object.Tree, checkpointPath string, ses
 	return prompts
 }
 
-// ReadSessionPromptFromShadow reads the first prompt for a session from the shadow branch.
-// Returns an empty string if the prompt cannot be read.
-func ReadSessionPromptFromShadow(repo *git.Repository, baseCommit, worktreeID, sessionID string) string {
-	// Get shadow branch for this base commit using worktree-specific naming
-	shadowBranchName := checkpoint.ShadowBranchNameForCommit(baseCommit, worktreeID)
-	ref, err := repo.Reference(plumbing.NewBranchReferenceName(shadowBranchName), true)
-	if err != nil {
-		return ""
-	}
-
-	commit, err := repo.CommitObject(ref.Hash())
-	if err != nil {
-		return ""
-	}
-
-	tree, err := commit.Tree()
-	if err != nil {
-		return ""
-	}
-
-	// Build the path to prompt.txt: .entire/metadata/<session-id>/prompt.txt
-	checkpointPath := paths.EntireMetadataDir + "/" + sessionID
-	return ReadSessionPromptFromTree(tree, checkpointPath)
-}
-
 // GetRemoteMetadataBranchTree returns the tree object for origin/entire/checkpoints/v1.
 func GetRemoteMetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
 	refName := plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName)
