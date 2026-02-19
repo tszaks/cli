@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -43,6 +44,10 @@ type EntireSettings struct {
 	// Telemetry controls anonymous usage analytics.
 	// nil = not asked yet (show prompt), true = opted in, false = opted out
 	Telemetry *bool `json:"telemetry,omitempty"`
+
+	// Deprecated: no longer used. Exists to tolerate old settings files
+	// that still contain "strategy": "auto-commit" or similar.
+	Strategy string `json:"strategy,omitempty"`
 }
 
 // Load loads the Entire settings from .entire/settings.json,
@@ -252,6 +257,35 @@ func (s *EntireSettings) IsPushSessionsDisabled() bool {
 		return !boolVal // disabled = !push_sessions
 	}
 	return false
+}
+
+// FilesWithDeprecatedStrategy returns the relative paths of settings files
+// that still contain the deprecated "strategy" field.
+func FilesWithDeprecatedStrategy() []string {
+	var files []string
+	for _, rel := range []string{EntireSettingsFile, EntireSettingsLocalFile} {
+		abs, err := paths.AbsPath(rel)
+		if err != nil {
+			abs = rel // Fallback to relative
+		}
+		s, err := LoadFromFile(abs)
+		if err != nil || s.Strategy == "" {
+			continue
+		}
+		files = append(files, rel)
+	}
+	return files
+}
+
+// WriteDeprecatedStrategyWarnings writes user-friendly deprecation warnings
+// for each settings file that still contains the "strategy" field.
+// Returns true if any warnings were written.
+func WriteDeprecatedStrategyWarnings(w io.Writer) bool {
+	files := FilesWithDeprecatedStrategy()
+	for _, f := range files {
+		fmt.Fprintf(w, "Note: \"%s\" in %s is no longer needed and can be removed.\n", "strategy", f)
+	}
+	return len(files) > 0
 }
 
 // Save saves the settings to .entire/settings.json.

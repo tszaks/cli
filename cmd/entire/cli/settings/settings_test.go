@@ -131,6 +131,75 @@ func TestLoad_LocalSettingsRejectsUnknownKeys(t *testing.T) {
 	}
 }
 
+func TestLoad_AcceptsDeprecatedStrategyField(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	entireDir := filepath.Join(tmpDir, ".entire")
+	if err := os.MkdirAll(entireDir, 0o755); err != nil {
+		t.Fatalf("failed to create .entire directory: %v", err)
+	}
+
+	settingsFile := filepath.Join(entireDir, "settings.json")
+	if err := os.WriteFile(settingsFile, []byte(`{"enabled": true, "strategy": "auto-commit"}`), 0o644); err != nil {
+		t.Fatalf("failed to write settings file: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
+		t.Fatalf("failed to create .git directory: %v", err)
+	}
+
+	t.Chdir(tmpDir)
+
+	s, err := Load()
+	if err != nil {
+		t.Fatalf("expected no error for deprecated strategy field, got: %v", err)
+	}
+	if s.Strategy != "auto-commit" {
+		t.Errorf("expected strategy 'auto-commit', got %q", s.Strategy)
+	}
+}
+
+func TestFilesWithDeprecatedStrategy(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	entireDir := filepath.Join(tmpDir, ".entire")
+	if err := os.MkdirAll(entireDir, 0o755); err != nil {
+		t.Fatalf("failed to create .entire directory: %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
+		t.Fatalf("failed to create .git directory: %v", err)
+	}
+
+	t.Chdir(tmpDir)
+
+	// No strategy field → empty result
+	if err := os.WriteFile(filepath.Join(entireDir, "settings.json"), []byte(`{"enabled": true}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if files := FilesWithDeprecatedStrategy(); len(files) != 0 {
+		t.Errorf("expected no deprecated files, got %v", files)
+	}
+
+	// Add strategy to project settings
+	if err := os.WriteFile(filepath.Join(entireDir, "settings.json"), []byte(`{"enabled": true, "strategy": "auto-commit"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := FilesWithDeprecatedStrategy()
+	if len(files) != 1 || files[0] != EntireSettingsFile {
+		t.Errorf("expected [%s], got %v", EntireSettingsFile, files)
+	}
+
+	// Also add strategy to local settings
+	if err := os.WriteFile(filepath.Join(entireDir, "settings.local.json"), []byte(`{"strategy": "manual-commit"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files = FilesWithDeprecatedStrategy()
+	if len(files) != 2 {
+		t.Errorf("expected 2 deprecated files, got %v", files)
+	}
+}
+
 // containsUnknownField checks if the error message indicates an unknown field
 func containsUnknownField(msg string) bool {
 	// Go's json package reports unknown fields with this message format
