@@ -1819,10 +1819,6 @@ func TestPostCommit_IdleSessionEmptyFilesTouched_NotCondensed(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	head, err := repo.Head()
-	require.NoError(t, err)
-	newHead := head.Hash().String()
-
 	// Run PostCommit
 	err = s.PostCommit()
 	require.NoError(t, err)
@@ -1836,5 +1832,4 @@ func TestPostCommit_IdleSessionEmptyFilesTouched_NotCondensed(t *testing.T) {
 	assert.Equal(t, session.PhaseIdle, idleState.Phase,
 		"IDLE session should remain IDLE")
 	// BaseCommit is NOT updated for non-ACTIVE sessions (updateBaseCommitIfChanged skips them)
-	_ = newHead
 }

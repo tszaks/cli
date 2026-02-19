@@ -533,8 +533,8 @@ func (h *postCommitActionHandler) HandleCondenseIfFilesTouched(state *session.St
 // unrelated commit.
 //
 // filesTouchedBefore is populated from:
-//   - state.FilesTouched for IDLE/ENDED sessions (set by SaveChanges)
-//   - transcript extraction for ACTIVE sessions with empty FilesTouched
+//   - state.FilesTouched for IDLE/ENDED sessions (set via SaveStep/SaveTaskStep -> mergeFilesTouched)
+//   - transcript extraction for ACTIVE sessions when FilesTouched is empty
 //
 // When filesTouchedBefore is empty:
 //   - For ACTIVE sessions: fail-open (trust hasNew) because the agent may be
