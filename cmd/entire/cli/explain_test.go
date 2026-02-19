@@ -2494,6 +2494,8 @@ func TestRunExplain_SessionFlagFiltersListView(t *testing.T) {
 	tmp := t.TempDir()
 	for _, args := range [][]string{
 		{"init"},
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test User"},
 		{"commit", "--allow-empty", "-m", "init"},
 	} {
 		cmd := exec.CommandContext(context.Background(), "git", args...)
