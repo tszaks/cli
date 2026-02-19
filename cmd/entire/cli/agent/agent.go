@@ -43,11 +43,6 @@ type Agent interface {
 
 	// --- Event Mapping ---
 
-	// HookNames returns the hook verbs this agent supports.
-	// These become subcommands under `entire hooks <agent>`.
-	// e.g., ["stop", "user-prompt-submit", "session-start", "session-end"]
-	HookNames() []string
-
 	// ParseHookEvent translates an agent-native hook into a normalized lifecycle Event.
 	// Returns nil if the hook has no lifecycle significance (e.g., pass-through hooks).
 	// This is the core contribution surface for new agent implementations.
@@ -93,6 +88,11 @@ type Agent interface {
 // install and manage hooks that notify Entire of agent events.
 type HookSupport interface {
 	Agent
+
+	// HookNames returns the hook verbs this agent supports.
+	// These become subcommands under `entire hooks <agent>`.
+	// e.g., ["stop", "user-prompt-submit", "session-start", "session-end"]
+	HookNames() []string
 
 	// InstallHooks installs agent-specific hooks.
 	// If localDev is true, hooks point to local development build.

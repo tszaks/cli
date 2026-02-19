@@ -32,7 +32,6 @@ func (m *mockLifecycleAgent) Description() string                    { return "M
 func (m *mockLifecycleAgent) IsPreview() bool                        { return false }
 func (m *mockLifecycleAgent) DetectPresence() (bool, error)          { return false, nil }
 func (m *mockLifecycleAgent) ProtectedDirs() []string                { return nil }
-func (m *mockLifecycleAgent) HookNames() []string                    { return nil }
 func (m *mockLifecycleAgent) GetSessionID(_ *agent.HookInput) string { return "" }
 
 //nolint:nilnil // Mock implementation
