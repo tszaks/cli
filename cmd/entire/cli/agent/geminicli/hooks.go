@@ -369,18 +369,6 @@ func (g *GeminiCLIAgent) AreHooksInstalled() bool {
 		hasEntireHook(settings.Hooks.Notification)
 }
 
-// GetSupportedHooks returns the hook types Gemini CLI supports.
-func (g *GeminiCLIAgent) GetSupportedHooks() []agent.HookType {
-	return []agent.HookType{
-		agent.HookSessionStart,
-		agent.HookSessionEnd,       // Maps to Gemini's SessionEnd (explicit exit/logout)
-		agent.HookStop,             // Maps to Gemini's AfterAgent (end of response)
-		agent.HookUserPromptSubmit, // Maps to Gemini's BeforeAgent (user prompt)
-		agent.HookPreToolUse,       // Maps to Gemini's BeforeTool
-		agent.HookPostToolUse,      // Maps to Gemini's AfterTool
-	}
-}
-
 // Helper functions for hook management
 
 // addGeminiHook adds a hook entry to matchers.

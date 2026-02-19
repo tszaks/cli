@@ -394,18 +394,6 @@ func (c *ClaudeCodeAgent) AreHooksInstalled() bool {
 		hookCommandExists(settings.Hooks.Stop, "go run ${CLAUDE_PROJECT_DIR}/cmd/entire/main.go rewind claude-hook --stop")
 }
 
-// GetSupportedHooks returns the hook types Claude Code supports.
-func (c *ClaudeCodeAgent) GetSupportedHooks() []agent.HookType {
-	return []agent.HookType{
-		agent.HookSessionStart,
-		agent.HookSessionEnd,
-		agent.HookUserPromptSubmit,
-		agent.HookStop,
-		agent.HookPreToolUse,
-		agent.HookPostToolUse,
-	}
-}
-
 // Helper functions for hook management
 
 func hookCommandExists(matchers []ClaudeHookMatcher, command string) bool {

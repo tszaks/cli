@@ -464,30 +464,6 @@ func TestGetProjectHash(t *testing.T) {
 	}
 }
 
-func TestGetSupportedHooks(t *testing.T) {
-	ag := &GeminiCLIAgent{}
-	hooks := ag.GetSupportedHooks()
-
-	expected := []agent.HookType{
-		agent.HookSessionStart,
-		agent.HookSessionEnd,       // Maps to Gemini's SessionEnd (explicit exit/logout)
-		agent.HookStop,             // Maps to Gemini's AfterAgent (end of response)
-		agent.HookUserPromptSubmit, // Maps to Gemini's BeforeAgent
-		agent.HookPreToolUse,       // Maps to Gemini's BeforeTool
-		agent.HookPostToolUse,      // Maps to Gemini's AfterTool
-	}
-
-	if len(hooks) != len(expected) {
-		t.Errorf("GetSupportedHooks() returned %d hooks, want %d", len(hooks), len(expected))
-	}
-
-	for i, hook := range expected {
-		if hooks[i] != hook {
-			t.Errorf("GetSupportedHooks()[%d] = %v, want %v", i, hooks[i], hook)
-		}
-	}
-}
-
 // Chunking tests
 
 func TestChunkTranscript_SmallContent(t *testing.T) {

@@ -111,9 +111,6 @@ type HookSupport interface {
 
 	// AreHooksInstalled checks if hooks are currently installed
 	AreHooksInstalled() bool
-
-	// GetSupportedHooks returns the hook types this agent supports
-	GetSupportedHooks() []HookType
 }
 
 // FileWatcher is implemented by agents that use file-based detection.
