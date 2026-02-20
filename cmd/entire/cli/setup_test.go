@@ -553,8 +553,7 @@ func TestIsFullyEnabled_NotEnabled(t *testing.T) {
 	setupTestDir(t)
 
 	// No settings, no hooks, no directory - should not be fully enabled
-	enabled, _, _ := isFullyEnabled()
-	if enabled {
+	if isFullyEnabled() {
 		t.Error("isFullyEnabled() should return false when nothing is set up")
 	}
 }
@@ -563,8 +562,7 @@ func TestIsFullyEnabled_SettingsDisabled(t *testing.T) {
 	setupTestDir(t)
 	writeSettings(t, testSettingsDisabled)
 
-	enabled, _, _ := isFullyEnabled()
-	if enabled {
+	if isFullyEnabled() {
 		t.Error("isFullyEnabled() should return false when settings have enabled=false")
 	}
 }

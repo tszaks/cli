@@ -98,22 +98,6 @@ Strategies: manual-commit (default), auto-commit`,
 				}
 				return setupAgentHooksNonInteractive(cmd.OutOrStdout(), ag, strategyFlag, localDev, forceHooks, skipPushSessions, telemetry)
 			}
-			// Check if already fully enabled before prompting for agents.
-			// Only applies to interactive path (no --strategy flag) with no config flags.
-			if strategyFlag == "" {
-				hasConfigFlags := forceHooks || skipPushSessions || !telemetry || useLocalSettings || useProjectSettings || localDev
-				if !hasConfigFlags {
-					if fullyEnabled, agentDesc, configPath := isFullyEnabled(); fullyEnabled {
-						w := cmd.OutOrStdout()
-						fmt.Fprintln(w, "Already enabled. Everything looks good.")
-						fmt.Fprintln(w)
-						fmt.Fprintf(w, "  Agent: %s\n", agentDesc)
-						fmt.Fprintf(w, "  Config: %s\n", configPath)
-						return nil
-					}
-				}
-			}
-
 			// Detect or prompt for agents
 			agents, err := detectOrSelectAgent(cmd.OutOrStdout(), nil)
 			if err != nil {
@@ -195,48 +179,20 @@ To completely remove Entire integrations from this repository, use --uninstall:
 }
 
 // isFullyEnabled checks whether Entire is already fully set up.
-// Returns whether it's fully enabled, and if so, the agent type display name and config file path.
-func isFullyEnabled() (enabled bool, agentDesc string, configPath string) {
-	// Check settings exist and Enabled == true
+// Returns true when settings are enabled, agent hooks are installed,
+// git hooks are installed, and the .entire directory exists.
+func isFullyEnabled() bool {
 	s, err := LoadEntireSettings()
 	if err != nil || !s.Enabled {
-		return false, "", ""
+		return false
 	}
-
-	// Check any agent hooks installed (not just Claude Code — works with Gemini too)
-	installedAgents := GetAgentsWithHooksInstalled()
-	if len(installedAgents) == 0 {
-		return false, "", ""
+	if len(GetAgentsWithHooksInstalled()) == 0 {
+		return false
 	}
-
-	// Check git hooks installed
 	if !strategy.IsGitHookInstalled() {
-		return false, "", ""
+		return false
 	}
-
-	// Check .entire directory exists
-	if !checkEntireDirExists() {
-		return false, "", ""
-	}
-
-	// Determine agent description from first installed agent
-	desc := string(installedAgents[0]) // fallback to agent name
-	if ag, err := agent.Get(installedAgents[0]); err == nil {
-		desc = string(ag.Type())
-	}
-
-	// Determine config path - check if local settings exists, otherwise show project settings
-	entireDirAbs, err := paths.AbsPath(paths.EntireDir)
-	if err != nil {
-		entireDirAbs = paths.EntireDir
-	}
-	configDisplay := configDisplayProject
-	localSettingsPath := filepath.Join(entireDirAbs, "settings.local.json")
-	if _, err := os.Stat(localSettingsPath); err == nil {
-		configDisplay = configDisplayLocal
-	}
-
-	return true, desc, configDisplay
+	return checkEntireDirExists()
 }
 
 // runEnableWithStrategy enables Entire with a specified strategy (non-interactive).
