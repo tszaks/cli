@@ -96,6 +96,9 @@ Strategies: manual-commit (default), auto-commit`,
 					printWrongAgentError(cmd.ErrOrStderr(), agentName)
 					return NewSilentError(errors.New("wrong agent name"))
 				}
+				// --agent is a targeted operation: set up this specific agent without
+				// affecting other agents. Unlike the interactive path, it does not
+				// uninstall hooks for other previously-enabled agents.
 				return setupAgentHooksNonInteractive(cmd.OutOrStdout(), ag, strategyFlag, localDev, forceHooks, skipPushSessions, telemetry)
 			}
 			// Detect or prompt for agents
@@ -176,23 +179,6 @@ To completely remove Entire integrations from this repository, use --uninstall:
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt (use with --uninstall)")
 
 	return cmd
-}
-
-// isFullyEnabled checks whether Entire is already fully set up.
-// Returns true when settings are enabled, agent hooks are installed,
-// git hooks are installed, and the .entire directory exists.
-func isFullyEnabled() bool {
-	s, err := LoadEntireSettings()
-	if err != nil || !s.Enabled {
-		return false
-	}
-	if len(GetAgentsWithHooksInstalled()) == 0 {
-		return false
-	}
-	if !strategy.IsGitHookInstalled() {
-		return false
-	}
-	return checkEntireDirExists()
 }
 
 // runEnableWithStrategy enables Entire with a specified strategy (non-interactive).
@@ -529,13 +515,13 @@ func setupAgentHooks(ag agent.Agent, localDev, forceHooks bool) (int, error) { /
 func detectOrSelectAgent(w io.Writer, selectFn func(available []string) ([]string, error)) ([]agent.Agent, error) {
 	// Check for agents with hooks already installed (re-run detection)
 	installedAgentNames := GetAgentsWithHooksInstalled()
-	isReRun := len(installedAgentNames) > 0
+	hasInstalledHooks := len(installedAgentNames) > 0
 
 	// Try auto-detection
 	detected := agent.DetectAll()
 
 	// First run: use existing auto-detect shortcuts
-	if !isReRun {
+	if !hasInstalledHooks {
 		switch {
 		case len(detected) == 1:
 			fmt.Fprintf(w, "Detected agent: %s\n\n", detected[0].Type())
@@ -553,7 +539,7 @@ func detectOrSelectAgent(w io.Writer, selectFn func(available []string) ([]strin
 
 	// Check if we can prompt interactively
 	if !canPromptInteractively() {
-		if isReRun {
+		if hasInstalledHooks {
 			// Re-run without TTY — keep currently installed agents
 			agents := make([]agent.Agent, 0, len(installedAgentNames))
 			for _, name := range installedAgentNames {
@@ -576,7 +562,7 @@ func detectOrSelectAgent(w io.Writer, selectFn func(available []string) ([]strin
 		return []agent.Agent{defaultAgent}, nil
 	}
 
-	if !isReRun && len(detected) == 0 {
+	if !hasInstalledHooks && len(detected) == 0 {
 		fmt.Fprintln(w, "No agent configuration detected (e.g., .claude or .gemini directory).")
 		fmt.Fprintln(w, "This is normal - some agents don't require a config directory.")
 		fmt.Fprintln(w)

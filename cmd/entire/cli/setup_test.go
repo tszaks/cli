@@ -549,24 +549,6 @@ func TestCheckEntireDirExists(t *testing.T) {
 	}
 }
 
-func TestIsFullyEnabled_NotEnabled(t *testing.T) {
-	setupTestDir(t)
-
-	// No settings, no hooks, no directory - should not be fully enabled
-	if isFullyEnabled() {
-		t.Error("isFullyEnabled() should return false when nothing is set up")
-	}
-}
-
-func TestIsFullyEnabled_SettingsDisabled(t *testing.T) {
-	setupTestDir(t)
-	writeSettings(t, testSettingsDisabled)
-
-	if isFullyEnabled() {
-		t.Error("isFullyEnabled() should return false when settings have enabled=false")
-	}
-}
-
 func TestCountSessionStates(t *testing.T) {
 	setupTestRepo(t)
 
@@ -1154,6 +1136,7 @@ func TestDetectOrSelectAgent_BothDirectoriesExist_NoTTY_UsesAll(t *testing.T) {
 }
 
 // writeClaudeHooksFixture writes a minimal .claude/settings.json with Entire hooks installed.
+// Only the Stop hook is needed — AreHooksInstalled() checks for it first.
 func writeClaudeHooksFixture(t *testing.T) {
 	t.Helper()
 	if err := os.MkdirAll(".claude", 0o755); err != nil {
@@ -1166,6 +1149,24 @@ func writeClaudeHooksFixture(t *testing.T) {
 	}`
 	if err := os.WriteFile(".claude/settings.json", []byte(hooksJSON), 0o644); err != nil {
 		t.Fatalf("Failed to write .claude/settings.json: %v", err)
+	}
+}
+
+// writeGeminiHooksFixture writes a minimal .gemini/settings.json with Entire hooks installed.
+// AreHooksInstalled() checks for any hook command starting with "entire ".
+func writeGeminiHooksFixture(t *testing.T) {
+	t.Helper()
+	if err := os.MkdirAll(".gemini", 0o755); err != nil {
+		t.Fatalf("Failed to create .gemini directory: %v", err)
+	}
+	hooksJSON := `{
+		"hooks": {
+			"enabled": true,
+			"SessionStart": [{"hooks": [{"type": "command", "command": "entire hooks gemini session-start"}]}]
+		}
+	}`
+	if err := os.WriteFile(".gemini/settings.json", []byte(hooksJSON), 0o644); err != nil {
+		t.Fatalf("Failed to write .gemini/settings.json: %v", err)
 	}
 }
 
@@ -1294,5 +1295,107 @@ func TestUninstallDeselectedAgentHooks_KeepsSelectedAgents(t *testing.T) {
 	output := buf.String()
 	if strings.Contains(output, "Removed") {
 		t.Errorf("Should not mention removal when agent is still selected, got: %s", output)
+	}
+}
+
+func TestUninstallDeselectedAgentHooks_MultipleInstalled_DeselectOne(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir
+	setupTestRepo(t)
+
+	// Install both Claude Code and Gemini hooks
+	writeClaudeHooksFixture(t)
+	writeGeminiHooksFixture(t)
+
+	// Verify both are installed
+	installed := GetAgentsWithHooksInstalled()
+	if len(installed) < 2 {
+		t.Fatalf("Expected at least 2 agents installed, got %d", len(installed))
+	}
+
+	// Keep only Claude Code selected (deselect Gemini)
+	claudeAgent, err := agent.Get(agent.AgentNameClaudeCode)
+	if err != nil {
+		t.Fatalf("Failed to get claude-code agent: %v", err)
+	}
+
+	var buf bytes.Buffer
+	err = uninstallDeselectedAgentHooks(&buf, []agent.Agent{claudeAgent})
+	if err != nil {
+		t.Fatalf("uninstallDeselectedAgentHooks() error = %v", err)
+	}
+
+	// Claude Code hooks should remain
+	if !checkClaudeCodeHooksInstalled() {
+		t.Error("Expected Claude Code hooks to remain installed")
+	}
+
+	// Gemini hooks should be removed
+	if checkGeminiCLIHooksInstalled() {
+		t.Error("Expected Gemini CLI hooks to be uninstalled after deselection")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Removed") {
+		t.Errorf("Expected output to mention removal, got: %s", output)
+	}
+}
+
+func TestDetectOrSelectAgent_ReRun_NewlyDetectedAgentPreSelected(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
+	setupTestRepo(t)
+	t.Setenv("ENTIRE_TEST_TTY", "1")
+
+	// Simulate: Claude Code hooks installed from a previous run
+	writeClaudeHooksFixture(t)
+
+	// Simulate: user added .gemini directory since last enable
+	if err := os.MkdirAll(".gemini", 0o755); err != nil {
+		t.Fatalf("Failed to create .gemini directory: %v", err)
+	}
+
+	// Track which agents the selector receives
+	var receivedAvailable []string
+	selectFn := func(available []string) ([]string, error) {
+		receivedAvailable = available
+		// Accept all available agents
+		return available, nil
+	}
+
+	var buf bytes.Buffer
+	agents, err := detectOrSelectAgent(&buf, selectFn)
+	if err != nil {
+		t.Fatalf("detectOrSelectAgent() error = %v", err)
+	}
+
+	// Should have prompted (re-run always prompts)
+	if len(receivedAvailable) == 0 {
+		t.Fatal("Expected interactive prompt on re-run")
+	}
+
+	// Should return both agents (installed + newly detected)
+	if len(agents) < 2 {
+		t.Errorf("Expected at least 2 agents (installed + detected), got %d", len(agents))
+	}
+}
+
+func TestDetectOrSelectAgent_ReRun_EmptySelection_ReturnsError(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
+	setupTestRepo(t)
+	t.Setenv("ENTIRE_TEST_TTY", "1")
+
+	// Install Claude Code hooks (re-run scenario)
+	writeClaudeHooksFixture(t)
+
+	selectFn := func(_ []string) ([]string, error) {
+		return []string{}, nil // user deselected everything
+	}
+
+	var buf bytes.Buffer
+	_, err := detectOrSelectAgent(&buf, selectFn)
+	if err == nil {
+		t.Fatal("Expected error when no agents selected on re-run")
+	}
+	if !strings.Contains(err.Error(), "no agents selected") {
+		t.Errorf("Expected 'no agents selected' error, got: %v", err)
 	}
 }
