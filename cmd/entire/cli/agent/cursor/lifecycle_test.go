@@ -1,6 +1,7 @@
 package cursor
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -385,5 +386,67 @@ func TestParseHookEvent_AllHookTypes(t *testing.T) {
 				t.Errorf("expected event type %v, got %v", tc.expectedType, event.Type)
 			}
 		})
+	}
+}
+
+// --- ReadTranscript ---
+
+func TestReadTranscript_Success(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	transcriptPath := writeSampleTranscript(t, tmpDir)
+
+	ag := &CursorAgent{}
+	data, err := ag.ReadTranscript(transcriptPath)
+	if err != nil {
+		t.Fatalf("ReadTranscript() error = %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("ReadTranscript() returned empty data")
+	}
+
+	// Verify it contains the expected Cursor format markers
+	content := string(data)
+	if !strings.Contains(content, `"role":"user"`) {
+		t.Error("transcript missing 'role' field (Cursor uses 'role', not 'type')")
+	}
+	if !strings.Contains(content, "<user_query>") {
+		t.Error("transcript missing <user_query> tags (Cursor wraps user text)")
+	}
+}
+
+func TestReadTranscript_MissingFile(t *testing.T) {
+	t.Parallel()
+	ag := &CursorAgent{}
+	_, err := ag.ReadTranscript("/nonexistent/path/transcript.jsonl")
+	if err == nil {
+		t.Fatal("ReadTranscript() should error for missing file")
+	}
+}
+
+func TestReadTranscript_MatchesReadSession(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	transcriptPath := writeSampleTranscript(t, tmpDir)
+
+	ag := &CursorAgent{}
+
+	// ReadTranscript
+	transcriptData, err := ag.ReadTranscript(transcriptPath)
+	if err != nil {
+		t.Fatalf("ReadTranscript() error = %v", err)
+	}
+
+	// ReadSession
+	session, err := ag.ReadSession(&agent.HookInput{
+		SessionID:  "compare-session",
+		SessionRef: transcriptPath,
+	})
+	if err != nil {
+		t.Fatalf("ReadSession() error = %v", err)
+	}
+
+	if !bytes.Equal(transcriptData, session.NativeData) {
+		t.Error("ReadTranscript() and ReadSession().NativeData should return identical bytes")
 	}
 }
