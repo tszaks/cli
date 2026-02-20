@@ -50,8 +50,11 @@ func (a *OpenCodeAgent) ParseHookEvent(hookName string, stdin io.Reader) (*agent
 		if err != nil {
 			return nil, err
 		}
-		// Get the temp file path for this session (may not exist yet, but needed for pre-prompt state)
-		repoRoot, _ := paths.RepoRoot() //nolint:errcheck // fallback to empty string is fine for path construction
+		// Get the temp file path for this session (may not exist yet, but needed for pre-prompt state).
+		// Repo root may fail if called outside a repo (unlikely in hook context).
+		// Fallback to "." is acceptable - the file will still be written, just
+		// to current directory instead of .entire/tmp/.
+		repoRoot, _ := paths.RepoRoot() //nolint:errcheck // see comment above
 		tmpDir := filepath.Join(repoRoot, paths.EntireTmpDir)
 		transcriptPath := filepath.Join(tmpDir, raw.SessionID+".json")
 		return &agent.Event{
@@ -109,9 +112,10 @@ func (a *OpenCodeAgent) ParseHookEvent(hookName string, stdin io.Reader) (*agent
 // fetchAndCacheExport calls `opencode export <sessionID>` and writes the result
 // to a temporary file. Returns the path to the temp file.
 //
-// For integration testing: if a file already exists at the expected location
-// (.entire/tmp/<sessionID>.json), it is used directly instead of calling
-// `opencode export`. This allows tests to provide mock transcript data.
+// Integration testing: Set ENTIRE_TEST_OPENCODE_MOCK_EXPORT=1 to skip the
+// `opencode export` call and use pre-written mock data instead. Tests must
+// pre-write the transcript file to .entire/tmp/<sessionID>.json before
+// triggering the hook. See integration_test/hooks.go:SimulateOpenCodeTurnEnd.
 func (a *OpenCodeAgent) fetchAndCacheExport(sessionID string) (string, error) {
 	// Get repo root for the temp directory
 	repoRoot, err := paths.RepoRoot()
@@ -122,12 +126,15 @@ func (a *OpenCodeAgent) fetchAndCacheExport(sessionID string) (string, error) {
 	tmpDir := filepath.Join(repoRoot, paths.EntireTmpDir)
 	tmpFile := filepath.Join(tmpDir, sessionID+".json")
 
-	// Check if file already exists (e.g., pre-written by integration tests)
-	if _, err := os.Stat(tmpFile); err == nil {
-		return tmpFile, nil
+	// Integration test mode: use pre-written mock file without calling opencode export
+	if os.Getenv("ENTIRE_TEST_OPENCODE_MOCK_EXPORT") != "" {
+		if _, err := os.Stat(tmpFile); err == nil {
+			return tmpFile, nil
+		}
+		return "", fmt.Errorf("mock export file not found: %s (ENTIRE_TEST_OPENCODE_MOCK_EXPORT is set)", tmpFile)
 	}
 
-	// Call opencode export to get the transcript
+	// Call opencode export to get the transcript (always refresh on each turn)
 	data, err := runOpenCodeExport(sessionID)
 	if err != nil {
 		return "", fmt.Errorf("opencode export failed: %w", err)

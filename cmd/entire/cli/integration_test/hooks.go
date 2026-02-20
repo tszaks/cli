@@ -796,6 +796,7 @@ func (r *OpenCodeHookRunner) runOpenCodeHookInRepoDir(hookName string, inputJSON
 	cmd.Stdin = bytes.NewReader(inputJSON)
 	cmd.Env = append(os.Environ(),
 		"ENTIRE_TEST_OPENCODE_PROJECT_DIR="+r.OpenCodeProjectDir,
+		"ENTIRE_TEST_OPENCODE_MOCK_EXPORT=1", // Use pre-written mock transcript instead of calling opencode export
 	)
 
 	output, err := cmd.CombinedOutput()

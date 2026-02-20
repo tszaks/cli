@@ -102,17 +102,28 @@ func listTempFiles() ([]string, error) {
 	return files, nil
 }
 
+// TempFileDeleteError contains a file name and the error that occurred during deletion.
+type TempFileDeleteError struct {
+	File string
+	Err  error
+}
+
 // deleteTempFiles removes all files in .entire/tmp/.
-func deleteTempFiles(files []string) (deleted, failed []string) {
+// Returns successfully deleted files and any failures with their error reasons.
+func deleteTempFiles(files []string) (deleted []string, failed []TempFileDeleteError) {
 	tmpDir, err := paths.AbsPath(paths.EntireTmpDir)
 	if err != nil {
-		return nil, files
+		// Can't get path - mark all as failed with the same error
+		for _, file := range files {
+			failed = append(failed, TempFileDeleteError{File: file, Err: err})
+		}
+		return nil, failed
 	}
 
 	for _, file := range files {
 		path := filepath.Join(tmpDir, file)
 		if err := os.Remove(path); err != nil {
-			failed = append(failed, file)
+			failed = append(failed, TempFileDeleteError{File: file, Err: err})
 		} else {
 			deleted = append(deleted, file)
 		}
@@ -254,8 +265,8 @@ func runCleanWithItems(w io.Writer, force bool, items []strategy.CleanupItem, te
 
 		if len(failedTempFiles) > 0 {
 			fmt.Fprintf(w, "\n  Temp files:\n")
-			for _, file := range failedTempFiles {
-				fmt.Fprintf(w, "    %s\n", file)
+			for _, fe := range failedTempFiles {
+				fmt.Fprintf(w, "    %s: %v\n", fe.File, fe.Err)
 			}
 		}
 

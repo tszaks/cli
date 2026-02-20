@@ -208,7 +208,7 @@ func (a *OpenCodeAgent) WriteSession(session *agent.AgentSession) error {
 		return errors.New("no session data to write")
 	}
 
-	// 1. Write JSONL file (for Entire's internal checkpoint use)
+	// 1. Write export JSON file (for Entire's internal checkpoint use)
 	dir := filepath.Dir(session.SessionRef)
 	//nolint:gosec // G301: Session directory needs standard permissions
 	if err := os.MkdirAll(dir, 0o755); err != nil {

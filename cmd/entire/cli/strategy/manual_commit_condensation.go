@@ -497,10 +497,19 @@ func (s *ManualCommitStrategy) extractSessionDataFromLiveTranscript(state *Sessi
 
 // countTranscriptItems counts lines (JSONL) or messages (JSON) in a transcript.
 // For Claude Code and JSONL-based agents, this counts lines.
-// For Gemini CLI and JSON-based agents, this counts messages.
+// For Gemini CLI, OpenCode, and JSON-based agents, this counts messages.
 // Returns 0 if the content is empty or malformed.
 func countTranscriptItems(agentType agent.AgentType, content string) int {
 	if content == "" {
+		return 0
+	}
+
+	// OpenCode uses export JSON format with {"info": {...}, "messages": [...]}
+	if agentType == agent.AgentTypeOpenCode {
+		session, err := opencode.ParseExportSession([]byte(content))
+		if err == nil && session != nil {
+			return len(session.Messages)
+		}
 		return 0
 	}
 
