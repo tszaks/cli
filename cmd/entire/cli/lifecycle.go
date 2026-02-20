@@ -326,9 +326,6 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 		if cleanupErr := CleanupPrePromptState(sessionID); cleanupErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to cleanup pre-prompt state: %v\n", cleanupErr)
 		}
-		if cleanupErr := CleanupCachedTranscript(transcriptRef); cleanupErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to cleanup cached transcript: %v\n", cleanupErr)
-		}
 		return nil
 	}
 
@@ -406,13 +403,10 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 		updateAutoCommitTranscriptPosition(sessionID, newTranscriptPosition)
 	}
 
-	// Transition session phase and cleanup
+	// Transition session phase and cleanup pre-prompt state
 	transitionSessionTurnEnd(sessionID)
 	if cleanupErr := CleanupPrePromptState(sessionID); cleanupErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup pre-prompt state: %v\n", cleanupErr)
-	}
-	if cleanupErr := CleanupCachedTranscript(transcriptRef); cleanupErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup cached transcript: %v\n", cleanupErr)
 	}
 
 	return nil
@@ -462,6 +456,11 @@ func handleLifecycleSessionEnd(ag agent.Agent, event *agent.Event) error {
 	if event.SessionID == "" {
 		return nil // No session to update
 	}
+
+	// Note: We intentionally don't clean up cached transcripts here.
+	// Post-session commits (carry-forward in ENDED phase) may still need
+	// the transcript to extract file changes. Cleanup is handled by
+	// `entire clean` or when the session state is fully removed.
 
 	if err := markSessionEnded(event.SessionID); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to mark session ended: %v\n", err)

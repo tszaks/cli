@@ -39,6 +39,37 @@ func parseExportSessionFromFile(path string) (*ExportSession, error) {
 	return ParseExportSession(data)
 }
 
+// SliceFromMessage returns an OpenCode export transcript scoped to messages starting from
+// startMessageIndex. This is the OpenCode equivalent of transcript.SliceFromLine —
+// for OpenCode's JSON format, scoping is done by message index rather than line offset.
+// Returns the original data if startMessageIndex <= 0.
+// Returns nil if startMessageIndex exceeds the number of messages.
+func SliceFromMessage(data []byte, startMessageIndex int) []byte {
+	if len(data) == 0 || startMessageIndex <= 0 {
+		return data
+	}
+
+	session, err := ParseExportSession(data)
+	if err != nil || session == nil {
+		return nil
+	}
+
+	if startMessageIndex >= len(session.Messages) {
+		return nil
+	}
+
+	scoped := &ExportSession{
+		Info:     session.Info,
+		Messages: session.Messages[startMessageIndex:],
+	}
+
+	out, err := json.Marshal(scoped)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
 // GetTranscriptPosition returns the number of messages in the transcript.
 func (a *OpenCodeAgent) GetTranscriptPosition(path string) (int, error) {
 	session, err := parseExportSessionFromFile(path)

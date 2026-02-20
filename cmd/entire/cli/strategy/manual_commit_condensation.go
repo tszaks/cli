@@ -199,11 +199,14 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 
 		// Scope transcript to this checkpoint's portion.
 		// For Claude Code (JSONL), CheckpointTranscriptStart is a line offset.
-		// For Gemini (JSON), CheckpointTranscriptStart is a message index.
+		// For Gemini/OpenCode (JSON), CheckpointTranscriptStart is a message index.
 		var scopedTranscript []byte
-		if state.AgentType == agent.AgentTypeGemini {
+		switch state.AgentType {
+		case agent.AgentTypeGemini:
 			scopedTranscript = geminicli.SliceFromMessage(sessionData.Transcript, state.CheckpointTranscriptStart)
-		} else {
+		case agent.AgentTypeOpenCode:
+			scopedTranscript = opencode.SliceFromMessage(sessionData.Transcript, state.CheckpointTranscriptStart)
+		case agent.AgentTypeClaudeCode, agent.AgentTypeUnknown:
 			scopedTranscript = transcript.SliceFromLine(sessionData.Transcript, state.CheckpointTranscriptStart)
 		}
 		if len(scopedTranscript) > 0 {

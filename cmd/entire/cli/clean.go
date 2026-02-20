@@ -3,8 +3,11 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
 	"github.com/entireio/cli/cmd/entire/cli/logging"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
 	"github.com/spf13/cobra"
 )
@@ -15,7 +18,7 @@ func newCleanCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "clean",
 		Short: "Clean up orphaned Entire data",
-		Long: `Remove orphaned Entire data (session state, shadow branches, checkpoint metadata) that wasn't cleaned up automatically.
+		Long: `Remove orphaned Entire data (session state, shadow branches, checkpoint metadata, temp files) that wasn't cleaned up automatically.
 
 This command finds and removes orphaned data from any strategy:
 
@@ -32,6 +35,10 @@ This command finds and removes orphaned data from any strategy:
     and no commit references the checkpoint ID anymore.
     Manual-commit checkpoints are permanent (condensed history) and are
     never considered orphaned.
+
+  Temporary files (.entire/tmp/)
+    Cached transcripts and other temporary data. Safe to delete when no
+    active sessions are using them.
 
 Default: shows a preview of items that would be deleted.
 With --force, actually deletes the orphaned items.
@@ -61,14 +68,63 @@ func runClean(w io.Writer, force bool) error {
 		return fmt.Errorf("failed to list orphaned items: %w", err)
 	}
 
-	return runCleanWithItems(w, force, items)
+	// List temp files
+	tempFiles, err := listTempFiles()
+	if err != nil {
+		// Non-fatal: continue with other cleanup items
+		fmt.Fprintf(w, "Warning: failed to list temp files: %v\n", err)
+	}
+
+	return runCleanWithItems(w, force, items, tempFiles)
+}
+
+// listTempFiles returns all files in .entire/tmp/.
+func listTempFiles() ([]string, error) {
+	tmpDir, err := paths.AbsPath(paths.EntireTmpDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get temp dir path: %w", err)
+	}
+
+	entries, err := os.ReadDir(tmpDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read temp dir: %w", err)
+	}
+
+	var files []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			files = append(files, entry.Name())
+		}
+	}
+	return files, nil
+}
+
+// deleteTempFiles removes all files in .entire/tmp/.
+func deleteTempFiles(files []string) (deleted, failed []string) {
+	tmpDir, err := paths.AbsPath(paths.EntireTmpDir)
+	if err != nil {
+		return nil, files
+	}
+
+	for _, file := range files {
+		path := filepath.Join(tmpDir, file)
+		if err := os.Remove(path); err != nil {
+			failed = append(failed, file)
+		} else {
+			deleted = append(deleted, file)
+		}
+	}
+	return deleted, failed
 }
 
 // runCleanWithItems is the core logic for cleaning orphaned items.
 // Separated for testability.
-func runCleanWithItems(w io.Writer, force bool, items []strategy.CleanupItem) error {
+func runCleanWithItems(w io.Writer, force bool, items []strategy.CleanupItem, tempFiles []string) error {
 	// Handle no items case
-	if len(items) == 0 {
+	if len(items) == 0 && len(tempFiles) == 0 {
 		fmt.Fprintln(w, "No orphaned items to clean up.")
 		return nil
 	}
@@ -88,7 +144,8 @@ func runCleanWithItems(w io.Writer, force bool, items []strategy.CleanupItem) er
 
 	// Preview mode (default)
 	if !force {
-		fmt.Fprintf(w, "Found %d orphaned items:\n\n", len(items))
+		totalItems := len(items) + len(tempFiles)
+		fmt.Fprintf(w, "Found %d items to clean:\n\n", totalItems)
 
 		if len(branches) > 0 {
 			fmt.Fprintf(w, "Shadow branches (%d):\n", len(branches))
@@ -114,6 +171,14 @@ func runCleanWithItems(w io.Writer, force bool, items []strategy.CleanupItem) er
 			fmt.Fprintln(w)
 		}
 
+		if len(tempFiles) > 0 {
+			fmt.Fprintf(w, "Temp files (%d):\n", len(tempFiles))
+			for _, file := range tempFiles {
+				fmt.Fprintf(w, "  %s\n", file)
+			}
+			fmt.Fprintln(w)
+		}
+
 		fmt.Fprintln(w, "Run with --force to delete these items.")
 		return nil
 	}
@@ -124,9 +189,12 @@ func runCleanWithItems(w io.Writer, force bool, items []strategy.CleanupItem) er
 		return fmt.Errorf("failed to delete orphaned items: %w", err)
 	}
 
+	// Delete temp files
+	deletedTempFiles, failedTempFiles := deleteTempFiles(tempFiles)
+
 	// Report results
-	totalDeleted := len(result.ShadowBranches) + len(result.SessionStates) + len(result.Checkpoints)
-	totalFailed := len(result.FailedBranches) + len(result.FailedStates) + len(result.FailedCheckpoints)
+	totalDeleted := len(result.ShadowBranches) + len(result.SessionStates) + len(result.Checkpoints) + len(deletedTempFiles)
+	totalFailed := len(result.FailedBranches) + len(result.FailedStates) + len(result.FailedCheckpoints) + len(failedTempFiles)
 
 	if totalDeleted > 0 {
 		fmt.Fprintf(w, "Deleted %d items:\n", totalDeleted)
@@ -149,6 +217,13 @@ func runCleanWithItems(w io.Writer, force bool, items []strategy.CleanupItem) er
 			fmt.Fprintf(w, "\n  Checkpoints (%d):\n", len(result.Checkpoints))
 			for _, cp := range result.Checkpoints {
 				fmt.Fprintf(w, "    %s\n", cp)
+			}
+		}
+
+		if len(deletedTempFiles) > 0 {
+			fmt.Fprintf(w, "\n  Temp files (%d):\n", len(deletedTempFiles))
+			for _, file := range deletedTempFiles {
+				fmt.Fprintf(w, "    %s\n", file)
 			}
 		}
 	}
@@ -174,6 +249,13 @@ func runCleanWithItems(w io.Writer, force bool, items []strategy.CleanupItem) er
 			fmt.Fprintf(w, "\n  Checkpoints:\n")
 			for _, cp := range result.FailedCheckpoints {
 				fmt.Fprintf(w, "    %s\n", cp)
+			}
+		}
+
+		if len(failedTempFiles) > 0 {
+			fmt.Fprintf(w, "\n  Temp files:\n")
+			for _, file := range failedTempFiles {
+				fmt.Fprintf(w, "    %s\n", file)
 			}
 		}
 
