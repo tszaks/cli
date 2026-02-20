@@ -1238,6 +1238,32 @@ func TestDetectOrSelectAgent_ReRun_NoTTY_KeepsInstalled(t *testing.T) {
 	}
 }
 
+// checkClaudeCodeHooksInstalled checks if Claude Code hooks are installed.
+func checkClaudeCodeHooksInstalled() bool {
+	ag, err := agent.Get(agent.AgentNameClaudeCode)
+	if err != nil {
+		return false
+	}
+	hookAgent, ok := ag.(agent.HookSupport)
+	if !ok {
+		return false
+	}
+	return hookAgent.AreHooksInstalled()
+}
+
+// checkGeminiCLIHooksInstalled checks if Gemini CLI hooks are installed.
+func checkGeminiCLIHooksInstalled() bool {
+	ag, err := agent.Get(agent.AgentNameGemini)
+	if err != nil {
+		return false
+	}
+	hookAgent, ok := ag.(agent.HookSupport)
+	if !ok {
+		return false
+	}
+	return hookAgent.AreHooksInstalled()
+}
+
 func TestUninstallDeselectedAgentHooks(t *testing.T) {
 	// Cannot use t.Parallel() because we use t.Chdir
 	setupTestRepo(t)
