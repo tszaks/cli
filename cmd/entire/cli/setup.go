@@ -1095,8 +1095,10 @@ func runUninstall(w, errW io.Writer, force bool) error {
 		}
 		if len(agentsWithInstalledHooks) > 0 {
 			displayNames := make([]string, 0, len(agentsWithInstalledHooks))
-			for _, ag := range agentsWithInstalledHooks {
-				displayNames = append(displayNames, ag.Type())
+			for _, name := range agentsWithInstalledHooks {
+				if ag, err := agent.Get(name); err == nil {
+					displayNames = append(displayNames, string(ag.Type()))
+				}
 			}
 			fmt.Fprintf(w, "  - Agent hooks (%s)\n", strings.Join(displayNames, ", "))
 		}
