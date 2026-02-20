@@ -32,6 +32,11 @@ export const EntirePlugin: Plugin = async ({ $, directory }) => {
         case "session.created": {
           const session = (event as any).properties?.info
           if (!session?.id) break
+          // Reset per-session tracking state when switching sessions.
+          if (currentSessionID !== session.id) {
+            seenUserMessages.clear()
+            messageStore.clear()
+          }
           currentSessionID = session.id
           await callHook("session-start", {
             session_id: session.id,
