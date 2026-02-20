@@ -999,9 +999,9 @@ func TestOpenCodeSessionOperations(t *testing.T) {
 			"info": {"id": "test-session"},
 			"messages": [
 				{"info": {"id": "msg-1", "role": "user", "time": {"created": 1708300000}}, "parts": [{"type": "text", "text": "Fix the bug"}]},
-				{"info": {"id": "msg-2", "role": "assistant", "time": {"created": 1708300001, "completed": 1708300005}, "tokens": {"input": 100, "output": 50, "reasoning": 5, "cache": {"read": 3, "write": 10}}}, "parts": [{"type": "text", "text": "I'll fix it."}, {"type": "tool", "tool": "write", "callID": "call-1", "state": {"status": "completed", "input": {"file_path": "main.go"}, "output": "written"}}]},
+				{"info": {"id": "msg-2", "role": "assistant", "time": {"created": 1708300001, "completed": 1708300005}, "tokens": {"input": 100, "output": 50, "reasoning": 5, "cache": {"read": 3, "write": 10}}}, "parts": [{"type": "text", "text": "I'll fix it."}, {"type": "tool", "tool": "write", "callID": "call-1", "state": {"status": "completed", "input": {"filePath": "main.go"}, "output": "written"}}]},
 				{"info": {"id": "msg-3", "role": "user", "time": {"created": 1708300010}}, "parts": [{"type": "text", "text": "Also fix util.go"}]},
-				{"info": {"id": "msg-4", "role": "assistant", "time": {"created": 1708300011, "completed": 1708300015}, "tokens": {"input": 120, "output": 60, "reasoning": 3, "cache": {"read": 5, "write": 12}}}, "parts": [{"type": "tool", "tool": "edit", "callID": "call-2", "state": {"status": "completed", "input": {"file_path": "util.go"}, "output": "edited"}}]}
+				{"info": {"id": "msg-4", "role": "assistant", "time": {"created": 1708300011, "completed": 1708300015}, "tokens": {"input": 120, "output": 60, "reasoning": 3, "cache": {"read": 5, "write": 12}}}, "parts": [{"type": "tool", "tool": "edit", "callID": "call-2", "state": {"status": "completed", "input": {"filePath": "util.go"}, "output": "edited"}}]}
 			]
 		}`
 		if err := os.WriteFile(transcriptPath, []byte(transcriptContent), 0o644); err != nil {

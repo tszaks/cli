@@ -160,9 +160,10 @@ func ExtractModifiedFiles(data []byte) ([]string, error) {
 	return files, nil
 }
 
-// extractFilePathFromInput extracts the file path from a tool's input map.
+// extractFilePathFromInput extracts the file path from an OpenCode tool's input map.
+// OpenCode uses camelCase keys (e.g., "filePath"), with "path" as a fallback.
 func extractFilePathFromInput(input map[string]any) string {
-	for _, key := range []string{"file_path", "path", "file", "filename"} {
+	for _, key := range []string{"filePath", "path"} {
 		if v, ok := input[key]; ok {
 			if s, ok := v.(string); ok && s != "" {
 				return s

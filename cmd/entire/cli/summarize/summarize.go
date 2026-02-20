@@ -203,7 +203,7 @@ func buildCondensedTranscriptFromOpenCode(content []byte) ([]Entry, error) {
 					entries = append(entries, Entry{
 						Type:       EntryTypeTool,
 						ToolName:   part.Tool,
-						ToolDetail: extractGenericToolDetail(part.State.Input),
+						ToolDetail: extractOpenCodeToolDetail(part.State.Input),
 					})
 				}
 			}
@@ -224,8 +224,19 @@ func extractTextFromOpenCodeParts(parts []opencode.Part) string {
 	return strings.Join(texts, "\n")
 }
 
+// extractOpenCodeToolDetail extracts a detail string from an OpenCode tool's input map.
+// OpenCode uses camelCase keys (e.g., "filePath" instead of "file_path").
+func extractOpenCodeToolDetail(input map[string]interface{}) string {
+	for _, key := range []string{"description", "command", "filePath", "path", "pattern"} {
+		if v, ok := input[key].(string); ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // extractGenericToolDetail extracts an appropriate detail string from a tool's input/args map.
-// Checks common fields in order of preference. Used by both OpenCode and Gemini condensation.
+// Checks common fields in order of preference. Used by Gemini condensation.
 func extractGenericToolDetail(input map[string]interface{}) string {
 	for _, key := range []string{"description", "command", "file_path", "path", "pattern"} {
 		if v, ok := input[key].(string); ok && v != "" {

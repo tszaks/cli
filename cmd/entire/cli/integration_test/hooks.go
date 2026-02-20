@@ -880,6 +880,9 @@ type OpenCodeSession struct {
 	TranscriptPath string
 	env            *TestEnv
 	msgCounter     int
+	// messages accumulates all messages across turns, matching real `opencode export`
+	// behavior where each export returns the full session history.
+	messages []map[string]interface{}
 }
 
 // NewOpenCodeSession creates a new simulated OpenCode session.
@@ -898,13 +901,12 @@ func (env *TestEnv) NewOpenCodeSession() *OpenCodeSession {
 }
 
 // CreateOpenCodeTranscript creates an OpenCode export JSON transcript file for the session.
-// This matches the format of `opencode export <session-id>` output.
+// Each call appends new messages to the accumulated session history, matching real
+// `opencode export` behavior where each export returns the full session history.
 func (s *OpenCodeSession) CreateOpenCodeTranscript(prompt string, changes []FileChange) string {
-	var messages []map[string]interface{}
-
 	// User message
 	s.msgCounter++
-	messages = append(messages, map[string]interface{}{
+	s.messages = append(s.messages, map[string]interface{}{
 		"info": map[string]interface{}{
 			"id":   fmt.Sprintf("msg-%d", s.msgCounter),
 			"role": "user",
@@ -929,7 +931,7 @@ func (s *OpenCodeSession) CreateOpenCodeTranscript(prompt string, changes []File
 			"callID": fmt.Sprintf("call-%d", i+1),
 			"state": map[string]interface{}{
 				"status": "completed",
-				"input":  map[string]string{"file_path": change.Path},
+				"input":  map[string]string{"filePath": change.Path},
 				"output": "File written: " + change.Path,
 			},
 		})
@@ -939,7 +941,7 @@ func (s *OpenCodeSession) CreateOpenCodeTranscript(prompt string, changes []File
 		"text": "Done!",
 	})
 
-	messages = append(messages, map[string]interface{}{
+	s.messages = append(s.messages, map[string]interface{}{
 		"info": map[string]interface{}{
 			"id":   fmt.Sprintf("msg-%d", s.msgCounter),
 			"role": "assistant",
@@ -958,12 +960,12 @@ func (s *OpenCodeSession) CreateOpenCodeTranscript(prompt string, changes []File
 		"parts": parts,
 	})
 
-	// Build export session format
+	// Build export session format with accumulated messages
 	exportSession := map[string]interface{}{
 		"info": map[string]interface{}{
 			"id": s.ID,
 		},
-		"messages": messages,
+		"messages": s.messages,
 	}
 
 	// Ensure directory exists

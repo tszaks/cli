@@ -737,7 +737,7 @@ func TestBuildCondensedTranscriptFromBytes_OpenCodeToolCalls(t *testing.T) {
 			{"info": {"id": "msg-1", "role": "user", "time": {"created": 1708300000}}, "parts": [{"type": "text", "text": "Edit main.go"}]},
 			{"info": {"id": "msg-2", "role": "assistant", "time": {"created": 1708300001}}, "parts": [
 				{"type": "text", "text": "Editing now."},
-				{"type": "tool", "tool": "edit", "callID": "call-1", "state": {"status": "completed", "input": {"file_path": "main.go"}, "output": "Applied"}},
+				{"type": "tool", "tool": "edit", "callID": "call-1", "state": {"status": "completed", "input": {"filePath": "main.go"}, "output": "Applied"}},
 				{"type": "tool", "tool": "bash", "callID": "call-2", "state": {"status": "completed", "input": {"command": "go test ./..."}, "output": "PASS"}}
 			]}
 		]

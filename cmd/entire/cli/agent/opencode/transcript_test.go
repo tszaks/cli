@@ -29,7 +29,7 @@ var testExportJSON = func() string {
 				},
 				Parts: []Part{
 					{Type: "text", Text: "I'll fix the bug."},
-					{Type: "tool", Tool: "edit", CallID: "call-1", State: &ToolState{Status: "completed", Input: map[string]any{"file_path": "main.go"}, Output: "Applied edit"}},
+					{Type: "tool", Tool: "edit", CallID: "call-1", State: &ToolState{Status: "completed", Input: map[string]any{"filePath": "main.go"}, Output: "Applied edit"}},
 				},
 			},
 			{
@@ -46,7 +46,7 @@ var testExportJSON = func() string {
 					Cost:   0.005,
 				},
 				Parts: []Part{
-					{Type: "tool", Tool: "write", CallID: "call-2", State: &ToolState{Status: "completed", Input: map[string]any{"file_path": "util.go"}, Output: "File written"}},
+					{Type: "tool", Tool: "write", CallID: "call-2", State: &ToolState{Status: "completed", Input: map[string]any{"filePath": "util.go"}, Output: "File written"}},
 					{Type: "text", Text: "Done fixing util.go."},
 				},
 			},
@@ -176,6 +176,102 @@ func TestExtractModifiedFilesFromOffset(t *testing.T) {
 	}
 	if files[0] != "util.go" {
 		t.Errorf("expected 'util.go', got %q", files[0])
+	}
+}
+
+func TestExtractFilePathFromInput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input map[string]any
+		want  string
+	}{
+		{name: "camelCase filePath (OpenCode native format)", input: map[string]any{"filePath": "/repo/main.go"}, want: "/repo/main.go"},
+		{name: "path key", input: map[string]any{"path": "/repo/main.go"}, want: "/repo/main.go"},
+		{name: "filePath takes priority over path", input: map[string]any{"filePath": "/a.go", "path": "/b.go"}, want: "/a.go"},
+		{name: "empty input", input: map[string]any{}, want: ""},
+		{name: "non-string value", input: map[string]any{"filePath": 42}, want: ""},
+		{name: "empty string value", input: map[string]any{"filePath": ""}, want: ""},
+		{name: "unrecognized keys ignored", input: map[string]any{"file_path": "/repo/main.go", "file": "/repo/main.go"}, want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := extractFilePathFromInput(tt.input)
+			if got != tt.want {
+				t.Errorf("extractFilePathFromInput(%v) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// testCamelCaseExportJSON uses camelCase "filePath" keys matching real OpenCode export format.
+var testCamelCaseExportJSON = func() string {
+	session := ExportSession{
+		Info: SessionInfo{ID: "test-camelcase"},
+		Messages: []ExportMessage{
+			{
+				Info: MessageInfo{ID: "msg-1", Role: "user", Time: Time{Created: 1708300000}},
+				Parts: []Part{
+					{Type: "text", Text: "Fix the bug"},
+				},
+			},
+			{
+				Info: MessageInfo{ID: "msg-2", Role: "assistant", Time: Time{Created: 1708300001, Completed: 1708300005}},
+				Parts: []Part{
+					{Type: "tool", Tool: "write", CallID: "call-1", State: &ToolState{Status: "completed", Input: map[string]any{"filePath": "/repo/new_file.rb", "content": "puts 'hello'"}, Output: "Wrote file"}},
+				},
+			},
+			{
+				Info: MessageInfo{ID: "msg-3", Role: "user", Time: Time{Created: 1708300010}},
+				Parts: []Part{
+					{Type: "text", Text: "Now edit it"},
+				},
+			},
+			{
+				Info: MessageInfo{ID: "msg-4", Role: "assistant", Time: Time{Created: 1708300011, Completed: 1708300015}},
+				Parts: []Part{
+					{Type: "tool", Tool: "edit", CallID: "call-2", State: &ToolState{Status: "completed", Input: map[string]any{"filePath": "/repo/new_file.rb", "oldString": "hello", "newString": "world"}, Output: "Edit applied"}},
+				},
+			},
+		},
+	}
+	data, err := json.Marshal(session)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
+}()
+
+func TestExtractModifiedFilesFromOffset_CamelCaseFilePath(t *testing.T) {
+	t.Parallel()
+	ag := &OpenCodeAgent{}
+	path := writeTestTranscript(t, testCamelCaseExportJSON)
+
+	files, pos, err := ag.ExtractModifiedFilesFromOffset(path, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pos != 4 {
+		t.Errorf("expected position 4, got %d", pos)
+	}
+	// Both write (msg-2) and edit (msg-4) reference the same file, so deduplicated to 1
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file (deduplicated), got %d: %v", len(files), files)
+	}
+	if files[0] != "/repo/new_file.rb" {
+		t.Errorf("expected '/repo/new_file.rb', got %q", files[0])
+	}
+
+	// From offset 2 — should still find the edit in msg-4
+	files, _, err = ag.ExtractModifiedFilesFromOffset(path, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d: %v", len(files), files)
 	}
 }
 
