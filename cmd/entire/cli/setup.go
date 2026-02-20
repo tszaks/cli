@@ -508,7 +508,7 @@ func setupAgentHooks(ag agent.Agent, localDev, forceHooks bool) (int, error) { /
 //
 // On re-run (hooks already installed):
 //   - Always shows the interactive multi-select
-//   - Pre-selects agents that have hooks installed + any newly detected agents
+//   - Pre-selects only agents that have hooks installed (respects prior deselection)
 //
 // selectFn overrides the interactive prompt for testing. When nil, the real form is used.
 // It receives available agent names and returns the selected names.
@@ -568,13 +568,18 @@ func detectOrSelectAgent(w io.Writer, selectFn func(available []string) ([]strin
 		fmt.Fprintln(w)
 	}
 
-	// Build pre-selection set: installed agents (always) + detected agents
+	// Build pre-selection set.
+	// On re-run: only pre-select agents with hooks installed (respect prior deselection).
+	// On first run: pre-select all detected agents.
 	preSelectedSet := make(map[agent.AgentName]struct{})
-	for _, name := range installedAgentNames {
-		preSelectedSet[name] = struct{}{}
-	}
-	for _, ag := range detected {
-		preSelectedSet[ag.Name()] = struct{}{}
+	if hasInstalledHooks {
+		for _, name := range installedAgentNames {
+			preSelectedSet[name] = struct{}{}
+		}
+	} else {
+		for _, ag := range detected {
+			preSelectedSet[ag.Name()] = struct{}{}
+		}
 	}
 
 	// Build options from registered agents

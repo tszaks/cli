@@ -1340,7 +1340,7 @@ func TestUninstallDeselectedAgentHooks_MultipleInstalled_DeselectOne(t *testing.
 	}
 }
 
-func TestDetectOrSelectAgent_ReRun_NewlyDetectedAgentPreSelected(t *testing.T) {
+func TestDetectOrSelectAgent_ReRun_NewlyDetectedAgentAvailableNotPreSelected(t *testing.T) {
 	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
 	setupTestRepo(t)
 	t.Setenv("ENTIRE_TEST_TTY", "1")
@@ -1348,7 +1348,7 @@ func TestDetectOrSelectAgent_ReRun_NewlyDetectedAgentPreSelected(t *testing.T) {
 	// Simulate: Claude Code hooks installed from a previous run
 	writeClaudeHooksFixture(t)
 
-	// Simulate: user added .gemini directory since last enable
+	// Simulate: user added .gemini directory since last enable (detected but not installed)
 	if err := os.MkdirAll(".gemini", 0o755); err != nil {
 		t.Fatalf("Failed to create .gemini directory: %v", err)
 	}
@@ -1357,8 +1357,8 @@ func TestDetectOrSelectAgent_ReRun_NewlyDetectedAgentPreSelected(t *testing.T) {
 	var receivedAvailable []string
 	selectFn := func(available []string) ([]string, error) {
 		receivedAvailable = available
-		// Accept all available agents
-		return available, nil
+		// Only select the installed agent (simulate user not checking the new one)
+		return []string{string(agent.AgentNameClaudeCode)}, nil
 	}
 
 	var buf bytes.Buffer
@@ -1372,9 +1372,14 @@ func TestDetectOrSelectAgent_ReRun_NewlyDetectedAgentPreSelected(t *testing.T) {
 		t.Fatal("Expected interactive prompt on re-run")
 	}
 
-	// Should return both agents (installed + newly detected)
-	if len(agents) < 2 {
-		t.Errorf("Expected at least 2 agents (installed + detected), got %d", len(agents))
+	// Newly detected agent should be available as an option
+	if len(receivedAvailable) < 2 {
+		t.Errorf("Expected at least 2 available agents (detected agent should be an option), got %d", len(receivedAvailable))
+	}
+
+	// Only the installed agent should be returned (user didn't select the new one)
+	if len(agents) != 1 || agents[0].Name() != agent.AgentNameClaudeCode {
+		t.Errorf("Expected only [claude-code], got %v", agents)
 	}
 }
 
