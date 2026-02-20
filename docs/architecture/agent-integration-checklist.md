@@ -51,10 +51,12 @@ Store transcripts in the **agent's native format**. Any transformation or normal
 
 ### Hook Events
 
-- [ ] **turn-start**: Fire when user submits a prompt (for pre-prompt state capture)
-- [ ] **turn-end**: Fire when agent finishes responding (for checkpoint creation)
-- [ ] **session-start**: Fire when a new session begins
-- [ ] **session-end**: Fire when session is explicitly ended (optional but recommended)
+Map agent-native hooks to these `EventType` constants (see `agent/event.go`):
+
+- [ ] **TurnStart**: Fire when user submits a prompt (for pre-prompt state capture)
+- [ ] **TurnEnd**: Fire when agent finishes responding (for checkpoint creation)
+- [ ] **SessionStart**: Fire when a new session begins
+- [ ] **SessionEnd**: Fire when session is explicitly ended (optional but recommended)
 
 ### Rewind/Resume Support
 
@@ -74,12 +76,12 @@ Store transcripts in the **agent's native format**. Any transformation or normal
 ### Claude Code
 - Transcript: JSONL file on disk, always complete
 - Storage: File-based, `WriteSession` just writes file
-- Resume: `claude --resume <session-id>`
+- Resume: `claude -r <session-id>`
 
 ### Gemini CLI
 - Transcript: JSON file on disk, always complete
 - Storage: File-based, `WriteSession` just writes file
-- Resume: `gemini --session <session-id>`
+- Resume: `gemini --resume <session-id>`
 
 ### OpenCode
 - Transcript: `opencode export <session-id>` output (JSON) - this is the native format
