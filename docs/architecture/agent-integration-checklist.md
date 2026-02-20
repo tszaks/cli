@@ -1,0 +1,111 @@
+# Agent Integration Checklist
+
+This document provides requirements and a checklist for integrating new AI coding agents with Entire. Use this when implementing support for a new agent (e.g., Claude Code, Gemini CLI, OpenCode).
+
+## Core Principle: Full Transcript Storage
+
+Entire stores the **complete session transcript** at every checkpoint, not incremental diffs. This enables:
+
+- Simple rewind: restore the full transcript, agent resumes from that state
+- No dependency on previous checkpoints being intact
+- Consistent behavior across all checkpoint types (committed, uncommitted)
+
+**Each checkpoint must contain the full session history up to that point.**
+
+## Core Principle: Native Format Preservation
+
+Store transcripts in the **agent's native format**. Any transformation or normalization should only be done to support CLI features (rewind, resume, summarization, file extraction), not for backend or web UI consumption.
+
+**Why:**
+- The backend/web UI should handle format differences, not the CLI
+- Transforming for downstream consumers couples the CLI to their requirements
+- Native formats ensure compatibility with agent's own import/export tools
+- Reduces risk of data loss from lossy transformations
+- Format changes that break the UI can be fixed with a backend deploy; CLI changes require a full release cycle and user adoption
+
+**Do:**
+- Store the raw transcript as the agent produces it
+- Parse the native format when CLI features need specific data (e.g., extract file paths for `entire status`)
+- Let the backend normalize formats for display
+
+**Don't:**
+- Create a "universal transcript format" in the CLI
+- Transform logs to match what the web UI expects
+- Strip or restructure data to simplify backend processing
+
+## Integration Checklist
+
+### Transcript Capture
+
+- [ ] **Full transcript on every turn**: At turn-end, capture the complete session transcript, not just events since the last checkpoint
+- [ ] **Resumed session handling**: When a user resumes an existing session, the transcript must include all historical messages, not just new ones since the plugin/hook loaded
+- [ ] **Use agent's canonical export**: Prefer the agent's native export command (e.g., `opencode export`, reading Claude's JSONL file) over manually reconstructing from events
+- [ ] **Graceful degradation**: If the canonical source is unavailable (e.g., agent shutting down), fall back to best-effort capture with clear documentation of limitations
+
+### Why This Matters
+
+**Bug pattern to avoid:**
+
+```typescript
+// BAD: Event-stream accumulation misses history on resumed sessions
+const messageStore = new Map()  // Empty on plugin load
+
+case "message.updated":
+  messageStore.set(msg.id, msg)  // Only captures new messages
+
+case "session.idle":
+  writeExport(messageStore)  // Missing historical messages!
+```
+
+**Correct approach:**
+
+```typescript
+// GOOD: Use agent's canonical export which includes full history
+case "session.idle":
+  await $`agent export ${sessionID} > ${exportPath}`  // Full session from agent's DB
+```
+
+### Session Storage Abstraction
+
+- [ ] **`WriteSession` implementation**: Agent must implement `WriteSession(AgentSession)` to restore sessions
+- [ ] **File-based agents** (Claude, Gemini): Just write `NativeData` to `SessionRef` path
+- [ ] **Database-backed agents** (OpenCode): Write file AND import into native storage using `ExportData`
+- [ ] **Format compatibility**: Export data format must be compatible with agent's import command
+
+### Hook Events
+
+- [ ] **turn-start**: Fire when user submits a prompt (for pre-prompt state capture)
+- [ ] **turn-end**: Fire when agent finishes responding (for checkpoint creation)
+- [ ] **session-start**: Fire when a new session begins
+- [ ] **session-end**: Fire when session is explicitly ended (optional but recommended)
+
+### Rewind/Resume Support
+
+- [ ] **Rewind restores full state**: After rewind, agent can continue from that point with full context
+- [ ] **Resume command**: `FormatResumeCommand()` returns the CLI command to resume a session
+- [ ] **Session ID preservation**: Restored sessions maintain original session ID where possible
+
+### Testing
+
+- [ ] **New session**: Create session, multiple turns, verify full transcript at each checkpoint
+- [ ] **Resumed session**: Resume existing session, add turns, verify checkpoint includes historical messages
+- [ ] **Rewind**: Rewind to earlier checkpoint, verify agent can continue from that state
+- [ ] **Agent shutdown**: Verify graceful handling if agent exits during checkpoint
+
+## Agent-Specific Notes
+
+### Claude Code
+- Transcript: JSONL file on disk, always complete
+- Storage: File-based, `WriteSession` just writes file
+- Resume: `claude --resume <session-id>`
+
+### Gemini CLI
+- Transcript: JSON file on disk, always complete
+- Storage: File-based, `WriteSession` just writes file
+- Resume: `gemini --session <session-id>`
+
+### OpenCode
+- Transcript: SQLite database (not directly accessible)
+- Storage: Database-backed, `WriteSession` must import via `opencode import`
+- Export: Use `opencode export <session-id>` for canonical format
+- Resume: `opencode -s <session-id>`
