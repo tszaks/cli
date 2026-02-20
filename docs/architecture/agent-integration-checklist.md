@@ -42,35 +42,12 @@ Store transcripts in the **agent's native format**. Any transformation or normal
 - [ ] **Use agent's canonical export**: Prefer the agent's native export command (e.g., `opencode export`, reading Claude's JSONL file) over manually reconstructing from events
 - [ ] **Graceful degradation**: If the canonical source is unavailable (e.g., agent shutting down), fall back to best-effort capture with clear documentation of limitations
 
-### Why This Matters
-
-**Bug pattern to avoid:**
-
-```typescript
-// BAD: Event-stream accumulation misses history on resumed sessions
-const messageStore = new Map()  // Empty on plugin load
-
-case "message.updated":
-  messageStore.set(msg.id, msg)  // Only captures new messages
-
-case "session.idle":
-  writeExport(messageStore)  // Missing historical messages!
-```
-
-**Correct approach:**
-
-```typescript
-// GOOD: Use agent's canonical export which includes full history
-case "session.idle":
-  await $`agent export ${sessionID} > ${exportPath}`  // Full session from agent's DB
-```
-
 ### Session Storage Abstraction
 
 - [ ] **`WriteSession` implementation**: Agent must implement `WriteSession(AgentSession)` to restore sessions
-- [ ] **File-based agents** (Claude, Gemini): Just write `NativeData` to `SessionRef` path
-- [ ] **Database-backed agents** (OpenCode): Write file AND import into native storage using `ExportData`
-- [ ] **Format compatibility**: Export data format must be compatible with agent's import command
+- [ ] **File-based agents** (Claude, Gemini): Write `NativeData` to `SessionRef` path
+- [ ] **Database-backed agents** (OpenCode): Write `NativeData` to file, then import into native storage (the native format should be what the agent's import command expects)
+- [ ] **Single format per agent**: Store only the agent's native format in `NativeData` - no separate fields for different representations of the same data
 
 ### Hook Events
 
@@ -105,7 +82,7 @@ case "session.idle":
 - Resume: `gemini --session <session-id>`
 
 ### OpenCode
-- Transcript: SQLite database (not directly accessible)
-- Storage: Database-backed, `WriteSession` must import via `opencode import`
-- Export: Use `opencode export <session-id>` for canonical format
+- Transcript: `opencode export <session-id>` output (JSON) - this is the native format
+- Storage: Database-backed, `WriteSession` writes file then imports via `opencode import`
 - Resume: `opencode -s <session-id>`
+- Note: Don't build transcripts from events - use `opencode export` which reads from SQLite and includes full history
