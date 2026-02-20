@@ -38,6 +38,15 @@ func hasTTY() bool {
 	if v := os.Getenv("ENTIRE_TEST_TTY"); v != "" {
 		return v == "1"
 	}
+
+	// Gemini CLI sets GEMINI_CLI=1 when running shell commands.
+	// Gemini subprocesses may have access to the user's TTY, but they can't
+	// actually respond to interactive prompts. Treat them as non-TTY.
+	// See: https://geminicli.com/docs/tools/shell/
+	if os.Getenv("GEMINI_CLI") != "" {
+		return false
+	}
+
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
 		return false
@@ -55,6 +64,13 @@ func askConfirmTTY(prompt string, context string, defaultYes bool) bool {
 	// ENTIRE_TEST_TTY=1 simulates "a human is present" for the hasTTY() check
 	// but we can't actually read from the TTY in tests.
 	if os.Getenv("ENTIRE_TEST_TTY") != "" {
+		return defaultYes
+	}
+
+	// Gemini CLI sets GEMINI_CLI=1 when running shell commands (including git commit).
+	// The agent can't respond to TTY prompts, so use the default to avoid hanging.
+	// See: https://geminicli.com/docs/tools/shell/
+	if os.Getenv("GEMINI_CLI") != "" {
 		return defaultYes
 	}
 
