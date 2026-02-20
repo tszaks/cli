@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -280,7 +279,7 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 	}
 
 	// Track aggregate totals
-	var totalSessions, totalFiles, totalTok int
+	var totalSessions, totalTok int
 
 	fmt.Fprintln(w)
 	for _, g := range sortedGroups {
@@ -301,11 +300,11 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 				shortID = shortID[:7]
 			}
 
-			// Line 1: Agent · shortID ● phase
+			// Line 1: Agent · shortID
 			fmt.Fprintf(w, "%s %s %s\n",
 				sty.render(sty.agent, agentLabel),
 				sty.render(sty.dim, "·"),
-				shortID+" "+sty.phaseIndicator(st.Phase))
+				shortID)
 
 			// Line 2: "first prompt" (quoted, truncated)
 			if st.FirstPrompt != "" {
@@ -321,10 +320,6 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 				stats = append(stats, activeTimeDisplay(st.LastInteractionTime))
 			}
 
-			fileCount := len(st.FilesTouched)
-			totalFiles += fileCount
-			stats = append(stats, "files "+sty.render(sty.bold, strconv.Itoa(fileCount)))
-
 			tok := totalTokens(st.TokenUsage)
 			totalTok += tok
 			stats = append(stats, "tokens "+sty.render(sty.bold, formatTokenCount(tok)))
@@ -337,8 +332,8 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 
 	// Footer: horizontal rule + aggregate totals
 	fmt.Fprintln(w, sty.horizontalRule(sty.width))
-	footer := fmt.Sprintf("%d sessions · %d files · %s tokens",
-		totalSessions, totalFiles, formatTokenCount(totalTok))
+	footer := fmt.Sprintf("%d sessions · %s tokens",
+		totalSessions, formatTokenCount(totalTok))
 	fmt.Fprintln(w, sty.render(sty.dim, footer))
 }
 

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 
@@ -397,7 +398,7 @@ func TestWriteActiveSessions(t *testing.T) {
 	now := time.Now()
 	recentInteraction := now.Add(-5 * time.Minute)
 
-	// Create active sessions
+	// Create active sessions with token usage
 	states := []*session.State{
 		{
 			SessionID:           "abc-1234-session",
@@ -406,6 +407,10 @@ func TestWriteActiveSessions(t *testing.T) {
 			LastInteractionTime: &recentInteraction,
 			FirstPrompt:         "Fix auth bug in login flow",
 			AgentType:           agent.AgentType("Claude Code"),
+			TokenUsage: &agent.TokenUsage{
+				InputTokens:  800,
+				OutputTokens: 400,
+			},
 		},
 		{
 			SessionID:    "def-5678-session",
@@ -413,6 +418,10 @@ func TestWriteActiveSessions(t *testing.T) {
 			StartedAt:    now.Add(-15 * time.Minute),
 			FirstPrompt:  "Add dark mode support for the entire application and all components",
 			AgentType:    agent.AgentType("Cursor"),
+			TokenUsage: &agent.TokenUsage{
+				InputTokens:  500,
+				OutputTokens: 300,
+			},
 		},
 		{
 			SessionID:    "ghi-9012-session",
@@ -484,9 +493,27 @@ func TestWriteActiveSessions(t *testing.T) {
 		}
 	}
 
-	// Should contain aggregate footer
+	// Should contain per-session token counts
+	if !strings.Contains(output, "tokens 1.2k") {
+		t.Errorf("Expected per-session 'tokens 1.2k' for first session (800+400), got: %s", output)
+	}
+
+	// Should contain aggregate footer with total tokens (800+400+500+300 = 2000 → "2k")
 	if !strings.Contains(output, "3 sessions") {
 		t.Errorf("Expected aggregate '3 sessions' in footer, got: %s", output)
+	}
+	if !strings.Contains(output, "2k tokens") {
+		t.Errorf("Expected aggregate '2k tokens' in footer, got: %s", output)
+	}
+
+	// Should NOT contain phase indicators (removed)
+	if strings.Contains(output, "● active") || strings.Contains(output, "● idle") || strings.Contains(output, "● ended") {
+		t.Errorf("Output should not contain phase indicators, got: %s", output)
+	}
+
+	// Should NOT contain file counts (removed)
+	if strings.Contains(output, "files ") {
+		t.Errorf("Output should not contain file counts, got: %s", output)
 	}
 }
 
@@ -649,31 +676,39 @@ func TestTotalTokens(t *testing.T) {
 	})
 }
 
-func TestPhaseIndicator(t *testing.T) {
+func TestTotalTokens_ExcludesAPICallCount(t *testing.T) {
 	t.Parallel()
 
-	// Use a non-terminal writer so color is disabled — output is plain text
-	var buf bytes.Buffer
-	sty := newStatusStyles(&buf)
-
-	tests := []struct {
-		phase session.Phase
-		want  string
-	}{
-		{session.PhaseActive, "● active"},
-		{session.PhaseIdle, "● idle"},
-		{session.PhaseEnded, "● ended"},
-		{"", "● idle"}, // empty defaults to idle
+	// APICallCount should NOT be included in token totals — it's a separate metric
+	tu := &agent.TokenUsage{
+		InputTokens:  100,
+		OutputTokens: 50,
+		APICallCount: 999, // should be ignored
 	}
+	got := totalTokens(tu)
+	if got != 150 {
+		t.Errorf("totalTokens() = %d, want 150 (APICallCount should be excluded)", got)
+	}
+}
 
-	for _, tt := range tests {
-		t.Run(string(tt.phase), func(t *testing.T) {
-			t.Parallel()
-			got := sty.phaseIndicator(tt.phase)
-			if got != tt.want {
-				t.Errorf("phaseIndicator(%q) = %q, want %q", tt.phase, got, tt.want)
-			}
-		})
+func TestTotalTokens_DeepSubagentNesting(t *testing.T) {
+	t.Parallel()
+
+	tu := &agent.TokenUsage{
+		InputTokens:  100,
+		OutputTokens: 50,
+		SubagentTokens: &agent.TokenUsage{
+			InputTokens:  200,
+			OutputTokens: 100,
+			SubagentTokens: &agent.TokenUsage{
+				InputTokens:  50,
+				OutputTokens: 25,
+			},
+		},
+	}
+	// 100+50 + 200+100 + 50+25 = 525
+	if got := totalTokens(tu); got != 525 {
+		t.Errorf("totalTokens() = %d, want 525 (deep nesting)", got)
 	}
 }
 
@@ -705,13 +740,142 @@ func TestActiveTimeDisplay(t *testing.T) {
 	})
 }
 
-func TestShouldUseColor(t *testing.T) {
+func TestShouldUseColor_NonTTY(t *testing.T) {
 	t.Parallel()
 
 	// bytes.Buffer is not a terminal → should return false
 	var buf bytes.Buffer
 	if shouldUseColor(&buf) {
 		t.Error("shouldUseColor(bytes.Buffer) should be false")
+	}
+}
+
+func TestShouldUseColor_NoColorEnv(t *testing.T) {
+	// NO_COLOR env var should force color off even for a real file
+	t.Setenv("NO_COLOR", "1")
+
+	f, err := os.CreateTemp(t.TempDir(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if shouldUseColor(f) {
+		t.Error("shouldUseColor should be false when NO_COLOR is set")
+	}
+}
+
+func TestShouldUseColor_RegularFile(t *testing.T) {
+	t.Parallel()
+
+	// A regular file (not a terminal) should return false
+	f, err := os.CreateTemp(t.TempDir(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if shouldUseColor(f) {
+		t.Error("shouldUseColor(regular file) should be false")
+	}
+}
+
+func TestNewStatusStyles_NonTTY(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+
+	if sty.colorEnabled {
+		t.Error("newStatusStyles(bytes.Buffer) should have colorEnabled=false")
+	}
+}
+
+func TestRender_ColorDisabled(t *testing.T) {
+	t.Parallel()
+
+	// When color is disabled, render should return text unchanged
+	sty := statusStyles{colorEnabled: false}
+	style := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))
+
+	got := sty.render(style, "hello")
+	if got != "hello" {
+		t.Errorf("render with color disabled = %q, want %q", got, "hello")
+	}
+}
+
+func TestRender_ColorEnabled_CallsStyleRender(t *testing.T) {
+	t.Parallel()
+
+	// When colorEnabled=true, render should call style.Render (not return plain text).
+	// Note: lipgloss may strip ANSI in test environments without a terminal, so we
+	// can't assert ANSI codes. Instead, verify the code path is exercised and
+	// the text content is preserved.
+	sty := statusStyles{
+		colorEnabled: true,
+		bold:         lipgloss.NewStyle().Bold(true),
+	}
+
+	got := sty.render(sty.bold, "hello")
+	if !strings.Contains(got, "hello") {
+		t.Errorf("render with color enabled should preserve text content, got: %q", got)
+	}
+}
+
+func TestRender_ColorToggle(t *testing.T) {
+	t.Parallel()
+
+	style := lipgloss.NewStyle().Bold(true)
+
+	// Color disabled: must return exact input
+	styOff := statusStyles{colorEnabled: false}
+	got := styOff.render(style, "test")
+	if got != "test" {
+		t.Errorf("render(colorEnabled=false) = %q, want exact %q", got, "test")
+	}
+
+	// Color enabled: exercises style.Render code path, text preserved
+	styOn := statusStyles{colorEnabled: true}
+	got = styOn.render(style, "test")
+	if !strings.Contains(got, "test") {
+		t.Errorf("render(colorEnabled=true) should contain 'test', got: %q", got)
+	}
+}
+
+func TestSectionRule_PlainText(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false, width: 40}
+	rule := sty.sectionRule("Active Sessions", "myrepo", 40)
+
+	// Plain text should contain the label and highlight
+	if !strings.Contains(rule, "Active Sessions") {
+		t.Errorf("sectionRule should contain label, got: %q", rule)
+	}
+	if !strings.Contains(rule, "myrepo") {
+		t.Errorf("sectionRule should contain highlight, got: %q", rule)
+	}
+	if !strings.Contains(rule, "─") {
+		t.Errorf("sectionRule should contain rule characters, got: %q", rule)
+	}
+	// With color disabled, should have no ANSI escapes
+	if strings.Contains(rule, "\x1b[") {
+		t.Errorf("sectionRule with color disabled should have no ANSI escapes, got: %q", rule)
+	}
+}
+
+func TestHorizontalRule_PlainText(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false}
+	rule := sty.horizontalRule(15)
+
+	// Should be no ANSI escapes
+	if strings.Contains(rule, "\x1b[") {
+		t.Errorf("horizontalRule with color disabled should have no ANSI escapes, got: %q", rule)
+	}
+	if len([]rune(rule)) != 15 {
+		t.Errorf("horizontalRule(15) has %d runes, want 15", len([]rune(rule)))
 	}
 }
 

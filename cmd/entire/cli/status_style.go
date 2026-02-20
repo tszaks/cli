@@ -11,7 +11,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/entireio/cli/cmd/entire/cli/agent"
-	"github.com/entireio/cli/cmd/entire/cli/session"
 
 	"golang.org/x/term"
 )
@@ -22,14 +21,13 @@ type statusStyles struct {
 	width        int
 
 	// Styles
-	green  lipgloss.Style
-	red    lipgloss.Style
-	yellow lipgloss.Style
-	gray   lipgloss.Style
-	bold   lipgloss.Style
-	dim    lipgloss.Style
-	agent  lipgloss.Style // amber/orange for agent names
-	cyan   lipgloss.Style
+	green lipgloss.Style
+	red   lipgloss.Style
+	gray  lipgloss.Style
+	bold  lipgloss.Style
+	dim   lipgloss.Style
+	agent lipgloss.Style // amber/orange for agent names
+	cyan  lipgloss.Style
 }
 
 // newStatusStyles creates styles appropriate for the output writer.
@@ -45,7 +43,6 @@ func newStatusStyles(w io.Writer) statusStyles {
 	if useColor {
 		s.green = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 		s.red = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-		s.yellow = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 		s.gray = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
 		s.bold = lipgloss.NewStyle().Bold(true)
 		s.dim = lipgloss.NewStyle().Faint(true)
@@ -135,20 +132,6 @@ func (s statusStyles) sectionRule(label, highlight string, width int) string {
 	b.WriteString(" ")
 	b.WriteString(s.render(s.dim, strings.Repeat("─", trailing)))
 	return b.String()
-}
-
-// phaseIndicator returns a colored dot + phase text.
-func (s statusStyles) phaseIndicator(phase session.Phase) string {
-	switch phase {
-	case session.PhaseActive:
-		return s.render(s.green, "●") + " " + s.render(s.green, "active")
-	case session.PhaseIdle:
-		return s.render(s.yellow, "●") + " " + s.render(s.yellow, "idle")
-	case session.PhaseEnded:
-		return s.render(s.gray, "●") + " " + s.render(s.gray, "ended")
-	default:
-		return s.render(s.gray, "●") + " " + s.render(s.gray, "idle")
-	}
 }
 
 // activeTimeDisplay formats a last interaction time for display.
