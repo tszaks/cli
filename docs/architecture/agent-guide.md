@@ -1,5 +1,7 @@
 # Agent Implementation Guide
 
+Before implementing, read the [Agent Integration Checklist](agent-integration-checklist.md) for design principles (full transcript storage, native format preservation) and validation criteria.
+
 ## Architecture Overview
 
 The Entire CLI uses **inversion of control** for agent integration: agents are passive data providers that translate their native hook payloads into normalized lifecycle events, and the framework handles all orchestration (state transitions, file detection, checkpoint saving, metadata generation). The flow is:
@@ -313,7 +315,7 @@ func (a *YourAgent) ParseHookEvent(hookName string, stdin io.Reader) (*agent.Eve
 Key decisions in `ParseHookEvent`:
 
 - **Return `nil, nil`** for hooks with no lifecycle significance (pass-through hooks). This is not an error - it tells the framework to do nothing.
-- **Every event must include the required fields for its `EventType`** (see the [Event Field Requirements](#event-field-requirements) table). `SessionID` is always required; `SessionRef` is required for most event types but optional for `Compaction` and `SessionEnd`.
+- **Every event should include the fields listed in the [Event Field Requirements](#event-field-requirements) table.** `SessionID` should always be populated (the framework falls back to `"unknown"` for `TurnEnd` if missing, but this degrades checkpoint quality). `SessionRef` is required for `TurnStart` and `TurnEnd` but optional for `Compaction` and `SessionEnd`.
 - **`TurnStart` should include `Prompt`** if available - it's used for commit message generation.
 - **Use `agent.ReadAndParseHookInput[T]`** - the generic helper reads stdin and unmarshals JSON in one step.
 - **Set `Timestamp` to `time.Now()`** - the framework uses this for ordering.
@@ -433,13 +435,15 @@ The framework dispatcher (`DispatchLifecycleEvent` in `lifecycle.go`) handles ea
 
 | Event Type | Required Fields | Optional Fields |
 |------------|----------------|-----------------|
-| `SessionStart` | `SessionID`, `SessionRef` | `ResponseMessage` |
-| `TurnStart` | `SessionID`, `SessionRef` | `Prompt`, `PreviousSessionID` |
-| `TurnEnd` | `SessionID`, `SessionRef` | |
-| `Compaction` | `SessionID` | `SessionRef` |
-| `SessionEnd` | `SessionID` | `SessionRef` |
-| `SubagentStart` | `SessionID`, `SessionRef`, `ToolUseID` | `ToolInput` |
-| `SubagentEnd` | `SessionID`, `SessionRef`, `ToolUseID` | `SubagentID`, `ToolInput` |
+| `SessionStart` | `SessionID` | `SessionRef`, `ResponseMessage`, `Metadata` |
+| `TurnStart` | `SessionID`, `SessionRef` | `Prompt`, `PreviousSessionID`, `Metadata` |
+| `TurnEnd` | `SessionRef` | `SessionID` (falls back to `"unknown"`), `Metadata` |
+| `Compaction` | `SessionID` | `SessionRef`, `Metadata` |
+| `SessionEnd` | `SessionID` | `SessionRef`, `Metadata` |
+| `SubagentStart` | `SessionID`, `SessionRef`, `ToolUseID` | `ToolInput`, `Metadata` |
+| `SubagentEnd` | `SessionID`, `SessionRef`, `ToolUseID` | `SubagentID`, `ToolInput`, `Metadata` |
+
+`Metadata` (`map[string]string`) holds agent-specific state that the framework stores and makes available on subsequent events. Use it for agent-internal tracking (e.g., cursor positions, background agent flags) that doesn't map to a dedicated Event field.
 
 ## Optional Interface Decision Tree
 
