@@ -110,10 +110,11 @@ echo "$output" | grep -v '^Benchmark' >&2
 bench_lines=$(echo "$output" | grep '^Benchmark' || true)
 if [ -n "$bench_lines" ]; then
   {
-    echo "BENCHMARK ITERS NS/OP B/OP ALLOCS/OP"
-    echo "--------- ----- ----- ---- ---------"
-    # Strip unit suffixes — headers already label each column
-    echo "$bench_lines" | sed 's/ ns\/op//g; s/ B\/op//g; s/ allocs\/op//g; s/ transcript_bytes//g'
+    echo "BENCHMARK ITERS MS/OP NS/OP B/OP ALLOCS/OP"
+    echo "--------- ----- ----- ----- ---- ---------"
+    # Strip unit suffixes and add ms/op column (ns/op / 1000000)
+    echo "$bench_lines" | sed 's/ ns\/op//g; s/ B\/op//g; s/ allocs\/op//g; s/ transcript_bytes//g' \
+      | awk '{printf "%s %s %.2f %s %s %s\n", $1, $2, $3/1000000, $3, $4, $5}'
   } | column -t
 fi
 '''
@@ -132,9 +133,10 @@ echo "$output" | grep -v '^Benchmark' >&2
 bench_lines=$(echo "$output" | grep '^Benchmark' || true)
 if [ -n "$bench_lines" ]; then
   {
-    echo "BENCHMARK ITERS NS/OP B/OP ALLOCS/OP"
-    echo "--------- ----- ----- ---- ---------"
-    echo "$bench_lines" | sed 's/ ns\/op//g; s/ B\/op//g; s/ allocs\/op//g; s/ transcript_bytes//g'
+    echo "BENCHMARK ITERS MS/OP NS/OP B/OP ALLOCS/OP"
+    echo "--------- ----- ----- ----- ---- ---------"
+    echo "$bench_lines" | sed 's/ ns\/op//g; s/ B\/op//g; s/ allocs\/op//g; s/ transcript_bytes//g' \
+      | awk '{printf "%s %s %.2f %s %s %s\n", $1, $2, $3/1000000, $3, $4, $5}'
   } | column -t
 fi
 
@@ -156,9 +158,10 @@ echo "$output" | grep -v '^Benchmark' >&2
 bench_lines=$(echo "$output" | grep '^Benchmark' || true)
 if [ -n "$bench_lines" ]; then
   {
-    echo "BENCHMARK ITERS NS/OP B/OP ALLOCS/OP"
-    echo "--------- ----- ----- ---- ---------"
-    echo "$bench_lines" | sed 's/ ns\/op//g; s/ B\/op//g; s/ allocs\/op//g; s/ transcript_bytes//g'
+    echo "BENCHMARK ITERS MS/OP NS/OP B/OP ALLOCS/OP"
+    echo "--------- ----- ----- ----- ---- ---------"
+    echo "$bench_lines" | sed 's/ ns\/op//g; s/ B\/op//g; s/ allocs\/op//g; s/ transcript_bytes//g' \
+      | awk '{printf "%s %s %.2f %s %s %s\n", $1, $2, $3/1000000, $3, $4, $5}'
   } | column -t
 fi
 
