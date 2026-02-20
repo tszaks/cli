@@ -1236,3 +1236,63 @@ func TestDetectOrSelectAgent_ReRun_NoTTY_KeepsInstalled(t *testing.T) {
 		t.Errorf("Expected claude-code, got %v", agents[0].Name())
 	}
 }
+
+func TestUninstallDeselectedAgentHooks(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir
+	setupTestRepo(t)
+
+	// Install Claude Code hooks
+	writeClaudeHooksFixture(t)
+
+	// Verify hooks are installed
+	if !checkClaudeCodeHooksInstalled() {
+		t.Fatal("Expected Claude Code hooks to be installed before test")
+	}
+
+	// Call uninstallDeselectedAgentHooks with an empty selection (deselect claude-code)
+	var buf bytes.Buffer
+	err := uninstallDeselectedAgentHooks(&buf, []agent.Agent{})
+	if err != nil {
+		t.Fatalf("uninstallDeselectedAgentHooks() error = %v", err)
+	}
+
+	// Hooks should be uninstalled
+	if checkClaudeCodeHooksInstalled() {
+		t.Error("Expected Claude Code hooks to be uninstalled after deselection")
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Removed") {
+		t.Errorf("Expected output to mention removal, got: %s", output)
+	}
+}
+
+func TestUninstallDeselectedAgentHooks_KeepsSelectedAgents(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir
+	setupTestRepo(t)
+
+	// Install Claude Code hooks
+	writeClaudeHooksFixture(t)
+
+	// Call uninstallDeselectedAgentHooks with claude-code still selected
+	claudeAgent, err := agent.Get(agent.AgentNameClaudeCode)
+	if err != nil {
+		t.Fatalf("Failed to get claude-code agent: %v", err)
+	}
+
+	var buf bytes.Buffer
+	err = uninstallDeselectedAgentHooks(&buf, []agent.Agent{claudeAgent})
+	if err != nil {
+		t.Fatalf("uninstallDeselectedAgentHooks() error = %v", err)
+	}
+
+	// Hooks should still be installed
+	if !checkClaudeCodeHooksInstalled() {
+		t.Error("Expected Claude Code hooks to remain installed when still selected")
+	}
+
+	output := buf.String()
+	if strings.Contains(output, "Removed") {
+		t.Errorf("Should not mention removal when agent is still selected, got: %s", output)
+	}
+}

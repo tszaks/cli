@@ -212,6 +212,11 @@ func runEnableWithStrategy(w io.Writer, agents []agent.Agent, selectedStrategy s
 		return fmt.Errorf("unknown strategy: %s (use manual-commit or auto-commit)", selectedStrategy)
 	}
 
+	// Uninstall hooks for agents that were previously active but are no longer selected
+	if err := uninstallDeselectedAgentHooks(w, agents); err != nil {
+		return fmt.Errorf("failed to clean up deselected agents: %w", err)
+	}
+
 	// Setup agent hooks for all selected agents
 	for _, ag := range agents {
 		if _, err := setupAgentHooks(ag, localDev, forceHooks); err != nil {
@@ -294,8 +299,12 @@ func runEnableWithStrategy(w io.Writer, agents []agent.Agent, selectedStrategy s
 
 // runEnableInteractive runs the interactive enable flow.
 // agents must be provided by the caller (via detectOrSelectAgent).
-// The isFullyEnabled check is handled by the caller before agent detection.
 func runEnableInteractive(w io.Writer, agents []agent.Agent, localDev, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry bool) error {
+	// Uninstall hooks for agents that were previously active but are no longer selected
+	if err := uninstallDeselectedAgentHooks(w, agents); err != nil {
+		return fmt.Errorf("failed to clean up deselected agents: %w", err)
+	}
+
 	// Setup agent hooks for all selected agents
 	for _, ag := range agents {
 		if _, err := setupAgentHooks(ag, localDev, forceHooks); err != nil {
@@ -450,6 +459,42 @@ func checkDisabledGuard(w io.Writer) bool {
 		return true
 	}
 	return false
+}
+
+// uninstallDeselectedAgentHooks removes hooks for agents that were previously
+// installed but are not in the selected list. This handles the case where a user
+// re-runs `entire enable` and deselects an agent.
+func uninstallDeselectedAgentHooks(w io.Writer, selectedAgents []agent.Agent) error {
+	installedNames := GetAgentsWithHooksInstalled()
+	if len(installedNames) == 0 {
+		return nil
+	}
+
+	selectedSet := make(map[agent.AgentName]struct{}, len(selectedAgents))
+	for _, ag := range selectedAgents {
+		selectedSet[ag.Name()] = struct{}{}
+	}
+
+	var errs []error
+	for _, name := range installedNames {
+		if _, selected := selectedSet[name]; selected {
+			continue
+		}
+		ag, err := agent.Get(name)
+		if err != nil {
+			continue
+		}
+		hookAgent, ok := ag.(agent.HookSupport)
+		if !ok {
+			continue
+		}
+		if err := hookAgent.UninstallHooks(); err != nil {
+			errs = append(errs, fmt.Errorf("failed to uninstall %s hooks: %w", ag.Type(), err))
+		} else {
+			fmt.Fprintf(w, "Removed %s hooks\n", ag.Type())
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // setupAgentHooks sets up hooks for a given agent.
