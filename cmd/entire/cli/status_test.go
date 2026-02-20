@@ -29,8 +29,9 @@ func TestResolveWorktreeBranch_RegularRepo(t *testing.T) {
 
 	// New repo on default branch — HEAD is "ref: refs/heads/master"
 	branch := resolveWorktreeBranch(dir)
-	if branch != "master" { //nolint:goconst // go-git default branch name
-		t.Errorf("resolveWorktreeBranch() = %q, want %q", branch, "master")
+	wantBranch := "master"
+	if branch != wantBranch {
+		t.Errorf("resolveWorktreeBranch() = %q, want %q", branch, wantBranch)
 	}
 }
 
