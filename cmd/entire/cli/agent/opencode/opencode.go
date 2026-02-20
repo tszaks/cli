@@ -74,15 +74,23 @@ func (a *OpenCodeAgent) ChunkTranscript(content []byte, maxSize int) ([][]byte, 
 		return [][]byte{content}, nil
 	}
 
+	// Marshal info to calculate accurate base size
+	infoBytes, err := json.Marshal(session.Info)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal session info for chunking: %w", err)
+	}
+	// Base JSON structure size: {"info":<info>,"messages":[ ... ]}
+	baseSize := len(`{"info":`) + len(infoBytes) + len(`,"messages":[]}`)
+
 	var chunks [][]byte
 	var currentMessages []ExportMessage
-	currentSize := len(`{"info":{},"messages":[]}`) // Base JSON structure size
+	currentSize := baseSize
 
 	for _, msg := range session.Messages {
 		// Marshal message to get its size
 		msgBytes, err := json.Marshal(msg)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("failed to marshal message for chunking: %w", err)
 		}
 		msgSize := len(msgBytes) + 1 // +1 for comma separator
 
@@ -96,7 +104,7 @@ func (a *OpenCodeAgent) ChunkTranscript(content []byte, maxSize int) ([][]byte, 
 
 			// Start new chunk
 			currentMessages = nil
-			currentSize = len(`{"info":{},"messages":[]}`)
+			currentSize = baseSize
 		}
 
 		currentMessages = append(currentMessages, msg)
@@ -122,7 +130,7 @@ func (a *OpenCodeAgent) ChunkTranscript(content []byte, maxSize int) ([][]byte, 
 // ReassembleTranscript merges OpenCode export JSON chunks by combining their message arrays.
 func (a *OpenCodeAgent) ReassembleTranscript(chunks [][]byte) ([]byte, error) {
 	if len(chunks) == 0 {
-		return nil, nil
+		return nil, errors.New("no chunks to reassemble")
 	}
 
 	var allMessages []ExportMessage

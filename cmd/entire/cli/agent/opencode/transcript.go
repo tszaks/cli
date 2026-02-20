@@ -193,7 +193,7 @@ func (a *OpenCodeAgent) ExtractPrompts(sessionRef string, fromOffset int) ([]str
 			continue
 		}
 		// Extract text from parts
-		content := extractTextFromParts(msg.Parts)
+		content := ExtractTextFromParts(msg.Parts)
 		if content != "" {
 			prompts = append(prompts, content)
 		}
@@ -218,7 +218,7 @@ func (a *OpenCodeAgent) ExtractSummary(sessionRef string) (string, error) {
 	for i := len(session.Messages) - 1; i >= 0; i-- {
 		msg := session.Messages[i]
 		if msg.Info.Role == roleAssistant {
-			content := extractTextFromParts(msg.Parts)
+			content := ExtractTextFromParts(msg.Parts)
 			if content != "" {
 				return content, nil
 			}
@@ -228,8 +228,8 @@ func (a *OpenCodeAgent) ExtractSummary(sessionRef string) (string, error) {
 	return "", nil
 }
 
-// extractTextFromParts extracts text content from message parts.
-func extractTextFromParts(parts []Part) string {
+// ExtractTextFromParts extracts text content from message parts.
+func ExtractTextFromParts(parts []Part) string {
 	var texts []string
 	for _, part := range parts {
 		if part.Type == "text" && part.Text != "" {
@@ -255,7 +255,7 @@ func ExtractAllUserPrompts(data []byte) ([]string, error) {
 		if msg.Info.Role != roleUser {
 			continue
 		}
-		content := extractTextFromParts(msg.Parts)
+		content := ExtractTextFromParts(msg.Parts)
 		if content != "" {
 			prompts = append(prompts, content)
 		}

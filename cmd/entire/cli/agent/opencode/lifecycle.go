@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -51,10 +52,10 @@ func (a *OpenCodeAgent) ParseHookEvent(hookName string, stdin io.Reader) (*agent
 			return nil, err
 		}
 		// Get the temp file path for this session (may not exist yet, but needed for pre-prompt state).
-		// Repo root may fail if called outside a repo (unlikely in hook context).
-		// Fallback to "." is acceptable - the file will still be written, just
-		// to current directory instead of .entire/tmp/.
-		repoRoot, _ := paths.RepoRoot() //nolint:errcheck // see comment above
+		repoRoot, err := paths.RepoRoot()
+		if err != nil {
+			repoRoot = "."
+		}
 		tmpDir := filepath.Join(repoRoot, paths.EntireTmpDir)
 		transcriptPath := filepath.Join(tmpDir, raw.SessionID+".json")
 		return &agent.Event{
@@ -138,6 +139,11 @@ func (a *OpenCodeAgent) fetchAndCacheExport(sessionID string) (string, error) {
 	data, err := runOpenCodeExport(sessionID)
 	if err != nil {
 		return "", fmt.Errorf("opencode export failed: %w", err)
+	}
+
+	// Validate output is valid JSON before caching
+	if !json.Valid(data) {
+		return "", fmt.Errorf("opencode export returned invalid JSON (%d bytes)", len(data))
 	}
 
 	// Write to temp directory under .entire

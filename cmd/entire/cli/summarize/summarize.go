@@ -183,7 +183,7 @@ func buildCondensedTranscriptFromOpenCode(content []byte) ([]Entry, error) {
 	for _, msg := range session.Messages {
 		switch msg.Info.Role {
 		case "user":
-			text := extractTextFromOpenCodeParts(msg.Parts)
+			text := opencode.ExtractTextFromParts(msg.Parts)
 			if text != "" {
 				entries = append(entries, Entry{
 					Type:    EntryTypeUser,
@@ -191,7 +191,7 @@ func buildCondensedTranscriptFromOpenCode(content []byte) ([]Entry, error) {
 				})
 			}
 		case "assistant":
-			text := extractTextFromOpenCodeParts(msg.Parts)
+			text := opencode.ExtractTextFromParts(msg.Parts)
 			if text != "" {
 				entries = append(entries, Entry{
 					Type:    EntryTypeAssistant,
@@ -211,17 +211,6 @@ func buildCondensedTranscriptFromOpenCode(content []byte) ([]Entry, error) {
 	}
 
 	return entries, nil
-}
-
-// extractTextFromOpenCodeParts extracts text content from OpenCode message parts.
-func extractTextFromOpenCodeParts(parts []opencode.Part) string {
-	var texts []string
-	for _, part := range parts {
-		if part.Type == "text" && part.Text != "" {
-			texts = append(texts, part.Text)
-		}
-	}
-	return strings.Join(texts, "\n")
 }
 
 // extractOpenCodeToolDetail extracts a detail string from an OpenCode tool's input map.

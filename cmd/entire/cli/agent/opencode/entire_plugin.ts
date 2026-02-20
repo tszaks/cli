@@ -10,9 +10,8 @@ export const EntirePlugin: Plugin = async ({ $, directory }) => {
   const seenUserMessages = new Set<string>()
   // Track current session ID for message events (which don't include sessionID)
   let currentSessionID: string | null = null
-  // In-memory stores for message metadata
+  // In-memory store for message metadata (role, tokens, etc.)
   const messageStore = new Map<string, any>()
-  const partStore = new Map<string, any[]>()
 
   /**
    * Pipe JSON payload to an entire hooks command.
@@ -51,16 +50,6 @@ export const EntirePlugin: Plugin = async ({ $, directory }) => {
         case "message.part.updated": {
           const part = (event as any).properties?.part
           if (!part?.messageID) break
-
-          // Accumulate parts per message
-          const existing = partStore.get(part.messageID) ?? []
-          const idx = existing.findIndex((p: any) => p.id === part.id)
-          if (idx >= 0) {
-            existing[idx] = part
-          } else {
-            existing.push(part)
-          }
-          partStore.set(part.messageID, existing)
 
           // Fire turn-start on the first text part of a new user message
           const msg = messageStore.get(part.messageID)
@@ -101,7 +90,6 @@ export const EntirePlugin: Plugin = async ({ $, directory }) => {
           if (!session?.id) break
           seenUserMessages.clear()
           messageStore.clear()
-          partStore.clear()
           currentSessionID = null
           await callHook("session-end", {
             session_id: session.id,

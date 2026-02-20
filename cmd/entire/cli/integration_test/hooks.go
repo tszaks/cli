@@ -846,12 +846,16 @@ func (r *OpenCodeHookRunner) SimulateOpenCodeTurnEnd(sessionID, transcriptPath s
 	// lifecycle handler expects it (.entire/tmp/<session_id>.json)
 	if transcriptPath != "" {
 		srcData, err := os.ReadFile(transcriptPath)
-		if err == nil {
-			destDir := filepath.Join(r.RepoDir, ".entire", "tmp")
-			if mkErr := os.MkdirAll(destDir, 0o755); mkErr == nil {
-				destPath := filepath.Join(destDir, sessionID+".json")
-				_ = os.WriteFile(destPath, srcData, 0o644)
-			}
+		if err != nil {
+			r.T.Fatalf("SimulateOpenCodeTurnEnd: failed to read transcript from %q: %v", transcriptPath, err)
+		}
+		destDir := filepath.Join(r.RepoDir, ".entire", "tmp")
+		if err := os.MkdirAll(destDir, 0o755); err != nil {
+			r.T.Fatalf("SimulateOpenCodeTurnEnd: failed to create directory %q: %v", destDir, err)
+		}
+		destPath := filepath.Join(destDir, sessionID+".json")
+		if err := os.WriteFile(destPath, srcData, 0o644); err != nil {
+			r.T.Fatalf("SimulateOpenCodeTurnEnd: failed to write transcript to %q: %v", destPath, err)
 		}
 	}
 

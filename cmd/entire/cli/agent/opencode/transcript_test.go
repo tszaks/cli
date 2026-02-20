@@ -524,8 +524,8 @@ func TestReassembleTranscript_Empty(t *testing.T) {
 	ag := &OpenCodeAgent{}
 
 	result, err := ag.ReassembleTranscript(nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for nil chunks, got nil")
 	}
 	if result != nil {
 		t.Errorf("expected nil result for nil chunks, got %d bytes", len(result))
