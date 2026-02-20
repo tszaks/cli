@@ -259,15 +259,18 @@ func TestRunStatus_LocalSettingsOnly(t *testing.T) {
 	}
 
 	output := stdout.String()
-	// Should show effective status first
-	if !strings.Contains(output, "Enabled (auto-commit)") {
-		t.Errorf("Expected output to show effective 'Enabled (auto-commit)', got: %s", output)
+	// Should show effective status first (dot + Enabled + separator + strategy)
+	if !strings.Contains(output, "Enabled") {
+		t.Errorf("Expected output to show 'Enabled', got: %s", output)
+	}
+	if !strings.Contains(output, "auto-commit") {
+		t.Errorf("Expected output to show 'auto-commit', got: %s", output)
 	}
 	// Should show per-file details
-	if !strings.Contains(output, "Local, enabled") {
-		t.Errorf("Expected output to show 'Local, enabled', got: %s", output)
+	if !strings.Contains(output, "Local") || !strings.Contains(output, "enabled") {
+		t.Errorf("Expected output to show 'Local' and 'enabled', got: %s", output)
 	}
-	if strings.Contains(output, "Project,") {
+	if strings.Contains(output, "Project") {
 		t.Errorf("Should not show Project settings when only local exists, got: %s", output)
 	}
 }
@@ -287,15 +290,15 @@ func TestRunStatus_BothProjectAndLocal(t *testing.T) {
 
 	output := stdout.String()
 	// Should show effective status first (local overrides project)
-	if !strings.Contains(output, "Disabled (auto-commit)") {
-		t.Errorf("Expected output to show effective 'Disabled (auto-commit)', got: %s", output)
+	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "auto-commit") {
+		t.Errorf("Expected output to show effective 'Disabled' with 'auto-commit', got: %s", output)
 	}
 	// Should show both settings separately
-	if !strings.Contains(output, "Project, enabled (manual-commit)") {
-		t.Errorf("Expected output to show 'Project, enabled (manual-commit)', got: %s", output)
+	if !strings.Contains(output, "Project") || !strings.Contains(output, "manual-commit") {
+		t.Errorf("Expected output to show Project with manual-commit, got: %s", output)
 	}
-	if !strings.Contains(output, "Local, disabled (auto-commit)") {
-		t.Errorf("Expected output to show 'Local, disabled (auto-commit)', got: %s", output)
+	if !strings.Contains(output, "Local") || !strings.Contains(output, "disabled") {
+		t.Errorf("Expected output to show Local with disabled, got: %s", output)
 	}
 }
 
@@ -314,8 +317,8 @@ func TestRunStatus_BothProjectAndLocal_Short(t *testing.T) {
 
 	output := stdout.String()
 	// Should show merged/effective state (local overrides project)
-	if !strings.Contains(output, "Disabled (auto-commit)") {
-		t.Errorf("Expected output to show 'Disabled (auto-commit)', got: %s", output)
+	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "auto-commit") {
+		t.Errorf("Expected output to show 'Disabled' with 'auto-commit', got: %s", output)
 	}
 }
 
@@ -329,8 +332,8 @@ func TestRunStatus_ShowsStrategy(t *testing.T) {
 	}
 
 	output := stdout.String()
-	if !strings.Contains(output, "(auto-commit)") {
-		t.Errorf("Expected output to show strategy '(auto-commit)', got: %s", output)
+	if !strings.Contains(output, "auto-commit") {
+		t.Errorf("Expected output to show strategy 'auto-commit', got: %s", output)
 	}
 }
 
@@ -345,12 +348,12 @@ func TestRunStatus_ShowsManualCommitStrategy(t *testing.T) {
 
 	output := stdout.String()
 	// Should show effective status first
-	if !strings.Contains(output, "Disabled (manual-commit)") {
-		t.Errorf("Expected output to show effective 'Disabled (manual-commit)', got: %s", output)
+	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "manual-commit") {
+		t.Errorf("Expected output to show effective 'Disabled' with 'manual-commit', got: %s", output)
 	}
 	// Should show per-file details
-	if !strings.Contains(output, "Project, disabled (manual-commit)") {
-		t.Errorf("Expected output to show 'Project, disabled (manual-commit)', got: %s", output)
+	if !strings.Contains(output, "Project") || !strings.Contains(output, "disabled") {
+		t.Errorf("Expected output to show 'Project' and 'disabled', got: %s", output)
 	}
 }
 
@@ -425,33 +428,26 @@ func TestWriteActiveSessions(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	writeActiveSessions(&buf)
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(&buf, sty)
 
 	output := buf.String()
 
-	// Should contain "Active Sessions:" header
-	if !strings.Contains(output, "Active Sessions:") {
-		t.Errorf("Expected 'Active Sessions:' header, got: %s", output)
+	// Should contain "Active Sessions" in section header
+	if !strings.Contains(output, "Active Sessions") {
+		t.Errorf("Expected 'Active Sessions' header, got: %s", output)
 	}
 
-	// Should contain worktree paths
-	if !strings.Contains(output, "/Users/test/repo") {
-		t.Errorf("Expected worktree path '/Users/test/repo', got: %s", output)
+	// Should contain agent labels (without brackets in new format)
+	if !strings.Contains(output, "Claude Code") {
+		t.Errorf("Expected agent label 'Claude Code', got: %s", output)
 	}
-	if !strings.Contains(output, "/Users/test/repo/.worktrees/3") {
-		t.Errorf("Expected worktree path '/Users/test/repo/.worktrees/3', got: %s", output)
-	}
-
-	// Should contain agent labels
-	if !strings.Contains(output, "[Claude Code]") {
-		t.Errorf("Expected agent label '[Claude Code]', got: %s", output)
-	}
-	if !strings.Contains(output, "[Cursor]") {
-		t.Errorf("Expected agent label '[Cursor]', got: %s", output)
+	if !strings.Contains(output, "Cursor") {
+		t.Errorf("Expected agent label 'Cursor', got: %s", output)
 	}
 	// Session without AgentType should show unknown placeholder
-	if !strings.Contains(output, "[(unknown)]") {
-		t.Errorf("Expected '[(unknown)]' for missing agent type, got: %s", output)
+	if !strings.Contains(output, unknownPlaceholder) {
+		t.Errorf("Expected '%s' for missing agent type, got: %s", unknownPlaceholder, output)
 	}
 
 	// Should contain truncated session IDs
@@ -459,36 +455,38 @@ func TestWriteActiveSessions(t *testing.T) {
 		t.Errorf("Expected truncated session ID 'abc-123', got: %s", output)
 	}
 
-	// Should contain first prompts on indented second line
+	// Should contain first prompts in quotes
 	if !strings.Contains(output, "\"Fix auth bug in login flow\"") {
 		t.Errorf("Expected first prompt text in quotes, got: %s", output)
 	}
 
 	// Session without FirstPrompt should NOT show a prompt line
-	// (no more "(unknown)" in quotes for missing prompts)
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "ghi-901") {
-			// The line with the no-prompt session should not have a prompt
 			if strings.Contains(line, "\"") {
 				t.Errorf("Session without prompt should not show quoted text on first line, got: %s", line)
 			}
 		}
 	}
 
-	// Should show "active X ago" for session with LastInteractionTime that differs from StartedAt
+	// Should show "active 5m ago" for session with LastInteractionTime that differs from StartedAt
 	if !strings.Contains(output, "active 5m ago") {
 		t.Errorf("Expected 'active 5m ago' for session with LastInteractionTime, got: %s", output)
 	}
 
-	// Session started 15m ago with no LastInteractionTime should NOT show "active" text
-	// Find the Cursor session line and verify no "active" in it
+	// Session started 15m ago with no LastInteractionTime should NOT show "active" in stats
 	for _, line := range lines {
-		if strings.Contains(line, "[Cursor]") {
+		if strings.Contains(line, "Cursor") {
 			if strings.Contains(line, "active") {
 				t.Errorf("Session without LastInteractionTime should not show 'active', got: %s", line)
 			}
 		}
+	}
+
+	// Should contain aggregate footer
+	if !strings.Contains(output, "3 sessions") {
+		t.Errorf("Expected aggregate '3 sessions' in footer, got: %s", output)
 	}
 }
 
@@ -519,11 +517,14 @@ func TestWriteActiveSessions_ActiveTimeOmittedWhenClose(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	writeActiveSessions(&buf)
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(&buf, sty)
 
 	output := buf.String()
-	if strings.Contains(output, "active") {
-		t.Errorf("Expected no 'active' when LastInteractionTime is close to StartedAt, got: %s", output)
+	// Should not show "active Xm ago" when LastInteractionTime is close to StartedAt
+	// But "active" may appear in phase indicator, so check for the specific pattern
+	if strings.Contains(output, "active 10m ago") || strings.Contains(output, "active 9m ago") {
+		t.Errorf("Expected no separate 'active' time when LastInteractionTime is close to StartedAt, got: %s", output)
 	}
 }
 
@@ -531,7 +532,8 @@ func TestWriteActiveSessions_NoSessions(t *testing.T) {
 	setupTestRepo(t)
 
 	var buf bytes.Buffer
-	writeActiveSessions(&buf)
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(&buf, sty)
 
 	// Should produce no output when there are no sessions
 	if buf.Len() != 0 {
@@ -560,10 +562,174 @@ func TestWriteActiveSessions_EndedSessionsExcluded(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	writeActiveSessions(&buf)
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(&buf, sty)
 
 	// Should produce no output when all sessions are ended
 	if buf.Len() != 0 {
 		t.Errorf("Expected empty output with only ended sessions, got: %s", buf.String())
+	}
+}
+
+func TestFormatTokenCount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input int
+		want  string
+	}{
+		{0, "0"},
+		{500, "500"},
+		{999, "999"},
+		{1000, "1k"},
+		{1200, "1.2k"},
+		{4800, "4.8k"},
+		{14300, "14.3k"},
+		{100000, "100k"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			t.Parallel()
+			got := formatTokenCount(tt.input)
+			if got != tt.want {
+				t.Errorf("formatTokenCount(%d) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTotalTokens(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil", func(t *testing.T) {
+		t.Parallel()
+		if got := totalTokens(nil); got != 0 {
+			t.Errorf("totalTokens(nil) = %d, want 0", got)
+		}
+	})
+
+	t.Run("basic", func(t *testing.T) {
+		t.Parallel()
+		tu := &agent.TokenUsage{
+			InputTokens:  100,
+			OutputTokens: 50,
+		}
+		if got := totalTokens(tu); got != 150 {
+			t.Errorf("totalTokens() = %d, want 150", got)
+		}
+	})
+
+	t.Run("with subagents", func(t *testing.T) {
+		t.Parallel()
+		tu := &agent.TokenUsage{
+			InputTokens:  100,
+			OutputTokens: 50,
+			SubagentTokens: &agent.TokenUsage{
+				InputTokens:  200,
+				OutputTokens: 100,
+			},
+		}
+		if got := totalTokens(tu); got != 450 {
+			t.Errorf("totalTokens() = %d, want 450", got)
+		}
+	})
+
+	t.Run("all fields", func(t *testing.T) {
+		t.Parallel()
+		tu := &agent.TokenUsage{
+			InputTokens:         100,
+			CacheCreationTokens: 50,
+			CacheReadTokens:     25,
+			OutputTokens:        75,
+		}
+		if got := totalTokens(tu); got != 250 {
+			t.Errorf("totalTokens() = %d, want 250", got)
+		}
+	})
+}
+
+func TestPhaseIndicator(t *testing.T) {
+	t.Parallel()
+
+	// Use a non-terminal writer so color is disabled — output is plain text
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+
+	tests := []struct {
+		phase session.Phase
+		want  string
+	}{
+		{session.PhaseActive, "● active"},
+		{session.PhaseIdle, "● idle"},
+		{session.PhaseEnded, "● ended"},
+		{"", "● idle"}, // empty defaults to idle
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.phase), func(t *testing.T) {
+			t.Parallel()
+			got := sty.phaseIndicator(tt.phase)
+			if got != tt.want {
+				t.Errorf("phaseIndicator(%q) = %q, want %q", tt.phase, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestActiveTimeDisplay(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil", func(t *testing.T) {
+		t.Parallel()
+		if got := activeTimeDisplay(nil); got != "" {
+			t.Errorf("activeTimeDisplay(nil) = %q, want empty", got)
+		}
+	})
+
+	t.Run("recent", func(t *testing.T) {
+		t.Parallel()
+		now := time.Now()
+		if got := activeTimeDisplay(&now); got != "active now" {
+			t.Errorf("activeTimeDisplay(now) = %q, want 'active now'", got)
+		}
+	})
+
+	t.Run("older", func(t *testing.T) {
+		t.Parallel()
+		older := time.Now().Add(-5 * time.Minute)
+		got := activeTimeDisplay(&older)
+		if got != "active 5m ago" {
+			t.Errorf("activeTimeDisplay(-5m) = %q, want 'active 5m ago'", got)
+		}
+	})
+}
+
+func TestShouldUseColor(t *testing.T) {
+	t.Parallel()
+
+	// bytes.Buffer is not a terminal → should return false
+	var buf bytes.Buffer
+	if shouldUseColor(&buf) {
+		t.Error("shouldUseColor(bytes.Buffer) should be false")
+	}
+}
+
+func TestHorizontalRule(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+
+	rule := sty.horizontalRule(20)
+	if len([]rune(rule)) != 20 {
+		t.Errorf("horizontalRule(20) has %d runes, want 20", len([]rune(rule)))
+	}
+	// All characters should be the box-drawing dash
+	for _, r := range rule {
+		if r != '─' {
+			t.Errorf("horizontalRule contains unexpected rune %q", r)
+			break
+		}
 	}
 }

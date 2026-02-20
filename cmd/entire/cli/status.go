@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,33 +73,35 @@ func runStatus(w io.Writer, detailed bool) error {
 		return nil
 	}
 
+	sty := newStatusStyles(w)
+
 	if detailed {
-		return runStatusDetailed(w, settingsPath, localSettingsPath, projectExists, localExists)
+		return runStatusDetailed(w, sty, settingsPath, localSettingsPath, projectExists, localExists)
 	}
 
 	// Short output: just show the effective/merged state
-	settings, err := LoadEntireSettings()
+	s, err := LoadEntireSettings()
 	if err != nil {
 		return fmt.Errorf("failed to load settings: %w", err)
 	}
 
-	fmt.Fprintln(w, formatSettingsStatusShort(settings))
+	fmt.Fprintln(w, formatSettingsStatusShort(s, sty))
 
-	if settings.Enabled {
-		writeActiveSessions(w)
+	if s.Enabled {
+		writeActiveSessions(w, sty)
 	}
 
 	return nil
 }
 
 // runStatusDetailed shows the effective status plus detailed status for each settings file.
-func runStatusDetailed(w io.Writer, settingsPath, localSettingsPath string, projectExists, localExists bool) error {
+func runStatusDetailed(w io.Writer, sty statusStyles, settingsPath, localSettingsPath string, projectExists, localExists bool) error {
 	// First show the effective/merged status
 	effectiveSettings, err := LoadEntireSettings()
 	if err != nil {
 		return fmt.Errorf("failed to load settings: %w", err)
 	}
-	fmt.Fprintln(w, formatSettingsStatusShort(effectiveSettings))
+	fmt.Fprintln(w, formatSettingsStatusShort(effectiveSettings, sty))
 	fmt.Fprintln(w) // blank line
 
 	// Show project settings if it exists
@@ -107,7 +110,7 @@ func runStatusDetailed(w io.Writer, settingsPath, localSettingsPath string, proj
 		if err != nil {
 			return fmt.Errorf("failed to load project settings: %w", err)
 		}
-		fmt.Fprintln(w, formatSettingsStatus("Project", projectSettings))
+		fmt.Fprintln(w, formatSettingsStatus("Project", projectSettings, sty))
 	}
 
 	// Show local settings if it exists
@@ -116,42 +119,73 @@ func runStatusDetailed(w io.Writer, settingsPath, localSettingsPath string, proj
 		if err != nil {
 			return fmt.Errorf("failed to load local settings: %w", err)
 		}
-		fmt.Fprintln(w, formatSettingsStatus("Local", localSettings))
+		fmt.Fprintln(w, formatSettingsStatus("Local", localSettings, sty))
 	}
 
 	if effectiveSettings.Enabled {
-		writeActiveSessions(w)
+		writeActiveSessions(w, sty)
 	}
 
 	return nil
 }
 
 // formatSettingsStatusShort formats a short settings status line.
-// Output format: "Enabled (manual-commit)" or "Disabled (auto-commit)"
-func formatSettingsStatusShort(settings *EntireSettings) string {
-	displayName := settings.Strategy
-	if dn, ok := strategyInternalToDisplay[settings.Strategy]; ok {
+// Output format: "● Enabled · manual-commit · branch main" or "○ Disabled · auto-commit"
+func formatSettingsStatusShort(s *EntireSettings, sty statusStyles) string {
+	displayName := s.Strategy
+	if dn, ok := strategyInternalToDisplay[s.Strategy]; ok {
 		displayName = dn
 	}
 
-	if settings.Enabled {
-		return fmt.Sprintf("Enabled (%s)", displayName)
+	var b strings.Builder
+
+	if s.Enabled {
+		b.WriteString(sty.render(sty.green, "●"))
+		b.WriteString(" ")
+		b.WriteString(sty.render(sty.bold, "Enabled"))
+	} else {
+		b.WriteString(sty.render(sty.red, "○"))
+		b.WriteString(" ")
+		b.WriteString(sty.render(sty.bold, "Disabled"))
 	}
-	return fmt.Sprintf("Disabled (%s)", displayName)
+
+	b.WriteString(sty.render(sty.dim, " · "))
+	b.WriteString(displayName)
+
+	// Resolve branch from repo root
+	if repoRoot, err := paths.RepoRoot(); err == nil {
+		if branch := resolveWorktreeBranch(repoRoot); branch != "" {
+			b.WriteString(sty.render(sty.dim, " · "))
+			b.WriteString("branch ")
+			b.WriteString(sty.render(sty.cyan, branch))
+		}
+	}
+
+	return b.String()
 }
 
 // formatSettingsStatus formats a settings status line with source prefix.
-// Output format: "Project, enabled (manual-commit)" or "Local, disabled (auto-commit)"
-func formatSettingsStatus(prefix string, settings *EntireSettings) string {
-	displayName := settings.Strategy
-	if dn, ok := strategyInternalToDisplay[settings.Strategy]; ok {
+// Output format: "Project · enabled · manual-commit" or "Local · disabled · auto-commit"
+func formatSettingsStatus(prefix string, s *EntireSettings, sty statusStyles) string {
+	displayName := s.Strategy
+	if dn, ok := strategyInternalToDisplay[s.Strategy]; ok {
 		displayName = dn
 	}
 
-	if settings.Enabled {
-		return fmt.Sprintf("%s, enabled (%s)", prefix, displayName)
+	var b strings.Builder
+	b.WriteString(sty.render(sty.bold, prefix))
+	b.WriteString(sty.render(sty.dim, " · "))
+
+	if s.Enabled {
+		b.WriteString("enabled")
+	} else {
+		b.WriteString("disabled")
 	}
-	return fmt.Sprintf("%s, disabled (%s)", prefix, displayName)
+
+	b.WriteString(sty.render(sty.dim, " · "))
+	b.WriteString(displayName)
+
+	return b.String()
 }
 
 // timeAgo formats a time as a human-readable relative duration.
@@ -185,7 +219,7 @@ const (
 )
 
 // writeActiveSessions writes active session information grouped by worktree.
-func writeActiveSessions(w io.Writer) {
+func writeActiveSessions(w io.Writer, sty statusStyles) {
 	store, err := session.NewStateStore()
 	if err != nil {
 		return
@@ -245,16 +279,18 @@ func writeActiveSessions(w io.Writer) {
 		})
 	}
 
+	// Track aggregate totals
+	var totalSessions, totalFiles, totalTok int
+
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Active Sessions:")
-	for i, g := range sortedGroups {
-		header := g.path
-		if g.branch != "" {
-			header += " (" + g.branch + ")"
-		}
-		fmt.Fprintf(w, "  %s\n", header)
+	for _, g := range sortedGroups {
+		displayName := worktreeDisplayName(g.path)
+		fmt.Fprintln(w, sty.sectionRule("Active Sessions", displayName, sty.width))
+		fmt.Fprintln(w)
 
 		for _, st := range g.sessions {
+			totalSessions++
+
 			agentLabel := string(st.AgentType)
 			if agentLabel == "" {
 				agentLabel = unknownPlaceholder
@@ -265,29 +301,45 @@ func writeActiveSessions(w io.Writer) {
 				shortID = shortID[:7]
 			}
 
-			age := "started " + timeAgo(st.StartedAt)
+			// Line 1: Agent · shortID ● phase
+			fmt.Fprintf(w, "%s %s %s\n",
+				sty.render(sty.agent, agentLabel),
+				sty.render(sty.dim, "·"),
+				shortID+" "+sty.phaseIndicator(st.Phase))
 
-			// Show "active X ago" when LastInteractionTime differs meaningfully from StartedAt
-			activeStr := ""
-			if st.LastInteractionTime != nil && st.LastInteractionTime.Sub(st.StartedAt) > time.Minute {
-				activeStr = ", active " + timeAgo(*st.LastInteractionTime)
-			}
-
-			fmt.Fprintf(w, "    [%s] %-9s %s%s\n",
-				agentLabel, shortID, age, activeStr)
-
-			// Show first prompt on indented second line
+			// Line 2: "first prompt" (quoted, truncated)
 			if st.FirstPrompt != "" {
 				prompt := stringutil.TruncateRunes(st.FirstPrompt, 60, "...")
-				fmt.Fprintf(w, "      \"%s\"\n", prompt)
+				fmt.Fprintf(w, "\"%s\"\n", prompt)
 			}
-		}
 
-		// Blank line between groups, but not after the last one
-		if i < len(sortedGroups)-1 {
+			// Line 3: stats line — started Xd ago · active now · files N · tokens X.Xk
+			var stats []string
+			stats = append(stats, "started "+timeAgo(st.StartedAt))
+
+			if st.LastInteractionTime != nil && st.LastInteractionTime.Sub(st.StartedAt) > time.Minute {
+				stats = append(stats, activeTimeDisplay(st.LastInteractionTime))
+			}
+
+			fileCount := len(st.FilesTouched)
+			totalFiles += fileCount
+			stats = append(stats, "files "+sty.render(sty.bold, strconv.Itoa(fileCount)))
+
+			tok := totalTokens(st.TokenUsage)
+			totalTok += tok
+			stats = append(stats, "tokens "+sty.render(sty.bold, formatTokenCount(tok)))
+
+			statsLine := strings.Join(stats, sty.render(sty.dim, " · "))
+			fmt.Fprintln(w, sty.render(sty.dim, statsLine))
 			fmt.Fprintln(w)
 		}
 	}
+
+	// Footer: horizontal rule + aggregate totals
+	fmt.Fprintln(w, sty.horizontalRule(sty.width))
+	footer := fmt.Sprintf("%d sessions · %d files · %s tokens",
+		totalSessions, totalFiles, formatTokenCount(totalTok))
+	fmt.Fprintln(w, sty.render(sty.dim, footer))
 }
 
 // resolveWorktreeBranch resolves the current branch for a worktree path

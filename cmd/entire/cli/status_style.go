@@ -1,0 +1,173 @@
+package cli
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/session"
+
+	"golang.org/x/term"
+)
+
+// statusStyles holds pre-built lipgloss styles and terminal metadata.
+type statusStyles struct {
+	colorEnabled bool
+	width        int
+
+	// Styles
+	green  lipgloss.Style
+	red    lipgloss.Style
+	yellow lipgloss.Style
+	gray   lipgloss.Style
+	bold   lipgloss.Style
+	dim    lipgloss.Style
+	agent  lipgloss.Style // amber/orange for agent names
+	cyan   lipgloss.Style
+}
+
+// newStatusStyles creates styles appropriate for the output writer.
+func newStatusStyles(w io.Writer) statusStyles {
+	useColor := shouldUseColor(w)
+	width := getTerminalWidth()
+
+	s := statusStyles{
+		colorEnabled: useColor,
+		width:        width,
+	}
+
+	if useColor {
+		s.green = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+		s.red = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+		s.yellow = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+		s.gray = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
+		s.bold = lipgloss.NewStyle().Bold(true)
+		s.dim = lipgloss.NewStyle().Faint(true)
+		s.agent = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+		s.cyan = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	}
+
+	return s
+}
+
+// render applies a style to text only when color is enabled.
+func (s statusStyles) render(style lipgloss.Style, text string) string {
+	if !s.colorEnabled {
+		return text
+	}
+	return style.Render(text)
+}
+
+// shouldUseColor returns true if the writer supports color output.
+func shouldUseColor(w io.Writer) bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	if f, ok := w.(*os.File); ok {
+		return term.IsTerminal(int(f.Fd()))
+	}
+	return false
+}
+
+// getTerminalWidth returns the terminal width, capped at 80 with a fallback of 60.
+func getTerminalWidth() int {
+	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 {
+		if w > 80 {
+			return 80
+		}
+		return w
+	}
+	return 60
+}
+
+// formatTokenCount formats a token count for display.
+// 0 → "0", 500 → "500", 1200 → "1.2k", 14300 → "14.3k"
+func formatTokenCount(n int) string {
+	if n < 1000 {
+		return strconv.Itoa(n)
+	}
+	f := float64(n) / 1000.0
+	s := fmt.Sprintf("%.1f", f)
+	// Remove trailing ".0" for clean display (e.g., 1000 → "1k" not "1.0k")
+	s = strings.TrimSuffix(s, ".0")
+	return s + "k"
+}
+
+// totalTokens recursively sums all token fields including subagent tokens.
+func totalTokens(tu *agent.TokenUsage) int {
+	if tu == nil {
+		return 0
+	}
+	total := tu.InputTokens + tu.CacheCreationTokens + tu.CacheReadTokens + tu.OutputTokens
+	total += totalTokens(tu.SubagentTokens)
+	return total
+}
+
+// horizontalRule renders a dimmed horizontal rule of the given width.
+func (s statusStyles) horizontalRule(width int) string {
+	rule := strings.Repeat("─", width)
+	return s.render(s.dim, rule)
+}
+
+// sectionRule renders a section header like: ── Active Sessions · repo-name ────
+func (s statusStyles) sectionRule(label, highlight string, width int) string {
+	prefix := "── "
+	content := label + " · " + highlight + " "
+	// Calculate remaining space for trailing rule
+	// Count visible characters (no ANSI escapes in the plain text)
+	usedWidth := len(prefix) + len(content)
+	trailing := width - usedWidth
+	if trailing < 1 {
+		trailing = 1
+	}
+
+	var b strings.Builder
+	b.WriteString(s.render(s.dim, "── "))
+	b.WriteString(s.render(s.dim, label))
+	b.WriteString(s.render(s.dim, " · "))
+	b.WriteString(s.render(s.cyan, highlight))
+	b.WriteString(" ")
+	b.WriteString(s.render(s.dim, strings.Repeat("─", trailing)))
+	return b.String()
+}
+
+// phaseIndicator returns a colored dot + phase text.
+func (s statusStyles) phaseIndicator(phase session.Phase) string {
+	switch phase {
+	case session.PhaseActive:
+		return s.render(s.green, "●") + " " + s.render(s.green, "active")
+	case session.PhaseIdle:
+		return s.render(s.yellow, "●") + " " + s.render(s.yellow, "idle")
+	case session.PhaseEnded:
+		return s.render(s.gray, "●") + " " + s.render(s.gray, "ended")
+	default:
+		return s.render(s.gray, "●") + " " + s.render(s.gray, "idle")
+	}
+}
+
+// activeTimeDisplay formats a last interaction time for display.
+// Returns "active now" for recent activity (<1min), otherwise "active Xm ago".
+func activeTimeDisplay(lastInteraction *time.Time) string {
+	if lastInteraction == nil {
+		return ""
+	}
+	d := time.Since(*lastInteraction)
+	if d < time.Minute {
+		return "active now"
+	}
+	return "active " + timeAgo(*lastInteraction)
+}
+
+// worktreeDisplayName returns the base name of a worktree path for compact display.
+func worktreeDisplayName(path string) string {
+	if path == unknownPlaceholder {
+		return path
+	}
+	return filepath.Base(path)
+}
