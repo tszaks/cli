@@ -15,7 +15,6 @@ import (
 // Ensure CursorAgent implements HookSupport and HookHandler
 var (
 	_ agent.HookSupport = (*CursorAgent)(nil)
-	_ agent.HookHandler = (*CursorAgent)(nil)
 )
 
 // Cursor hook names - these become subcommands under `entire hooks cursor`
