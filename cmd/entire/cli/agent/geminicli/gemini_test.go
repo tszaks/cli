@@ -80,13 +80,6 @@ func TestDetectPresence(t *testing.T) {
 	})
 }
 
-func TestSupportsHooks(t *testing.T) {
-	ag := &GeminiCLIAgent{}
-	if !ag.SupportsHooks() {
-		t.Error("SupportsHooks() = false, want true")
-	}
-}
-
 func TestParseHookInput_SessionStart(t *testing.T) {
 	ag := &GeminiCLIAgent{}
 
@@ -461,30 +454,6 @@ func TestGetProjectHash(t *testing.T) {
 	hash3 := GetProjectHash("/Users/test/other")
 	if hash1 == hash3 {
 		t.Errorf("GetProjectHash should return different hashes for different paths")
-	}
-}
-
-func TestGetSupportedHooks(t *testing.T) {
-	ag := &GeminiCLIAgent{}
-	hooks := ag.GetSupportedHooks()
-
-	expected := []agent.HookType{
-		agent.HookSessionStart,
-		agent.HookSessionEnd,       // Maps to Gemini's SessionEnd (explicit exit/logout)
-		agent.HookStop,             // Maps to Gemini's AfterAgent (end of response)
-		agent.HookUserPromptSubmit, // Maps to Gemini's BeforeAgent
-		agent.HookPreToolUse,       // Maps to Gemini's BeforeTool
-		agent.HookPostToolUse,      // Maps to Gemini's AfterTool
-	}
-
-	if len(hooks) != len(expected) {
-		t.Errorf("GetSupportedHooks() returned %d hooks, want %d", len(hooks), len(expected))
-	}
-
-	for i, hook := range expected {
-		if hooks[i] != hook {
-			t.Errorf("GetSupportedHooks()[%d] = %v, want %v", i, hooks[i], hook)
-		}
 	}
 }
 

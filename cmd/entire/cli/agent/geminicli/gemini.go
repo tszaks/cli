@@ -73,11 +73,6 @@ func (g *GeminiCLIAgent) DetectPresence() (bool, error) {
 	return false, nil
 }
 
-// SupportsHooks returns true as Gemini CLI supports lifecycle hooks.
-func (g *GeminiCLIAgent) SupportsHooks() bool {
-	return true
-}
-
 // ParseHookInput parses Gemini CLI hook input from stdin.
 func (g *GeminiCLIAgent) ParseHookInput(hookType agent.HookType, reader io.Reader) (*agent.HookInput, error) {
 	data, err := io.ReadAll(reader)
