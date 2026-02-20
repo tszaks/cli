@@ -127,7 +127,7 @@ func (s statusStyles) horizontalRule(width int) string {
 func (s statusStyles) sectionRule(label string, width int) string {
 	prefix := "── "
 	content := label + " "
-	usedWidth := len(prefix) + len(content)
+	usedWidth := len([]rune(prefix)) + len([]rune(content))
 	trailing := width - usedWidth
 	if trailing < 1 {
 		trailing = 1

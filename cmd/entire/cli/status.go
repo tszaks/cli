@@ -284,9 +284,13 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 	var totalSessions int
 
 	fmt.Fprintln(w)
+	printedHeader := false
 	for _, g := range sortedGroups {
-		fmt.Fprintln(w, sty.sectionRule("Active Sessions", sty.width))
-		fmt.Fprintln(w)
+		if !printedHeader {
+			fmt.Fprintln(w, sty.sectionRule("Active Sessions", sty.width))
+			fmt.Fprintln(w)
+			printedHeader = true
+		}
 
 		for _, st := range g.sessions {
 			totalSessions++
@@ -321,7 +325,7 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 				stats = append(stats, activeTimeDisplay(st.LastInteractionTime))
 			}
 
-			stats = append(stats, "tokens "+sty.render(sty.bold, formatTokenCount(totalTokens(st.TokenUsage))))
+			stats = append(stats, "tokens "+formatTokenCount(totalTokens(st.TokenUsage)))
 
 			statsLine := strings.Join(stats, sty.render(sty.dim, " · "))
 			fmt.Fprintln(w, sty.render(sty.dim, statsLine))
@@ -331,7 +335,12 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 
 	// Footer: horizontal rule + session count
 	fmt.Fprintln(w, sty.horizontalRule(sty.width))
-	footer := fmt.Sprintf("%d sessions", totalSessions)
+	var footer string
+	if totalSessions == 1 {
+		footer = "1 session"
+	} else {
+		footer = fmt.Sprintf("%d sessions", totalSessions)
+	}
 	fmt.Fprintln(w, sty.render(sty.dim, footer))
 	fmt.Fprintln(w)
 }
