@@ -3,6 +3,7 @@ package strategy
 import (
 	"encoding/json"
 	"fmt"
+	"unicode/utf8"
 
 	"github.com/entireio/cli/cmd/entire/cli/stringutil"
 )
@@ -15,12 +16,11 @@ const MaxDescriptionLength = 60
 // Uses rune-based slicing to avoid splitting multi-byte UTF-8 characters.
 // If maxLen is less than 3, truncates without ellipsis.
 func TruncateDescription(s string, maxLen int) string {
-	runes := []rune(s)
-	if len(runes) <= maxLen {
+	if utf8.RuneCountInString(s) <= maxLen {
 		return s
 	}
 	if maxLen < 3 {
-		return string(runes[:maxLen])
+		return stringutil.TruncateRunes(s, maxLen, "")
 	}
 	return stringutil.TruncateRunes(s, maxLen, "...")
 }
