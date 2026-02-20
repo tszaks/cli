@@ -333,6 +333,7 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 	fmt.Fprintln(w, sty.horizontalRule(sty.width))
 	footer := fmt.Sprintf("%d sessions", totalSessions)
 	fmt.Fprintln(w, sty.render(sty.dim, footer))
+	fmt.Fprintln(w)
 }
 
 // resolveWorktreeBranch resolves the current branch for a worktree path
