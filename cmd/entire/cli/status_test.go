@@ -171,6 +171,26 @@ func TestResolveWorktreeBranch_NotARepo(t *testing.T) {
 	}
 }
 
+func TestResolveWorktreeBranch_ReftableStub(t *testing.T) {
+	t.Parallel()
+
+	// Simulate a reftable repo where .git/HEAD contains "ref: refs/heads/.invalid"
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/.invalid\n"), 0o644); err != nil {
+		t.Fatalf("write HEAD: %v", err)
+	}
+
+	branch := resolveWorktreeBranch(dir)
+	// Should fall back to git, which will fail on this fake repo and return "HEAD"
+	if branch != "HEAD" {
+		t.Errorf("resolveWorktreeBranch() = %q, want %q for reftable stub", branch, "HEAD")
+	}
+}
+
 func TestRunStatus_Enabled(t *testing.T) {
 	setupTestRepo(t)
 	writeSettings(t, testSettingsEnabled)

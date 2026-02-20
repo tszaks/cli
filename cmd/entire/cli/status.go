@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -178,7 +179,10 @@ type worktreeGroup struct {
 	sessions []*session.State
 }
 
-const unknownPlaceholder = "(unknown)"
+const (
+	unknownPlaceholder  = "(unknown)"
+	detachedHEADDisplay = "HEAD"
+)
 
 // writeActiveSessions writes active session information grouped by worktree.
 func writeActiveSessions(w io.Writer) {
@@ -326,9 +330,32 @@ func resolveWorktreeBranch(worktreePath string) string {
 
 	// Symbolic ref: "ref: refs/heads/<branch>"
 	if strings.HasPrefix(ref, "ref: refs/heads/") {
-		return strings.TrimPrefix(ref, "ref: refs/heads/")
+		branch := strings.TrimPrefix(ref, "ref: refs/heads/")
+		// Reftable ref storage uses "ref: refs/heads/.invalid" as a dummy HEAD stub.
+		// Fall back to git to resolve the actual branch in that case.
+		if branch == ".invalid" {
+			return resolveWorktreeBranchGit(worktreePath)
+		}
+		return branch
 	}
 
 	// Detached HEAD or other ref type
-	return "HEAD"
+	return detachedHEADDisplay
+}
+
+// resolveWorktreeBranchGit resolves the branch name by shelling out to git.
+// Used as a fallback for reftable ref storage where .git/HEAD is a stub.
+func resolveWorktreeBranchGit(worktreePath string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "-C", worktreePath, "rev-parse", "--symbolic-full-name", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return detachedHEADDisplay
+	}
+	ref := strings.TrimSpace(string(out))
+	if strings.HasPrefix(ref, "refs/heads/") {
+		return strings.TrimPrefix(ref, "refs/heads/")
+	}
+	return detachedHEADDisplay
 }
