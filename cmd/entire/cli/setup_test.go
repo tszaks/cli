@@ -1152,3 +1152,87 @@ func TestDetectOrSelectAgent_BothDirectoriesExist_NoTTY_UsesAll(t *testing.T) {
 		t.Errorf("detectOrSelectAgent() returned %d agents, want 2", len(agents))
 	}
 }
+
+// writeClaudeHooksFixture writes a minimal .claude/settings.json with Entire hooks installed.
+func writeClaudeHooksFixture(t *testing.T) {
+	t.Helper()
+	if err := os.MkdirAll(".claude", 0o755); err != nil {
+		t.Fatalf("Failed to create .claude directory: %v", err)
+	}
+	hooksJSON := `{
+		"hooks": {
+			"Stop": [{"hooks": [{"type": "command", "command": "entire hooks claude-code stop"}]}]
+		}
+	}`
+	if err := os.WriteFile(".claude/settings.json", []byte(hooksJSON), 0o644); err != nil {
+		t.Fatalf("Failed to write .claude/settings.json: %v", err)
+	}
+}
+
+func TestDetectOrSelectAgent_ReRun_AlwaysPromptsWithInstalledPreSelected(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
+	setupTestRepo(t)
+	t.Setenv("ENTIRE_TEST_TTY", "1")
+
+	// Install Claude Code hooks (simulates a previous `entire enable` run)
+	writeClaudeHooksFixture(t)
+
+	// Verify hooks are detected as installed
+	installed := GetAgentsWithHooksInstalled()
+	if len(installed) == 0 {
+		t.Fatal("Expected Claude Code hooks to be detected as installed")
+	}
+
+	// Track what the selector receives
+	var receivedAvailable []string
+	selectFn := func(available []string) ([]string, error) {
+		receivedAvailable = available
+		// User keeps claude-code selected
+		return []string{string(agent.AgentNameClaudeCode)}, nil
+	}
+
+	var buf bytes.Buffer
+	agents, err := detectOrSelectAgent(&buf, selectFn)
+	if err != nil {
+		t.Fatalf("detectOrSelectAgent() error = %v", err)
+	}
+
+	// Should have been prompted (selectFn called) even though only one agent is detected
+	if len(receivedAvailable) == 0 {
+		t.Fatal("Expected interactive prompt to be shown on re-run, but selectFn was not called")
+	}
+
+	// Should return the selected agent
+	if len(agents) != 1 || agents[0].Name() != agent.AgentNameClaudeCode {
+		t.Errorf("Expected [claude-code], got %v", agents)
+	}
+
+	// Should NOT contain "Detected agent:" (the auto-use message for first run)
+	output := buf.String()
+	if strings.Contains(output, "Detected agent:") {
+		t.Errorf("Re-run should not auto-use agent, but got: %s", output)
+	}
+}
+
+func TestDetectOrSelectAgent_ReRun_NoTTY_KeepsInstalled(t *testing.T) {
+	// Cannot use t.Parallel() because we use t.Chdir and t.Setenv
+	setupTestRepo(t)
+	t.Setenv("ENTIRE_TEST_TTY", "0") // No TTY available
+
+	// Install Claude Code hooks
+	writeClaudeHooksFixture(t)
+
+	var buf bytes.Buffer
+	agents, err := detectOrSelectAgent(&buf, nil)
+	if err != nil {
+		t.Fatalf("detectOrSelectAgent() error = %v", err)
+	}
+
+	// Should keep currently installed agents without prompting
+	if len(agents) != 1 {
+		t.Fatalf("Expected 1 agent, got %d", len(agents))
+	}
+	if agents[0].Name() != agent.AgentNameClaudeCode {
+		t.Errorf("Expected claude-code, got %v", agents[0].Name())
+	}
+}

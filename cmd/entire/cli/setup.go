@@ -470,40 +470,59 @@ func setupAgentHooks(ag agent.Agent, localDev, forceHooks bool) (int, error) { /
 
 // detectOrSelectAgent tries to auto-detect agents, or prompts the user to select.
 // Returns the detected/selected agents and any error.
-// When exactly one agent is detected, it is used automatically.
-// When multiple agents are detected, the user is prompted to confirm.
-// If no agent is detected and no TTY is available, falls back to the default agent.
+//
+// On first run (no hooks installed):
+//   - Single detected agent: used automatically
+//   - Multiple/no detected agents: interactive multi-select prompt
+//
+// On re-run (hooks already installed):
+//   - Always shows the interactive multi-select
+//   - Pre-selects agents that have hooks installed + any newly detected agents
 //
 // selectFn overrides the interactive prompt for testing. When nil, the real form is used.
 // It receives available agent names and returns the selected names.
 func detectOrSelectAgent(w io.Writer, selectFn func(available []string) ([]string, error)) ([]agent.Agent, error) {
-	// Try auto-detection first
+	// Check for agents with hooks already installed (re-run detection)
+	installedAgentNames := GetAgentsWithHooksInstalled()
+	isReRun := len(installedAgentNames) > 0
+
+	// Try auto-detection
 	detected := agent.DetectAll()
 
-	switch {
-	case len(detected) == 1:
-		// Single agent detected — use it directly
-		fmt.Fprintf(w, "Detected agent: %s\n\n", detected[0].Type())
-		return detected, nil
+	// First run: use existing auto-detect shortcuts
+	if !isReRun {
+		switch {
+		case len(detected) == 1:
+			fmt.Fprintf(w, "Detected agent: %s\n\n", detected[0].Type())
+			return detected, nil
 
-	case len(detected) > 1:
-		// Multiple agents detected — prompt the user to confirm which to enable
-		agentTypes := make([]string, 0, len(detected))
-		for _, ag := range detected {
-			agentTypes = append(agentTypes, string(ag.Type()))
+		case len(detected) > 1:
+			agentTypes := make([]string, 0, len(detected))
+			for _, ag := range detected {
+				agentTypes = append(agentTypes, string(ag.Type()))
+			}
+			fmt.Fprintf(w, "Detected multiple agents: %s\n", strings.Join(agentTypes, ", "))
+			fmt.Fprintln(w)
 		}
-		fmt.Fprintf(w, "Detected multiple agents: %s\n", strings.Join(agentTypes, ", "))
-		fmt.Fprintln(w)
-		// Fall through to the interactive multi-select below
 	}
 
-	// No agent detected (or multiple detected) — check if we can prompt interactively
+	// Check if we can prompt interactively
 	if !canPromptInteractively() {
+		if isReRun {
+			// Re-run without TTY — keep currently installed agents
+			agents := make([]agent.Agent, 0, len(installedAgentNames))
+			for _, name := range installedAgentNames {
+				ag, err := agent.Get(name)
+				if err != nil {
+					continue
+				}
+				agents = append(agents, ag)
+			}
+			return agents, nil
+		}
 		if len(detected) > 0 {
-			// Multiple agents detected but no TTY — use all of them
 			return detected, nil
 		}
-		// No TTY available (e.g., running in CI or tests) - fall back to default agent
 		defaultAgent := agent.Default()
 		if defaultAgent == nil {
 			return nil, errors.New("no default agent available")
@@ -512,17 +531,19 @@ func detectOrSelectAgent(w io.Writer, selectFn func(available []string) ([]strin
 		return []agent.Agent{defaultAgent}, nil
 	}
 
-	if len(detected) == 0 {
-		// Show message only when nothing was detected
+	if !isReRun && len(detected) == 0 {
 		fmt.Fprintln(w, "No agent configuration detected (e.g., .claude or .gemini directory).")
 		fmt.Fprintln(w, "This is normal - some agents don't require a config directory.")
 		fmt.Fprintln(w)
 	}
 
-	// Build a set of detected agent names for pre-selection
-	detectedSet := make(map[agent.AgentName]struct{}, len(detected))
+	// Build pre-selection set: installed agents (always) + detected agents
+	preSelectedSet := make(map[agent.AgentName]struct{})
+	for _, name := range installedAgentNames {
+		preSelectedSet[name] = struct{}{}
+	}
 	for _, ag := range detected {
-		detectedSet[ag.Name()] = struct{}{}
+		preSelectedSet[ag.Name()] = struct{}{}
 	}
 
 	// Build options from registered agents
@@ -542,7 +563,7 @@ func detectOrSelectAgent(w io.Writer, selectFn func(available []string) ([]strin
 			label += " (default)"
 		}
 		opt := huh.NewOption(label, string(name))
-		if _, isDetected := detectedSet[name]; isDetected {
+		if _, isPreSelected := preSelectedSet[name]; isPreSelected {
 			opt = opt.Selected(true)
 		}
 		options = append(options, opt)
