@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
@@ -810,12 +809,12 @@ func (r *OpenCodeHookRunner) runOpenCodeHookInRepoDir(hookName string, inputJSON
 }
 
 // SimulateOpenCodeSessionStart simulates the session-start hook for OpenCode.
-func (r *OpenCodeHookRunner) SimulateOpenCodeSessionStart(sessionID, transcriptPath string) error {
+// Note: The plugin now sends only session_id, not transcript_path.
+func (r *OpenCodeHookRunner) SimulateOpenCodeSessionStart(sessionID, _ string) error {
 	r.T.Helper()
 
 	input := map[string]string{
-		"session_id":      sessionID,
-		"transcript_path": transcriptPath,
+		"session_id": sessionID,
 	}
 
 	return r.runOpenCodeHookWithInput("session-start", input)
@@ -823,13 +822,13 @@ func (r *OpenCodeHookRunner) SimulateOpenCodeSessionStart(sessionID, transcriptP
 
 // SimulateOpenCodeTurnStart simulates the turn-start hook for OpenCode.
 // This is equivalent to Claude Code's UserPromptSubmit.
-func (r *OpenCodeHookRunner) SimulateOpenCodeTurnStart(sessionID, transcriptPath, prompt string) error {
+// Note: The plugin now sends only session_id and prompt, not transcript_path.
+func (r *OpenCodeHookRunner) SimulateOpenCodeTurnStart(sessionID, _, prompt string) error {
 	r.T.Helper()
 
 	input := map[string]string{
-		"session_id":      sessionID,
-		"transcript_path": transcriptPath,
-		"prompt":          prompt,
+		"session_id": sessionID,
+		"prompt":     prompt,
 	}
 
 	return r.runOpenCodeHookWithInput("turn-start", input)
@@ -837,24 +836,38 @@ func (r *OpenCodeHookRunner) SimulateOpenCodeTurnStart(sessionID, transcriptPath
 
 // SimulateOpenCodeTurnEnd simulates the turn-end hook for OpenCode.
 // This is equivalent to Claude Code's Stop hook.
+// Note: The plugin now sends only session_id. The Go handler calls `opencode export`
+// to get the transcript. For tests, we write a mock export JSON file first.
 func (r *OpenCodeHookRunner) SimulateOpenCodeTurnEnd(sessionID, transcriptPath string) error {
 	r.T.Helper()
 
+	// For integration tests, write the mock transcript to the location where the
+	// lifecycle handler expects it (.entire/tmp/<session_id>.json)
+	if transcriptPath != "" {
+		srcData, err := os.ReadFile(transcriptPath)
+		if err == nil {
+			destDir := filepath.Join(r.RepoDir, ".entire", "tmp")
+			if mkErr := os.MkdirAll(destDir, 0o755); mkErr == nil {
+				destPath := filepath.Join(destDir, sessionID+".json")
+				_ = os.WriteFile(destPath, srcData, 0o644)
+			}
+		}
+	}
+
 	input := map[string]string{
-		"session_id":      sessionID,
-		"transcript_path": transcriptPath,
+		"session_id": sessionID,
 	}
 
 	return r.runOpenCodeHookWithInput("turn-end", input)
 }
 
 // SimulateOpenCodeSessionEnd simulates the session-end hook for OpenCode.
-func (r *OpenCodeHookRunner) SimulateOpenCodeSessionEnd(sessionID, transcriptPath string) error {
+// Note: The plugin now sends only session_id, not transcript_path.
+func (r *OpenCodeHookRunner) SimulateOpenCodeSessionEnd(sessionID, _ string) error {
 	r.T.Helper()
 
 	input := map[string]string{
-		"session_id":      sessionID,
-		"transcript_path": transcriptPath,
+		"session_id": sessionID,
 	}
 
 	return r.runOpenCodeHookWithInput("session-end", input)
@@ -874,7 +887,7 @@ func (env *TestEnv) NewOpenCodeSession() *OpenCodeSession {
 
 	env.SessionCounter++
 	sessionID := fmt.Sprintf("opencode-session-%d", env.SessionCounter)
-	transcriptPath := filepath.Join(env.OpenCodeProjectDir, sessionID+".jsonl")
+	transcriptPath := filepath.Join(env.OpenCodeProjectDir, sessionID+".json")
 
 	return &OpenCodeSession{
 		ID:             sessionID,
@@ -883,21 +896,23 @@ func (env *TestEnv) NewOpenCodeSession() *OpenCodeSession {
 	}
 }
 
-// CreateOpenCodeTranscript creates an OpenCode JSONL transcript file for the session.
-// Each line is a JSON message in OpenCode's format (id, role, content, time, tokens, parts).
+// CreateOpenCodeTranscript creates an OpenCode export JSON transcript file for the session.
+// This matches the format of `opencode export <session-id>` output.
 func (s *OpenCodeSession) CreateOpenCodeTranscript(prompt string, changes []FileChange) string {
-	var lines []string
+	var messages []map[string]interface{}
 
 	// User message
 	s.msgCounter++
-	userMsg := map[string]interface{}{
-		"id":      fmt.Sprintf("msg-%d", s.msgCounter),
-		"role":    "user",
-		"content": prompt,
-		"time":    map[string]interface{}{"created": 1708300000 + s.msgCounter},
-	}
-	userJSON, _ := json.Marshal(userMsg)
-	lines = append(lines, string(userJSON))
+	messages = append(messages, map[string]interface{}{
+		"info": map[string]interface{}{
+			"id":   fmt.Sprintf("msg-%d", s.msgCounter),
+			"role": "user",
+			"time": map[string]interface{}{"created": 1708300000 + s.msgCounter},
+		},
+		"parts": []map[string]interface{}{
+			{"type": "text", "text": prompt},
+		},
+	})
 
 	// Assistant message with tool calls for file changes
 	s.msgCounter++
@@ -918,35 +933,49 @@ func (s *OpenCodeSession) CreateOpenCodeTranscript(prompt string, changes []File
 			},
 		})
 	}
+	parts = append(parts, map[string]interface{}{
+		"type": "text",
+		"text": "Done!",
+	})
 
-	asstMsg := map[string]interface{}{
-		"id":      fmt.Sprintf("msg-%d", s.msgCounter),
-		"role":    "assistant",
-		"content": "Done!",
-		"time": map[string]interface{}{
-			"created":   1708300000 + s.msgCounter,
-			"completed": 1708300000 + s.msgCounter + 5,
+	messages = append(messages, map[string]interface{}{
+		"info": map[string]interface{}{
+			"id":   fmt.Sprintf("msg-%d", s.msgCounter),
+			"role": "assistant",
+			"time": map[string]interface{}{
+				"created":   1708300000 + s.msgCounter,
+				"completed": 1708300000 + s.msgCounter + 5,
+			},
+			"tokens": map[string]interface{}{
+				"input":     150,
+				"output":    80,
+				"reasoning": 10,
+				"cache":     map[string]int{"read": 5, "write": 15},
+			},
+			"cost": 0.003,
 		},
-		"tokens": map[string]interface{}{
-			"input":     150,
-			"output":    80,
-			"reasoning": 10,
-			"cache":     map[string]int{"read": 5, "write": 15},
-		},
-		"cost":  0.003,
 		"parts": parts,
+	})
+
+	// Build export session format
+	exportSession := map[string]interface{}{
+		"info": map[string]interface{}{
+			"id": s.ID,
+		},
+		"messages": messages,
 	}
-	asstJSON, _ := json.Marshal(asstMsg)
-	lines = append(lines, string(asstJSON))
 
 	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(s.TranscriptPath), 0o755); err != nil {
 		s.env.T.Fatalf("failed to create transcript dir: %v", err)
 	}
 
-	// Write JSONL transcript (one message per line)
-	content := strings.Join(lines, "\n") + "\n"
-	if err := os.WriteFile(s.TranscriptPath, []byte(content), 0o644); err != nil {
+	// Write export JSON transcript
+	data, err := json.MarshalIndent(exportSession, "", "  ")
+	if err != nil {
+		s.env.T.Fatalf("failed to marshal transcript: %v", err)
+	}
+	if err := os.WriteFile(s.TranscriptPath, data, 0o644); err != nil {
 		s.env.T.Fatalf("failed to write transcript: %v", err)
 	}
 

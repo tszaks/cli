@@ -169,28 +169,33 @@ func buildCondensedTranscriptFromGemini(content []byte) ([]Entry, error) {
 	return entries, nil
 }
 
-// buildCondensedTranscriptFromOpenCode parses OpenCode JSONL transcript and extracts a condensed view.
+// buildCondensedTranscriptFromOpenCode parses OpenCode export JSON transcript and extracts a condensed view.
 func buildCondensedTranscriptFromOpenCode(content []byte) ([]Entry, error) {
-	messages, err := opencode.ParseMessages(content)
+	session, err := opencode.ParseExportSession(content)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse OpenCode transcript: %w", err)
 	}
+	if session == nil {
+		return nil, nil
+	}
 
 	var entries []Entry
-	for _, msg := range messages {
-		switch msg.Role {
+	for _, msg := range session.Messages {
+		switch msg.Info.Role {
 		case "user":
-			if msg.Content != "" {
+			text := extractTextFromOpenCodeParts(msg.Parts)
+			if text != "" {
 				entries = append(entries, Entry{
 					Type:    EntryTypeUser,
-					Content: msg.Content,
+					Content: text,
 				})
 			}
 		case "assistant":
-			if msg.Content != "" {
+			text := extractTextFromOpenCodeParts(msg.Parts)
+			if text != "" {
 				entries = append(entries, Entry{
 					Type:    EntryTypeAssistant,
-					Content: msg.Content,
+					Content: text,
 				})
 			}
 			for _, part := range msg.Parts {
@@ -206,6 +211,17 @@ func buildCondensedTranscriptFromOpenCode(content []byte) ([]Entry, error) {
 	}
 
 	return entries, nil
+}
+
+// extractTextFromOpenCodeParts extracts text content from OpenCode message parts.
+func extractTextFromOpenCodeParts(parts []opencode.Part) string {
+	var texts []string
+	for _, part := range parts {
+		if part.Type == "text" && part.Text != "" {
+			texts = append(texts, part.Text)
+		}
+	}
+	return strings.Join(texts, "\n")
 }
 
 // extractGenericToolDetail extracts an appropriate detail string from a tool's input/args map.

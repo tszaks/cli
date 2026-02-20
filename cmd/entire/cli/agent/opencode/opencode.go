@@ -2,6 +2,7 @@
 package opencode
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -51,6 +52,8 @@ func (a *OpenCodeAgent) DetectPresence() (bool, error) {
 
 // --- Transcript Storage ---
 
+// ReadTranscript reads the transcript for a session.
+// The sessionRef is expected to be a path to the export JSON file.
 func (a *OpenCodeAgent) ReadTranscript(sessionRef string) ([]byte, error) {
 	data, err := os.ReadFile(sessionRef) //nolint:gosec // Path from agent hook
 	if err != nil {
@@ -59,18 +62,88 @@ func (a *OpenCodeAgent) ReadTranscript(sessionRef string) ([]byte, error) {
 	return data, nil
 }
 
+// ChunkTranscript splits an OpenCode export JSON transcript by distributing messages across chunks.
+// OpenCode uses JSON format with {"info": {...}, "messages": [...]} structure.
 func (a *OpenCodeAgent) ChunkTranscript(content []byte, maxSize int) ([][]byte, error) {
-	// OpenCode uses JSONL (one message per line) — use the shared JSONL chunker.
-	chunks, err := agent.ChunkJSONL(content, maxSize)
-	if err != nil {
-		return nil, fmt.Errorf("failed to chunk opencode transcript: %w", err)
+	var session ExportSession
+	if err := json.Unmarshal(content, &session); err != nil {
+		return nil, fmt.Errorf("failed to parse export session for chunking: %w", err)
 	}
+
+	if len(session.Messages) == 0 {
+		return [][]byte{content}, nil
+	}
+
+	var chunks [][]byte
+	var currentMessages []ExportMessage
+	currentSize := len(`{"info":{},"messages":[]}`) // Base JSON structure size
+
+	for _, msg := range session.Messages {
+		// Marshal message to get its size
+		msgBytes, err := json.Marshal(msg)
+		if err != nil {
+			continue
+		}
+		msgSize := len(msgBytes) + 1 // +1 for comma separator
+
+		if currentSize+msgSize > maxSize && len(currentMessages) > 0 {
+			// Save current chunk
+			chunkData, err := json.Marshal(ExportSession{Info: session.Info, Messages: currentMessages})
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal chunk: %w", err)
+			}
+			chunks = append(chunks, chunkData)
+
+			// Start new chunk
+			currentMessages = nil
+			currentSize = len(`{"info":{},"messages":[]}`)
+		}
+
+		currentMessages = append(currentMessages, msg)
+		currentSize += msgSize
+	}
+
+	// Add the last chunk
+	if len(currentMessages) > 0 {
+		chunkData, err := json.Marshal(ExportSession{Info: session.Info, Messages: currentMessages})
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal final chunk: %w", err)
+		}
+		chunks = append(chunks, chunkData)
+	}
+
+	if len(chunks) == 0 {
+		return nil, errors.New("failed to create any chunks")
+	}
+
 	return chunks, nil
 }
 
+// ReassembleTranscript merges OpenCode export JSON chunks by combining their message arrays.
 func (a *OpenCodeAgent) ReassembleTranscript(chunks [][]byte) ([]byte, error) {
-	// JSONL reassembly is simple concatenation.
-	return agent.ReassembleJSONL(chunks), nil
+	if len(chunks) == 0 {
+		return nil, nil
+	}
+
+	var allMessages []ExportMessage
+	var sessionInfo SessionInfo
+
+	for i, chunk := range chunks {
+		var session ExportSession
+		if err := json.Unmarshal(chunk, &session); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal chunk %d: %w", i, err)
+		}
+		if i == 0 {
+			sessionInfo = session.Info // Preserve session info from first chunk
+		}
+		allMessages = append(allMessages, session.Messages...)
+	}
+
+	result, err := json.Marshal(ExportSession{Info: sessionInfo, Messages: allMessages})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal reassembled transcript: %w", err)
+	}
+	return result, nil
 }
 
 // --- Legacy methods ---
@@ -95,7 +168,7 @@ func (a *OpenCodeAgent) GetSessionDir(repoPath string) (string, error) {
 }
 
 func (a *OpenCodeAgent) ResolveSessionFile(sessionDir, agentSessionID string) string {
-	return filepath.Join(sessionDir, agentSessionID+".jsonl")
+	return filepath.Join(sessionDir, agentSessionID+".json")
 }
 
 func (a *OpenCodeAgent) ReadSession(input *agent.HookInput) (*agent.AgentSession, error) {
@@ -119,6 +192,7 @@ func (a *OpenCodeAgent) ReadSession(input *agent.HookInput) (*agent.AgentSession
 		SessionID:     input.SessionID,
 		SessionRef:    input.SessionRef,
 		NativeData:    data,
+		ExportData:    data, // Export JSON is both native and export format
 		ModifiedFiles: modifiedFiles,
 	}, nil
 }

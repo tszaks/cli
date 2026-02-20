@@ -988,18 +988,22 @@ func TestOpenCodeHookInstallation(t *testing.T) {
 func TestOpenCodeSessionOperations(t *testing.T) {
 	t.Parallel()
 
-	t.Run("ReadSession parses JSONL transcript and computes ModifiedFiles", func(t *testing.T) {
+	t.Run("ReadSession parses export JSON transcript and computes ModifiedFiles", func(t *testing.T) {
 		t.Parallel()
 		env := NewTestEnv(t)
 		env.InitRepo()
 
-		// Create an OpenCode JSONL transcript file
-		transcriptPath := filepath.Join(env.RepoDir, "test-transcript.jsonl")
-		transcriptContent := `{"id":"msg-1","role":"user","content":"Fix the bug","time":{"created":1708300000}}
-{"id":"msg-2","role":"assistant","content":"I'll fix it.","time":{"created":1708300001,"completed":1708300005},"tokens":{"input":100,"output":50,"reasoning":5,"cache":{"read":3,"write":10}},"parts":[{"type":"text","text":"I'll fix it."},{"type":"tool","tool":"write","callID":"call-1","state":{"status":"completed","input":{"file_path":"main.go"},"output":"written"}}]}
-{"id":"msg-3","role":"user","content":"Also fix util.go","time":{"created":1708300010}}
-{"id":"msg-4","role":"assistant","content":"Done.","time":{"created":1708300011,"completed":1708300015},"tokens":{"input":120,"output":60,"reasoning":3,"cache":{"read":5,"write":12}},"parts":[{"type":"tool","tool":"edit","callID":"call-2","state":{"status":"completed","input":{"file_path":"util.go"},"output":"edited"}}]}
-`
+		// Create an OpenCode export JSON transcript file
+		transcriptPath := filepath.Join(env.RepoDir, "test-transcript.json")
+		transcriptContent := `{
+			"info": {"id": "test-session"},
+			"messages": [
+				{"info": {"id": "msg-1", "role": "user", "time": {"created": 1708300000}}, "parts": [{"type": "text", "text": "Fix the bug"}]},
+				{"info": {"id": "msg-2", "role": "assistant", "time": {"created": 1708300001, "completed": 1708300005}, "tokens": {"input": 100, "output": 50, "reasoning": 5, "cache": {"read": 3, "write": 10}}}, "parts": [{"type": "text", "text": "I'll fix it."}, {"type": "tool", "tool": "write", "callID": "call-1", "state": {"status": "completed", "input": {"file_path": "main.go"}, "output": "written"}}]},
+				{"info": {"id": "msg-3", "role": "user", "time": {"created": 1708300010}}, "parts": [{"type": "text", "text": "Also fix util.go"}]},
+				{"info": {"id": "msg-4", "role": "assistant", "time": {"created": 1708300011, "completed": 1708300015}, "tokens": {"input": 120, "output": 60, "reasoning": 3, "cache": {"read": 5, "write": 12}}}, "parts": [{"type": "tool", "tool": "edit", "callID": "call-2", "state": {"status": "completed", "input": {"file_path": "util.go"}, "output": "edited"}}]}
+			]
+		}`
 		if err := os.WriteFile(transcriptPath, []byte(transcriptContent), 0o644); err != nil {
 			t.Fatalf("failed to write transcript: %v", err)
 		}
@@ -1026,6 +1030,11 @@ func TestOpenCodeSessionOperations(t *testing.T) {
 			t.Error("NativeData is empty, want transcript content")
 		}
 
+		// Verify ExportData is also populated (same as NativeData for OpenCode)
+		if len(session.ExportData) == 0 {
+			t.Error("ExportData is empty, want transcript content")
+		}
+
 		// Verify ModifiedFiles computed from tool calls
 		if len(session.ModifiedFiles) != 2 {
 			t.Errorf("ModifiedFiles = %v, want 2 files (main.go, util.go)", session.ModifiedFiles)
@@ -1040,9 +1049,8 @@ func TestOpenCodeSessionOperations(t *testing.T) {
 		ag, _ := agent.Get("opencode")
 
 		// First read a session
-		srcPath := filepath.Join(env.RepoDir, "src.jsonl")
-		srcContent := `{"id":"msg-1","role":"user","content":"hello","time":{"created":1708300000}}
-`
+		srcPath := filepath.Join(env.RepoDir, "src.json")
+		srcContent := `{"info": {"id": "test"}, "messages": [{"info": {"id": "msg-1", "role": "user", "time": {"created": 1708300000}}, "parts": [{"type": "text", "text": "hello"}]}]}`
 		if err := os.WriteFile(srcPath, []byte(srcContent), 0o644); err != nil {
 			t.Fatalf("failed to write source: %v", err)
 		}
@@ -1053,7 +1061,7 @@ func TestOpenCodeSessionOperations(t *testing.T) {
 		})
 
 		// Write to a new location
-		dstPath := filepath.Join(env.RepoDir, "dst.jsonl")
+		dstPath := filepath.Join(env.RepoDir, "dst.json")
 		session.SessionRef = dstPath
 
 		if err := ag.WriteSession(session); err != nil {

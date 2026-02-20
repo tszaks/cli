@@ -178,6 +178,33 @@ func CleanupPrePromptState(sessionID string) error {
 	return nil
 }
 
+// CleanupCachedTranscript removes the transcript file if it's in .entire/tmp/.
+// This cleans up cached exports (e.g., from OpenCode's `opencode export` command).
+// Files outside .entire/tmp/ are left alone (they belong to the agent).
+func CleanupCachedTranscript(transcriptPath string) error {
+	if transcriptPath == "" {
+		return nil
+	}
+
+	// Get the tmp directory path
+	tmpDirAbs, err := paths.AbsPath(paths.EntireTmpDir)
+	if err != nil {
+		tmpDirAbs = paths.EntireTmpDir
+	}
+
+	// Check if the transcript is in .entire/tmp/
+	absPath, _ := filepath.Abs(transcriptPath) //nolint:errcheck // best-effort cleanup, skip if path resolution fails
+	if absPath == "" || !strings.HasPrefix(absPath, tmpDirAbs) {
+		// Not in .entire/tmp/ or can't determine path - skip cleanup
+		return nil
+	}
+
+	if fileExists(transcriptPath) {
+		return os.Remove(transcriptPath) //nolint:wrapcheck // simple cleanup, caller logs warning
+	}
+	return nil
+}
+
 // FileChanges holds categorized file changes from git status.
 type FileChanges struct {
 	Modified []string // Modified or staged files

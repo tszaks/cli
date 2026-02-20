@@ -2,6 +2,7 @@ package opencode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -31,6 +32,29 @@ func runOpenCodeSessionDelete(sessionID string) error {
 		return fmt.Errorf("opencode session delete failed: %w (output: %s)", err, string(output))
 	}
 	return nil
+}
+
+// runOpenCodeExport runs `opencode export <sessionID>` to export a session
+// from OpenCode's database. Returns the JSON export data as bytes.
+func runOpenCodeExport(sessionID string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), openCodeCommandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "opencode", "export", sessionID)
+	output, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("opencode export timed out after %s", openCodeCommandTimeout)
+		}
+		// Get stderr for better error message
+		exitErr := &exec.ExitError{}
+		if errors.As(err, &exitErr) {
+			return nil, fmt.Errorf("opencode export failed: %w (stderr: %s)", err, string(exitErr.Stderr))
+		}
+		return nil, fmt.Errorf("opencode export failed: %w", err)
+	}
+
+	return output, nil
 }
 
 // runOpenCodeImport runs `opencode import <file>` to import a session into
