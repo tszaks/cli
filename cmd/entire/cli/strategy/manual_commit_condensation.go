@@ -240,6 +240,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		TranscriptIdentifierAtStart: state.TranscriptIdentifierAtStart,
 		CheckpointTranscriptStart:   state.CheckpointTranscriptStart,
 		TokenUsage:                  sessionData.TokenUsage,
+		ExportData:                  sessionData.ExportData,
 		InitialAttribution:          attribution,
 		Summary:                     summary,
 	}); err != nil {
@@ -422,6 +423,16 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 	// Use tracked files from session state (not all files in tree)
 	data.FilesTouched = filesTouched
 
+	// Read export data from local metadata directory (e.g., OpenCode SQLite export).
+	// This is written by lifecycle.go during TurnEnd and must be stored in the
+	// committed checkpoint so resume/rewind can re-import the session.
+	exportRelPath := metadataDir + "/" + paths.ExportDataFileName
+	if exportAbsPath, absErr := paths.AbsPath(exportRelPath); absErr == nil {
+		if exportBytes, readErr := os.ReadFile(exportAbsPath); readErr == nil && len(exportBytes) > 0 { //nolint:gosec // path from session metadata
+			data.ExportData = exportBytes
+		}
+	}
+
 	// Calculate token usage from the extracted transcript portion
 	if len(data.Transcript) > 0 {
 		data.TokenUsage = calculateTokenUsage(agentType, data.Transcript, checkpointTranscriptStart)
@@ -462,6 +473,15 @@ func (s *ManualCommitStrategy) extractSessionDataFromLiveTranscript(state *Sessi
 	} else {
 		// Use the shared helper which includes subagent transcripts
 		data.FilesTouched = s.extractModifiedFilesFromLiveTranscript(state, state.CheckpointTranscriptStart)
+	}
+
+	// Read export data from local metadata directory
+	metadataDir := paths.SessionMetadataDirFromSessionID(state.SessionID)
+	exportRelPath := metadataDir + "/" + paths.ExportDataFileName
+	if exportAbsPath, absErr := paths.AbsPath(exportRelPath); absErr == nil {
+		if exportBytes, readErr := os.ReadFile(exportAbsPath); readErr == nil && len(exportBytes) > 0 { //nolint:gosec // path from session metadata
+			data.ExportData = exportBytes
+		}
 	}
 
 	// Calculate token usage from the extracted transcript portion

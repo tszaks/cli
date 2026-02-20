@@ -376,6 +376,19 @@ func (s *GitStore) writeSessionToSubdirectory(opts WriteCommittedOptions, sessio
 	}
 	filePaths.Metadata = "/" + sessionPath + paths.MetadataFileName
 
+	// Write export data (optional — for agents with non-file storage, e.g., OpenCode)
+	if len(opts.ExportData) > 0 {
+		exportHash, err := CreateBlobFromContent(s.repo, opts.ExportData)
+		if err != nil {
+			return filePaths, fmt.Errorf("failed to create export data blob: %w", err)
+		}
+		entries[sessionPath+paths.ExportDataFileName] = object.TreeEntry{
+			Name: sessionPath + paths.ExportDataFileName,
+			Mode: filemode.Regular,
+			Hash: exportHash,
+		}
+	}
+
 	return filePaths, nil
 }
 

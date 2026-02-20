@@ -7,11 +7,6 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 )
 
-// Compile-time interface assertions
-var (
-	_ agent.HookHandler = (*OpenCodeAgent)(nil)
-)
-
 // Hook name constants — these become CLI subcommands under `entire hooks opencode`.
 const (
 	HookNameSessionStart = "session-start"
@@ -30,11 +25,6 @@ func (a *OpenCodeAgent) HookNames() []string {
 		HookNameTurnEnd,
 		HookNameCompaction,
 	}
-}
-
-// GetHookNames implements agent.HookHandler for CLI hook registration.
-func (a *OpenCodeAgent) GetHookNames() []string {
-	return a.HookNames()
 }
 
 // ParseHookEvent translates OpenCode hook calls into normalized lifecycle events.

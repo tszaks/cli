@@ -4,7 +4,6 @@ package opencode
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -75,20 +74,6 @@ func (a *OpenCodeAgent) ReassembleTranscript(chunks [][]byte) ([]byte, error) {
 }
 
 // --- Legacy methods ---
-
-func (a *OpenCodeAgent) GetHookConfigPath() string { return "" } // Plugin file, not a JSON config
-func (a *OpenCodeAgent) SupportsHooks() bool       { return true }
-
-func (a *OpenCodeAgent) ParseHookInput(_ agent.HookType, r io.Reader) (*agent.HookInput, error) {
-	raw, err := agent.ReadAndParseHookInput[sessionInfoRaw](r)
-	if err != nil {
-		return nil, err
-	}
-	return &agent.HookInput{
-		SessionID:  raw.SessionID,
-		SessionRef: raw.TranscriptPath,
-	}, nil
-}
 
 func (a *OpenCodeAgent) GetSessionID(input *agent.HookInput) string {
 	return input.SessionID
