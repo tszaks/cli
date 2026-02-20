@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -112,12 +111,10 @@ func (s statusStyles) horizontalRule(width int) string {
 	return s.render(s.dim, rule)
 }
 
-// sectionRule renders a section header like: ── Active Sessions · repo-name ────
-func (s statusStyles) sectionRule(label, highlight string, width int) string {
+// sectionRule renders a section header like: ── Active Sessions ────────────
+func (s statusStyles) sectionRule(label string, width int) string {
 	prefix := "── "
-	content := label + " · " + highlight + " "
-	// Calculate remaining space for trailing rule
-	// Count visible characters (no ANSI escapes in the plain text)
+	content := label + " "
 	usedWidth := len(prefix) + len(content)
 	trailing := width - usedWidth
 	if trailing < 1 {
@@ -127,8 +124,6 @@ func (s statusStyles) sectionRule(label, highlight string, width int) string {
 	var b strings.Builder
 	b.WriteString(s.render(s.dim, "── "))
 	b.WriteString(s.render(s.dim, label))
-	b.WriteString(s.render(s.dim, " · "))
-	b.WriteString(s.render(s.cyan, highlight))
 	b.WriteString(" ")
 	b.WriteString(s.render(s.dim, strings.Repeat("─", trailing)))
 	return b.String()
@@ -145,12 +140,4 @@ func activeTimeDisplay(lastInteraction *time.Time) string {
 		return "active now"
 	}
 	return "active " + timeAgo(*lastInteraction)
-}
-
-// worktreeDisplayName returns the base name of a worktree path for compact display.
-func worktreeDisplayName(path string) string {
-	if path == unknownPlaceholder {
-		return path
-	}
-	return filepath.Base(path)
 }

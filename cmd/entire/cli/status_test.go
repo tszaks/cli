@@ -464,9 +464,9 @@ func TestWriteActiveSessions(t *testing.T) {
 		t.Errorf("Expected truncated session ID 'abc-123', got: %s", output)
 	}
 
-	// Should contain first prompts in quotes
-	if !strings.Contains(output, "\"Fix auth bug in login flow\"") {
-		t.Errorf("Expected first prompt text in quotes, got: %s", output)
+	// Should contain first prompts with chevron
+	if !strings.Contains(output, "> \"Fix auth bug in login flow\"") {
+		t.Errorf("Expected first prompt with chevron, got: %s", output)
 	}
 
 	// Session without FirstPrompt should NOT show a prompt line
@@ -498,12 +498,9 @@ func TestWriteActiveSessions(t *testing.T) {
 		t.Errorf("Expected per-session 'tokens 1.2k' for first session (800+400), got: %s", output)
 	}
 
-	// Should contain aggregate footer with total tokens (800+400+500+300 = 2000 → "2k")
+	// Should contain aggregate footer with session count (no total tokens in footer)
 	if !strings.Contains(output, "3 sessions") {
 		t.Errorf("Expected aggregate '3 sessions' in footer, got: %s", output)
-	}
-	if !strings.Contains(output, "2k tokens") {
-		t.Errorf("Expected aggregate '2k tokens' in footer, got: %s", output)
 	}
 
 	// Should NOT contain phase indicators (removed)
@@ -846,14 +843,11 @@ func TestSectionRule_PlainText(t *testing.T) {
 	t.Parallel()
 
 	sty := statusStyles{colorEnabled: false, width: 40}
-	rule := sty.sectionRule("Active Sessions", "myrepo", 40)
+	rule := sty.sectionRule("Active Sessions", 40)
 
-	// Plain text should contain the label and highlight
+	// Plain text should contain the label
 	if !strings.Contains(rule, "Active Sessions") {
 		t.Errorf("sectionRule should contain label, got: %q", rule)
-	}
-	if !strings.Contains(rule, "myrepo") {
-		t.Errorf("sectionRule should contain highlight, got: %q", rule)
 	}
 	if !strings.Contains(rule, "─") {
 		t.Errorf("sectionRule should contain rule characters, got: %q", rule)

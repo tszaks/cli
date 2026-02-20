@@ -84,6 +84,7 @@ func runStatus(w io.Writer, detailed bool) error {
 		return fmt.Errorf("failed to load settings: %w", err)
 	}
 
+	fmt.Fprintln(w)
 	fmt.Fprintln(w, formatSettingsStatusShort(s, sty))
 
 	if s.Enabled {
@@ -100,6 +101,7 @@ func runStatusDetailed(w io.Writer, sty statusStyles, settingsPath, localSetting
 	if err != nil {
 		return fmt.Errorf("failed to load settings: %w", err)
 	}
+	fmt.Fprintln(w)
 	fmt.Fprintln(w, formatSettingsStatusShort(effectiveSettings, sty))
 	fmt.Fprintln(w) // blank line
 
@@ -279,12 +281,11 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 	}
 
 	// Track aggregate totals
-	var totalSessions, totalTok int
+	var totalSessions int
 
 	fmt.Fprintln(w)
 	for _, g := range sortedGroups {
-		displayName := worktreeDisplayName(g.path)
-		fmt.Fprintln(w, sty.sectionRule("Active Sessions", displayName, sty.width))
+		fmt.Fprintln(w, sty.sectionRule("Active Sessions", sty.width))
 		fmt.Fprintln(w)
 
 		for _, st := range g.sessions {
@@ -306,10 +307,10 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 				sty.render(sty.dim, "·"),
 				shortID)
 
-			// Line 2: "first prompt" (quoted, truncated)
+			// Line 2: > "first prompt" (chevron + quoted, truncated)
 			if st.FirstPrompt != "" {
 				prompt := stringutil.TruncateRunes(st.FirstPrompt, 60, "...")
-				fmt.Fprintf(w, "\"%s\"\n", prompt)
+				fmt.Fprintf(w, "%s \"%s\"\n", sty.render(sty.dim, ">"), prompt)
 			}
 
 			// Line 3: stats line — started Xd ago · active now · files N · tokens X.Xk
@@ -320,9 +321,7 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 				stats = append(stats, activeTimeDisplay(st.LastInteractionTime))
 			}
 
-			tok := totalTokens(st.TokenUsage)
-			totalTok += tok
-			stats = append(stats, "tokens "+sty.render(sty.bold, formatTokenCount(tok)))
+			stats = append(stats, "tokens "+sty.render(sty.bold, formatTokenCount(totalTokens(st.TokenUsage))))
 
 			statsLine := strings.Join(stats, sty.render(sty.dim, " · "))
 			fmt.Fprintln(w, sty.render(sty.dim, statsLine))
@@ -330,10 +329,9 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 		}
 	}
 
-	// Footer: horizontal rule + aggregate totals
+	// Footer: horizontal rule + session count
 	fmt.Fprintln(w, sty.horizontalRule(sty.width))
-	footer := fmt.Sprintf("%d sessions · %s tokens",
-		totalSessions, formatTokenCount(totalTok))
+	footer := fmt.Sprintf("%d sessions", totalSessions)
 	fmt.Fprintln(w, sty.render(sty.dim, footer))
 }
 
