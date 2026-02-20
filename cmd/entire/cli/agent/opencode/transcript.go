@@ -43,19 +43,22 @@ func parseExportSessionFromFile(path string) (*ExportSession, error) {
 // startMessageIndex. This is the OpenCode equivalent of transcript.SliceFromLine —
 // for OpenCode's JSON format, scoping is done by message index rather than line offset.
 // Returns the original data if startMessageIndex <= 0.
-// Returns nil if startMessageIndex exceeds the number of messages.
-func SliceFromMessage(data []byte, startMessageIndex int) []byte {
+// Returns nil, nil if startMessageIndex exceeds the number of messages.
+func SliceFromMessage(data []byte, startMessageIndex int) ([]byte, error) {
 	if len(data) == 0 || startMessageIndex <= 0 {
-		return data
+		return data, nil
 	}
 
 	session, err := ParseExportSession(data)
-	if err != nil || session == nil {
-		return nil
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse export session for slicing: %w", err)
+	}
+	if session == nil {
+		return nil, nil
 	}
 
 	if startMessageIndex >= len(session.Messages) {
-		return nil
+		return nil, nil
 	}
 
 	scoped := &ExportSession{
@@ -65,9 +68,9 @@ func SliceFromMessage(data []byte, startMessageIndex int) []byte {
 
 	out, err := json.Marshal(scoped)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("failed to marshal scoped session: %w", err)
 	}
-	return out
+	return out, nil
 }
 
 // GetTranscriptPosition returns the number of messages in the transcript.

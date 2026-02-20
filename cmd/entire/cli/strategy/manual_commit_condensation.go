@@ -203,9 +203,21 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		var scopedTranscript []byte
 		switch state.AgentType {
 		case agent.AgentTypeGemini:
-			scopedTranscript = geminicli.SliceFromMessage(sessionData.Transcript, state.CheckpointTranscriptStart)
+			scoped, sliceErr := geminicli.SliceFromMessage(sessionData.Transcript, state.CheckpointTranscriptStart)
+			if sliceErr != nil {
+				logging.Warn(summarizeCtx, "failed to scope Gemini transcript for summary",
+					slog.String("session_id", state.SessionID),
+					slog.String("error", sliceErr.Error()))
+			}
+			scopedTranscript = scoped
 		case agent.AgentTypeOpenCode:
-			scopedTranscript = opencode.SliceFromMessage(sessionData.Transcript, state.CheckpointTranscriptStart)
+			scoped, sliceErr := opencode.SliceFromMessage(sessionData.Transcript, state.CheckpointTranscriptStart)
+			if sliceErr != nil {
+				logging.Warn(summarizeCtx, "failed to scope OpenCode transcript for summary",
+					slog.String("session_id", state.SessionID),
+					slog.String("error", sliceErr.Error()))
+			}
+			scopedTranscript = scoped
 		case agent.AgentTypeClaudeCode, agent.AgentTypeUnknown:
 			scopedTranscript = transcript.SliceFromLine(sessionData.Transcript, state.CheckpointTranscriptStart)
 		}

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
@@ -78,7 +79,8 @@ func runClean(w io.Writer, force bool) error {
 	return runCleanWithItems(w, force, items, tempFiles)
 }
 
-// listTempFiles returns all files in .entire/tmp/.
+// listTempFiles returns files in .entire/tmp/ that are safe to delete,
+// excluding files belonging to active sessions.
 func listTempFiles() ([]string, error) {
 	tmpDir, err := paths.AbsPath(paths.EntireTmpDir)
 	if err != nil {
@@ -93,11 +95,26 @@ func listTempFiles() ([]string, error) {
 		return nil, fmt.Errorf("failed to read temp dir: %w", err)
 	}
 
+	// Build set of active session IDs to protect their temp files
+	activeSessionIDs := make(map[string]bool)
+	if states, listErr := strategy.ListSessionStates(); listErr == nil {
+		for _, state := range states {
+			activeSessionIDs[state.SessionID] = true
+		}
+	}
+
 	var files []string
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			files = append(files, entry.Name())
+		if entry.IsDir() {
+			continue
 		}
+		// Skip temp files belonging to active sessions (e.g., "session-id.json")
+		name := entry.Name()
+		sessionID := strings.TrimSuffix(name, ".json")
+		if sessionID != name && activeSessionIDs[sessionID] {
+			continue
+		}
+		files = append(files, name)
 	}
 	return files, nil
 }
