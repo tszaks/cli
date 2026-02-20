@@ -891,3 +891,191 @@ func TestHorizontalRule(t *testing.T) {
 		}
 	}
 }
+
+func TestGetTerminalWidth_NonTTY(t *testing.T) {
+	t.Parallel()
+
+	// A bytes.Buffer is not a terminal — should fall back to 60
+	var buf bytes.Buffer
+	width := getTerminalWidth(&buf)
+	// In CI/test environments without a real terminal on Stdout/Stderr,
+	// the fallback should be 60. If running in a terminal, it may be
+	// capped at 80. Either is acceptable.
+	if width != 60 && width > 80 {
+		t.Errorf("getTerminalWidth(bytes.Buffer) = %d, want 60 or ≤80", width)
+	}
+}
+
+func TestGetTerminalWidth_RegularFile(t *testing.T) {
+	t.Parallel()
+
+	// A regular file (not a terminal) should not report a terminal width
+	f, err := os.CreateTemp(t.TempDir(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	width := getTerminalWidth(f)
+	// Regular file fd won't have a terminal size, so it should fall back
+	if width != 60 && width > 80 {
+		t.Errorf("getTerminalWidth(regular file) = %d, want 60 or ≤80", width)
+	}
+}
+
+func TestNewStatusStyles_Width(t *testing.T) {
+	t.Parallel()
+
+	// For a non-terminal writer, width should be the fallback (60)
+	// unless Stdout/Stderr happen to be terminals
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+
+	if sty.width == 0 {
+		t.Error("newStatusStyles should set a non-zero width")
+	}
+	if sty.width > 80 {
+		t.Errorf("newStatusStyles width = %d, should be capped at 80", sty.width)
+	}
+}
+
+func TestSectionRule_NarrowWidth(t *testing.T) {
+	t.Parallel()
+
+	// When width is very small (smaller than prefix + label), trailing should be at least 1
+	sty := statusStyles{colorEnabled: false, width: 10}
+	rule := sty.sectionRule("Active Sessions", 10)
+
+	// Should still contain the label and at least one trailing dash
+	if !strings.Contains(rule, "Active Sessions") {
+		t.Errorf("sectionRule with narrow width should still contain label, got: %q", rule)
+	}
+	if !strings.Contains(rule, "─") {
+		t.Errorf("sectionRule with narrow width should have at least one trailing dash, got: %q", rule)
+	}
+}
+
+func TestActiveTimeDisplay_Hours(t *testing.T) {
+	t.Parallel()
+
+	hoursAgo := time.Now().Add(-3 * time.Hour)
+	got := activeTimeDisplay(&hoursAgo)
+	if got != "active 3h ago" {
+		t.Errorf("activeTimeDisplay(-3h) = %q, want 'active 3h ago'", got)
+	}
+}
+
+func TestActiveTimeDisplay_Days(t *testing.T) {
+	t.Parallel()
+
+	daysAgo := time.Now().Add(-48 * time.Hour)
+	got := activeTimeDisplay(&daysAgo)
+	if got != "active 2d ago" {
+		t.Errorf("activeTimeDisplay(-48h) = %q, want 'active 2d ago'", got)
+	}
+}
+
+func TestFormatSettingsStatusShort_Enabled(t *testing.T) {
+	setupTestRepo(t)
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled:  true,
+		Strategy: "manual-commit",
+	}
+
+	result := formatSettingsStatusShort(s, sty)
+
+	if !strings.Contains(result, "●") {
+		t.Errorf("Enabled status should have green dot, got: %q", result)
+	}
+	if !strings.Contains(result, "Enabled") {
+		t.Errorf("Expected 'Enabled' in output, got: %q", result)
+	}
+	if !strings.Contains(result, "manual-commit") {
+		t.Errorf("Expected strategy in output, got: %q", result)
+	}
+}
+
+func TestFormatSettingsStatusShort_Disabled(t *testing.T) {
+	setupTestRepo(t)
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled:  false,
+		Strategy: "auto-commit",
+	}
+
+	result := formatSettingsStatusShort(s, sty)
+
+	if !strings.Contains(result, "○") {
+		t.Errorf("Disabled status should have open dot, got: %q", result)
+	}
+	if !strings.Contains(result, "Disabled") {
+		t.Errorf("Expected 'Disabled' in output, got: %q", result)
+	}
+	if !strings.Contains(result, "auto-commit") {
+		t.Errorf("Expected strategy in output, got: %q", result)
+	}
+}
+
+func TestFormatSettingsStatus_Project(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled:  true,
+		Strategy: "manual-commit",
+	}
+
+	result := formatSettingsStatus("Project", s, sty)
+
+	if !strings.Contains(result, "Project") {
+		t.Errorf("Expected 'Project' prefix, got: %q", result)
+	}
+	if !strings.Contains(result, "enabled") {
+		t.Errorf("Expected 'enabled' in output, got: %q", result)
+	}
+	if !strings.Contains(result, "manual-commit") {
+		t.Errorf("Expected strategy in output, got: %q", result)
+	}
+}
+
+func TestFormatSettingsStatus_LocalDisabled(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled:  false,
+		Strategy: "auto-commit",
+	}
+
+	result := formatSettingsStatus("Local", s, sty)
+
+	if !strings.Contains(result, "Local") {
+		t.Errorf("Expected 'Local' prefix, got: %q", result)
+	}
+	if !strings.Contains(result, "disabled") {
+		t.Errorf("Expected 'disabled' in output, got: %q", result)
+	}
+	if !strings.Contains(result, "auto-commit") {
+		t.Errorf("Expected strategy in output, got: %q", result)
+	}
+}
+
+func TestFormatSettingsStatus_Separators(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled:  true,
+		Strategy: "manual-commit",
+	}
+
+	result := formatSettingsStatus("Project", s, sty)
+
+	// Should use · as separator (plain text, no ANSI)
+	if !strings.Contains(result, "·") {
+		t.Errorf("Expected '·' separators in output, got: %q", result)
+	}
+}
