@@ -11,12 +11,10 @@ import (
 // Each agent implementation (Claude Code, Cursor, Aider, etc.) converts its
 // native format to the normalized types defined in this package.
 //
-// The interface is organized into four groups:
-//
+// The interface is organized into three groups:
 //   - Identity (5 methods): Name, Type, Description, DetectPresence, ProtectedDirs
-//   - Event Mapping (2 methods): HookNames, ParseHookEvent
 //   - Transcript Storage (3 methods): ReadTranscript, ChunkTranscript, ReassembleTranscript
-//   - Legacy (8 methods): Will be moved to optional interfaces or removed in a future phase
+//   - Legacy (6 methods): Will be moved to optional interfaces or removed in a future phase
 type Agent interface {
 	// --- Identity ---
 
@@ -79,6 +77,10 @@ type Agent interface {
 // HookSupport is implemented by agents with lifecycle hooks.
 // This optional interface allows agents like Claude Code and Cursor to
 // install and manage hooks that notify Entire of agent events.
+//
+// The interface is organized into two groups:
+//   - Hook Mapping (2 methods): HookNames, ParseHookEvent
+//   - Hook Management (3 methods): InstallHooks, UninstallHooks, AreHooksInstalled
 type HookSupport interface {
 	Agent
 
