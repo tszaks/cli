@@ -21,7 +21,7 @@ const (
 // Cursor uses "role" for the same purpose.
 type Line struct {
 	Type    string          `json:"type"`
-	Role    string          `json:"role"`
+	Role    string          `json:"role,omitempty"`
 	UUID    string          `json:"uuid"`
 	Message json.RawMessage `json:"message"`
 }
