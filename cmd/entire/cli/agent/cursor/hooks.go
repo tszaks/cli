@@ -23,9 +23,8 @@ const (
 	HookNameSessionEnd         = "session-end"
 	HookNameBeforeSubmitPrompt = "before-submit-prompt"
 	HookNameStop               = "stop"
-	HookNamePreTask            = "pre-task"
-	HookNamePostTask           = "post-task"
-	HookNamePostTodo           = "post-todo"
+	HookNamePreTool            = "pre-tool"
+	HookNamePostTool           = "post-tool"
 )
 
 // HooksFileName is the hooks file used by Cursor.
@@ -45,9 +44,8 @@ func (c *CursorAgent) GetHookNames() []string {
 		HookNameSessionEnd,
 		HookNameBeforeSubmitPrompt,
 		HookNameStop,
-		HookNamePreTask,
-		HookNamePostTask,
-		HookNamePostTodo,
+		HookNamePreTool,
+		HookNamePostTool,
 	}
 }
 
@@ -121,9 +119,8 @@ func (c *CursorAgent) InstallHooks(localDev bool, force bool) (int, error) {
 	sessionEndCmd := cmdPrefix + "session-end"
 	beforeSubmitPromptCmd := cmdPrefix + "before-submit-prompt"
 	stopCmd := cmdPrefix + "stop"
-	preTaskCmd := cmdPrefix + "pre-task"
-	postTaskCmd := cmdPrefix + "post-task"
-	postTodoCmd := cmdPrefix + "post-todo"
+	preTaskCmd := cmdPrefix + HookNamePreTool
+	postTaskCmd := cmdPrefix + HookNamePostTool
 
 	count := 0
 
@@ -144,16 +141,12 @@ func (c *CursorAgent) InstallHooks(localDev bool, force bool) (int, error) {
 		stop = append(stop, CursorHookEntry{Command: stopCmd})
 		count++
 	}
-	if !hookCommandExistsWithMatcher(preToolUse, "Task", preTaskCmd) {
-		preToolUse = append(preToolUse, CursorHookEntry{Command: preTaskCmd, Matcher: "Task"})
+	if !hookCommandExistsWithMatcher(preToolUse, "Subagent", preTaskCmd) {
+		preToolUse = append(preToolUse, CursorHookEntry{Command: preTaskCmd, Matcher: "Subagent"})
 		count++
 	}
-	if !hookCommandExistsWithMatcher(postToolUse, "Task", postTaskCmd) {
-		postToolUse = append(postToolUse, CursorHookEntry{Command: postTaskCmd, Matcher: "Task"})
-		count++
-	}
-	if !hookCommandExistsWithMatcher(postToolUse, "TodoWrite", postTodoCmd) {
-		postToolUse = append(postToolUse, CursorHookEntry{Command: postTodoCmd, Matcher: "TodoWrite"})
+	if !hookCommandExistsWithMatcher(postToolUse, "Subagent", postTaskCmd) {
+		postToolUse = append(postToolUse, CursorHookEntry{Command: postTaskCmd, Matcher: "Subagent"})
 		count++
 	}
 

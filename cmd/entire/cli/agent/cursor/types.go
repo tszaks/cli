@@ -35,68 +35,67 @@ type CursorHookEntry struct {
 // sessionInfoRaw is the JSON structure from SessionStart/SessionEnd/Stop hooks.
 // Cursor may provide session_id or conversation_id (fallback).
 type sessionInfoRaw struct {
-	SessionID      string `json:"session_id"`
-	ConversationID string `json:"conversation_id"`
-	TranscriptPath string `json:"transcript_path"`
+	// common
+	ConversationID string   `json:"conversation_id"`
+	GenerationID   string   `json:"generation_id"`
+	Model          string   `json:"model"`
+	HookEventName  string   `json:"hook_event_name"`
+	CursorVersion  string   `json:"cursor_version"`
+	WorkspaceRoots []string `json:"workspace_roots"`
+	UserEmail      string   `json:"user_email"`
+	TranscriptPath string   `json:"transcript_path"`
 }
 
-// getSessionID returns session_id if present, falling back to conversation_id.
-func (s *sessionInfoRaw) getSessionID() string {
-	if s.SessionID != "" {
-		return s.SessionID
-	}
-	return s.ConversationID
+// beforeSubmitPromptInputRaw is the JSON structure from BeforeSubmitPrompt hooks.
+type beforeSubmitPromptInputRaw struct {
+	// common
+	ConversationID string   `json:"conversation_id"`
+	GenerationID   string   `json:"generation_id"`
+	Model          string   `json:"model"`
+	HookEventName  string   `json:"hook_event_name"`
+	CursorVersion  string   `json:"cursor_version"`
+	WorkspaceRoots []string `json:"workspace_roots"`
+	UserEmail      string   `json:"user_email"`
+	TranscriptPath string   `json:"transcript_path"`
+
+	// hook specific
+	Prompt string `json:"prompt"`
 }
 
-// userPromptSubmitRaw is the JSON structure from BeforeSubmitPrompt hooks.
-type userPromptSubmitRaw struct {
-	SessionID      string `json:"session_id"`
-	ConversationID string `json:"conversation_id"`
-	TranscriptPath string `json:"transcript_path"`
-	Prompt         string `json:"prompt"`
+// preToolUseHookInputRaw is the JSON structure from PreToolUse[Task] hook.
+type preToolUseHookInputRaw struct {
+	// common
+	ConversationID string   `json:"conversation_id"`
+	GenerationID   string   `json:"generation_id"`
+	Model          string   `json:"model"`
+	HookEventName  string   `json:"hook_event_name"`
+	CursorVersion  string   `json:"cursor_version"`
+	WorkspaceRoots []string `json:"workspace_roots"`
+	UserEmail      string   `json:"user_email"`
+	TranscriptPath string   `json:"transcript_path"`
+
+	// hook specific
+	ToolUseID string          `json:"tool_use_id"`
+	ToolInput json.RawMessage `json:"tool_input"`
+	ToolName  string          `json:"tool_name"`
 }
 
-// getSessionID returns session_id if present, falling back to conversation_id.
-func (u *userPromptSubmitRaw) getSessionID() string {
-	if u.SessionID != "" {
-		return u.SessionID
-	}
-	return u.ConversationID
-}
+// postToolUseHookInputRaw is the JSON structure from PostToolUse hooks.
+type postToolUseHookInputRaw struct {
+	// common
+	ConversationID string   `json:"conversation_id"`
+	GenerationID   string   `json:"generation_id"`
+	Model          string   `json:"model"`
+	HookEventName  string   `json:"hook_event_name"`
+	CursorVersion  string   `json:"cursor_version"`
+	WorkspaceRoots []string `json:"workspace_roots"`
+	UserEmail      string   `json:"user_email"`
+	TranscriptPath string   `json:"transcript_path"`
 
-// taskHookInputRaw is the JSON structure from PreToolUse[Task] hook.
-type taskHookInputRaw struct {
-	SessionID      string          `json:"session_id"`
-	ConversationID string          `json:"conversation_id"`
-	TranscriptPath string          `json:"transcript_path"`
-	ToolUseID      string          `json:"tool_use_id"`
-	ToolInput      json.RawMessage `json:"tool_input"`
-}
-
-// getSessionID returns session_id if present, falling back to conversation_id.
-func (t *taskHookInputRaw) getSessionID() string {
-	if t.SessionID != "" {
-		return t.SessionID
-	}
-	return t.ConversationID
-}
-
-// postToolHookInputRaw is the JSON structure from PostToolUse hooks.
-type postToolHookInputRaw struct {
-	SessionID      string          `json:"session_id"`
-	ConversationID string          `json:"conversation_id"`
-	TranscriptPath string          `json:"transcript_path"`
-	ToolUseID      string          `json:"tool_use_id"`
-	ToolInput      json.RawMessage `json:"tool_input"`
-	ToolResponse   struct {
-		AgentID string `json:"agentId"`
-	} `json:"tool_response"`
-}
-
-// getSessionID returns session_id if present, falling back to conversation_id.
-func (p *postToolHookInputRaw) getSessionID() string {
-	if p.SessionID != "" {
-		return p.SessionID
-	}
-	return p.ConversationID
+	// hook specific
+	ToolName   string          `json:"tool_name"`
+	ToolInput  json.RawMessage `json:"tool_input"`
+	ToolOutput string          `json:"tool_output"`
+	ToolUseID  string          `json:"tool_use_id"`
+	Cwd        string          `json:"cwd"`
 }

@@ -27,13 +27,10 @@ func (c *CursorAgent) ParseHookEvent(hookName string, stdin io.Reader) (*agent.E
 		return c.parseTurnEnd(stdin)
 	case HookNameSessionEnd:
 		return c.parseSessionEnd(stdin)
-	case HookNamePreTask:
-		return c.parseSubagentStart(stdin)
-	case HookNamePostTask:
-		return c.parseSubagentEnd(stdin)
-	case HookNamePostTodo:
-		// PostTodo is handled outside the generic dispatcher (incremental checkpoints).
-		return nil, nil //nolint:nilnil // nil event = no lifecycle action
+	case HookNamePreTool:
+		return c.parsePreToolUse(stdin)
+	case HookNamePostTool:
+		return c.parsePostToolUse(stdin)
 	default:
 		return nil, nil //nolint:nilnil // Unknown hooks have no lifecycle action
 	}
@@ -61,20 +58,20 @@ func (c *CursorAgent) parseSessionStart(stdin io.Reader) (*agent.Event, error) {
 	}
 	return &agent.Event{
 		Type:       agent.SessionStart,
-		SessionID:  raw.getSessionID(),
+		SessionID:  raw.ConversationID,
 		SessionRef: raw.TranscriptPath,
 		Timestamp:  time.Now(),
 	}, nil
 }
 
 func (c *CursorAgent) parseTurnStart(stdin io.Reader) (*agent.Event, error) {
-	raw, err := agent.ReadAndParseHookInput[userPromptSubmitRaw](stdin)
+	raw, err := agent.ReadAndParseHookInput[beforeSubmitPromptInputRaw](stdin)
 	if err != nil {
 		return nil, err
 	}
 	return &agent.Event{
 		Type:       agent.TurnStart,
-		SessionID:  raw.getSessionID(),
+		SessionID:  raw.ConversationID,
 		SessionRef: raw.TranscriptPath,
 		Prompt:     raw.Prompt,
 		Timestamp:  time.Now(),
@@ -88,7 +85,7 @@ func (c *CursorAgent) parseTurnEnd(stdin io.Reader) (*agent.Event, error) {
 	}
 	return &agent.Event{
 		Type:       agent.TurnEnd,
-		SessionID:  raw.getSessionID(),
+		SessionID:  raw.ConversationID,
 		SessionRef: raw.TranscriptPath,
 		Timestamp:  time.Now(),
 	}, nil
@@ -101,20 +98,20 @@ func (c *CursorAgent) parseSessionEnd(stdin io.Reader) (*agent.Event, error) {
 	}
 	return &agent.Event{
 		Type:       agent.SessionEnd,
-		SessionID:  raw.getSessionID(),
+		SessionID:  raw.ConversationID,
 		SessionRef: raw.TranscriptPath,
 		Timestamp:  time.Now(),
 	}, nil
 }
 
-func (c *CursorAgent) parseSubagentStart(stdin io.Reader) (*agent.Event, error) {
-	raw, err := agent.ReadAndParseHookInput[taskHookInputRaw](stdin)
+func (c *CursorAgent) parsePreToolUse(stdin io.Reader) (*agent.Event, error) {
+	raw, err := agent.ReadAndParseHookInput[preToolUseHookInputRaw](stdin)
 	if err != nil {
 		return nil, err
 	}
 	return &agent.Event{
 		Type:       agent.SubagentStart,
-		SessionID:  raw.getSessionID(),
+		SessionID:  raw.ConversationID,
 		SessionRef: raw.TranscriptPath,
 		ToolUseID:  raw.ToolUseID,
 		ToolInput:  raw.ToolInput,
@@ -122,21 +119,19 @@ func (c *CursorAgent) parseSubagentStart(stdin io.Reader) (*agent.Event, error) 
 	}, nil
 }
 
-func (c *CursorAgent) parseSubagentEnd(stdin io.Reader) (*agent.Event, error) {
-	raw, err := agent.ReadAndParseHookInput[postToolHookInputRaw](stdin)
+func (c *CursorAgent) parsePostToolUse(stdin io.Reader) (*agent.Event, error) {
+	raw, err := agent.ReadAndParseHookInput[postToolUseHookInputRaw](stdin)
 	if err != nil {
 		return nil, err
 	}
 	event := &agent.Event{
 		Type:       agent.SubagentEnd,
-		SessionID:  raw.getSessionID(),
+		SessionID:  raw.ConversationID,
 		SessionRef: raw.TranscriptPath,
 		ToolUseID:  raw.ToolUseID,
 		ToolInput:  raw.ToolInput,
 		Timestamp:  time.Now(),
 	}
-	if raw.ToolResponse.AgentID != "" {
-		event.SubagentID = raw.ToolResponse.AgentID
-	}
+	//  TODO "tool_output": "{\"status\":\"success\",\"agentId\":\"3211cc34-8d8f-42de-9dcf-c19625b17566\",\"durationMs\":7901,\"messageCount\":1,\"toolCallCount\":1}",
 	return event, nil
 }
