@@ -32,7 +32,7 @@ type statusStyles struct {
 // newStatusStyles creates styles appropriate for the output writer.
 func newStatusStyles(w io.Writer) statusStyles {
 	useColor := shouldUseColor(w)
-	width := getTerminalWidth()
+	width := getTerminalWidth(w)
 
 	s := statusStyles{
 		colorEnabled: useColor,
@@ -72,13 +72,25 @@ func shouldUseColor(w io.Writer) bool {
 }
 
 // getTerminalWidth returns the terminal width, capped at 80 with a fallback of 60.
-func getTerminalWidth() int {
-	if w, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && w > 0 {
-		if w > 80 {
-			return 80
+// It first checks the writer itself, then falls back to Stdout/Stderr.
+func getTerminalWidth(w io.Writer) int {
+	// Try the output writer first
+	if f, ok := w.(*os.File); ok {
+		if width, _, err := term.GetSize(int(f.Fd())); err == nil && width > 0 {
+			return min(width, 80)
 		}
-		return w
 	}
+
+	// Fall back to Stdout, then Stderr
+	for _, f := range []*os.File{os.Stdout, os.Stderr} {
+		if f == nil {
+			continue
+		}
+		if width, _, err := term.GetSize(int(f.Fd())); err == nil && width > 0 {
+			return min(width, 80)
+		}
+	}
+
 	return 60
 }
 
