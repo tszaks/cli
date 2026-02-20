@@ -29,16 +29,31 @@ and then go to http://localhost:8089/ui/flamegraph
 //
 // The primary scaling dimension is active session count.
 func BenchmarkStatusCommand(b *testing.B) {
-	b.Run("Short/NoSessions", benchStatus(0, false))
-	b.Run("Short/1Session", benchStatus(1, false))
-	b.Run("Short/5Sessions", benchStatus(5, false))
-	b.Run("Short/10Sessions", benchStatus(10, false))
-	b.Run("Short/20Sessions", benchStatus(20, false))
-	b.Run("Detailed/NoSessions", benchStatus(0, true))
-	b.Run("Detailed/5Sessions", benchStatus(5, true))
+	b.Run("Short/NoSessions", benchStatus(0, false, true))
+	b.Run("Short/1Session", benchStatus(1, false, true))
+	b.Run("Short/5Sessions", benchStatus(5, false, true))
+	b.Run("Short/10Sessions", benchStatus(10, false, true))
+	b.Run("Short/20Sessions", benchStatus(20, false, true))
+	b.Run("Detailed/NoSessions", benchStatus(0, true, true))
+	b.Run("Detailed/5Sessions", benchStatus(5, true, true))
 }
 
-func benchStatus(sessionCount int, detailed bool) func(*testing.B) {
+// BenchmarkStatusCommand_NoCache simulates the old behavior where getGitCommonDir
+// is uncached — every invocation spawns an extra git subprocess.
+func BenchmarkStatusCommand_NoCache(b *testing.B) {
+	b.Run("Short/NoSessions", benchStatus(0, false, false))
+	b.Run("Short/1Session", benchStatus(1, false, false))
+	b.Run("Short/5Sessions", benchStatus(5, false, false))
+	b.Run("Short/10Sessions", benchStatus(10, false, false))
+	b.Run("Short/20Sessions", benchStatus(20, false, false))
+	b.Run("Detailed/NoSessions", benchStatus(0, true, false))
+	b.Run("Detailed/5Sessions", benchStatus(5, true, false))
+}
+
+// benchStatus returns a benchmark function for the `entire status` command.
+// When useGitCommonDirCache is false, it clears the git common dir cache each
+// iteration to simulate the old uncached behavior.
+func benchStatus(sessionCount int, detailed, useGitCommonDirCache bool) func(*testing.B) {
 	return func(b *testing.B) {
 		repo := benchutil.NewBenchRepo(b, benchutil.RepoOpts{})
 
@@ -54,10 +69,13 @@ func benchStatus(sessionCount int, detailed bool) func(*testing.B) {
 
 		b.ResetTimer()
 		for range b.N {
-			// Clear caches each iteration to simulate a fresh CLI invocation.
-			// In real usage, each `entire status` call starts cold.
+			// Always clear RepoRoot to simulate a fresh CLI invocation.
 			paths.ClearRepoRootCache()
-			session.ClearGitCommonDirCache()
+
+			if !useGitCommonDirCache {
+				// Simulate old behavior: no git common dir cache.
+				session.ClearGitCommonDirCache()
+			}
 
 			if err := runStatus(io.Discard, detailed); err != nil {
 				b.Fatalf("runStatus: %v", err)
