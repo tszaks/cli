@@ -131,6 +131,52 @@ func SliceFromLine(content []byte, startLine int) []byte {
 	return content[offset:]
 }
 
+// ExtractModifiedFiles extracts file paths from assistant tool_use blocks that match
+// the given set of file modification tool names (e.g., Write, Edit, NotebookEdit).
+// Returns a deduplicated list of file paths in the order they first appear.
+func ExtractModifiedFiles(lines []Line, toolNames []string) []string {
+	seen := make(map[string]bool)
+	var files []string
+
+	toolSet := make(map[string]bool, len(toolNames))
+	for _, name := range toolNames {
+		toolSet[name] = true
+	}
+
+	for i := range lines {
+		if lines[i].Type != TypeAssistant {
+			continue
+		}
+
+		var msg AssistantMessage
+		if err := json.Unmarshal(lines[i].Message, &msg); err != nil {
+			continue
+		}
+
+		for _, block := range msg.Content {
+			if block.Type != ContentTypeToolUse || !toolSet[block.Name] {
+				continue
+			}
+
+			var input ToolInput
+			if err := json.Unmarshal(block.Input, &input); err != nil {
+				continue
+			}
+
+			file := input.FilePath
+			if file == "" {
+				file = input.NotebookPath
+			}
+			if file != "" && !seen[file] {
+				seen[file] = true
+				files = append(files, file)
+			}
+		}
+	}
+
+	return files
+}
+
 // ExtractUserContent extracts user content from a raw message.
 // Handles both string and array content formats.
 // IDE-injected context tags (like <ide_opened_file>) are stripped from the result.

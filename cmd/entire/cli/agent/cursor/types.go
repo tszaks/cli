@@ -100,17 +100,3 @@ func (p *postToolHookInputRaw) getSessionID() string {
 	}
 	return p.ConversationID
 }
-
-// Tool names used in Cursor transcripts (same as Claude Code)
-const (
-	ToolWrite        = "Write"
-	ToolEdit         = "Edit"
-	ToolNotebookEdit = "NotebookEdit"
-)
-
-// FileModificationTools lists tools that create or modify files
-var FileModificationTools = []string{
-	ToolWrite,
-	ToolEdit,
-	ToolNotebookEdit,
-}

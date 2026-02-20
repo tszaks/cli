@@ -1,5 +1,5 @@
-// Package transcript provides shared types for parsing Claude Code transcripts.
-// This package contains only data structures and constants, not parsing logic.
+// Package transcript provides shared types and utilities for parsing JSONL transcripts.
+// Used by agents that share the same JSONL format (Claude Code, Cursor).
 package transcript
 
 import "encoding/json"
@@ -17,6 +17,8 @@ const (
 )
 
 // Line represents a single line in a Claude Code or Cursor JSONL transcript.
+// Claude Code uses "type" to distinguish user/assistant messages.
+// Cursor uses "role" for the same purpose.
 type Line struct {
 	Type    string          `json:"type"`
 	Role    string          `json:"role"`

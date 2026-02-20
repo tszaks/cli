@@ -2,10 +2,8 @@
 package cursor
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,7 +11,6 @@ import (
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
-	"github.com/entireio/cli/cmd/entire/cli/transcript"
 )
 
 //nolint:gochecknoinits // Agent self-registration is the intended pattern
@@ -62,78 +59,6 @@ func (c *CursorAgent) DetectPresence() (bool, error) {
 	return false, nil
 }
 
-// GetHookConfigPath returns the path to Cursor's hook config file.
-func (c *CursorAgent) GetHookConfigPath() string {
-	return ".cursor/" + HooksFileName
-}
-
-// SupportsHooks returns true as Cursor supports lifecycle hooks.
-func (c *CursorAgent) SupportsHooks() bool {
-	return true
-}
-
-// ParseHookInput parses Cursor hook input from stdin.
-func (c *CursorAgent) ParseHookInput(hookType agent.HookType, reader io.Reader) (*agent.HookInput, error) {
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read input: %w", err)
-	}
-
-	if len(data) == 0 {
-		return nil, errors.New("empty input")
-	}
-
-	input := &agent.HookInput{
-		HookType:  hookType,
-		Timestamp: time.Now(),
-		RawData:   make(map[string]interface{}),
-	}
-
-	switch hookType {
-	case agent.HookUserPromptSubmit:
-		var raw userPromptSubmitRaw
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, fmt.Errorf("failed to parse user prompt submit: %w", err)
-		}
-		input.SessionID = raw.getSessionID()
-		input.SessionRef = raw.TranscriptPath
-		input.UserPrompt = raw.Prompt
-
-	case agent.HookSessionStart, agent.HookSessionEnd, agent.HookStop:
-		var raw sessionInfoRaw
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, fmt.Errorf("failed to parse session info: %w", err)
-		}
-		input.SessionID = raw.getSessionID()
-		input.SessionRef = raw.TranscriptPath
-
-	case agent.HookPreToolUse:
-		var raw taskHookInputRaw
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, fmt.Errorf("failed to parse pre-tool input: %w", err)
-		}
-		input.SessionID = raw.getSessionID()
-		input.SessionRef = raw.TranscriptPath
-		input.ToolUseID = raw.ToolUseID
-		input.ToolInput = raw.ToolInput
-
-	case agent.HookPostToolUse:
-		var raw postToolHookInputRaw
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil, fmt.Errorf("failed to parse post-tool input: %w", err)
-		}
-		input.SessionID = raw.getSessionID()
-		input.SessionRef = raw.TranscriptPath
-		input.ToolUseID = raw.ToolUseID
-		input.ToolInput = raw.ToolInput
-		if raw.ToolResponse.AgentID != "" {
-			input.RawData["agent_id"] = raw.ToolResponse.AgentID
-		}
-	}
-
-	return input, nil
-}
-
 // GetSessionID extracts the session ID from hook input.
 func (c *CursorAgent) GetSessionID(input *agent.HookInput) string {
 	return input.SessionID
@@ -164,6 +89,8 @@ func (c *CursorAgent) GetSessionDir(repoPath string) (string, error) {
 }
 
 // ReadSession reads a session from Cursor's storage (JSONL transcript file).
+// Note: ModifiedFiles is left empty because Cursor's transcript format does not
+// contain tool_use blocks. File detection relies on git status instead.
 func (c *CursorAgent) ReadSession(input *agent.HookInput) (*agent.AgentSession, error) {
 	if input.SessionRef == "" {
 		return nil, errors.New("session reference (transcript path) is required")
@@ -174,18 +101,12 @@ func (c *CursorAgent) ReadSession(input *agent.HookInput) (*agent.AgentSession, 
 		return nil, fmt.Errorf("failed to read transcript: %w", err)
 	}
 
-	lines, err := transcript.ParseFromBytes(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse transcript: %w", err)
-	}
-
 	return &agent.AgentSession{
-		SessionID:     input.SessionID,
-		AgentName:     c.Name(),
-		SessionRef:    input.SessionRef,
-		StartTime:     time.Now(),
-		NativeData:    data,
-		ModifiedFiles: extractModifiedFiles(lines),
+		SessionID:  input.SessionID,
+		AgentName:  c.Name(),
+		SessionRef: input.SessionRef,
+		StartTime:  time.Now(),
+		NativeData: data,
 	}, nil
 }
 
@@ -214,9 +135,10 @@ func (c *CursorAgent) WriteSession(session *agent.AgentSession) error {
 	return nil
 }
 
-// FormatResumeCommand returns the command to resume a Cursor session.
-func (c *CursorAgent) FormatResumeCommand(sessionID string) string {
-	return "cursor --resume " + sessionID
+// FormatResumeCommand returns an instruction to resume a Cursor session.
+// Cursor is a GUI IDE, so there's no CLI command to resume a session directly.
+func (c *CursorAgent) FormatResumeCommand(_ string) string {
+	return "Open this project in Cursor to continue the session."
 }
 
 // sanitizePathForCursor converts a path to Cursor's project directory format.
@@ -238,54 +160,4 @@ func (c *CursorAgent) ChunkTranscript(content []byte, maxSize int) ([][]byte, er
 // ReassembleTranscript concatenates JSONL chunks with newlines.
 func (c *CursorAgent) ReassembleTranscript(chunks [][]byte) ([]byte, error) {
 	return agent.ReassembleJSONL(chunks), nil
-}
-
-// extractModifiedFiles extracts file paths from transcript lines that contain file-modifying tools.
-func extractModifiedFiles(lines []transcript.Line) []string {
-	seen := make(map[string]bool)
-	var files []string
-
-	for i := range lines {
-		if lines[i].Type != transcript.TypeAssistant {
-			continue
-		}
-
-		var msg transcript.AssistantMessage
-		if err := json.Unmarshal(lines[i].Message, &msg); err != nil {
-			continue
-		}
-
-		for _, block := range msg.Content {
-			if block.Type != transcript.ContentTypeToolUse {
-				continue
-			}
-
-			isModifyTool := false
-			for _, name := range FileModificationTools {
-				if block.Name == name {
-					isModifyTool = true
-					break
-				}
-			}
-			if !isModifyTool {
-				continue
-			}
-
-			var toolInput transcript.ToolInput
-			if err := json.Unmarshal(block.Input, &toolInput); err != nil {
-				continue
-			}
-
-			file := toolInput.FilePath
-			if file == "" {
-				file = toolInput.NotebookPath
-			}
-			if file != "" && !seen[file] {
-				seen[file] = true
-				files = append(files, file)
-			}
-		}
-	}
-
-	return files
 }
