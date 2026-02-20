@@ -618,6 +618,9 @@ func detectOrSelectAgent(w io.Writer, selectFn func(available []string) ([]strin
 		if err != nil {
 			return nil, err
 		}
+		if len(selectedAgentNames) == 0 {
+			return nil, errors.New("no agents selected")
+		}
 	} else {
 		form := NewAccessibleForm(
 			huh.NewGroup(
@@ -625,16 +628,18 @@ func detectOrSelectAgent(w io.Writer, selectFn func(available []string) ([]strin
 					Title("Which agents are you using?").
 					Description("Use space to select, enter to confirm.").
 					Options(options...).
+					Validate(func(selected []string) error {
+						if len(selected) == 0 {
+							return errors.New("please select at least one agent")
+						}
+						return nil
+					}).
 					Value(&selectedAgentNames),
 			),
 		)
 		if err := form.Run(); err != nil {
 			return nil, fmt.Errorf("agent selection cancelled: %w", err)
 		}
-	}
-
-	if len(selectedAgentNames) == 0 {
-		return nil, errors.New("no agents selected")
 	}
 
 	selectedAgents := make([]agent.Agent, 0, len(selectedAgentNames))
