@@ -32,6 +32,8 @@ Store transcripts in the **agent's native format**. Any transformation or normal
 - Create a "universal transcript format" in the CLI
 - Transform logs to match what the web UI expects
 - Strip or restructure data to simplify backend processing
+- Create intermediate formats (e.g., converting JSON to JSONL for "easier parsing")
+- Reconstruct transcripts from events when a canonical export exists
 
 ## Integration Checklist
 
@@ -40,13 +42,14 @@ Store transcripts in the **agent's native format**. Any transformation or normal
 - [ ] **Full transcript on every turn**: At turn-end, capture the complete session transcript, not just events since the last checkpoint
 - [ ] **Resumed session handling**: When a user resumes an existing session, the transcript must include all historical messages, not just new ones since the plugin/hook loaded
 - [ ] **Use agent's canonical export**: Prefer the agent's native export command (e.g., `opencode export`, reading Claude's JSONL file) over manually reconstructing from events
+- [ ] **No custom formats**: Store the agent's native format directly in `NativeData` - do not convert between formats (e.g., JSON to JSONL) or create intermediate representations
 - [ ] **Graceful degradation**: If the canonical source is unavailable (e.g., agent shutting down), fall back to best-effort capture with clear documentation of limitations
 
 ### Session Storage Abstraction
 
 - [ ] **`WriteSession` implementation**: Agent must implement `WriteSession(AgentSession)` to restore sessions
 - [ ] **File-based agents** (Claude, Gemini): Write `NativeData` to `SessionRef` path
-- [ ] **Database-backed agents** (OpenCode): Write `NativeData` to file, then import into native storage (the native format should be what the agent's import command expects)
+- [ ] **Database-backed agents**: Write `NativeData` to file, then import into native storage (the native format should be what the agent's import command expects)
 - [ ] **Single format per agent**: Store only the agent's native format in `NativeData` - no separate fields for different representations of the same data
 
 ### Hook Events
@@ -70,21 +73,3 @@ Map agent-native hooks to these `EventType` constants (see `agent/event.go`):
 - [ ] **Resumed session**: Resume existing session, add turns, verify checkpoint includes historical messages
 - [ ] **Rewind**: Rewind to earlier checkpoint, verify agent can continue from that state
 - [ ] **Agent shutdown**: Verify graceful handling if agent exits during checkpoint
-
-## Agent-Specific Notes
-
-### Claude Code
-- Transcript: JSONL file on disk, always complete
-- Storage: File-based, `WriteSession` just writes file
-- Resume: `claude -r <session-id>`
-
-### Gemini CLI
-- Transcript: JSON file on disk, always complete
-- Storage: File-based, `WriteSession` just writes file
-- Resume: `gemini --resume <session-id>`
-
-### OpenCode
-- Transcript: `opencode export <session-id>` output (JSON) - this is the native format
-- Storage: Database-backed, `WriteSession` writes file then imports via `opencode import`
-- Resume: `opencode -s <session-id>`
-- Note: Don't build transcripts from events - use `opencode export` which reads from SQLite and includes full history
