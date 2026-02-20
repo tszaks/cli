@@ -246,12 +246,15 @@ func (a *OpenCodeAgent) WriteSession(session *agent.AgentSession) error {
 // For rewind (session already exists), the session is deleted first so the
 // reimport replaces it with the checkpoint-state messages.
 func (a *OpenCodeAgent) importSessionIntoOpenCode(sessionID string, exportData []byte) error {
-	// Delete the session first so reimport replaces it cleanly.
+	// Delete existing messages first so reimport replaces them cleanly.
 	// opencode import uses ON CONFLICT DO NOTHING, so existing messages
 	// would be skipped without this step (breaking rewind).
-	// runOpenCodeSessionDelete treats "not found" as success.
-	if err := runOpenCodeSessionDelete(sessionID); err != nil {
-		return fmt.Errorf("failed to delete existing session: %w", err)
+	// Uses direct SQLite delete since OpenCode CLI has no session delete command.
+	if err := deleteMessagesFromSQLite(sessionID); err != nil {
+		// Non-fatal: DB might not exist yet (first session), or sqlite3 not installed.
+		// Import will still work for new sessions; only rewind of existing sessions
+		// would have stale messages.
+		fmt.Fprintf(os.Stderr, "warning: could not clear existing messages: %v\n", err)
 	}
 
 	// Write export JSON to a temp file for opencode import
