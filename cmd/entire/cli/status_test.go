@@ -27,9 +27,14 @@ func TestResolveWorktreeBranch_RegularRepo(t *testing.T) {
 		t.Fatalf("git init: %v", err)
 	}
 
-	// New repo on default branch — HEAD is "ref: refs/heads/master"
+	// Read the default branch name directly from HEAD to avoid hard-coding it
+	headData, err := os.ReadFile(filepath.Join(dir, ".git", "HEAD"))
+	if err != nil {
+		t.Fatalf("read HEAD: %v", err)
+	}
+	wantBranch := strings.TrimPrefix(strings.TrimSpace(string(headData)), "ref: refs/heads/")
+
 	branch := resolveWorktreeBranch(dir)
-	wantBranch := "master"
 	if branch != wantBranch {
 		t.Errorf("resolveWorktreeBranch() = %q, want %q", branch, wantBranch)
 	}
