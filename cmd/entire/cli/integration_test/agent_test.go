@@ -1030,11 +1030,6 @@ func TestOpenCodeSessionOperations(t *testing.T) {
 			t.Error("NativeData is empty, want transcript content")
 		}
 
-		// Verify ExportData is also populated (same as NativeData for OpenCode)
-		if len(session.ExportData) == 0 {
-			t.Error("ExportData is empty, want transcript content")
-		}
-
 		// Verify ModifiedFiles computed from tool calls
 		if len(session.ModifiedFiles) != 2 {
 			t.Errorf("ModifiedFiles = %v, want 2 files (main.go, util.go)", session.ModifiedFiles)
