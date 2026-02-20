@@ -1068,7 +1068,7 @@ func runUninstall(w, errW io.Writer, force bool) error {
 	sessionStateCount := countSessionStates()
 	shadowBranchCount := countShadowBranches()
 	gitHooksInstalled := strategy.IsGitHookInstalled()
-	agentsWithInstalledHooks := installedAgentHooks()
+	agentsWithInstalledHooks := GetAgentsWithHooksInstalled()
 	entireDirExists := checkEntireDirExists()
 
 	// Check if there's anything to uninstall
@@ -1094,14 +1094,7 @@ func runUninstall(w, errW io.Writer, force bool) error {
 			fmt.Fprintf(w, "  - Shadow branches (%d)\n", shadowBranchCount)
 		}
 		if len(agentsWithInstalledHooks) > 0 {
-			fmt.Fprint(w, "  - Agent hooks (")
-			for i, ag := range agentsWithInstalledHooks {
-				if i != 0 {
-					fmt.Fprint(w, ", ")
-				}
-				fmt.Fprintf(w, "%s", ag.Type())
-			}
-			fmt.Fprintln(w, ")")
+			fmt.Fprintf(w, "  - Agent hooks (%s)\n", JoinAgentNames(agentsWithInstalledHooks))
 		}
 		fmt.Fprintln(w)
 
@@ -1190,25 +1183,6 @@ func countShadowBranches() int {
 	return len(branches)
 }
 
-func installedAgentHooks() []agent.HookSupport {
-	var installed []agent.HookSupport
-	for _, a := range agent.List() {
-		ag, err := agent.Get(a)
-		if err != nil {
-			continue
-		}
-		hookAgent, ok := ag.(agent.HookSupport)
-		if !ok {
-			continue
-		}
-		if !hookAgent.AreHooksInstalled() {
-			continue
-		}
-		installed = append(installed, hookAgent)
-	}
-	return installed
-}
-
 // checkEntireDirExists checks if the .entire directory exists.
 func checkEntireDirExists() bool {
 	entireDirAbs, err := paths.AbsPath(paths.EntireDir)
@@ -1221,10 +1195,18 @@ func checkEntireDirExists() bool {
 
 // removeAgentHooks removes hooks from all agents that support hooks.
 // take list of agents to process, so we only remove hooks for the agents we previously listed.
-func removeAgentHooks(w io.Writer, agents []agent.HookSupport) error {
+func removeAgentHooks(w io.Writer, agents []agent.AgentName) error {
 	var errs []error
-	for _, ag := range agents {
-		if err := ag.UninstallHooks(); err != nil {
+	for _, name := range agents {
+		ag, err := agent.Get(name)
+		if err != nil {
+			continue
+		}
+		hs, ok := ag.(agent.HookSupport)
+		if !ok {
+			continue
+		}
+		if err := hs.UninstallHooks(); err != nil {
 			errs = append(errs, err)
 		} else {
 			fmt.Fprintf(w, "  Removed %s hooks\n", ag.Type())
