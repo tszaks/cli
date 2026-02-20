@@ -1122,7 +1122,7 @@ func runUninstall(w, errW io.Writer, force bool) error {
 	fmt.Fprintln(w, "\nUninstalling Entire CLI...")
 
 	// 1. Remove agent hooks (lowest risk)
-	if err := removeAgentHooks(w, agentsWithInstalledHooks); err != nil {
+	if err := removeAgentHooks(w); err != nil {
 		fmt.Fprintf(errW, "Warning: failed to remove agent hooks: %v\n", err)
 	}
 
@@ -1194,10 +1194,9 @@ func checkEntireDirExists() bool {
 }
 
 // removeAgentHooks removes hooks from all agents that support hooks.
-// It takes a list of agents to process, so it only removes hooks for the agents that were previously listed.
-func removeAgentHooks(w io.Writer, agents []agent.AgentName) error {
+func removeAgentHooks(w io.Writer) error {
 	var errs []error
-	for _, name := range agents {
+	for _, name := range agent.List() {
 		ag, err := agent.Get(name)
 		if err != nil {
 			continue
