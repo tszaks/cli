@@ -1194,7 +1194,7 @@ func checkEntireDirExists() bool {
 }
 
 // removeAgentHooks removes hooks from all agents that support hooks.
-// take list of agents to process, so we only remove hooks for the agents we previously listed.
+// It takes a list of agents to process, so it only removes hooks for the agents that were previously listed.
 func removeAgentHooks(w io.Writer, agents []agent.AgentName) error {
 	var errs []error
 	for _, name := range agents {
