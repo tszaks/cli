@@ -1094,7 +1094,11 @@ func runUninstall(w, errW io.Writer, force bool) error {
 			fmt.Fprintf(w, "  - Shadow branches (%d)\n", shadowBranchCount)
 		}
 		if len(agentsWithInstalledHooks) > 0 {
-			fmt.Fprintf(w, "  - Agent hooks (%s)\n", JoinAgentNames(agentsWithInstalledHooks))
+			displayNames := make([]string, 0, len(agentsWithInstalledHooks))
+			for _, ag := range agentsWithInstalledHooks {
+				displayNames = append(displayNames, ag.Type())
+			}
+			fmt.Fprintf(w, "  - Agent hooks (%s)\n", strings.Join(displayNames, ", "))
 		}
 		fmt.Fprintln(w)
 
