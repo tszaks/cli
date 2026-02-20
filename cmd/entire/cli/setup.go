@@ -594,11 +594,7 @@ func detectOrSelectAgent(w io.Writer, selectFn func(available []string) ([]strin
 		if _, ok := ag.(agent.HookSupport); !ok {
 			continue
 		}
-		label := string(ag.Type())
-		if name == agent.DefaultAgentName {
-			label += " (default)"
-		}
-		opt := huh.NewOption(label, string(name))
+		opt := huh.NewOption(string(ag.Type()), string(name))
 		if _, isPreSelected := preSelectedSet[name]; isPreSelected {
 			opt = opt.Selected(true)
 		}
