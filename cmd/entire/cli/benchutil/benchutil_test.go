@@ -23,14 +23,14 @@ func BenchmarkNewBenchRepo_Large(b *testing.B) {
 }
 
 func BenchmarkSeedShadowBranch(b *testing.B) {
-	repo := NewBenchRepo(b, RepoOpts{FileCount: 10})
-	sessionID := repo.CreateSessionState(b, SessionOpts{})
-
-	b.ResetTimer()
-	for b.Loop() {
-		// Each iteration seeds a fresh shadow branch
-		// (will append to existing, but that's fine for benchmarking)
-		repo.SeedShadowBranch(b, sessionID, 5, 3)
+	for _, count := range []int{1, 5, 10} {
+		b.Run(fmt.Sprintf("%dCheckpoints", count), func(b *testing.B) {
+			for b.Loop() {
+				repo := NewBenchRepo(b, RepoOpts{FileCount: 10})
+				sessionID := repo.CreateSessionState(b, SessionOpts{})
+				repo.SeedShadowBranch(b, sessionID, count, 3)
+			}
+		})
 	}
 }
 

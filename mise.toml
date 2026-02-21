@@ -130,7 +130,10 @@ set -euo pipefail
 # Install benchstat if not available
 if ! command -v benchstat &>/dev/null; then
   echo "Installing benchstat..."
-  go install golang.org/x/perf/cmd/benchstat@latest
+  if ! go install golang.org/x/perf/cmd/benchstat@latest; then
+    echo "Failed to install benchstat. Please install it manually: go install golang.org/x/perf/cmd/benchstat@latest"
+    exit 1
+  fi
 fi
 
 BENCH_PATTERN="${BENCH_PATTERN:-.}"
@@ -148,20 +151,8 @@ tmpdir=$(mktemp -d)
 new_out="$tmpdir/new.txt"
 old_out="$tmpdir/old.txt"
 
-cleanup() {
-  local exit_code=$?
-  # Restore original branch if we're not on it
-  if [ "$(git rev-parse --abbrev-ref HEAD)" != "$current_branch" ]; then
-    git checkout "$current_branch" --quiet 2>/dev/null || true
-  fi
-  # Pop stash if we pushed one
-  if [ "$has_changes" = true ]; then
-    git stash pop --quiet 2>/dev/null || true
-  fi
-  rm -rf "$tmpdir"
-  exit $exit_code
-}
-trap cleanup EXIT
+has_changes=false
+trap 'git checkout "$current_branch" --quiet 2>/dev/null; [ "$has_changes" = true ] && git stash pop --quiet 2>/dev/null; rm -rf "$tmpdir"' EXIT
 
 echo "=== Benchmarking current branch ($current_branch) ==="
 go test -bench="$BENCH_PATTERN" -benchmem -run='^$' -count="$BENCH_COUNT" -timeout="$BENCH_TIMEOUT" ./... > "$new_out" 2>&1 || true
