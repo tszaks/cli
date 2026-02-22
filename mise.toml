@@ -170,21 +170,13 @@ echo "Memory profile saved to mem.prof. View with: go tool pprof -http=:8080 mem
 '''
 
 [tasks."bench:compare"]
-description = "Compare benchmarks between current branch and main"
+description = "Compare benchmarks between current branch and base ref"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Install benchstat if not available
-if ! command -v benchstat &>/dev/null; then
-  echo "Installing benchstat..."
-  if ! go install golang.org/x/perf/cmd/benchstat@latest; then
-    echo "Failed to install benchstat. Please install it manually: go install golang.org/x/perf/cmd/benchstat@latest"
-    exit 1
-  fi
-fi
-
 BENCH_PATTERN="${BENCH_PATTERN:-.}"
+BENCH_PKG="${BENCH_PKG:-./...}"
 BENCH_COUNT="${BENCH_COUNT:-6}"
 BENCH_TIMEOUT="${BENCH_TIMEOUT:-10m}"
 BASE_REF="${BASE_REF:-main}"
@@ -196,39 +188,109 @@ if [ "$current_branch" = "$BASE_REF" ]; then
 fi
 
 tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+run_bench() {
+  local label="$1" out="$2"
+  echo "=== Benchmarking: $label ==="
+  go test -bench="$BENCH_PATTERN" -benchmem -run='^$' -count="$BENCH_COUNT" -timeout="$BENCH_TIMEOUT" "$BENCH_PKG" 2>/dev/null \
+    | grep -E '^(Benchmark|goos:|goarch:|pkg:|cpu:)' > "$out"
+  local count
+  count=$(grep -c '^Benchmark' "$out" || true)
+  if [ "$count" -eq 0 ]; then
+    echo "  ERROR: no benchmark results captured. Does the benchmark exist on this branch?"
+    return 1
+  fi
+  echo "  captured $count benchmark lines"
+}
+
+# Run on current branch first
 new_out="$tmpdir/new.txt"
-old_out="$tmpdir/old.txt"
+if ! run_bench "$current_branch" "$new_out"; then
+  exit 1
+fi
 
-has_changes=false
-trap 'git checkout "$current_branch" --quiet 2>/dev/null; [ "$has_changes" = true ] && git stash pop --quiet 2>/dev/null; rm -rf "$tmpdir"' EXIT
-
-echo "=== Benchmarking current branch ($current_branch) ==="
-go test -bench="$BENCH_PATTERN" -benchmem -run='^$' -count="$BENCH_COUNT" -timeout="$BENCH_TIMEOUT" ./... > "$new_out" 2>&1 || true
-
-# Check for uncommitted changes
+# Stash if needed, switch to base, run, switch back
 has_changes=false
 if ! git diff --quiet || ! git diff --cached --quiet; then
   has_changes=true
-  echo "Stashing uncommitted changes..."
-  git stash push -m "bench:compare auto-stash"
+  git stash push -q -m "bench:compare auto-stash"
 fi
 
+old_out="$tmpdir/old.txt"
 echo ""
-echo "=== Benchmarking base ($BASE_REF) ==="
-git checkout "$BASE_REF" --quiet
-go test -bench="$BENCH_PATTERN" -benchmem -run='^$' -count="$BENCH_COUNT" -timeout="$BENCH_TIMEOUT" ./... > "$old_out" 2>&1 || true
+git checkout "$BASE_REF" --quiet 2>/dev/null
+if ! run_bench "$BASE_REF" "$old_out"; then
+  echo ""
+  echo "Benchmark does not exist on $BASE_REF. Showing current branch results only:"
+  echo ""
+  git checkout "$current_branch" --quiet 2>/dev/null
+  [ "$has_changes" = true ] && git stash pop --quiet
 
-echo ""
-echo "=== Switching back to $current_branch ==="
-git checkout "$current_branch" --quiet
-if [ "$has_changes" = true ]; then
-  git stash pop --quiet
+  # Pretty-print single-branch results
+  printf "%-40s %12s %12s %12s\n" "Benchmark" "ms/op" "B/op" "allocs/op"
+  printf "%-40s %12s %12s %12s\n" "----------------------------------------" "--------" "--------" "---------"
+  grep '^Benchmark' "$new_out" | while read -r name iters nsop _ bop _ aop _; do
+    ms=$(echo "scale=2; $nsop / 1000000" | bc)
+    printf "%-40s %10s ms %12s %12s\n" "$name" "$ms" "$bop" "$aop"
+  done
+  exit 0
 fi
 
+git checkout "$current_branch" --quiet 2>/dev/null
+[ "$has_changes" = true ] && git stash pop --quiet
+
+# Both branches have results — show comparison table
 echo ""
-echo "=== Results (base=$BASE_REF vs current=$current_branch) ==="
-echo ""
-benchstat "$old_out" "$new_out"
+python3 - "$old_out" "$new_out" "$BASE_REF" "$current_branch" <<'PYEOF'
+import sys, re
+
+old_file, new_file, base_name, curr_name = sys.argv[1:5]
+
+def parse_benchmarks(path):
+    results = {}
+    for line in open(path):
+        if not line.startswith("Benchmark"):
+            continue
+        parts = line.split()
+        if len(parts) < 8:
+            continue
+        try:
+            name = parts[0]
+            ns = float(parts[2])
+            bop = int(parts[4])
+            allocs = int(parts[6])
+            results[name] = (ns / 1e6, bop, allocs)
+        except (ValueError, IndexError):
+            continue
+    return results
+
+old = parse_benchmarks(old_file)
+new = parse_benchmarks(new_file)
+all_names = list(dict.fromkeys(list(new.keys()) + list(old.keys())))
+
+# Header
+print(f"{'Benchmark':<45} {'ms/op':>18} {'B/op':>18} {'allocs/op':>18}")
+print(f"{'':─<45}─{'':─<18}─{'':─<18}─{'':─<18}")
+
+for name in all_names:
+    short = name.replace("BenchmarkEnableCommand/", "").replace("Benchmark", "")
+    if name in old and name in new:
+        o_ms, o_b, o_a = old[name]
+        n_ms, n_b, n_a = new[name]
+        d_ms = ((n_ms - o_ms) / o_ms * 100) if o_ms > 0 else 0
+        d_b = ((n_b - o_b) / o_b * 100) if o_b > 0 else 0
+        d_a = ((n_a - o_a) / o_a * 100) if o_a > 0 else 0
+        def fmt_delta(d):
+            return f"({d:+.1f}%)"
+        print(f"  {short:<43} {o_ms:>6.1f} → {n_ms:>6.1f} {fmt_delta(d_ms):>7}  {o_b:>7} → {n_b:>7} {fmt_delta(d_b):>7}  {o_a:>5} → {n_a:>5} {fmt_delta(d_a):>7}")
+    elif name in new:
+        n_ms, n_b, n_a = new[name]
+        print(f"  {short:<43} {'':>6}   {n_ms:>6.1f} {'(new)':>7}  {'':>7}   {n_b:>7} {'(new)':>7}  {'':>5}   {n_a:>5} {'(new)':>7}")
+
+print()
+print(f"  base: {base_name}    current: {curr_name}")
+PYEOF
 """
 
 [tasks."test:e2e"]
