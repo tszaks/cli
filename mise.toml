@@ -170,7 +170,7 @@ echo "Memory profile saved to mem.prof. View with: go tool pprof -http=:8080 mem
 '''
 
 [tasks."bench:compare"]
-description = "Compare benchmarks between current branch and base ref"
+description = "Compare benchmarks between current branch and base ref (requires benchstat: go install golang.org/x/perf/cmd/benchstat@latest)"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
@@ -180,6 +180,11 @@ BENCH_PKG="${BENCH_PKG:-./...}"
 BENCH_COUNT="${BENCH_COUNT:-6}"
 BENCH_TIMEOUT="${BENCH_TIMEOUT:-10m}"
 BASE_REF="${BASE_REF:-main}"
+
+if ! command -v benchstat &>/dev/null; then
+  echo "benchstat not found. Install with: go install golang.org/x/perf/cmd/benchstat@latest"
+  exit 1
+fi
 
 current_branch=$(git rev-parse --abbrev-ref HEAD)
 if [ "$current_branch" = "$BASE_REF" ]; then
@@ -202,27 +207,28 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Filter go test output to only valid benchmark lines (excludes stderr noise like "✓ Created orphan branch")
 run_bench() {
   local label="$1" out="$2"
   echo "=== Benchmarking: $label ==="
   go test -bench="$BENCH_PATTERN" -benchmem -run='^$' -count="$BENCH_COUNT" -timeout="$BENCH_TIMEOUT" "$BENCH_PKG" 2>/dev/null \
-    | grep -E '^(Benchmark|goos:|goarch:|pkg:|cpu:)' > "$out"
-  local count
-  count=$(grep -c '^Benchmark' "$out" || true)
-  if [ "$count" -eq 0 ]; then
-    echo "  ERROR: no benchmark results captured. Does the benchmark exist on this branch?"
+    | grep -E '^(Benchmark.*[[:space:]]+[0-9]|goos:|goarch:|pkg:|cpu:)' > "$out"
+  local n
+  n=$(grep -c '^Benchmark' "$out" || true)
+  if [ "$n" -eq 0 ]; then
+    echo "  ERROR: no benchmark results captured."
     return 1
   fi
-  echo "  captured $count benchmark lines"
+  echo "  captured $n result lines"
 }
 
-# Run on current branch first
+# Run on current branch
 new_out="$tmpdir/new.txt"
 if ! run_bench "$current_branch" "$new_out"; then
   exit 1
 fi
 
-# Stash if needed, switch to base, run, switch back
+# Stash, switch to base, run, switch back
 if ! git diff --quiet || ! git diff --cached --quiet; then
   has_changes=true
   git stash push -q -m "bench:compare auto-stash"
@@ -232,44 +238,15 @@ old_out="$tmpdir/old.txt"
 echo ""
 git checkout "$BASE_REF" --quiet 2>/dev/null
 on_base_ref=true
+
 if ! run_bench "$BASE_REF" "$old_out"; then
   echo ""
-  echo "Benchmark does not exist on $BASE_REF. Showing current branch results only:"
-  echo ""
+  echo "Benchmark does not exist on $BASE_REF. Showing current branch only:"
   git checkout "$current_branch" --quiet 2>/dev/null
   on_base_ref=false
   [ "$has_changes" = true ] && git stash pop --quiet && has_changes=false
-
-  # Pretty-print single-branch results (aggregate median across runs)
-  python3 - "$new_out" <<'PYEOF'
-import sys, statistics
-from collections import defaultdict
-
-results = defaultdict(lambda: {"ns": [], "bop": [], "allocs": []})
-for line in open(sys.argv[1]):
-    if not line.startswith("Benchmark"):
-        continue
-    parts = line.split()
-    if len(parts) < 8:
-        continue
-    try:
-        name = parts[0]
-        results[name]["ns"].append(float(parts[2]))
-        results[name]["bop"].append(int(parts[4]))
-        results[name]["allocs"].append(int(parts[6]))
-    except (ValueError, IndexError):
-        continue
-
-print(f"  {'Benchmark':<43} {'ms/op':>8} {'B/op':>8} {'allocs/op':>9}")
-print(f"  {'─'*43} {'─'*8} {'─'*8} {'─'*9}")
-for name, v in results.items():
-    short = name.replace("BenchmarkEnableCommand/", "").replace("Benchmark", "")
-    ms = statistics.median(v["ns"]) / 1e6
-    bop = int(statistics.median(v["bop"]))
-    allocs = int(statistics.median(v["allocs"]))
-    n = len(v["ns"])
-    print(f"  {short:<43} {ms:>6.1f}ms {bop:>8} {allocs:>9}  (n={n})")
-PYEOF
+  echo ""
+  benchstat "$new_out"
   exit 0
 fi
 
@@ -277,66 +254,8 @@ git checkout "$current_branch" --quiet 2>/dev/null
 on_base_ref=false
 [ "$has_changes" = true ] && git stash pop --quiet && has_changes=false
 
-# Both branches have results — show comparison table (median of all runs)
 echo ""
-python3 - "$old_out" "$new_out" "$BASE_REF" "$current_branch" <<'PYEOF'
-import sys, statistics
-from collections import defaultdict
-
-old_file, new_file, base_name, curr_name = sys.argv[1:5]
-
-def parse_benchmarks(path):
-    raw = defaultdict(lambda: {"ns": [], "bop": [], "allocs": []})
-    for line in open(path):
-        if not line.startswith("Benchmark"):
-            continue
-        parts = line.split()
-        if len(parts) < 8:
-            continue
-        try:
-            name = parts[0]
-            raw[name]["ns"].append(float(parts[2]))
-            raw[name]["bop"].append(int(parts[4]))
-            raw[name]["allocs"].append(int(parts[6]))
-        except (ValueError, IndexError):
-            continue
-    return {
-        name: (
-            statistics.median(v["ns"]) / 1e6,
-            int(statistics.median(v["bop"])),
-            int(statistics.median(v["allocs"])),
-            len(v["ns"]),
-        )
-        for name, v in raw.items()
-    }
-
-old = parse_benchmarks(old_file)
-new = parse_benchmarks(new_file)
-all_names = list(dict.fromkeys(list(new.keys()) + list(old.keys())))
-
-print(f"  {'Benchmark':<43} {'ms/op':>18} {'B/op':>18} {'allocs/op':>18}")
-print(f"  {'─'*43}─{'─'*18}─{'─'*18}─{'─'*18}")
-
-def fmt_delta(d):
-    return f"({d:+.1f}%)"
-
-for name in all_names:
-    short = name.replace("BenchmarkEnableCommand/", "").replace("Benchmark", "")
-    if name in old and name in new:
-        o_ms, o_b, o_a, o_n = old[name]
-        n_ms, n_b, n_a, n_n = new[name]
-        d_ms = ((n_ms - o_ms) / o_ms * 100) if o_ms > 0 else 0
-        d_b = ((n_b - o_b) / o_b * 100) if o_b > 0 else 0
-        d_a = ((n_a - o_a) / o_a * 100) if o_a > 0 else 0
-        print(f"  {short:<43} {o_ms:>6.1f} → {n_ms:>6.1f} {fmt_delta(d_ms):>7}  {o_b:>7} → {n_b:>7} {fmt_delta(d_b):>7}  {o_a:>5} → {n_a:>5} {fmt_delta(d_a):>7}")
-    elif name in new:
-        n_ms, n_b, n_a, n_n = new[name]
-        print(f"  {short:<43} {'':>6}   {n_ms:>6.1f} {'(new)':>7}  {'':>7}   {n_b:>7} {'(new)':>7}  {'':>5}   {n_a:>5} {'(new)':>7}")
-
-n = next((v[3] for v in new.values()), 0)
-print()
-print(f"  base: {base_name}    current: {curr_name}    (median of {n} runs)")
-PYEOF
+benchstat "$old_out" "$new_out"
 """
 
 [tasks."test:e2e"]
