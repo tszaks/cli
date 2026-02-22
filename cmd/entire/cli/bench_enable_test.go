@@ -8,6 +8,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/benchutil"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
 // BenchmarkEnableCommand benchmarks the non-interactive enable path
@@ -29,6 +30,7 @@ func BenchmarkEnableCommand(b *testing.B) {
 				b.Fatalf("chdir: %v", err)
 			}
 			paths.ClearRepoRootCache()
+			strategy.ClearHooksDirCache()
 			b.StartTimer()
 
 			w := &bytes.Buffer{}
@@ -43,6 +45,7 @@ func BenchmarkEnableCommand(b *testing.B) {
 		repo := benchutil.NewBenchRepo(b, benchutil.RepoOpts{})
 		b.Chdir(repo.Dir)
 		paths.ClearRepoRootCache()
+		strategy.ClearHooksDirCache()
 
 		// First enable to set up everything
 		w := &bytes.Buffer{}
@@ -54,6 +57,7 @@ func BenchmarkEnableCommand(b *testing.B) {
 		for b.Loop() {
 			b.StopTimer()
 			paths.ClearRepoRootCache()
+			strategy.ClearHooksDirCache()
 			b.StartTimer()
 
 			w.Reset()

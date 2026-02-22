@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/entireio/cli/cmd/entire/cli/settings"
 )
@@ -40,11 +41,52 @@ func GetGitDir() (string, error) {
 	return getGitDirInPath(".")
 }
 
+// hooksDirCache caches the hooks directory to avoid repeated git subprocess spawns.
+// Keyed by current working directory to handle directory changes.
+var (
+	hooksDirMu       sync.RWMutex
+	hooksDirCache    string
+	hooksDirCacheDir string
+)
+
 // GetHooksDir returns the active hooks directory path.
 // This respects core.hooksPath and correctly resolves to the common hooks
 // directory when called from a linked worktree.
+// The result is cached per working directory.
 func GetHooksDir() (string, error) {
-	return getHooksDirInPath(".")
+	cwd, err := os.Getwd() //nolint:forbidigo // cache key for hooks dir, same pattern as paths.RepoRoot()
+	if err != nil {
+		cwd = ""
+	}
+
+	hooksDirMu.RLock()
+	if hooksDirCache != "" && hooksDirCacheDir == cwd {
+		cached := hooksDirCache
+		hooksDirMu.RUnlock()
+		return cached, nil
+	}
+	hooksDirMu.RUnlock()
+
+	result, err := getHooksDirInPath(".")
+	if err != nil {
+		return "", err
+	}
+
+	hooksDirMu.Lock()
+	hooksDirCache = result
+	hooksDirCacheDir = cwd
+	hooksDirMu.Unlock()
+
+	return result, nil
+}
+
+// ClearHooksDirCache clears the cached hooks directory.
+// This is primarily useful for testing when changing directories.
+func ClearHooksDirCache() {
+	hooksDirMu.Lock()
+	hooksDirCache = ""
+	hooksDirCacheDir = ""
+	hooksDirMu.Unlock()
 }
 
 // getGitDirInPath returns the git directory for a repository at the given path.
