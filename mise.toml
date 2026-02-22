@@ -188,7 +188,19 @@ if [ "$current_branch" = "$BASE_REF" ]; then
 fi
 
 tmpdir=$(mktemp -d)
-trap 'rm -rf "$tmpdir"' EXIT
+on_base_ref=false
+has_changes=false
+
+cleanup() {
+  if [ "$on_base_ref" = true ]; then
+    git checkout "$current_branch" --quiet 2>/dev/null || true
+  fi
+  if [ "$has_changes" = true ]; then
+    git stash pop --quiet 2>/dev/null || true
+  fi
+  rm -rf "$tmpdir"
+}
+trap cleanup EXIT
 
 run_bench() {
   local label="$1" out="$2"
@@ -211,7 +223,6 @@ if ! run_bench "$current_branch" "$new_out"; then
 fi
 
 # Stash if needed, switch to base, run, switch back
-has_changes=false
 if ! git diff --quiet || ! git diff --cached --quiet; then
   has_changes=true
   git stash push -q -m "bench:compare auto-stash"
@@ -220,35 +231,62 @@ fi
 old_out="$tmpdir/old.txt"
 echo ""
 git checkout "$BASE_REF" --quiet 2>/dev/null
+on_base_ref=true
 if ! run_bench "$BASE_REF" "$old_out"; then
   echo ""
   echo "Benchmark does not exist on $BASE_REF. Showing current branch results only:"
   echo ""
   git checkout "$current_branch" --quiet 2>/dev/null
-  [ "$has_changes" = true ] && git stash pop --quiet
+  on_base_ref=false
+  [ "$has_changes" = true ] && git stash pop --quiet && has_changes=false
 
-  # Pretty-print single-branch results
-  printf "%-40s %12s %12s %12s\n" "Benchmark" "ms/op" "B/op" "allocs/op"
-  printf "%-40s %12s %12s %12s\n" "----------------------------------------" "--------" "--------" "---------"
-  grep '^Benchmark' "$new_out" | while read -r name iters nsop _ bop _ aop _; do
-    ms=$(echo "scale=2; $nsop / 1000000" | bc)
-    printf "%-40s %10s ms %12s %12s\n" "$name" "$ms" "$bop" "$aop"
-  done
+  # Pretty-print single-branch results (aggregate median across runs)
+  python3 - "$new_out" <<'PYEOF'
+import sys, statistics
+from collections import defaultdict
+
+results = defaultdict(lambda: {"ns": [], "bop": [], "allocs": []})
+for line in open(sys.argv[1]):
+    if not line.startswith("Benchmark"):
+        continue
+    parts = line.split()
+    if len(parts) < 8:
+        continue
+    try:
+        name = parts[0]
+        results[name]["ns"].append(float(parts[2]))
+        results[name]["bop"].append(int(parts[4]))
+        results[name]["allocs"].append(int(parts[6]))
+    except (ValueError, IndexError):
+        continue
+
+print(f"  {'Benchmark':<43} {'ms/op':>8} {'B/op':>8} {'allocs/op':>9}")
+print(f"  {'─'*43} {'─'*8} {'─'*8} {'─'*9}")
+for name, v in results.items():
+    short = name.replace("BenchmarkEnableCommand/", "").replace("Benchmark", "")
+    ms = statistics.median(v["ns"]) / 1e6
+    bop = int(statistics.median(v["bop"]))
+    allocs = int(statistics.median(v["allocs"]))
+    n = len(v["ns"])
+    print(f"  {short:<43} {ms:>6.1f}ms {bop:>8} {allocs:>9}  (n={n})")
+PYEOF
   exit 0
 fi
 
 git checkout "$current_branch" --quiet 2>/dev/null
-[ "$has_changes" = true ] && git stash pop --quiet
+on_base_ref=false
+[ "$has_changes" = true ] && git stash pop --quiet && has_changes=false
 
-# Both branches have results — show comparison table
+# Both branches have results — show comparison table (median of all runs)
 echo ""
 python3 - "$old_out" "$new_out" "$BASE_REF" "$current_branch" <<'PYEOF'
-import sys, re
+import sys, statistics
+from collections import defaultdict
 
 old_file, new_file, base_name, curr_name = sys.argv[1:5]
 
 def parse_benchmarks(path):
-    results = {}
+    raw = defaultdict(lambda: {"ns": [], "bop": [], "allocs": []})
     for line in open(path):
         if not line.startswith("Benchmark"):
             continue
@@ -257,39 +295,47 @@ def parse_benchmarks(path):
             continue
         try:
             name = parts[0]
-            ns = float(parts[2])
-            bop = int(parts[4])
-            allocs = int(parts[6])
-            results[name] = (ns / 1e6, bop, allocs)
+            raw[name]["ns"].append(float(parts[2]))
+            raw[name]["bop"].append(int(parts[4]))
+            raw[name]["allocs"].append(int(parts[6]))
         except (ValueError, IndexError):
             continue
-    return results
+    return {
+        name: (
+            statistics.median(v["ns"]) / 1e6,
+            int(statistics.median(v["bop"])),
+            int(statistics.median(v["allocs"])),
+            len(v["ns"]),
+        )
+        for name, v in raw.items()
+    }
 
 old = parse_benchmarks(old_file)
 new = parse_benchmarks(new_file)
 all_names = list(dict.fromkeys(list(new.keys()) + list(old.keys())))
 
-# Header
-print(f"{'Benchmark':<45} {'ms/op':>18} {'B/op':>18} {'allocs/op':>18}")
-print(f"{'':─<45}─{'':─<18}─{'':─<18}─{'':─<18}")
+print(f"  {'Benchmark':<43} {'ms/op':>18} {'B/op':>18} {'allocs/op':>18}")
+print(f"  {'─'*43}─{'─'*18}─{'─'*18}─{'─'*18}")
+
+def fmt_delta(d):
+    return f"({d:+.1f}%)"
 
 for name in all_names:
     short = name.replace("BenchmarkEnableCommand/", "").replace("Benchmark", "")
     if name in old and name in new:
-        o_ms, o_b, o_a = old[name]
-        n_ms, n_b, n_a = new[name]
+        o_ms, o_b, o_a, o_n = old[name]
+        n_ms, n_b, n_a, n_n = new[name]
         d_ms = ((n_ms - o_ms) / o_ms * 100) if o_ms > 0 else 0
         d_b = ((n_b - o_b) / o_b * 100) if o_b > 0 else 0
         d_a = ((n_a - o_a) / o_a * 100) if o_a > 0 else 0
-        def fmt_delta(d):
-            return f"({d:+.1f}%)"
         print(f"  {short:<43} {o_ms:>6.1f} → {n_ms:>6.1f} {fmt_delta(d_ms):>7}  {o_b:>7} → {n_b:>7} {fmt_delta(d_b):>7}  {o_a:>5} → {n_a:>5} {fmt_delta(d_a):>7}")
     elif name in new:
-        n_ms, n_b, n_a = new[name]
+        n_ms, n_b, n_a, n_n = new[name]
         print(f"  {short:<43} {'':>6}   {n_ms:>6.1f} {'(new)':>7}  {'':>7}   {n_b:>7} {'(new)':>7}  {'':>5}   {n_a:>5} {'(new)':>7}")
 
+n = next((v[3] for v in new.values()), 0)
 print()
-print(f"  base: {base_name}    current: {curr_name}")
+print(f"  base: {base_name}    current: {curr_name}    (median of {n} runs)")
 PYEOF
 """
 
