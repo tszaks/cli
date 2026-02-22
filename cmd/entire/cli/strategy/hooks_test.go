@@ -573,6 +573,56 @@ func TestInstallGitHook_Idempotent(t *testing.T) {
 	}
 }
 
+func TestInstallGitHook_LocalDevCommandPrefix(t *testing.T) {
+	_, hooksDir := initHooksTestRepo(t)
+
+	// Install with localDev=true
+	count, err := InstallGitHook(true, true)
+	if err != nil {
+		t.Fatalf("InstallGitHook(localDev=true) error = %v", err)
+	}
+	if count == 0 {
+		t.Fatal("InstallGitHook(localDev=true) should install hooks")
+	}
+
+	for _, hook := range gitHookNames {
+		data, err := os.ReadFile(filepath.Join(hooksDir, hook))
+		if err != nil {
+			t.Fatalf("hook %s should exist: %v", hook, err)
+		}
+		content := string(data)
+		if !strings.Contains(content, "go run ./cmd/entire/main.go") {
+			t.Errorf("hook %s should use 'go run' prefix when localDev=true, got:\n%s", hook, content)
+		}
+		if strings.Contains(content, "\nentire ") {
+			t.Errorf("hook %s should not use bare 'entire' prefix when localDev=true", hook)
+		}
+	}
+
+	// Reinstall with localDev=false — hooks should update to use "entire" prefix
+	count, err = InstallGitHook(true, false)
+	if err != nil {
+		t.Fatalf("InstallGitHook(localDev=false) error = %v", err)
+	}
+	if count == 0 {
+		t.Fatal("InstallGitHook(localDev=false) should reinstall hooks (content changed)")
+	}
+
+	for _, hook := range gitHookNames {
+		data, err := os.ReadFile(filepath.Join(hooksDir, hook))
+		if err != nil {
+			t.Fatalf("hook %s should exist: %v", hook, err)
+		}
+		content := string(data)
+		if strings.Contains(content, "go run") {
+			t.Errorf("hook %s should not use 'go run' prefix when localDev=false, got:\n%s", hook, content)
+		}
+		if !strings.Contains(content, "\nentire ") {
+			t.Errorf("hook %s should use bare 'entire' prefix when localDev=false", hook)
+		}
+	}
+}
+
 func TestInstallGitHook_CoreHooksPathRelative(t *testing.T) {
 	tmpDir, _ := initHooksTestRepo(t)
 	ctx := context.Background()
