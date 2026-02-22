@@ -222,8 +222,8 @@ run_bench() {
   echo "  captured $n result lines"
 }
 
-# Run on current branch
-new_out="$tmpdir/new.txt"
+# Use branch names as filenames so benchstat shows them as column headers
+new_out="$tmpdir/$current_branch"
 if ! run_bench "$current_branch" "$new_out"; then
   exit 1
 fi
@@ -234,7 +234,7 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   git stash push -q -m "bench:compare auto-stash"
 fi
 
-old_out="$tmpdir/old.txt"
+old_out="$tmpdir/$BASE_REF"
 echo ""
 git checkout "$BASE_REF" --quiet 2>/dev/null
 on_base_ref=true
@@ -246,7 +246,7 @@ if ! run_bench "$BASE_REF" "$old_out"; then
   on_base_ref=false
   [ "$has_changes" = true ] && git stash pop --quiet && has_changes=false
   echo ""
-  benchstat "$new_out"
+  (cd "$tmpdir" && benchstat "$(basename "$new_out")")
   exit 0
 fi
 
@@ -255,7 +255,7 @@ on_base_ref=false
 [ "$has_changes" = true ] && git stash pop --quiet && has_changes=false
 
 echo ""
-benchstat "$old_out" "$new_out"
+(cd "$tmpdir" && benchstat "$(basename "$old_out")" "$(basename "$new_out")")
 """
 
 [tasks."test:e2e"]
