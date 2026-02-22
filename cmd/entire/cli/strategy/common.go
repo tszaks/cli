@@ -558,9 +558,8 @@ func GetRemoteMetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
 // The function first uses 'git rev-parse --show-toplevel' to find the repository
 // root, which works correctly even when called from a subdirectory within the repo.
 func OpenRepository() (*git.Repository, error) {
-	// First, find the repository root using git rev-parse --show-toplevel
-	// This works correctly from any subdirectory within the repository
-	repoRoot, err := GetWorktreePath()
+	// Use cached repo root (same git command as GetWorktreePath but with CWD-keyed caching)
+	repoRoot, err := paths.RepoRoot()
 	if err != nil {
 		// Fallback to current directory if git command fails
 		// (e.g., if git is not installed or we're not in a repo)
