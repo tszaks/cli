@@ -165,8 +165,9 @@ func buildHookSpecs(cmdPrefix string) []hookSpec {
 // InstallGitHook installs generic git hooks that delegate to `entire hook` commands.
 // These hooks work with any strategy - the strategy is determined at runtime.
 // If silent is true, no output is printed (except backup notifications, which always print).
+// localDev controls whether hooks use "go run" (true) or the "entire" binary (false).
 // Returns the number of hooks that were installed (0 if all already up to date).
-func InstallGitHook(silent bool) (int, error) {
+func InstallGitHook(silent bool, localDev bool) (int, error) {
 	hooksDir, err := GetHooksDir()
 	if err != nil {
 		return 0, err
@@ -176,7 +177,7 @@ func InstallGitHook(silent bool) (int, error) {
 		return 0, fmt.Errorf("failed to create hooks directory: %w", err)
 	}
 
-	specs := buildHookSpecs(hookCmdPrefix())
+	specs := buildHookSpecs(hookCmdPrefix(localDev))
 	installedCount := 0
 
 	for _, spec := range specs {
@@ -298,8 +299,8 @@ fi
 
 // hookCmdPrefix returns the command prefix for hook scripts and warning messages.
 // Returns "go run ./cmd/entire/main.go" when local_dev is enabled, "entire" otherwise.
-func hookCmdPrefix() string {
-	if isLocalDev() {
+func hookCmdPrefix(localDev bool) string {
+	if localDev {
 		return "go run ./cmd/entire/main.go"
 	}
 	return "entire"
