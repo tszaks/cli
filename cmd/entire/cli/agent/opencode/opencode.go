@@ -200,7 +200,6 @@ func (a *OpenCodeAgent) ReadSession(input *agent.HookInput) (*agent.AgentSession
 		SessionID:     input.SessionID,
 		SessionRef:    input.SessionRef,
 		NativeData:    data,
-		ExportData:    data, // Export JSON is both native and export format
 		ModifiedFiles: modifiedFiles,
 	}, nil
 }
@@ -209,36 +208,13 @@ func (a *OpenCodeAgent) WriteSession(session *agent.AgentSession) error {
 	if session == nil {
 		return errors.New("nil session")
 	}
-	if session.SessionRef == "" {
-		return errors.New("no session ref to write to")
-	}
 	if len(session.NativeData) == 0 {
 		return errors.New("no session data to write")
 	}
 
-	// 1. Write export JSON file (for Entire's internal checkpoint use)
-	dir := filepath.Dir(session.SessionRef)
-	//nolint:gosec // G301: Session directory needs standard permissions
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("failed to create session directory: %w", err)
-	}
-	if err := os.WriteFile(session.SessionRef, session.NativeData, 0o600); err != nil {
-		return fmt.Errorf("failed to write session data: %w", err)
-	}
-
-	// 2. If we have export data, import the session into OpenCode.
-	//    This enables `opencode -s <id>` for both resume and rewind.
-	if len(session.ExportData) == 0 {
-		return nil // No export data — skip import (graceful degradation)
-	}
-
-	if err := a.importSessionIntoOpenCode(session.SessionID, session.ExportData); err != nil {
-		// Non-fatal: import is best-effort. The JSONL file is written,
-		// and the user can always run `opencode import <file>` manually.
-		fmt.Fprintf(os.Stderr, "warning: could not import session into OpenCode: %v\n", err)
-	}
-
-	return nil
+	// Import the session into OpenCode's database.
+	// This enables `opencode -s <id>` for both resume and rewind.
+	return a.importSessionIntoOpenCode(session.SessionID, session.NativeData)
 }
 
 // importSessionIntoOpenCode writes the export JSON to a temp file and runs
@@ -246,15 +222,14 @@ func (a *OpenCodeAgent) WriteSession(session *agent.AgentSession) error {
 // For rewind (session already exists), the session is deleted first so the
 // reimport replaces it with the checkpoint-state messages.
 func (a *OpenCodeAgent) importSessionIntoOpenCode(sessionID string, exportData []byte) error {
-	// Delete existing messages first so reimport replaces them cleanly.
+	// Delete existing session first so reimport replaces it cleanly.
 	// opencode import uses ON CONFLICT DO NOTHING, so existing messages
 	// would be skipped without this step (breaking rewind).
-	// Uses direct SQLite delete since OpenCode CLI has no session delete command.
-	if err := deleteMessagesFromSQLite(sessionID); err != nil {
-		// Non-fatal: DB might not exist yet (first session), or sqlite3 not installed.
+	if err := runOpenCodeSessionDelete(sessionID); err != nil {
+		// Non-fatal: session might not exist yet (first session).
 		// Import will still work for new sessions; only rewind of existing sessions
 		// would have stale messages.
-		fmt.Fprintf(os.Stderr, "warning: could not clear existing messages: %v\n", err)
+		fmt.Fprintf(os.Stderr, "warning: could not delete existing session: %v\n", err)
 	}
 
 	// Write export JSON to a temp file for opencode import
