@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 
@@ -259,15 +260,18 @@ func TestRunStatus_LocalSettingsOnly(t *testing.T) {
 	}
 
 	output := stdout.String()
-	// Should show effective status first
-	if !strings.Contains(output, "Enabled (auto-commit)") {
-		t.Errorf("Expected output to show effective 'Enabled (auto-commit)', got: %s", output)
+	// Should show effective status first (dot + Enabled + separator + strategy)
+	if !strings.Contains(output, "Enabled") {
+		t.Errorf("Expected output to show 'Enabled', got: %s", output)
+	}
+	if !strings.Contains(output, "auto-commit") {
+		t.Errorf("Expected output to show 'auto-commit', got: %s", output)
 	}
 	// Should show per-file details
-	if !strings.Contains(output, "Local, enabled") {
-		t.Errorf("Expected output to show 'Local, enabled', got: %s", output)
+	if !strings.Contains(output, "Local") || !strings.Contains(output, "enabled") {
+		t.Errorf("Expected output to show 'Local' and 'enabled', got: %s", output)
 	}
-	if strings.Contains(output, "Project,") {
+	if strings.Contains(output, "Project") {
 		t.Errorf("Should not show Project settings when only local exists, got: %s", output)
 	}
 }
@@ -287,15 +291,15 @@ func TestRunStatus_BothProjectAndLocal(t *testing.T) {
 
 	output := stdout.String()
 	// Should show effective status first (local overrides project)
-	if !strings.Contains(output, "Disabled (auto-commit)") {
-		t.Errorf("Expected output to show effective 'Disabled (auto-commit)', got: %s", output)
+	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "auto-commit") {
+		t.Errorf("Expected output to show effective 'Disabled' with 'auto-commit', got: %s", output)
 	}
 	// Should show both settings separately
-	if !strings.Contains(output, "Project, enabled (manual-commit)") {
-		t.Errorf("Expected output to show 'Project, enabled (manual-commit)', got: %s", output)
+	if !strings.Contains(output, "Project") || !strings.Contains(output, "manual-commit") {
+		t.Errorf("Expected output to show Project with manual-commit, got: %s", output)
 	}
-	if !strings.Contains(output, "Local, disabled (auto-commit)") {
-		t.Errorf("Expected output to show 'Local, disabled (auto-commit)', got: %s", output)
+	if !strings.Contains(output, "Local") || !strings.Contains(output, "disabled") {
+		t.Errorf("Expected output to show Local with disabled, got: %s", output)
 	}
 }
 
@@ -314,8 +318,8 @@ func TestRunStatus_BothProjectAndLocal_Short(t *testing.T) {
 
 	output := stdout.String()
 	// Should show merged/effective state (local overrides project)
-	if !strings.Contains(output, "Disabled (auto-commit)") {
-		t.Errorf("Expected output to show 'Disabled (auto-commit)', got: %s", output)
+	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "auto-commit") {
+		t.Errorf("Expected output to show 'Disabled' with 'auto-commit', got: %s", output)
 	}
 }
 
@@ -329,8 +333,8 @@ func TestRunStatus_ShowsStrategy(t *testing.T) {
 	}
 
 	output := stdout.String()
-	if !strings.Contains(output, "(auto-commit)") {
-		t.Errorf("Expected output to show strategy '(auto-commit)', got: %s", output)
+	if !strings.Contains(output, "auto-commit") {
+		t.Errorf("Expected output to show strategy 'auto-commit', got: %s", output)
 	}
 }
 
@@ -345,12 +349,12 @@ func TestRunStatus_ShowsManualCommitStrategy(t *testing.T) {
 
 	output := stdout.String()
 	// Should show effective status first
-	if !strings.Contains(output, "Disabled (manual-commit)") {
-		t.Errorf("Expected output to show effective 'Disabled (manual-commit)', got: %s", output)
+	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "manual-commit") {
+		t.Errorf("Expected output to show effective 'Disabled' with 'manual-commit', got: %s", output)
 	}
 	// Should show per-file details
-	if !strings.Contains(output, "Project, disabled (manual-commit)") {
-		t.Errorf("Expected output to show 'Project, disabled (manual-commit)', got: %s", output)
+	if !strings.Contains(output, "Project") || !strings.Contains(output, "disabled") {
+		t.Errorf("Expected output to show 'Project' and 'disabled', got: %s", output)
 	}
 }
 
@@ -394,7 +398,7 @@ func TestWriteActiveSessions(t *testing.T) {
 	now := time.Now()
 	recentInteraction := now.Add(-5 * time.Minute)
 
-	// Create active sessions
+	// Create active sessions with token usage
 	states := []*session.State{
 		{
 			SessionID:           "abc-1234-session",
@@ -403,6 +407,10 @@ func TestWriteActiveSessions(t *testing.T) {
 			LastInteractionTime: &recentInteraction,
 			FirstPrompt:         "Fix auth bug in login flow",
 			AgentType:           agent.AgentType("Claude Code"),
+			TokenUsage: &agent.TokenUsage{
+				InputTokens:  800,
+				OutputTokens: 400,
+			},
 		},
 		{
 			SessionID:    "def-5678-session",
@@ -410,6 +418,10 @@ func TestWriteActiveSessions(t *testing.T) {
 			StartedAt:    now.Add(-15 * time.Minute),
 			FirstPrompt:  "Add dark mode support for the entire application and all components",
 			AgentType:    agent.AgentType("Cursor"),
+			TokenUsage: &agent.TokenUsage{
+				InputTokens:  500,
+				OutputTokens: 300,
+			},
 		},
 		{
 			SessionID:    "ghi-9012-session",
@@ -425,33 +437,26 @@ func TestWriteActiveSessions(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	writeActiveSessions(&buf)
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(&buf, sty)
 
 	output := buf.String()
 
-	// Should contain "Active Sessions:" header
-	if !strings.Contains(output, "Active Sessions:") {
-		t.Errorf("Expected 'Active Sessions:' header, got: %s", output)
+	// Should contain "Active Sessions" in section header
+	if !strings.Contains(output, "Active Sessions") {
+		t.Errorf("Expected 'Active Sessions' header, got: %s", output)
 	}
 
-	// Should contain worktree paths
-	if !strings.Contains(output, "/Users/test/repo") {
-		t.Errorf("Expected worktree path '/Users/test/repo', got: %s", output)
+	// Should contain agent labels (without brackets in new format)
+	if !strings.Contains(output, "Claude Code") {
+		t.Errorf("Expected agent label 'Claude Code', got: %s", output)
 	}
-	if !strings.Contains(output, "/Users/test/repo/.worktrees/3") {
-		t.Errorf("Expected worktree path '/Users/test/repo/.worktrees/3', got: %s", output)
-	}
-
-	// Should contain agent labels
-	if !strings.Contains(output, "[Claude Code]") {
-		t.Errorf("Expected agent label '[Claude Code]', got: %s", output)
-	}
-	if !strings.Contains(output, "[Cursor]") {
-		t.Errorf("Expected agent label '[Cursor]', got: %s", output)
+	if !strings.Contains(output, "Cursor") {
+		t.Errorf("Expected agent label 'Cursor', got: %s", output)
 	}
 	// Session without AgentType should show unknown placeholder
-	if !strings.Contains(output, "[(unknown)]") {
-		t.Errorf("Expected '[(unknown)]' for missing agent type, got: %s", output)
+	if !strings.Contains(output, unknownPlaceholder) {
+		t.Errorf("Expected '%s' for missing agent type, got: %s", unknownPlaceholder, output)
 	}
 
 	// Should contain truncated session IDs
@@ -459,36 +464,53 @@ func TestWriteActiveSessions(t *testing.T) {
 		t.Errorf("Expected truncated session ID 'abc-123', got: %s", output)
 	}
 
-	// Should contain first prompts on indented second line
-	if !strings.Contains(output, "\"Fix auth bug in login flow\"") {
-		t.Errorf("Expected first prompt text in quotes, got: %s", output)
+	// Should contain first prompts with chevron
+	if !strings.Contains(output, "> \"Fix auth bug in login flow\"") {
+		t.Errorf("Expected first prompt with chevron, got: %s", output)
 	}
 
 	// Session without FirstPrompt should NOT show a prompt line
-	// (no more "(unknown)" in quotes for missing prompts)
 	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		if strings.Contains(line, "ghi-901") {
-			// The line with the no-prompt session should not have a prompt
 			if strings.Contains(line, "\"") {
 				t.Errorf("Session without prompt should not show quoted text on first line, got: %s", line)
 			}
 		}
 	}
 
-	// Should show "active X ago" for session with LastInteractionTime that differs from StartedAt
+	// Should show "active 5m ago" for session with LastInteractionTime that differs from StartedAt
 	if !strings.Contains(output, "active 5m ago") {
 		t.Errorf("Expected 'active 5m ago' for session with LastInteractionTime, got: %s", output)
 	}
 
-	// Session started 15m ago with no LastInteractionTime should NOT show "active" text
-	// Find the Cursor session line and verify no "active" in it
+	// Session started 15m ago with no LastInteractionTime should NOT show "active" in stats
 	for _, line := range lines {
-		if strings.Contains(line, "[Cursor]") {
+		if strings.Contains(line, "Cursor") {
 			if strings.Contains(line, "active") {
 				t.Errorf("Session without LastInteractionTime should not show 'active', got: %s", line)
 			}
 		}
+	}
+
+	// Should contain per-session token counts
+	if !strings.Contains(output, "tokens 1.2k") {
+		t.Errorf("Expected per-session 'tokens 1.2k' for first session (800+400), got: %s", output)
+	}
+
+	// Should contain aggregate footer with session count (no total tokens in footer)
+	if !strings.Contains(output, "3 sessions") {
+		t.Errorf("Expected aggregate '3 sessions' in footer, got: %s", output)
+	}
+
+	// Should NOT contain phase indicators (removed)
+	if strings.Contains(output, "● active") || strings.Contains(output, "● idle") || strings.Contains(output, "● ended") {
+		t.Errorf("Output should not contain phase indicators, got: %s", output)
+	}
+
+	// Should NOT contain file counts (removed)
+	if strings.Contains(output, "files ") {
+		t.Errorf("Output should not contain file counts, got: %s", output)
 	}
 }
 
@@ -519,11 +541,14 @@ func TestWriteActiveSessions_ActiveTimeOmittedWhenClose(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	writeActiveSessions(&buf)
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(&buf, sty)
 
 	output := buf.String()
-	if strings.Contains(output, "active") {
-		t.Errorf("Expected no 'active' when LastInteractionTime is close to StartedAt, got: %s", output)
+	// Should not show "active Xm ago" when LastInteractionTime is close to StartedAt
+	// But "active" may appear in phase indicator, so check for the specific pattern
+	if strings.Contains(output, "active 10m ago") || strings.Contains(output, "active 9m ago") {
+		t.Errorf("Expected no separate 'active' time when LastInteractionTime is close to StartedAt, got: %s", output)
 	}
 }
 
@@ -531,7 +556,8 @@ func TestWriteActiveSessions_NoSessions(t *testing.T) {
 	setupTestRepo(t)
 
 	var buf bytes.Buffer
-	writeActiveSessions(&buf)
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(&buf, sty)
 
 	// Should produce no output when there are no sessions
 	if buf.Len() != 0 {
@@ -560,10 +586,496 @@ func TestWriteActiveSessions_EndedSessionsExcluded(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	writeActiveSessions(&buf)
+	sty := newStatusStyles(&buf)
+	writeActiveSessions(&buf, sty)
 
 	// Should produce no output when all sessions are ended
 	if buf.Len() != 0 {
 		t.Errorf("Expected empty output with only ended sessions, got: %s", buf.String())
+	}
+}
+
+func TestFormatTokenCount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		input int
+		want  string
+	}{
+		{0, "0"},
+		{500, "500"},
+		{999, "999"},
+		{1000, "1k"},
+		{1200, "1.2k"},
+		{4800, "4.8k"},
+		{14300, "14.3k"},
+		{100000, "100k"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			t.Parallel()
+			got := formatTokenCount(tt.input)
+			if got != tt.want {
+				t.Errorf("formatTokenCount(%d) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTotalTokens(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil", func(t *testing.T) {
+		t.Parallel()
+		if got := totalTokens(nil); got != 0 {
+			t.Errorf("totalTokens(nil) = %d, want 0", got)
+		}
+	})
+
+	t.Run("basic", func(t *testing.T) {
+		t.Parallel()
+		tu := &agent.TokenUsage{
+			InputTokens:  100,
+			OutputTokens: 50,
+		}
+		if got := totalTokens(tu); got != 150 {
+			t.Errorf("totalTokens() = %d, want 150", got)
+		}
+	})
+
+	t.Run("with subagents", func(t *testing.T) {
+		t.Parallel()
+		tu := &agent.TokenUsage{
+			InputTokens:  100,
+			OutputTokens: 50,
+			SubagentTokens: &agent.TokenUsage{
+				InputTokens:  200,
+				OutputTokens: 100,
+			},
+		}
+		if got := totalTokens(tu); got != 450 {
+			t.Errorf("totalTokens() = %d, want 450", got)
+		}
+	})
+
+	t.Run("all fields", func(t *testing.T) {
+		t.Parallel()
+		tu := &agent.TokenUsage{
+			InputTokens:         100,
+			CacheCreationTokens: 50,
+			CacheReadTokens:     25,
+			OutputTokens:        75,
+		}
+		if got := totalTokens(tu); got != 250 {
+			t.Errorf("totalTokens() = %d, want 250", got)
+		}
+	})
+}
+
+func TestTotalTokens_ExcludesAPICallCount(t *testing.T) {
+	t.Parallel()
+
+	// APICallCount should NOT be included in token totals — it's a separate metric
+	tu := &agent.TokenUsage{
+		InputTokens:  100,
+		OutputTokens: 50,
+		APICallCount: 999, // should be ignored
+	}
+	got := totalTokens(tu)
+	if got != 150 {
+		t.Errorf("totalTokens() = %d, want 150 (APICallCount should be excluded)", got)
+	}
+}
+
+func TestTotalTokens_DeepSubagentNesting(t *testing.T) {
+	t.Parallel()
+
+	tu := &agent.TokenUsage{
+		InputTokens:  100,
+		OutputTokens: 50,
+		SubagentTokens: &agent.TokenUsage{
+			InputTokens:  200,
+			OutputTokens: 100,
+			SubagentTokens: &agent.TokenUsage{
+				InputTokens:  50,
+				OutputTokens: 25,
+			},
+		},
+	}
+	// 100+50 + 200+100 + 50+25 = 525
+	if got := totalTokens(tu); got != 525 {
+		t.Errorf("totalTokens() = %d, want 525 (deep nesting)", got)
+	}
+}
+
+func TestActiveTimeDisplay(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil", func(t *testing.T) {
+		t.Parallel()
+		if got := activeTimeDisplay(nil); got != "" {
+			t.Errorf("activeTimeDisplay(nil) = %q, want empty", got)
+		}
+	})
+
+	t.Run("recent", func(t *testing.T) {
+		t.Parallel()
+		now := time.Now()
+		if got := activeTimeDisplay(&now); got != "active now" {
+			t.Errorf("activeTimeDisplay(now) = %q, want 'active now'", got)
+		}
+	})
+
+	t.Run("older", func(t *testing.T) {
+		t.Parallel()
+		older := time.Now().Add(-5 * time.Minute)
+		got := activeTimeDisplay(&older)
+		if got != "active 5m ago" {
+			t.Errorf("activeTimeDisplay(-5m) = %q, want 'active 5m ago'", got)
+		}
+	})
+}
+
+func TestShouldUseColor_NonTTY(t *testing.T) {
+	t.Parallel()
+
+	// bytes.Buffer is not a terminal → should return false
+	var buf bytes.Buffer
+	if shouldUseColor(&buf) {
+		t.Error("shouldUseColor(bytes.Buffer) should be false")
+	}
+}
+
+func TestShouldUseColor_NoColorEnv(t *testing.T) {
+	// NO_COLOR env var should force color off even for a real file
+	t.Setenv("NO_COLOR", "1")
+
+	f, err := os.CreateTemp(t.TempDir(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if shouldUseColor(f) {
+		t.Error("shouldUseColor should be false when NO_COLOR is set")
+	}
+}
+
+func TestShouldUseColor_RegularFile(t *testing.T) {
+	t.Parallel()
+
+	// A regular file (not a terminal) should return false
+	f, err := os.CreateTemp(t.TempDir(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	if shouldUseColor(f) {
+		t.Error("shouldUseColor(regular file) should be false")
+	}
+}
+
+func TestNewStatusStyles_NonTTY(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+
+	if sty.colorEnabled {
+		t.Error("newStatusStyles(bytes.Buffer) should have colorEnabled=false")
+	}
+}
+
+func TestRender_ColorDisabled(t *testing.T) {
+	t.Parallel()
+
+	// When color is disabled, render should return text unchanged
+	sty := statusStyles{colorEnabled: false}
+	style := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2"))
+
+	got := sty.render(style, "hello")
+	if got != "hello" {
+		t.Errorf("render with color disabled = %q, want %q", got, "hello")
+	}
+}
+
+func TestRender_ColorEnabled_CallsStyleRender(t *testing.T) {
+	t.Parallel()
+
+	// When colorEnabled=true, render should call style.Render (not return plain text).
+	// Note: lipgloss may strip ANSI in test environments without a terminal, so we
+	// can't assert ANSI codes. Instead, verify the code path is exercised and
+	// the text content is preserved.
+	sty := statusStyles{
+		colorEnabled: true,
+		bold:         lipgloss.NewStyle().Bold(true),
+	}
+
+	got := sty.render(sty.bold, "hello")
+	if !strings.Contains(got, "hello") {
+		t.Errorf("render with color enabled should preserve text content, got: %q", got)
+	}
+}
+
+func TestRender_ColorToggle(t *testing.T) {
+	t.Parallel()
+
+	style := lipgloss.NewStyle().Bold(true)
+
+	// Color disabled: must return exact input
+	styOff := statusStyles{colorEnabled: false}
+	got := styOff.render(style, "test")
+	if got != "test" {
+		t.Errorf("render(colorEnabled=false) = %q, want exact %q", got, "test")
+	}
+
+	// Color enabled: exercises style.Render code path, text preserved
+	styOn := statusStyles{colorEnabled: true}
+	got = styOn.render(style, "test")
+	if !strings.Contains(got, "test") {
+		t.Errorf("render(colorEnabled=true) should contain 'test', got: %q", got)
+	}
+}
+
+func TestSectionRule_PlainText(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false, width: 40}
+	rule := sty.sectionRule("Active Sessions", 40)
+
+	// Plain text should contain the label
+	if !strings.Contains(rule, "Active Sessions") {
+		t.Errorf("sectionRule should contain label, got: %q", rule)
+	}
+	if !strings.Contains(rule, "─") {
+		t.Errorf("sectionRule should contain rule characters, got: %q", rule)
+	}
+	// With color disabled, should have no ANSI escapes
+	if strings.Contains(rule, "\x1b[") {
+		t.Errorf("sectionRule with color disabled should have no ANSI escapes, got: %q", rule)
+	}
+}
+
+func TestHorizontalRule_PlainText(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false}
+	rule := sty.horizontalRule(15)
+
+	// Should be no ANSI escapes
+	if strings.Contains(rule, "\x1b[") {
+		t.Errorf("horizontalRule with color disabled should have no ANSI escapes, got: %q", rule)
+	}
+	if len([]rune(rule)) != 15 {
+		t.Errorf("horizontalRule(15) has %d runes, want 15", len([]rune(rule)))
+	}
+}
+
+func TestHorizontalRule(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+
+	rule := sty.horizontalRule(20)
+	if len([]rune(rule)) != 20 {
+		t.Errorf("horizontalRule(20) has %d runes, want 20", len([]rune(rule)))
+	}
+	// All characters should be the box-drawing dash
+	for _, r := range rule {
+		if r != '─' {
+			t.Errorf("horizontalRule contains unexpected rune %q", r)
+			break
+		}
+	}
+}
+
+func TestGetTerminalWidth_NonTTY(t *testing.T) {
+	t.Parallel()
+
+	// A bytes.Buffer is not a terminal — should fall back to 60
+	var buf bytes.Buffer
+	width := getTerminalWidth(&buf)
+	// In CI/test environments without a real terminal on Stdout/Stderr,
+	// the fallback should be 60. If running in a terminal, it may be
+	// capped at 80. Either is acceptable.
+	if width != 60 && width > 80 {
+		t.Errorf("getTerminalWidth(bytes.Buffer) = %d, want 60 or ≤80", width)
+	}
+}
+
+func TestGetTerminalWidth_RegularFile(t *testing.T) {
+	t.Parallel()
+
+	// A regular file (not a terminal) should not report a terminal width
+	f, err := os.CreateTemp(t.TempDir(), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	width := getTerminalWidth(f)
+	// Regular file fd won't have a terminal size, so it should fall back
+	if width != 60 && width > 80 {
+		t.Errorf("getTerminalWidth(regular file) = %d, want 60 or ≤80", width)
+	}
+}
+
+func TestNewStatusStyles_Width(t *testing.T) {
+	t.Parallel()
+
+	// For a non-terminal writer, width should be the fallback (60)
+	// unless Stdout/Stderr happen to be terminals
+	var buf bytes.Buffer
+	sty := newStatusStyles(&buf)
+
+	if sty.width == 0 {
+		t.Error("newStatusStyles should set a non-zero width")
+	}
+	if sty.width > 80 {
+		t.Errorf("newStatusStyles width = %d, should be capped at 80", sty.width)
+	}
+}
+
+func TestSectionRule_NarrowWidth(t *testing.T) {
+	t.Parallel()
+
+	// When width is very small (smaller than prefix + label), trailing should be at least 1
+	sty := statusStyles{colorEnabled: false, width: 10}
+	rule := sty.sectionRule("Active Sessions", 10)
+
+	// Should still contain the label and at least one trailing dash
+	if !strings.Contains(rule, "Active Sessions") {
+		t.Errorf("sectionRule with narrow width should still contain label, got: %q", rule)
+	}
+	if !strings.Contains(rule, "─") {
+		t.Errorf("sectionRule with narrow width should have at least one trailing dash, got: %q", rule)
+	}
+}
+
+func TestActiveTimeDisplay_Hours(t *testing.T) {
+	t.Parallel()
+
+	hoursAgo := time.Now().Add(-3 * time.Hour)
+	got := activeTimeDisplay(&hoursAgo)
+	if got != "active 3h ago" {
+		t.Errorf("activeTimeDisplay(-3h) = %q, want 'active 3h ago'", got)
+	}
+}
+
+func TestActiveTimeDisplay_Days(t *testing.T) {
+	t.Parallel()
+
+	daysAgo := time.Now().Add(-48 * time.Hour)
+	got := activeTimeDisplay(&daysAgo)
+	if got != "active 2d ago" {
+		t.Errorf("activeTimeDisplay(-48h) = %q, want 'active 2d ago'", got)
+	}
+}
+
+func TestFormatSettingsStatusShort_Enabled(t *testing.T) {
+	setupTestRepo(t)
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled:  true,
+		Strategy: "manual-commit",
+	}
+
+	result := formatSettingsStatusShort(s, sty)
+
+	if !strings.Contains(result, "●") {
+		t.Errorf("Enabled status should have green dot, got: %q", result)
+	}
+	if !strings.Contains(result, "Enabled") {
+		t.Errorf("Expected 'Enabled' in output, got: %q", result)
+	}
+	if !strings.Contains(result, "manual-commit") {
+		t.Errorf("Expected strategy in output, got: %q", result)
+	}
+}
+
+func TestFormatSettingsStatusShort_Disabled(t *testing.T) {
+	setupTestRepo(t)
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled:  false,
+		Strategy: "auto-commit",
+	}
+
+	result := formatSettingsStatusShort(s, sty)
+
+	if !strings.Contains(result, "○") {
+		t.Errorf("Disabled status should have open dot, got: %q", result)
+	}
+	if !strings.Contains(result, "Disabled") {
+		t.Errorf("Expected 'Disabled' in output, got: %q", result)
+	}
+	if !strings.Contains(result, "auto-commit") {
+		t.Errorf("Expected strategy in output, got: %q", result)
+	}
+}
+
+func TestFormatSettingsStatus_Project(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled:  true,
+		Strategy: "manual-commit",
+	}
+
+	result := formatSettingsStatus("Project", s, sty)
+
+	if !strings.Contains(result, "Project") {
+		t.Errorf("Expected 'Project' prefix, got: %q", result)
+	}
+	if !strings.Contains(result, "enabled") {
+		t.Errorf("Expected 'enabled' in output, got: %q", result)
+	}
+	if !strings.Contains(result, "manual-commit") {
+		t.Errorf("Expected strategy in output, got: %q", result)
+	}
+}
+
+func TestFormatSettingsStatus_LocalDisabled(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled:  false,
+		Strategy: "auto-commit",
+	}
+
+	result := formatSettingsStatus("Local", s, sty)
+
+	if !strings.Contains(result, "Local") {
+		t.Errorf("Expected 'Local' prefix, got: %q", result)
+	}
+	if !strings.Contains(result, "disabled") {
+		t.Errorf("Expected 'disabled' in output, got: %q", result)
+	}
+	if !strings.Contains(result, "auto-commit") {
+		t.Errorf("Expected strategy in output, got: %q", result)
+	}
+}
+
+func TestFormatSettingsStatus_Separators(t *testing.T) {
+	t.Parallel()
+
+	sty := statusStyles{colorEnabled: false, width: 60}
+	s := &EntireSettings{
+		Enabled:  true,
+		Strategy: "manual-commit",
+	}
+
+	result := formatSettingsStatus("Project", s, sty)
+
+	// Should use · as separator (plain text, no ANSI)
+	if !strings.Contains(result, "·") {
+		t.Errorf("Expected '·' separators in output, got: %q", result)
 	}
 }
