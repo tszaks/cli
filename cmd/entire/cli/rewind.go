@@ -680,10 +680,6 @@ func restoreSessionTranscriptFromStrategy(cpID id.CheckpointID, sessionID string
 		sessionID = returnedSessionID
 	}
 
-	// Use WriteSession which handles both file writing and native storage import
-	// (e.g., SQLite for OpenCode). The transcript IS the export data — for agents
-	// that need import (OpenCode), WriteSession uses ExportData; for others
-	// (Claude, Gemini), WriteSession ignores it and just writes NativeData.
 	sessionFile, err := resolveTranscriptPath(sessionID, agent)
 	if err != nil {
 		return "", err
@@ -696,7 +692,6 @@ func restoreSessionTranscriptFromStrategy(cpID id.CheckpointID, sessionID string
 		AgentName:  agent.Name(),
 		SessionRef: sessionFile,
 		NativeData: content,
-		ExportData: content,
 	}
 	if err := agent.WriteSession(agentSession); err != nil {
 		return "", fmt.Errorf("failed to write session: %w", err)
@@ -726,9 +721,6 @@ func restoreSessionTranscriptFromShadow(commitHash, metadataDir, sessionID strin
 		return "", fmt.Errorf("failed to get transcript from shadow branch: %w", err)
 	}
 
-	// Use WriteSession which handles both file writing and native storage import.
-	// The transcript IS the export data — for agents that need import (OpenCode),
-	// WriteSession uses ExportData; for others (Claude, Gemini), it's ignored.
 	sessionFile, err := resolveTranscriptPath(sessionID, agent)
 	if err != nil {
 		return "", err
@@ -741,7 +733,6 @@ func restoreSessionTranscriptFromShadow(commitHash, metadataDir, sessionID strin
 		AgentName:  agent.Name(),
 		SessionRef: sessionFile,
 		NativeData: content,
-		ExportData: content,
 	}
 	if err := agent.WriteSession(agentSession); err != nil {
 		return "", fmt.Errorf("failed to write session: %w", err)

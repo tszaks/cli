@@ -1036,40 +1036,16 @@ func TestOpenCodeSessionOperations(t *testing.T) {
 		}
 	})
 
-	t.Run("WriteSession writes NativeData to file", func(t *testing.T) {
+	t.Run("WriteSession validates input", func(t *testing.T) {
 		t.Parallel()
-		env := NewTestEnv(t)
-		env.InitRepo()
 
 		ag, _ := agent.Get("opencode")
 
-		// First read a session
-		srcPath := filepath.Join(env.RepoDir, "src.json")
-		srcContent := `{"info": {"id": "test"}, "messages": [{"info": {"id": "msg-1", "role": "user", "time": {"created": 1708300000}}, "parts": [{"type": "text", "text": "hello"}]}]}`
-		if err := os.WriteFile(srcPath, []byte(srcContent), 0o644); err != nil {
-			t.Fatalf("failed to write source: %v", err)
+		if err := ag.WriteSession(nil); err == nil {
+			t.Error("WriteSession(nil) should error")
 		}
-
-		session, _ := ag.ReadSession(&agent.HookInput{
-			SessionID:  "test",
-			SessionRef: srcPath,
-		})
-
-		// Write to a new location
-		dstPath := filepath.Join(env.RepoDir, "dst.json")
-		session.SessionRef = dstPath
-
-		if err := ag.WriteSession(session); err != nil {
-			t.Fatalf("WriteSession() error = %v", err)
-		}
-
-		// Verify file was written
-		data, err := os.ReadFile(dstPath)
-		if err != nil {
-			t.Fatalf("failed to read destination: %v", err)
-		}
-		if string(data) != srcContent {
-			t.Errorf("written content = %q, want %q", string(data), srcContent)
+		if err := ag.WriteSession(&agent.AgentSession{}); err == nil {
+			t.Error("WriteSession with empty NativeData should error")
 		}
 	})
 }

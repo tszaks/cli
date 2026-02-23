@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -32,6 +33,28 @@ func runOpenCodeExport(sessionID string) ([]byte, error) {
 	}
 
 	return output, nil
+}
+
+// runOpenCodeSessionDelete runs `opencode session delete <sessionID>` to remove
+// a session from OpenCode's database. Returns nil on success or if the session
+// doesn't exist (nothing to delete).
+func runOpenCodeSessionDelete(sessionID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), openCodeCommandTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "opencode", "session", "delete", sessionID)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("opencode session delete timed out after %s", openCodeCommandTimeout)
+		}
+		// "Session not found" means the session doesn't exist — nothing to delete.
+		if strings.Contains(strings.ToLower(string(output)), "session not found") {
+			return nil
+		}
+		return fmt.Errorf("opencode session delete failed: %w (output: %s)", err, string(output))
+	}
+
+	return nil
 }
 
 // runOpenCodeImport runs `opencode import <file>` to import a session into
