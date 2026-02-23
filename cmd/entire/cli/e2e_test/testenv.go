@@ -82,8 +82,10 @@ func NewFeatureBranchEnv(t *testing.T, strategyName string) *TestEnv {
 	// path is the project directory itself. Override to "allow" for the test repo.
 	// Note: specific path patterns don't work here because OpenCode evaluates the
 	// catch-all "ask" rule before specific "allow" rules (known issue).
+	// Include $schema to prevent OpenCode from modifying the file when it runs.
 	if defaultAgent == AgentNameOpenCode {
 		env.WriteFile("opencode.json", `{
+  "$schema": "https://opencode.ai/config.json",
   "permission": {
     "external_directory": "allow"
   }
