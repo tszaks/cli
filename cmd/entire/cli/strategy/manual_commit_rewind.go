@@ -699,6 +699,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) ([
 			SessionID: sessionID,
 			Agent:     sessionAgent.Type(),
 			Prompt:    promptPreview,
+			CreatedAt: content.Metadata.CreatedAt,
 		})
 	}
 
