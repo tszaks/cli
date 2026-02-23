@@ -309,9 +309,11 @@ func TestOpenCodeMidTurnCommit(t *testing.T) {
 	})
 
 	// 5. Copy transcript to .entire/tmp/ where PrepareTranscript will find it.
-	// In production, `opencode export` creates this file on demand. In tests,
-	// ENTIRE_TEST_OPENCODE_MOCK_EXPORT makes fetchAndCacheExport look for a
-	// pre-written file at .entire/tmp/<sessionID>.json.
+	// In production, `opencode export` refreshes this file on each call.
+	// In tests, ENTIRE_TEST_OPENCODE_MOCK_EXPORT makes fetchAndCacheExport
+	// read from the pre-written file at .entire/tmp/<sessionID>.json.
+	// PrepareTranscript ALWAYS calls fetchAndCacheExport (even if file exists)
+	// to ensure fresh data for resumed sessions.
 	env.CopyTranscriptToEntireTmp(session.ID, session.TranscriptPath)
 
 	// 6. Agent commits mid-turn (no turn-end yet!)

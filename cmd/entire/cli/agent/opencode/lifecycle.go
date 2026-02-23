@@ -111,14 +111,15 @@ func (a *OpenCodeAgent) ParseHookEvent(hookName string, stdin io.Reader) (*agent
 	}
 }
 
-// PrepareTranscript ensures the OpenCode transcript file exists by calling `opencode export`.
-// OpenCode's transcript is only created at turn-end via `opencode export`, but condensation
-// may need it earlier (e.g., during mid-turn commits). This method creates the file on demand.
-// If the file already exists, this is a no-op.
+// PrepareTranscript ensures the OpenCode transcript file is up-to-date by calling `opencode export`.
+// OpenCode's transcript is created/updated via `opencode export`, but condensation may need fresh
+// data mid-turn (e.g., during mid-turn commits or resumed sessions where the cached file is stale).
+// This method always refreshes the transcript to ensure the latest agent activity is captured.
 func (a *OpenCodeAgent) PrepareTranscript(sessionRef string) error {
-	// No-op if file already exists
-	if _, err := os.Stat(sessionRef); err == nil {
-		return nil
+	// Validate the session ref path
+	if _, err := os.Stat(sessionRef); err != nil && !os.IsNotExist(err) {
+		// Permission denied, broken symlink, or other non-recoverable errors
+		return fmt.Errorf("failed to stat OpenCode transcript path %s: %w", sessionRef, err)
 	}
 
 	// Extract session ID from path: basename without .json extension
@@ -131,6 +132,10 @@ func (a *OpenCodeAgent) PrepareTranscript(sessionRef string) error {
 		return fmt.Errorf("empty session ID in transcript path: %s", sessionRef)
 	}
 
+	// Always call fetchAndCacheExport to get fresh transcript data.
+	// This is critical for resumed sessions where the cached file may contain stale data
+	// from a previous turn. Unlike turn-end (which always runs export), mid-turn commits
+	// need to refresh the transcript to capture agent activity since the last export.
 	_, err := a.fetchAndCacheExport(sessionID)
 	return err
 }
