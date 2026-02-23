@@ -283,7 +283,7 @@ func FilesWithDeprecatedStrategy() []string {
 func WriteDeprecatedStrategyWarnings(w io.Writer) bool {
 	files := FilesWithDeprecatedStrategy()
 	for _, f := range files {
-		fmt.Fprintf(w, "Note: \"%s\" in %s is no longer needed and can be removed.\n", "strategy", f)
+		fmt.Fprintf(w, "Note: \"%s\" in %s is no longer needed and can be removed.  'manual-commit' is now the only supported strategy.\n", "strategy", f)
 	}
 	return len(files) > 0
 }
