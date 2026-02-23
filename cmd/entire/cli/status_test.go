@@ -3,13 +3,193 @@ package cli
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/session"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 )
+
+func TestResolveWorktreeBranch_RegularRepo(t *testing.T) {
+	dir := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+
+	// Read the default branch name directly from HEAD to avoid hard-coding it
+	headData, err := os.ReadFile(filepath.Join(dir, ".git", "HEAD"))
+	if err != nil {
+		t.Fatalf("read HEAD: %v", err)
+	}
+	wantBranch := strings.TrimPrefix(strings.TrimSpace(string(headData)), "ref: refs/heads/")
+
+	branch := resolveWorktreeBranch(dir)
+	if branch != wantBranch {
+		t.Errorf("resolveWorktreeBranch() = %q, want %q", branch, wantBranch)
+	}
+}
+
+func TestResolveWorktreeBranch_DetachedHEAD(t *testing.T) {
+	dir := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+
+	// Create a commit so we can detach HEAD
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("worktree: %v", err)
+	}
+	testFile := filepath.Join(dir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if _, err := wt.Add("test.txt"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	hash, err := wt.Commit("initial", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test",
+			Email: "test@test.com",
+			When:  time.Now(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+
+	// Detach HEAD by writing the raw hash to .git/HEAD
+	headPath := filepath.Join(dir, ".git", "HEAD")
+	if err := os.WriteFile(headPath, []byte(hash.String()+"\n"), 0o644); err != nil {
+		t.Fatalf("write HEAD: %v", err)
+	}
+
+	branch := resolveWorktreeBranch(dir)
+	if branch != "HEAD" {
+		t.Errorf("resolveWorktreeBranch() = %q, want %q for detached HEAD", branch, "HEAD")
+	}
+}
+
+func TestResolveWorktreeBranch_WorktreeGitFile(t *testing.T) {
+	// Simulate a worktree where .git is a file pointing to a gitdir
+	dir := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+
+	// Create a fake gitdir with a HEAD file
+	gitdir := filepath.Join(dir, "fake-gitdir")
+	if err := os.MkdirAll(gitdir, 0o755); err != nil {
+		t.Fatalf("mkdir gitdir: %v", err)
+	}
+	headPath := filepath.Join(gitdir, "HEAD")
+	if err := os.WriteFile(headPath, []byte("ref: refs/heads/feature-branch\n"), 0o644); err != nil {
+		t.Fatalf("write HEAD: %v", err)
+	}
+
+	// Create a worktree-style .git file
+	worktreeDir := filepath.Join(dir, "worktree")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("mkdir worktree: %v", err)
+	}
+	gitFile := filepath.Join(worktreeDir, ".git")
+	if err := os.WriteFile(gitFile, []byte("gitdir: "+gitdir+"\n"), 0o644); err != nil {
+		t.Fatalf("write .git file: %v", err)
+	}
+
+	branch := resolveWorktreeBranch(worktreeDir)
+	if branch != "feature-branch" {
+		t.Errorf("resolveWorktreeBranch() = %q, want %q", branch, "feature-branch")
+	}
+}
+
+func TestResolveWorktreeBranch_WorktreeRelativePath(t *testing.T) {
+	// Simulate a worktree where .git file uses a relative gitdir path
+	dir := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = resolved
+	}
+
+	// Create the main .git dir structure
+	mainGitDir := filepath.Join(dir, "main-repo", ".git", "worktrees", "wt1")
+	if err := os.MkdirAll(mainGitDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	headPath := filepath.Join(mainGitDir, "HEAD")
+	if err := os.WriteFile(headPath, []byte("ref: refs/heads/develop\n"), 0o644); err != nil {
+		t.Fatalf("write HEAD: %v", err)
+	}
+
+	// Create worktree directory with relative .git file
+	worktreeDir := filepath.Join(dir, "main-repo", "worktrees-dir", "wt1")
+	if err := os.MkdirAll(worktreeDir, 0o755); err != nil {
+		t.Fatalf("mkdir worktree: %v", err)
+	}
+	// Relative path from worktree to the gitdir
+	relPath := filepath.Join("..", "..", ".git", "worktrees", "wt1")
+	gitFile := filepath.Join(worktreeDir, ".git")
+	if err := os.WriteFile(gitFile, []byte("gitdir: "+relPath+"\n"), 0o644); err != nil {
+		t.Fatalf("write .git file: %v", err)
+	}
+
+	branch := resolveWorktreeBranch(worktreeDir)
+	if branch != "develop" {
+		t.Errorf("resolveWorktreeBranch() = %q, want %q", branch, "develop")
+	}
+}
+
+func TestResolveWorktreeBranch_NonExistentPath(t *testing.T) {
+	t.Parallel()
+	branch := resolveWorktreeBranch("/nonexistent/path/that/does/not/exist")
+	if branch != "" {
+		t.Errorf("resolveWorktreeBranch() = %q, want empty string for non-existent path", branch)
+	}
+}
+
+func TestResolveWorktreeBranch_NotARepo(t *testing.T) {
+	dir := t.TempDir()
+	// No .git directory or file
+	branch := resolveWorktreeBranch(dir)
+	if branch != "" {
+		t.Errorf("resolveWorktreeBranch() = %q, want empty string for non-repo directory", branch)
+	}
+}
+
+func TestResolveWorktreeBranch_ReftableStub(t *testing.T) {
+	t.Parallel()
+
+	// Simulate a reftable repo where .git/HEAD contains "ref: refs/heads/.invalid"
+	dir := t.TempDir()
+	gitDir := filepath.Join(dir, ".git")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/.invalid\n"), 0o644); err != nil {
+		t.Fatalf("write HEAD: %v", err)
+	}
+
+	branch := resolveWorktreeBranch(dir)
+	// Should fall back to git, which will fail on this fake repo and return "HEAD"
+	if branch != "HEAD" {
+		t.Errorf("resolveWorktreeBranch() = %q, want %q for reftable stub", branch, "HEAD")
+	}
+}
 
 func TestRunStatus_Enabled(t *testing.T) {
 	setupTestRepo(t)
