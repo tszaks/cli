@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
@@ -108,6 +109,30 @@ func (a *OpenCodeAgent) ParseHookEvent(hookName string, stdin io.Reader) (*agent
 	default:
 		return nil, nil //nolint:nilnil // nil event = no lifecycle action for unknown hooks
 	}
+}
+
+// PrepareTranscript ensures the OpenCode transcript file exists by calling `opencode export`.
+// OpenCode's transcript is only created at turn-end via `opencode export`, but condensation
+// may need it earlier (e.g., during mid-turn commits). This method creates the file on demand.
+// If the file already exists, this is a no-op.
+func (a *OpenCodeAgent) PrepareTranscript(sessionRef string) error {
+	// No-op if file already exists
+	if _, err := os.Stat(sessionRef); err == nil {
+		return nil
+	}
+
+	// Extract session ID from path: basename without .json extension
+	base := filepath.Base(sessionRef)
+	if !strings.HasSuffix(base, ".json") {
+		return fmt.Errorf("invalid OpenCode transcript path (expected .json): %s", sessionRef)
+	}
+	sessionID := strings.TrimSuffix(base, ".json")
+	if sessionID == "" {
+		return fmt.Errorf("empty session ID in transcript path: %s", sessionRef)
+	}
+
+	_, err := a.fetchAndCacheExport(sessionID)
+	return err
 }
 
 // fetchAndCacheExport calls `opencode export <sessionID>` and writes the result

@@ -1144,6 +1144,9 @@ func (s *ManualCommitStrategy) extractNewModifiedFilesFromLiveTranscript(state *
 		return nil, false
 	}
 
+	// Ensure transcript file exists (OpenCode creates it lazily via `opencode export`)
+	prepareTranscriptIfNeeded(state.AgentType, state.TranscriptPath)
+
 	analyzer, ok := ag.(agent.TranscriptAnalyzer)
 	if !ok {
 		return nil, false
@@ -1180,6 +1183,9 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(state *Ses
 	if err != nil {
 		return nil
 	}
+
+	// Ensure transcript file exists (OpenCode creates it lazily via `opencode export`)
+	prepareTranscriptIfNeeded(state.AgentType, state.TranscriptPath)
 
 	analyzer, ok := ag.(agent.TranscriptAnalyzer)
 	if !ok {

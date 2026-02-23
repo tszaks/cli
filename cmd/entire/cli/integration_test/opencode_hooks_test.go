@@ -275,6 +275,73 @@ func TestOpenCodeMultiTurnCondensation(t *testing.T) {
 	})
 }
 
+// TestOpenCodeMidTurnCommit verifies that when OpenCode's agent commits mid-turn
+// (before turn-end), the commit gets an Entire-Checkpoint trailer AND the checkpoint
+// data is written to entire/checkpoints/v1.
+//
+// This tests the PrepareTranscript fix: OpenCode's transcript file is created lazily
+// at turn-end via `opencode export`. When a commit happens mid-turn, PrepareTranscript
+// is called to create the transcript on-demand so condensation can read it.
+func TestOpenCodeMidTurnCommit(t *testing.T) {
+	t.Parallel()
+
+	env := NewFeatureBranchEnv(t, strategy.StrategyNameManualCommit)
+	env.InitEntireWithAgent(strategy.StrategyNameManualCommit, agent.AgentNameOpenCode)
+
+	session := env.NewOpenCodeSession()
+
+	// 1. session-start
+	if err := env.SimulateOpenCodeSessionStart(session.ID, session.TranscriptPath); err != nil {
+		t.Fatalf("session-start error: %v", err)
+	}
+
+	// 2. turn-start (session becomes ACTIVE)
+	if err := env.SimulateOpenCodeTurnStart(session.ID, session.TranscriptPath, "Add a script and commit it"); err != nil {
+		t.Fatalf("turn-start error: %v", err)
+	}
+
+	// 3. Agent creates file
+	env.WriteFile("script.sh", "#!/bin/bash\necho hello")
+
+	// 4. Create transcript reflecting the file change.
+	session.CreateOpenCodeTranscript("Add a script and commit it", []FileChange{
+		{Path: "script.sh", Content: "#!/bin/bash\necho hello"},
+	})
+
+	// 5. Copy transcript to .entire/tmp/ where PrepareTranscript will find it.
+	// In production, `opencode export` creates this file on demand. In tests,
+	// ENTIRE_TEST_OPENCODE_MOCK_EXPORT makes fetchAndCacheExport look for a
+	// pre-written file at .entire/tmp/<sessionID>.json.
+	env.CopyTranscriptToEntireTmp(session.ID, session.TranscriptPath)
+
+	// 6. Agent commits mid-turn (no turn-end yet!)
+	// This triggers: PrepareCommitMsg (adds trailer) → PostCommit (runs condensation)
+	// Condensation needs the transcript, which PrepareTranscript should provide.
+	env.GitCommitWithShadowHooksAsAgent("Add script", "script.sh")
+
+	// 7. Verify commit has checkpoint trailer
+	commitHash := env.GetHeadHash()
+	checkpointID := env.GetCheckpointIDFromCommitMessage(commitHash)
+	if checkpointID == "" {
+		t.Fatal("mid-turn agent commit should have Entire-Checkpoint trailer")
+	}
+	t.Logf("Mid-turn commit has checkpoint ID: %s", checkpointID)
+
+	// 8. CRITICAL: Verify checkpoint data was written to entire/checkpoints/v1
+	transcriptPath := SessionFilePath(checkpointID, paths.TranscriptFileName)
+	_, found := env.ReadFileFromBranch(paths.MetadataBranchName, transcriptPath)
+	if !found {
+		t.Error("checkpoint transcript should exist on metadata branch after mid-turn commit")
+	}
+
+	// 9. Validate checkpoint metadata
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID: checkpointID,
+		Strategy:     strategy.StrategyNameManualCommit,
+		FilesTouched: []string{"script.sh"},
+	})
+}
+
 // TestOpenCodeResumedSessionAfterCommit verifies that resuming an OpenCode session
 // after a commit correctly creates a checkpoint for the second turn.
 //

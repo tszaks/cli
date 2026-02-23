@@ -137,6 +137,8 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		if state.TranscriptPath == "" {
 			return nil, errors.New("shadow branch not found and no live transcript available")
 		}
+		// Ensure transcript file exists (OpenCode creates it lazily via `opencode export`)
+		prepareTranscriptIfNeeded(state.AgentType, state.TranscriptPath)
 		sessionData, err = s.extractSessionDataFromLiveTranscript(state)
 		if err != nil {
 			return nil, fmt.Errorf("failed to extract session data from live transcript: %w", err)
@@ -409,6 +411,8 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 	// (SaveStep is only called when there are file modifications).
 	var fullTranscript string
 	if liveTranscriptPath != "" {
+		// Ensure transcript file exists (OpenCode creates it lazily via `opencode export`)
+		prepareTranscriptIfNeeded(agentType, liveTranscriptPath)
 		if liveData, readErr := os.ReadFile(liveTranscriptPath); readErr == nil && len(liveData) > 0 { //nolint:gosec // path from session state
 			fullTranscript = string(liveData)
 		}

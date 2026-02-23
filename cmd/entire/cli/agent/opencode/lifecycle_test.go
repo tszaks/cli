@@ -1,6 +1,8 @@
 package opencode
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -201,5 +203,53 @@ func TestHookNames(t *testing.T) {
 		if !nameSet[e] {
 			t.Errorf("missing expected hook name: %s", e)
 		}
+	}
+}
+
+func TestPrepareTranscript_NoOpWhenFileExists(t *testing.T) {
+	t.Parallel()
+
+	// Create a temporary file to simulate an existing transcript
+	tmpDir := t.TempDir()
+	transcriptPath := filepath.Join(tmpDir, "sess-123.json")
+	if err := os.WriteFile(transcriptPath, []byte(`{"info":{},"messages":[]}`), 0o600); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	ag := &OpenCodeAgent{}
+	err := ag.PrepareTranscript(transcriptPath)
+
+	if err != nil {
+		t.Errorf("expected no error for existing file, got: %v", err)
+	}
+}
+
+func TestPrepareTranscript_ErrorOnInvalidPath(t *testing.T) {
+	t.Parallel()
+
+	ag := &OpenCodeAgent{}
+
+	// Path without .json extension
+	err := ag.PrepareTranscript("/tmp/not-a-json-file")
+	if err == nil {
+		t.Fatal("expected error for path without .json extension")
+	}
+	if !strings.Contains(err.Error(), "invalid OpenCode transcript path") {
+		t.Errorf("expected 'invalid OpenCode transcript path' error, got: %v", err)
+	}
+}
+
+func TestPrepareTranscript_ErrorOnEmptySessionID(t *testing.T) {
+	t.Parallel()
+
+	ag := &OpenCodeAgent{}
+
+	// Path with empty session ID (.json with no basename)
+	err := ag.PrepareTranscript("/tmp/.json")
+	if err == nil {
+		t.Fatal("expected error for empty session ID")
+	}
+	if !strings.Contains(err.Error(), "empty session ID") {
+		t.Errorf("expected 'empty session ID' error, got: %v", err)
 	}
 }

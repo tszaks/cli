@@ -13,6 +13,7 @@ import (
 // Compile-time interface assertions
 var (
 	_ agent.TranscriptAnalyzer = (*OpenCodeAgent)(nil)
+	_ agent.TranscriptPreparer = (*OpenCodeAgent)(nil)
 	_ agent.TokenCalculator    = (*OpenCodeAgent)(nil)
 )
 
