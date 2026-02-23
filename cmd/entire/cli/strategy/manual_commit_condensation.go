@@ -19,6 +19,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/settings"
+	"github.com/entireio/cli/cmd/entire/cli/stringutil"
 	"github.com/entireio/cli/cmd/entire/cli/summarize"
 	"github.com/entireio/cli/cmd/entire/cli/textutil"
 	"github.com/entireio/cli/cmd/entire/cli/transcript"
@@ -679,11 +680,9 @@ func generateContextFromPrompts(prompts []string) []byte {
 	buf.WriteString("## User Prompts\n\n")
 
 	for i, prompt := range prompts {
-		// Truncate very long prompts for readability
-		displayPrompt := prompt
-		if len(displayPrompt) > 500 {
-			displayPrompt = displayPrompt[:500] + "..."
-		}
+		// Truncate very long prompts for readability.
+		// Use rune-based truncation to avoid splitting multi-byte UTF-8 characters (e.g. CJK).
+		displayPrompt := stringutil.TruncateRunes(prompt, 500, "...")
 		buf.WriteString(fmt.Sprintf("### Prompt %d\n\n", i+1))
 		buf.WriteString(displayPrompt)
 		buf.WriteString("\n\n")
