@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
@@ -108,6 +109,35 @@ func (a *OpenCodeAgent) ParseHookEvent(hookName string, stdin io.Reader) (*agent
 	default:
 		return nil, nil //nolint:nilnil // nil event = no lifecycle action for unknown hooks
 	}
+}
+
+// PrepareTranscript ensures the OpenCode transcript file is up-to-date by calling `opencode export`.
+// OpenCode's transcript is created/updated via `opencode export`, but condensation may need fresh
+// data mid-turn (e.g., during mid-turn commits or resumed sessions where the cached file is stale).
+// This method always refreshes the transcript to ensure the latest agent activity is captured.
+func (a *OpenCodeAgent) PrepareTranscript(sessionRef string) error {
+	// Validate the session ref path
+	if _, err := os.Stat(sessionRef); err != nil && !os.IsNotExist(err) {
+		// Permission denied, broken symlink, or other non-recoverable errors
+		return fmt.Errorf("failed to stat OpenCode transcript path %s: %w", sessionRef, err)
+	}
+
+	// Extract session ID from path: basename without .json extension
+	base := filepath.Base(sessionRef)
+	if !strings.HasSuffix(base, ".json") {
+		return fmt.Errorf("invalid OpenCode transcript path (expected .json): %s", sessionRef)
+	}
+	sessionID := strings.TrimSuffix(base, ".json")
+	if sessionID == "" {
+		return fmt.Errorf("empty session ID in transcript path: %s", sessionRef)
+	}
+
+	// Always call fetchAndCacheExport to get fresh transcript data.
+	// This is critical for resumed sessions where the cached file may contain stale data
+	// from a previous turn. Unlike turn-end (which always runs export), mid-turn commits
+	// need to refresh the transcript to capture agent activity since the last export.
+	_, err := a.fetchAndCacheExport(sessionID)
+	return err
 }
 
 // fetchAndCacheExport calls `opencode export <sessionID>` and writes the result
