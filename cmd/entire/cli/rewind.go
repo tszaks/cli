@@ -1152,6 +1152,9 @@ func countCommitsBetween(repo *git.Repository, ancestor, descendant plumbing.Has
 // Uses the git CLI instead of go-git because go-git's HardReset incorrectly
 // deletes untracked directories (like .entire/) even when they're in .gitignore.
 func performGitResetHard(commitHash string) error {
+	if strings.HasPrefix(commitHash, "-") {
+		return fmt.Errorf("reset failed: invalid commit hash %q", commitHash)
+	}
 	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, "git", "reset", "--hard", commitHash)
 	if output, err := cmd.CombinedOutput(); err != nil {
