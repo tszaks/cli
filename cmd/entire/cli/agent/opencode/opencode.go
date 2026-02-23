@@ -2,15 +2,18 @@
 package opencode
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
+	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
@@ -229,7 +232,10 @@ func (a *OpenCodeAgent) importSessionIntoOpenCode(sessionID string, exportData [
 		// Non-fatal: session might not exist yet (first session).
 		// Import will still work for new sessions; only rewind of existing sessions
 		// would have stale messages.
-		fmt.Fprintf(os.Stderr, "warning: could not delete existing session: %v\n", err)
+		logging.Warn(context.Background(), "could not delete existing opencode session",
+			slog.String("session_id", sessionID),
+			slog.String("error", err.Error()),
+		)
 	}
 
 	// Write export JSON to a temp file for opencode import
