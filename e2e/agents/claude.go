@@ -111,10 +111,22 @@ func (c *Claude) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 
 func (c *Claude) StartSession(ctx context.Context, dir string) (Session, error) {
 	name := fmt.Sprintf("claude-test-%d", time.Now().UnixNano())
-	// Interactive sessions rely on macOS Keychain for auth, so we can't
-	// override CLAUDE_CONFIG_DIR without triggering a login prompt. Prompt
-	// hardening ("Do not use worktrees") covers interactive tests instead.
-	s, err := NewTmuxSession(name, dir, []string{"CLAUDECODE"}, "env", "ACCESSIBLE=1", "ENTIRE_TEST_TTY=0", "claude", "--dangerously-skip-permissions")
+
+	envArgs := []string{"ACCESSIBLE=1", "ENTIRE_TEST_TTY=0"}
+
+	// On CI (no macOS Keychain), use an isolated config dir so Claude Code
+	// picks up ANTHROPIC_API_KEY from the environment instead of trying OAuth.
+	// Locally, we skip CLAUDE_CONFIG_DIR so the Keychain-based auth works.
+	if os.Getenv("CI") != "" {
+		configDir, err := isolatedConfigDir()
+		if err == nil {
+			envArgs = append(envArgs, "CLAUDE_CONFIG_DIR="+configDir)
+		}
+	}
+
+	args := append([]string{"env"}, envArgs...)
+	args = append(args, "claude", "--dangerously-skip-permissions")
+	s, err := NewTmuxSession(name, dir, []string{"CLAUDECODE"}, args[0], args[1:]...)
 	if err != nil {
 		return nil, err
 	}
