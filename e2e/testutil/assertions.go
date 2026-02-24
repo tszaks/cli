@@ -36,16 +36,26 @@ func AssertFileExists(t *testing.T, dir string, glob string) {
 	assert.NotEmpty(t, matches, "expected files matching %s in %s", glob, dir)
 }
 
-// AssertNewCommits asserts that at least `atLeast` new commits exist since setup.
+// AssertNewCommits polls until at least `atLeast` new commits exist since setup,
+// or fails after 10 seconds. Polling handles the race where an interactive
+// agent's prompt pattern appears before its git commit lands on disk.
 func AssertNewCommits(t *testing.T, s *RepoState, atLeast int) {
 	t.Helper()
-	out := GitOutput(t, s.Dir, "log", "--oneline", s.HeadBefore+"..HEAD")
-	var lines []string
-	if out != "" {
-		lines = strings.Split(strings.TrimSpace(out), "\n")
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		out := GitOutput(t, s.Dir, "log", "--oneline", s.HeadBefore+"..HEAD")
+		var lines []string
+		if out != "" {
+			lines = strings.Split(strings.TrimSpace(out), "\n")
+		}
+		if len(lines) >= atLeast {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected at least %d new commit(s), got %d after 10s", atLeast, len(lines))
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
-	assert.GreaterOrEqual(t, len(lines), atLeast,
-		"expected at least %d new commit(s), got %d", atLeast, len(lines))
 }
 
 // WaitForCheckpoint polls until the checkpoint branch advances from its
