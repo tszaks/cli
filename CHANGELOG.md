@@ -49,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Thanks to @AlienKevin for contributing to this release!
 
+Thanks to @ammarateya ([#220](https://github.com/entireio/cli/pull/220)), @Avyukth ([#257](https://github.com/entireio/cli/pull/257)), and @MementoMori123 ([#315](https://github.com/entireio/cli/pull/315)) for their OpenCode PRs! We've now merged our OpenCode integration. While we went with our own implementation, your PRs were valuable in helping us validate our design choices and ensure we covered the right scenarios. We appreciate the effort you put into this!
+
 ## [0.4.5] - 2026-02-17
 
 ### Added
