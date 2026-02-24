@@ -58,10 +58,15 @@ func String(s string) string {
 		// Example: in "controller.go\nmodel.go", the regex could match "nmodel"
 		// (consuming the 'n' from '\n'), and after replacement the '\' would be
 		// followed by 'R' from "REDACTED", creating invalid escape '\R'.
+		// Only skip for known JSON escape letters to avoid trimming real secrets
+		// that happen to follow a literal backslash in decoded content.
 		if start > 0 && s[start-1] == '\\' {
-			start++
-			if end-start < 10 {
-				continue
+			switch s[start] {
+			case 'n', 't', 'r', 'b', 'f', 'u', '"', '\\', '/':
+				start++
+				if end-start < 10 {
+					continue
+				}
 			}
 		}
 
