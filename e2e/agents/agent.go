@@ -38,6 +38,10 @@ type Agent interface {
 	// Bootstrap performs one-time CI setup (auth config, warmup, etc.).
 	// Called before any tests run. Implementations should be idempotent.
 	Bootstrap() error
+	// IsTransientError returns true if the error from RunPrompt looks like
+	// a transient API failure (e.g. 500, rate limit, network error) that
+	// is worth retrying.
+	IsTransientError(out Output, err error) bool
 }
 
 type Session interface {

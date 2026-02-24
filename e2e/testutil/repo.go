@@ -137,14 +137,32 @@ func ForEachAgent(t *testing.T, timeout time.Duration, fn func(t *testing.T, s *
 }
 
 // RunPrompt runs an agent prompt, logs the command and output to ConsoleLog,
-// and returns the result. The caller should still check err.
+// and returns the result. If the agent reports a transient API error, the
+// prompt is retried once after a short delay. The caller should still check err.
 func (s *RepoState) RunPrompt(t *testing.T, ctx context.Context, prompt string, opts ...agents.Option) (agents.Output, error) {
 	t.Helper()
 	out, err := s.Agent.RunPrompt(ctx, s.Dir, prompt, opts...)
+	s.logPromptResult(out)
+
+	if err != nil && s.Agent.IsTransientError(out, err) {
+		t.Logf("transient API error detected, retrying in 5s: %v", err)
+		s.ConsoleLog.WriteString("> [retry] transient error, waiting 5s...\n")
+		select {
+		case <-time.After(5 * time.Second):
+		case <-ctx.Done():
+			return out, err
+		}
+		out, err = s.Agent.RunPrompt(ctx, s.Dir, prompt, opts...)
+		s.logPromptResult(out)
+	}
+
+	return out, err
+}
+
+func (s *RepoState) logPromptResult(out agents.Output) {
 	s.ConsoleLog.WriteString("> " + out.Command + "\n")
 	s.ConsoleLog.WriteString("stdout:\n" + out.Stdout + "\n")
 	s.ConsoleLog.WriteString("stderr:\n" + out.Stderr + "\n")
-	return out, err
 }
 
 // Git runs a git command in the repo and logs it to ConsoleLog.

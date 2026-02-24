@@ -27,6 +27,29 @@ func (g *Gemini) EntireAgent() string        { return "gemini" }
 func (g *Gemini) PromptPattern() string      { return `Type your message` }
 func (g *Gemini) TimeoutMultiplier() float64 { return 2.5 }
 
+func (g *Gemini) IsTransientError(out Output, err error) bool {
+	if err == nil {
+		return false
+	}
+	combined := out.Stdout + out.Stderr
+	transientPatterns := []string{
+		"INTERNAL",
+		"Incomplete JSON segment",
+		"429",
+		"TooManyRequests",
+		"RESOURCE_EXHAUSTED",
+		"UNAVAILABLE",
+		"DEADLINE_EXCEEDED",
+		"unexpected critical error",
+	}
+	for _, p := range transientPatterns {
+		if strings.Contains(combined, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *Gemini) Bootstrap() error {
 	// Pre-configure auth so gemini doesn't show the onboarding dialog.
 	home, err := os.UserHomeDir()

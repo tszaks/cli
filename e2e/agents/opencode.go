@@ -34,6 +34,27 @@ func (a *openCodeAgent) EntireAgent() string        { return "opencode" }
 func (a *openCodeAgent) PromptPattern() string      { return `(Ask anything|▣)` }
 func (a *openCodeAgent) TimeoutMultiplier() float64 { return 2.0 }
 
+func (a *openCodeAgent) IsTransientError(out Output, err error) bool {
+	if err == nil {
+		return false
+	}
+	combined := out.Stdout + out.Stderr
+	transientPatterns := []string{
+		"overloaded",
+		"rate limit",
+		"529",
+		"503",
+		"ECONNRESET",
+		"ETIMEDOUT",
+	}
+	for _, p := range transientPatterns {
+		if strings.Contains(combined, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *openCodeAgent) Bootstrap() error {
 	// opencode has first-run DB migration + node_modules resolution that
 	// races with parallel test execution (upstream issue #6935).

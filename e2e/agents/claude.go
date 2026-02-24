@@ -68,6 +68,27 @@ func (c *Claude) EntireAgent() string        { return "claude-code" }
 func (c *Claude) PromptPattern() string      { return `❯` }
 func (c *Claude) TimeoutMultiplier() float64 { return 1.0 }
 
+func (c *Claude) IsTransientError(out Output, err error) bool {
+	if err == nil {
+		return false
+	}
+	combined := out.Stdout + out.Stderr
+	transientPatterns := []string{
+		"overloaded",
+		"rate limit",
+		"529",
+		"503",
+		"ECONNRESET",
+		"ETIMEDOUT",
+	}
+	for _, p := range transientPatterns {
+		if strings.Contains(combined, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *Claude) Bootstrap() error {
 	// On CI, write a config file so Claude Code uses the API key from the
 	// environment instead of trying OAuth/Keychain.
