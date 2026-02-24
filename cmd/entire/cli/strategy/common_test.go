@@ -95,6 +95,83 @@ func TestOpenRepositoryError(t *testing.T) {
 	}
 }
 
+func TestGetWorktreePath_Cache(t *testing.T) {
+	// Uses t.Chdir + t.Setenv so cannot be parallel.
+	tmpDir := t.TempDir()
+	initTestRepo(t, tmpDir)
+	t.Chdir(tmpDir)
+	ClearWorktreePathCache()
+
+	// First call populates the cache via git.
+	got, err := GetWorktreePath()
+	if err != nil {
+		t.Fatalf("GetWorktreePath() first call error: %v", err)
+	}
+
+	// Resolve symlinks for comparison (macOS /var -> /private/var).
+	want, err := filepath.EvalSymlinks(tmpDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("GetWorktreePath() = %q, want %q", got, want)
+	}
+
+	// Break git by pointing PATH at an empty directory.
+	// If the second call hits git it will fail.
+	emptyDir := t.TempDir()
+	t.Setenv("PATH", emptyDir)
+
+	got2, err := GetWorktreePath()
+	if err != nil {
+		t.Fatalf("GetWorktreePath() cached call should succeed, got error: %v", err)
+	}
+	if got2 != want {
+		t.Fatalf("GetWorktreePath() cached = %q, want %q", got2, want)
+	}
+
+	// After clearing the cache the broken PATH should cause a failure.
+	ClearWorktreePathCache()
+	_, err = GetWorktreePath()
+	if err == nil {
+		t.Fatal("GetWorktreePath() should fail after cache clear with broken PATH")
+	}
+}
+
+func TestGetWorktreePath_Worktree(t *testing.T) {
+	// Verify GetWorktreePath returns the worktree root (not main repo)
+	// when called from inside a worktree.
+	tmpDir := t.TempDir()
+	resolved, err := filepath.EvalSymlinks(tmpDir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks error: %v", err)
+	}
+	tmpDir = resolved
+
+	initTestRepo(t, tmpDir)
+
+	worktreeDir := filepath.Join(tmpDir, "wt")
+	if err := createWorktree(tmpDir, worktreeDir, "wt-branch"); err != nil {
+		t.Fatalf("failed to create worktree: %v", err)
+	}
+	t.Cleanup(func() { removeWorktree(tmpDir, worktreeDir) })
+
+	t.Chdir(worktreeDir)
+	ClearWorktreePathCache()
+
+	got, err := GetWorktreePath()
+	if err != nil {
+		t.Fatalf("GetWorktreePath() error: %v", err)
+	}
+	if got != worktreeDir {
+		t.Errorf("GetWorktreePath() = %q, want worktree root %q", got, worktreeDir)
+	}
+	// Must NOT return the main repo root.
+	if got == tmpDir {
+		t.Errorf("GetWorktreePath() returned main repo root %q, expected worktree root", tmpDir)
+	}
+}
+
 func TestIsInsideWorktree(t *testing.T) {
 	t.Run("main repo", func(t *testing.T) {
 		tmpDir := t.TempDir()
