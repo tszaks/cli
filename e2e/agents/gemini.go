@@ -27,7 +27,7 @@ func (g *Gemini) PromptPattern() string      { return `Type your message` }
 func (g *Gemini) TimeoutMultiplier() float64 { return 2.5 }
 
 func (g *Gemini) RunPrompt(ctx context.Context, dir string, prompt string, opts ...Option) (Output, error) {
-	cfg := &runConfig{Model: "gemini-2.5-flash"}
+	cfg := &runConfig{Model: "gemini-3-flash-preview"}
 	for _, o := range opts {
 		o(cfg)
 	}
