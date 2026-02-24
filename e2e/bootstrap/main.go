@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"os"
 
-	// Import agents to trigger init() registration.
-	_ "github.com/entireio/cli/e2e/agents"
-
 	"github.com/entireio/cli/e2e/agents"
 )
 
