@@ -51,7 +51,7 @@ func (c *ClaudeCodeAgent) IsPreview() bool { return false }
 
 // DetectPresence checks if Claude Code is configured in the repository.
 func (c *ClaudeCodeAgent) DetectPresence() (bool, error) {
-	// Get repo root to check for .claude directory
+	// Get worktree root to check for .claude directory
 	// This is needed because the CLI may be run from a subdirectory
 	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {

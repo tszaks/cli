@@ -148,7 +148,7 @@ func (a *OpenCodeAgent) PrepareTranscript(sessionRef string) error {
 // pre-write the transcript file to .entire/tmp/<sessionID>.json before
 // triggering the hook. See integration_test/hooks.go:SimulateOpenCodeTurnEnd.
 func (a *OpenCodeAgent) fetchAndCacheExport(sessionID string) (string, error) {
-	// Get repo root for the temp directory
+	// Get worktree root for the temp directory
 	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
 		repoRoot = "."

@@ -823,7 +823,7 @@ func checkCanRewindWithWarning() (bool, string, error) {
 	// Use repo root, not cwd - git status returns paths relative to repo root
 	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
-		return true, "", nil //nolint:nilerr // Rewind allowed even if repo root lookup fails
+		return true, "", nil //nolint:nilerr // Rewind allowed even if worktree root lookup fails
 	}
 
 	for file, st := range status {
@@ -1009,7 +1009,7 @@ const (
 // The stageCtx parameter is used for user-facing messages to indicate whether
 // this is staging for a session checkpoint or a task checkpoint.
 func StageFiles(worktree *git.Worktree, modified, newFiles, deleted []string, stageCtx StageFilesContext) {
-	// Get repo root for resolving file paths
+	// Get worktree root for resolving file paths
 	// This is critical because fileExists() uses os.Stat() which resolves relative to CWD,
 	// but worktree.Add/Remove resolve relative to repo root. If CWD != repo root,
 	// fileExists() could return false for existing files, causing worktree.Remove()

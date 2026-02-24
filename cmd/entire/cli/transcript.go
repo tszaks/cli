@@ -263,7 +263,7 @@ func extractModifiedFiles(transcript []transcriptLine) []string {
 func resolveTranscriptPath(sessionID string, agent agentpkg.Agent) (string, error) {
 	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
-		return "", fmt.Errorf("failed to get repository root: %w", err)
+		return "", fmt.Errorf("failed to get worktree root: %w", err)
 	}
 
 	sessionDir, err := agent.GetSessionDir(repoRoot)
