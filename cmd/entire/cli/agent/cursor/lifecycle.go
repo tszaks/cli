@@ -131,6 +131,7 @@ func (c *CursorAgent) parseSubagentStart(stdin io.Reader) (*agent.Event, error) 
 		Type:            agent.SubagentStart,
 		SessionID:       raw.ConversationID,
 		SessionRef:      raw.TranscriptPath,
+		SubagentID:      raw.SubagentID,
 		ToolUseID:       raw.SubagentID,
 		SubagentType:    raw.SubagentType,
 		TaskDescription: raw.Task,
