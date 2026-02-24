@@ -111,7 +111,7 @@ func TestAttributionMultiCommitSameSession(t *testing.T) {
 		cpBranch1 := testutil.GitOutput(t, s.Dir, "rev-parse", "entire/checkpoints/v1")
 
 		// Second prompt: modify same file and commit again.
-		s.Send(t, session, "add another stanza to poem.txt about debugging, then commit it. Do not ask for confirmation.")
+		s.Send(t, session, "add another stanza to poem.txt about debugging, then create a NEW commit (do not amend). Do not ask for confirmation.")
 		if _, err = session.WaitFor(prompt, 90*time.Second); err != nil {
 			t.Fatalf("waiting for prompt after second commit: %v", err)
 		}
