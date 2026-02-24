@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -62,9 +63,9 @@ func init() {
 
 type Claude struct{}
 
-func (c *Claude) Name() string             { return "claude-code" }
-func (c *Claude) EntireAgent() string      { return "claude-code" }
-func (c *Claude) PromptPattern() string    { return `❯` }
+func (c *Claude) Name() string               { return "claude-code" }
+func (c *Claude) EntireAgent() string        { return "claude-code" }
+func (c *Claude) PromptPattern() string      { return `❯` }
 func (c *Claude) TimeoutMultiplier() float64 { return 1.0 }
 
 func (c *Claude) RunPrompt(ctx context.Context, dir string, prompt string, opts ...Option) (Output, error) {
@@ -97,7 +98,8 @@ func (c *Claude) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 
 	err = cmd.Run()
 	exitCode := 0
-	if exitErr, ok := err.(*exec.ExitError); ok {
+	exitErr := &exec.ExitError{}
+	if errors.As(err, &exitErr) {
 		exitCode = exitErr.ExitCode()
 	}
 
@@ -132,7 +134,7 @@ func (c *Claude) StartSession(ctx context.Context, dir string) (Session, error) 
 	}
 
 	// Dismiss startup dialogs until we reach the input prompt.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		content, err := s.WaitFor(`❯`, 15*time.Second)
 		if err != nil {
 			return s, fmt.Errorf("waiting for startup prompt: %w", err)

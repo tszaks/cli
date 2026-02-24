@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -49,7 +50,8 @@ func (g *Gemini) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 
 	err := cmd.Run()
 	exitCode := 0
-	if exitErr, ok := err.(*exec.ExitError); ok {
+	exitErr := &exec.ExitError{}
+	if errors.As(err, &exitErr) {
 		exitCode = exitErr.ExitCode()
 	}
 
@@ -69,7 +71,7 @@ func (g *Gemini) StartSession(ctx context.Context, dir string) (Session, error) 
 	}
 
 	// Dismiss startup dialogs (workspace trust, etc.)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		content, err := s.WaitFor(`(Type your message|trust)`, 15*time.Second)
 		if err != nil {
 			return s, fmt.Errorf("waiting for startup prompt: %w", err)

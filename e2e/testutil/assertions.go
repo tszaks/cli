@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -98,7 +99,7 @@ func AssertHasCheckpointTrailer(t *testing.T, dir string, ref string) string {
 // last n commits on the checkpoint branch (e.g. initial + catchup).
 func AssertCheckpointInLastN(t *testing.T, dir string, checkpointID string, n int) {
 	t.Helper()
-	out := GitOutput(t, dir, "log", "-n", fmt.Sprintf("%d", n),
+	out := GitOutput(t, dir, "log", "-n", strconv.Itoa(n),
 		"--format=%s", "entire/checkpoints/v1")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	require.Len(t, lines, n,
@@ -117,7 +118,7 @@ func AssertCheckpointExists(t *testing.T, dir string, checkpointID string) {
 	assert.NotEmpty(t, out, "checkpoint %s not found on checkpoint branch", checkpointID)
 
 	path := CheckpointPath(checkpointID) + "/metadata.json"
-	blob := fmt.Sprintf("entire/checkpoints/v1:%s", path)
+	blob := "entire/checkpoints/v1:" + path
 	raw := gitOutputSafe(dir, "show", blob)
 	assert.NotEmpty(t, raw,
 		"checkpoint %s metadata not found at %s", checkpointID, path)
@@ -255,7 +256,7 @@ func ValidateCheckpointDeep(t *testing.T, dir string, v DeepCheckpointValidation
 				t.Logf("transcript line %d is not valid JSON: %v", i+1, err)
 			}
 		}
-		assert.Greater(t, validLines, 0, "transcript should have at least one line")
+		assert.Positive(t, validLines, "transcript should have at least one line")
 
 		for _, expected := range v.ExpectedTranscriptContent {
 			assert.Contains(t, transcriptRaw, expected,

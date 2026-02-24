@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -217,7 +218,8 @@ func GitOutput(t *testing.T, dir string, args ...string) string {
 	out, err := cmd.Output()
 	if err != nil {
 		var stderr string
-		if ee, ok := err.(*exec.ExitError); ok {
+		ee := &exec.ExitError{}
+		if errors.As(err, &ee) {
 			stderr = string(ee.Stderr)
 		}
 		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, stderr)
@@ -269,7 +271,7 @@ func ReadCheckpointMetadata(t *testing.T, dir string, checkpointID string) Check
 	t.Helper()
 
 	path := CheckpointPath(checkpointID) + "/metadata.json"
-	blob := fmt.Sprintf("entire/checkpoints/v1:%s", path)
+	blob := "entire/checkpoints/v1:" + path
 
 	raw := GitOutput(t, dir, "show", blob)
 
@@ -287,7 +289,7 @@ func ReadSessionMetadata(t *testing.T, dir string, checkpointID string, sessionI
 	t.Helper()
 
 	path := fmt.Sprintf("%s/%d/metadata.json", CheckpointPath(checkpointID), sessionIndex)
-	blob := fmt.Sprintf("entire/checkpoints/v1:%s", path)
+	blob := "entire/checkpoints/v1:" + path
 
 	raw := GitOutput(t, dir, "show", blob)
 
@@ -307,7 +309,7 @@ func WaitForSessionMetadata(t *testing.T, dir string, checkpointID string, sessi
 	t.Helper()
 
 	path := fmt.Sprintf("%s/%d/metadata.json", CheckpointPath(checkpointID), sessionIndex)
-	blob := fmt.Sprintf("entire/checkpoints/v1:%s", path)
+	blob := "entire/checkpoints/v1:" + path
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {

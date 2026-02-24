@@ -22,13 +22,17 @@ func NewTmuxSession(name string, dir string, unsetEnv []string, command string, 
 	tmuxArgs := []string{"new-session", "-d", "-s", name, "-c", dir}
 	// Build the shell command, prefixed with env -u for each var to strip.
 	shellCmd := ""
+	var shellCmdSb25 strings.Builder
 	for _, v := range unsetEnv {
-		shellCmd += "env -u " + v + " "
+		shellCmdSb25.WriteString("env -u " + v + " ")
 	}
+	shellCmd += shellCmdSb25.String()
 	shellCmd += command
+	var shellCmdSb29 strings.Builder
 	for _, a := range args {
-		shellCmd += " " + a
+		shellCmdSb29.WriteString(" " + a)
 	}
+	shellCmd += shellCmdSb29.String()
 	tmuxArgs = append(tmuxArgs, shellCmd)
 
 	cmd := exec.Command("tmux", tmuxArgs...)

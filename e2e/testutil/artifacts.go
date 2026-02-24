@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -103,7 +104,7 @@ func captureCheckpointMetadata(t *testing.T, s *RepoState, outDir string) {
 			if raw == "" {
 				break
 			}
-			sessDir := filepath.Join(cpDir, fmt.Sprintf("%d", i))
+			sessDir := filepath.Join(cpDir, strconv.Itoa(i))
 			_ = os.MkdirAll(sessDir, 0o755)
 			writeArtifact(t, sessDir, "metadata.json", raw)
 		}

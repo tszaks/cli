@@ -29,7 +29,7 @@ func init() {
 	Register(&openCodeAgent{model: model, timeout: 2 * time.Minute})
 }
 
-func (a *openCodeAgent) Name() string              { return "opencode" }
+func (a *openCodeAgent) Name() string               { return "opencode" }
 func (a *openCodeAgent) EntireAgent() string        { return "opencode" }
 func (a *openCodeAgent) PromptPattern() string      { return `(Ask anything|▣)` }
 func (a *openCodeAgent) TimeoutMultiplier() float64 { return 2.0 }
@@ -71,7 +71,7 @@ func (a *openCodeAgent) RunPrompt(ctx context.Context, dir string, prompt string
 
 	err := cmd.Run()
 	out := Output{
-		Command: fmt.Sprintf("opencode %s", strings.Join(args, " ")),
+		Command: "opencode " + strings.Join(args, " "),
 		Stdout:  stdout.String(),
 		Stderr:  stderr.String(),
 	}
