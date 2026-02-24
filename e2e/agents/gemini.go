@@ -65,7 +65,7 @@ func (g *Gemini) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 
 func (g *Gemini) StartSession(ctx context.Context, dir string) (Session, error) {
 	name := fmt.Sprintf("gemini-test-%d", time.Now().UnixNano())
-	s, err := NewTmuxSession(name, dir, nil, "env", "ACCESSIBLE=1", "ENTIRE_TEST_TTY=0", "gemini", "-y")
+	s, err := NewTmuxSession(name, dir, nil, "env", "ACCESSIBLE=1", "ENTIRE_TEST_TTY=0", "gemini", "--model", "gemini-3-flash-preview", "-y")
 	if err != nil {
 		return nil, err
 	}
