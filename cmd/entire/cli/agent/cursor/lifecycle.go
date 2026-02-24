@@ -27,10 +27,12 @@ func (c *CursorAgent) ParseHookEvent(hookName string, stdin io.Reader) (*agent.E
 		return c.parseTurnEnd(stdin)
 	case HookNameSessionEnd:
 		return c.parseSessionEnd(stdin)
-	case HookNamePreTool:
-		return c.parsePreToolUse(stdin)
-	case HookNamePostTool:
-		return c.parsePostToolUse(stdin)
+	case HookNamePreCompact:
+		return c.parsePreCompact(stdin)
+	case HookNameSubagentStart:
+		return c.parseSubagentStart(stdin)
+	case HookNameSubagentStop:
+		return c.parseSubagentStop(stdin)
 	default:
 		return nil, nil //nolint:nilnil // Unknown hooks have no lifecycle action
 	}
@@ -104,34 +106,55 @@ func (c *CursorAgent) parseSessionEnd(stdin io.Reader) (*agent.Event, error) {
 	}, nil
 }
 
-func (c *CursorAgent) parsePreToolUse(stdin io.Reader) (*agent.Event, error) {
-	raw, err := agent.ReadAndParseHookInput[preToolUseHookInputRaw](stdin)
+func (c *CursorAgent) parsePreCompact(stdin io.Reader) (*agent.Event, error) {
+	raw, err := agent.ReadAndParseHookInput[preCompactHookInputRaw](stdin)
 	if err != nil {
 		return nil, err
+	}
+	return &agent.Event{
+		Type:       agent.Compaction,
+		SessionID:  raw.ConversationID,
+		SessionRef: raw.TranscriptPath,
+		Timestamp:  time.Now(),
+	}, nil
+}
+
+func (c *CursorAgent) parseSubagentStart(stdin io.Reader) (*agent.Event, error) {
+	raw, err := agent.ReadAndParseHookInput[subagentStartHookInputRaw](stdin)
+	if err != nil {
+		return nil, err
+	}
+	if raw.Task == "" {
+		return nil, nil
 	}
 	return &agent.Event{
 		Type:       agent.SubagentStart,
 		SessionID:  raw.ConversationID,
 		SessionRef: raw.TranscriptPath,
-		ToolUseID:  raw.ToolUseID,
-		ToolInput:  raw.ToolInput,
-		Timestamp:  time.Now(),
+		ToolUseID:  raw.SubagentId,
+		//TODO ToolInput:  raw.Task,
+		Timestamp: time.Now(),
 	}, nil
 }
 
-func (c *CursorAgent) parsePostToolUse(stdin io.Reader) (*agent.Event, error) {
-	raw, err := agent.ReadAndParseHookInput[postToolUseHookInputRaw](stdin)
+func (c *CursorAgent) parseSubagentStop(stdin io.Reader) (*agent.Event, error) {
+	raw, err := agent.ReadAndParseHookInput[subagentStopHookInputRaw](stdin)
 	if err != nil {
 		return nil, err
+	}
+	if raw.Task == "" {
+		return nil, nil
 	}
 	event := &agent.Event{
 		Type:       agent.SubagentEnd,
 		SessionID:  raw.ConversationID,
 		SessionRef: raw.TranscriptPath,
-		ToolUseID:  raw.ToolUseID,
-		ToolInput:  raw.ToolInput,
-		Timestamp:  time.Now(),
+		ToolUseID:  raw.SubagentId,
+		//TODO ToolInput:  raw.Task,
+		Timestamp: time.Now(),
 	}
-	//  TODO "tool_output": "{\"status\":\"success\",\"agentId\":\"3211cc34-8d8f-42de-9dcf-c19625b17566\",\"durationMs\":7901,\"messageCount\":1,\"toolCallCount\":1}",
+	if raw.SubagentId != "" {
+		event.SubagentID = raw.SubagentId
+	}
 	return event, nil
 }

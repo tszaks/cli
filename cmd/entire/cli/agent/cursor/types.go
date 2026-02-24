@@ -19,8 +19,9 @@ type CursorHooks struct {
 	SessionEnd         []CursorHookEntry `json:"sessionEnd,omitempty"`
 	BeforeSubmitPrompt []CursorHookEntry `json:"beforeSubmitPrompt,omitempty"`
 	Stop               []CursorHookEntry `json:"stop,omitempty"`
-	PreToolUse         []CursorHookEntry `json:"preToolUse,omitempty"`
-	PostToolUse        []CursorHookEntry `json:"postToolUse,omitempty"`
+	PreCompact         []CursorHookEntry `json:"preCompact,omitempty"`
+	SubagentStart      []CursorHookEntry `json:"subagentStart,omitempty"`
+	SubagentStop       []CursorHookEntry `json:"subagentStop,omitempty"`
 }
 
 // CursorHookEntry represents a single hook command.
@@ -62,8 +63,8 @@ type beforeSubmitPromptInputRaw struct {
 	Prompt string `json:"prompt"`
 }
 
-// preToolUseHookInputRaw is the JSON structure from PreToolUse[Task] hook.
-type preToolUseHookInputRaw struct {
+// preCompactHookInputRaw is the JSON structure from PreCompact hook.
+type preCompactHookInputRaw struct {
 	// common
 	ConversationID string   `json:"conversation_id"`
 	GenerationID   string   `json:"generation_id"`
@@ -75,13 +76,17 @@ type preToolUseHookInputRaw struct {
 	TranscriptPath string   `json:"transcript_path"`
 
 	// hook specific
-	ToolUseID string          `json:"tool_use_id"`
-	ToolInput json.RawMessage `json:"tool_input"`
-	ToolName  string          `json:"tool_name"`
+	Trigger             string      `json:"trigger"`               // "auto" | "manual",
+	ContextUsagePercent json.Number `json:"context_usage_percent"` //: 85,
+	ContextTokens       json.Number `json:"context_tokens"`        // 120000,
+	ContextWindowSize   json.Number `json:"context_window_size"`   //: 128000,
+	MessageCount        json.Number `json:"message_count"`         // 45,
+	MessagesToCompact   json.Number `json:"messages_to_compact"`   //: 30,
+	IsFirstCompaction   bool        `json:"is_first_compaction"`   // true | false
 }
 
-// postToolUseHookInputRaw is the JSON structure from PostToolUse hooks.
-type postToolUseHookInputRaw struct {
+// subagentStartHookInputRaw is the JSON structure from SubagentStart[Task] hook.
+type subagentStartHookInputRaw struct {
 	// common
 	ConversationID string   `json:"conversation_id"`
 	GenerationID   string   `json:"generation_id"`
@@ -93,9 +98,39 @@ type postToolUseHookInputRaw struct {
 	TranscriptPath string   `json:"transcript_path"`
 
 	// hook specific
-	ToolName   string          `json:"tool_name"`
-	ToolInput  json.RawMessage `json:"tool_input"`
-	ToolOutput string          `json:"tool_output"`
-	ToolUseID  string          `json:"tool_use_id"`
-	Cwd        string          `json:"cwd"`
+	SubagentId           string `json:"subagent_id"`
+	SubagentType         string `json:"subagent_type"`
+	SubagentModel        string `json:"subagent_model"`
+	Task                 string `json:"task"`
+	ParentConversationID string `json:"parent_conversation_id"`
+	ToolCallID           string `json:"tool_call_id"`
+	IsParallelWorker     bool   `json:"is_parallel_worker"`
+}
+
+// subagentStopHookInputRaw is the JSON structure from SubagentStop hooks.
+type subagentStopHookInputRaw struct {
+	// common
+	ConversationID string   `json:"conversation_id"`
+	GenerationID   string   `json:"generation_id"`
+	Model          string   `json:"model"`
+	HookEventName  string   `json:"hook_event_name"`
+	CursorVersion  string   `json:"cursor_version"`
+	WorkspaceRoots []string `json:"workspace_roots"`
+	UserEmail      string   `json:"user_email"`
+	TranscriptPath string   `json:"transcript_path"`
+
+	// hook specific
+	SubagentId           string      `json:"subagent_id"`
+	SubagentType         string      `json:"subagent_type"`
+	Status               string      `json:"status"`
+	Duration             json.Number `json:"duration_ms"`
+	Summary              string      `json:"summary"`
+	ParentConversationID string      `json:"parent_conversation_id"`
+	MessageCount         json.Number `json:"message_count"`
+	ToolCallCount        json.Number `json:"tool_call_count"`
+	ModifiedFiles        []string    `json:"modified_files"`
+	LoopCount            json.Number `json:"loop_count"`
+	Task                 string      `json:"task"`
+	Description          string      `json:"description"`
+	AgentTranscriptPath  string      `json:"agent_transcript_path"`
 }

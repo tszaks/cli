@@ -23,8 +23,9 @@ const (
 	HookNameSessionEnd         = "session-end"
 	HookNameBeforeSubmitPrompt = "before-submit-prompt"
 	HookNameStop               = "stop"
-	HookNamePreTool            = "pre-tool"
-	HookNamePostTool           = "post-tool"
+	HookNamePreCompact         = "pre-compact"
+	HookNameSubagentStart      = "subagent-start"
+	HookNameSubagentStop       = "subagent-stop"
 )
 
 // HooksFileName is the hooks file used by Cursor.
@@ -44,8 +45,9 @@ func (c *CursorAgent) GetHookNames() []string {
 		HookNameSessionEnd,
 		HookNameBeforeSubmitPrompt,
 		HookNameStop,
-		HookNamePreTool,
-		HookNamePostTool,
+		HookNamePreCompact,
+		HookNameSubagentStart,
+		HookNameSubagentStop,
 	}
 }
 
@@ -78,6 +80,9 @@ func (c *CursorAgent) InstallHooks(localDev bool, force bool) (int, error) {
 				return 0, fmt.Errorf("failed to parse hooks in "+HooksFileName+": %w", err)
 			}
 		}
+		if _, ok := rawFile["version"]; !ok {
+			rawFile["version"] = json.RawMessage(`1`)
+		}
 	} else {
 		rawFile = map[string]json.RawMessage{
 			"version": json.RawMessage(`1`),
@@ -89,13 +94,14 @@ func (c *CursorAgent) InstallHooks(localDev bool, force bool) (int, error) {
 	}
 
 	// Parse only the hook types we manage
-	var sessionStart, sessionEnd, beforeSubmitPrompt, stop, preToolUse, postToolUse []CursorHookEntry
+	var sessionStart, sessionEnd, beforeSubmitPrompt, stop, preCompact, subagentStart, subagentStop []CursorHookEntry
 	parseCursorHookType(rawHooks, "sessionStart", &sessionStart)
 	parseCursorHookType(rawHooks, "sessionEnd", &sessionEnd)
 	parseCursorHookType(rawHooks, "beforeSubmitPrompt", &beforeSubmitPrompt)
 	parseCursorHookType(rawHooks, "stop", &stop)
-	parseCursorHookType(rawHooks, "preToolUse", &preToolUse)
-	parseCursorHookType(rawHooks, "postToolUse", &postToolUse)
+	parseCursorHookType(rawHooks, "preCompact", &preCompact)
+	parseCursorHookType(rawHooks, "subagentStart", &subagentStart)
+	parseCursorHookType(rawHooks, "subagentStop", &subagentStop)
 
 	// If force is true, remove all existing Entire hooks first
 	if force {
@@ -103,8 +109,9 @@ func (c *CursorAgent) InstallHooks(localDev bool, force bool) (int, error) {
 		sessionEnd = removeEntireHooks(sessionEnd)
 		beforeSubmitPrompt = removeEntireHooks(beforeSubmitPrompt)
 		stop = removeEntireHooks(stop)
-		preToolUse = removeEntireHooks(preToolUse)
-		postToolUse = removeEntireHooks(postToolUse)
+		preCompact = removeEntireHooks(preCompact)
+		subagentStart = removeEntireHooks(subagentStart)
+		subagentStop = removeEntireHooks(subagentStop)
 	}
 
 	// Define hook commands
@@ -118,9 +125,10 @@ func (c *CursorAgent) InstallHooks(localDev bool, force bool) (int, error) {
 	sessionStartCmd := cmdPrefix + "session-start"
 	sessionEndCmd := cmdPrefix + "session-end"
 	beforeSubmitPromptCmd := cmdPrefix + "before-submit-prompt"
-	stopCmd := cmdPrefix + "stop"
-	preTaskCmd := cmdPrefix + HookNamePreTool
-	postTaskCmd := cmdPrefix + HookNamePostTool
+	stopCmd := cmdPrefix + HookNameStop
+	preCompactCmd := cmdPrefix + HookNamePreCompact
+	subagentStartCmd := cmdPrefix + HookNameSubagentStart
+	subagentEndCmd := cmdPrefix + HookNameSubagentStop
 
 	count := 0
 
@@ -141,12 +149,16 @@ func (c *CursorAgent) InstallHooks(localDev bool, force bool) (int, error) {
 		stop = append(stop, CursorHookEntry{Command: stopCmd})
 		count++
 	}
-	if !hookCommandExistsWithMatcher(preToolUse, "Subagent", preTaskCmd) {
-		preToolUse = append(preToolUse, CursorHookEntry{Command: preTaskCmd, Matcher: "Subagent"})
+	if !hookCommandExists(preCompact, preCompactCmd) {
+		preCompact = append(preCompact, CursorHookEntry{Command: preCompactCmd})
 		count++
 	}
-	if !hookCommandExistsWithMatcher(postToolUse, "Subagent", postTaskCmd) {
-		postToolUse = append(postToolUse, CursorHookEntry{Command: postTaskCmd, Matcher: "Subagent"})
+	if !hookCommandExists(subagentStart, subagentStartCmd) {
+		subagentStart = append(subagentStart, CursorHookEntry{Command: subagentStartCmd})
+		count++
+	}
+	if !hookCommandExists(subagentStop, subagentEndCmd) {
+		subagentStop = append(subagentStop, CursorHookEntry{Command: subagentEndCmd})
 		count++
 	}
 
@@ -159,8 +171,9 @@ func (c *CursorAgent) InstallHooks(localDev bool, force bool) (int, error) {
 	marshalCursorHookType(rawHooks, "sessionEnd", sessionEnd)
 	marshalCursorHookType(rawHooks, "beforeSubmitPrompt", beforeSubmitPrompt)
 	marshalCursorHookType(rawHooks, "stop", stop)
-	marshalCursorHookType(rawHooks, "preToolUse", preToolUse)
-	marshalCursorHookType(rawHooks, "postToolUse", postToolUse)
+	marshalCursorHookType(rawHooks, "preCompact", preCompact)
+	marshalCursorHookType(rawHooks, "subagentStart", subagentStart)
+	marshalCursorHookType(rawHooks, "subagentStop", subagentStop)
 
 	// Marshal hooks and update raw file
 	hooksJSON, err := json.Marshal(rawHooks)
@@ -215,29 +228,32 @@ func (c *CursorAgent) UninstallHooks() error {
 	}
 
 	// Parse only the hook types we manage
-	var sessionStart, sessionEnd, beforeSubmitPrompt, stop, preToolUse, postToolUse []CursorHookEntry
+	var sessionStart, sessionEnd, beforeSubmitPrompt, stop, preCompact, subagentStart, subagentStop []CursorHookEntry
 	parseCursorHookType(rawHooks, "sessionStart", &sessionStart)
 	parseCursorHookType(rawHooks, "sessionEnd", &sessionEnd)
 	parseCursorHookType(rawHooks, "beforeSubmitPrompt", &beforeSubmitPrompt)
 	parseCursorHookType(rawHooks, "stop", &stop)
-	parseCursorHookType(rawHooks, "preToolUse", &preToolUse)
-	parseCursorHookType(rawHooks, "postToolUse", &postToolUse)
+	parseCursorHookType(rawHooks, "preCompact", &preCompact)
+	parseCursorHookType(rawHooks, "subagentStart", &subagentStart)
+	parseCursorHookType(rawHooks, "subagentStop", &subagentStop)
 
 	// Remove Entire hooks from all hook types
 	sessionStart = removeEntireHooks(sessionStart)
 	sessionEnd = removeEntireHooks(sessionEnd)
 	beforeSubmitPrompt = removeEntireHooks(beforeSubmitPrompt)
 	stop = removeEntireHooks(stop)
-	preToolUse = removeEntireHooks(preToolUse)
-	postToolUse = removeEntireHooks(postToolUse)
+	preCompact = removeEntireHooks(preCompact)
+	subagentStart = removeEntireHooks(subagentStart)
+	subagentStop = removeEntireHooks(subagentStop)
 
 	// Marshal modified hook types back into rawHooks
 	marshalCursorHookType(rawHooks, "sessionStart", sessionStart)
 	marshalCursorHookType(rawHooks, "sessionEnd", sessionEnd)
 	marshalCursorHookType(rawHooks, "beforeSubmitPrompt", beforeSubmitPrompt)
 	marshalCursorHookType(rawHooks, "stop", stop)
-	marshalCursorHookType(rawHooks, "preToolUse", preToolUse)
-	marshalCursorHookType(rawHooks, "postToolUse", postToolUse)
+	marshalCursorHookType(rawHooks, "preCompact", preCompact)
+	marshalCursorHookType(rawHooks, "subagentStart", subagentStart)
+	marshalCursorHookType(rawHooks, "subagentStop", subagentStop)
 
 	// Marshal hooks back (preserving unknown hook types)
 	if len(rawHooks) > 0 {
@@ -283,8 +299,9 @@ func (c *CursorAgent) AreHooksInstalled() bool {
 		hasEntireHook(hooksFile.Hooks.SessionEnd) ||
 		hasEntireHook(hooksFile.Hooks.BeforeSubmitPrompt) ||
 		hasEntireHook(hooksFile.Hooks.Stop) ||
-		hasEntireHook(hooksFile.Hooks.PreToolUse) ||
-		hasEntireHook(hooksFile.Hooks.PostToolUse)
+		hasEntireHook(hooksFile.Hooks.PreCompact) ||
+		hasEntireHook(hooksFile.Hooks.SubagentStart) ||
+		hasEntireHook(hooksFile.Hooks.SubagentStop)
 }
 
 // GetSupportedHooks returns the hook types Cursor supports.
@@ -327,15 +344,6 @@ func marshalCursorHookType(rawHooks map[string]json.RawMessage, hookType string,
 func hookCommandExists(entries []CursorHookEntry, command string) bool {
 	for _, entry := range entries {
 		if entry.Command == command {
-			return true
-		}
-	}
-	return false
-}
-
-func hookCommandExistsWithMatcher(entries []CursorHookEntry, matcher, command string) bool {
-	for _, entry := range entries {
-		if entry.Matcher == matcher && entry.Command == command {
 			return true
 		}
 	}

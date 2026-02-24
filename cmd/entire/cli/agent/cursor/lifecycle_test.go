@@ -122,7 +122,7 @@ func TestParseHookEvent_SubagentStart(t *testing.T) {
 		t.Fatalf("failed to marshal test input: %v", marshalErr)
 	}
 
-	event, err := ag.ParseHookEvent(HookNamePreTool, strings.NewReader(string(inputBytes)))
+	event, err := ag.ParseHookEvent(HookNameSubagentStart, strings.NewReader(string(inputBytes)))
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -159,7 +159,7 @@ func TestParseHookEvent_SubagentEnd(t *testing.T) {
 		t.Fatalf("failed to marshal test input: %v", marshalErr)
 	}
 
-	event, err := ag.ParseHookEvent(HookNamePostTool, strings.NewReader(string(inputBytes)))
+	event, err := ag.ParseHookEvent(HookNameSubagentStop, strings.NewReader(string(inputBytes)))
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -241,7 +241,7 @@ func TestParseHookEvent_ConversationIDFallback(t *testing.T) {
 		t.Parallel()
 		input := `{"conversation_id": "conv-sub", "transcript_path": "/tmp/t.jsonl", "tool_use_id": "t1", "tool_input": {}}`
 
-		event, err := ag.ParseHookEvent(HookNamePreTool, strings.NewReader(input))
+		event, err := ag.ParseHookEvent(HookNameSubagentStart, strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -254,7 +254,7 @@ func TestParseHookEvent_ConversationIDFallback(t *testing.T) {
 		t.Parallel()
 		input := `{"conversation_id": "conv-end", "transcript_path": "/tmp/t.jsonl", "tool_use_id": "t2", "tool_input": {}, "tool_response": {}}`
 
-		event, err := ag.ParseHookEvent(HookNamePostTool, strings.NewReader(input))
+		event, err := ag.ParseHookEvent(HookNameSubagentStop, strings.NewReader(input))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -310,12 +310,12 @@ func TestParseHookEvent_AllHookTypes(t *testing.T) {
 			inputTemplate: `{"session_id": "s4", "transcript_path": "/t"}`,
 		},
 		{
-			hookName:      HookNamePreTool,
+			hookName:      HookNameSubagentStart,
 			expectedType:  agent.SubagentStart,
 			inputTemplate: `{"session_id": "s5", "transcript_path": "/t", "tool_use_id": "t1", "tool_input": {}}`,
 		},
 		{
-			hookName:      HookNamePostTool,
+			hookName:      HookNameSubagentStop,
 			expectedType:  agent.SubagentEnd,
 			inputTemplate: `{"session_id": "s6", "transcript_path": "/t", "tool_use_id": "t2", "tool_input": {}, "tool_response": {}}`,
 		},

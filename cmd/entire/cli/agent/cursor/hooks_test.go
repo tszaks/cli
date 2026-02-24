@@ -36,13 +36,13 @@ func TestInstallHooks_FreshInstall(t *testing.T) {
 	if len(hooksFile.Hooks.Stop) != 1 {
 		t.Errorf("Stop hooks = %d, want 1", len(hooksFile.Hooks.Stop))
 	}
-	// PreToolUse has 1 (Task)
-	if len(hooksFile.Hooks.PreToolUse) != 1 {
-		t.Errorf("PreToolUse hooks = %d, want 1", len(hooksFile.Hooks.PreToolUse))
+	// SubagentStart has 1 (Task)
+	if len(hooksFile.Hooks.SubagentStart) != 1 {
+		t.Errorf("SubagentStart hooks = %d, want 1", len(hooksFile.Hooks.SubagentStart))
 	}
-	// PostToolUse has 1 (Task)
-	if len(hooksFile.Hooks.PostToolUse) != 1 {
-		t.Errorf("PostToolUse hooks = %d, want 1", len(hooksFile.Hooks.PostToolUse))
+	// SubagentStop has 1 (Task)
+	if len(hooksFile.Hooks.SubagentStop) != 1 {
+		t.Errorf("SubagentStop hooks = %d, want 1", len(hooksFile.Hooks.SubagentStop))
 	}
 
 	// Verify version
@@ -56,8 +56,8 @@ func TestInstallHooks_FreshInstall(t *testing.T) {
 	assertEntryCommand(t, hooksFile.Hooks.BeforeSubmitPrompt, "entire hooks cursor before-submit-prompt")
 
 	// Verify matchers on tool hooks
-	assertEntryWithMatcher(t, hooksFile.Hooks.PreToolUse, "Subagent", "entire hooks cursor pre-tool")
-	assertEntryWithMatcher(t, hooksFile.Hooks.PostToolUse, "Subagent", "entire hooks cursor post-tool")
+	assertEntryWithMatcher(t, hooksFile.Hooks.SubagentStart, "Subagent", "entire hooks cursor pre-tool")
+	assertEntryWithMatcher(t, hooksFile.Hooks.SubagentStop, "Subagent", "entire hooks cursor post-tool")
 }
 
 func TestInstallHooks_Idempotent(t *testing.T) {
@@ -195,7 +195,7 @@ func TestInstallHooks_PreservesExistingHooks(t *testing.T) {
 			Stop: []CursorHookEntry{
 				{Command: "echo user hook"},
 			},
-			PostToolUse: []CursorHookEntry{
+			SubagentStop: []CursorHookEntry{
 				{Command: "echo file written", Matcher: "Write"},
 			},
 		},
@@ -216,12 +216,12 @@ func TestInstallHooks_PreservesExistingHooks(t *testing.T) {
 	assertEntryCommand(t, hooksFile.Hooks.Stop, "echo user hook")
 	assertEntryCommand(t, hooksFile.Hooks.Stop, "entire hooks cursor stop")
 
-	// PostToolUse should have user Write hook + Task hook + TodoWrite hook
-	if len(hooksFile.Hooks.PostToolUse) != 2 {
-		t.Errorf("PostToolUse hooks = %d, want 2 (user Write + Task)", len(hooksFile.Hooks.PostToolUse))
+	// SubagentStop should have user Write hook + Task hook + TodoWrite hook
+	if len(hooksFile.Hooks.SubagentStop) != 2 {
+		t.Errorf("SubagentStop hooks = %d, want 2 (user Write + Task)", len(hooksFile.Hooks.SubagentStop))
 	}
-	assertEntryWithMatcher(t, hooksFile.Hooks.PostToolUse, "Write", "echo file written")
-	assertEntryWithMatcher(t, hooksFile.Hooks.PostToolUse, "Subagent", "entire hooks cursor post-tool")
+	assertEntryWithMatcher(t, hooksFile.Hooks.SubagentStop, "Write", "echo file written")
+	assertEntryWithMatcher(t, hooksFile.Hooks.SubagentStop, "Subagent", "entire hooks cursor post-tool")
 }
 
 func TestInstallHooks_LocalDev(t *testing.T) {
