@@ -6,6 +6,7 @@ BENCH_PATTERN="${BENCH_PATTERN:-.}"
 BENCH_PKG="${BENCH_PKG:-./...}"
 BENCH_COUNT="${BENCH_COUNT:-6}"
 BENCH_TIMEOUT="${BENCH_TIMEOUT:-10m}"
+BENCH_TAGS="${BENCH_TAGS:-}"
 BASE_REF="${BASE_REF:-main}"
 
 if ! command -v benchstat &>/dev/null; then
@@ -38,7 +39,7 @@ trap cleanup EXIT
 run_bench() {
   local label="$1" out="$2"
   echo "=== Benchmarking: $label ==="
-  go test -bench="$BENCH_PATTERN" -benchmem -run='^$' -count="$BENCH_COUNT" -timeout="$BENCH_TIMEOUT" "$BENCH_PKG" 2>/dev/null \
+  go test ${BENCH_TAGS:+-tags="$BENCH_TAGS"} -bench="$BENCH_PATTERN" -benchmem -run='^$' -count="$BENCH_COUNT" -timeout="$BENCH_TIMEOUT" "$BENCH_PKG" 2>/dev/null \
     | grep -E '^(Benchmark.*[[:space:]]+[0-9]|goos:|goarch:|pkg:|cpu:)' > "$out"
   local n
   n=$(grep -c '^Benchmark' "$out" || true)
