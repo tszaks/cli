@@ -705,7 +705,7 @@ func (s *GitStore) buildTreeWithChanges(
 	// This is critical because fileExists() and createBlobFromFile() use os.Stat()
 	// which resolves relative to CWD. The modifiedFiles are repo-relative paths,
 	// so we must resolve them against repo root, not CWD.
-	repoRoot, err := paths.RepoRoot()
+	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
 		return plumbing.ZeroHash, fmt.Errorf("failed to get repo root: %w", err)
 	}

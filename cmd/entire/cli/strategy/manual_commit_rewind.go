@@ -322,7 +322,7 @@ func (s *ManualCommitStrategy) Rewind(point RewindPoint) error {
 	})
 
 	// Get repository root to walk from there
-	repoRoot, err := GetWorktreePath()
+	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
 		repoRoot = "." // Fallback to current directory
 	}
@@ -586,7 +586,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(point RewindPoint, force bool) ([
 	}
 
 	// Get repo root for agent session directory lookup
-	repoRoot, err := paths.RepoRoot()
+	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repository root: %w", err)
 	}

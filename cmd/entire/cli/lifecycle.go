@@ -286,7 +286,7 @@ func handleLifecycleTurnEnd(ag agent.Agent, event *agent.Event) error {
 	fmt.Fprintf(os.Stderr, "Using commit message: %s\n", commitMessage)
 
 	// Get repo root for path normalization
-	repoRoot, err := paths.RepoRoot()
+	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
 		return fmt.Errorf("failed to get repo root: %w", err)
 	}
@@ -554,7 +554,7 @@ func handleLifecycleSubagentEnd(ag agent.Agent, event *agent.Event) error {
 	}
 
 	// Get repo root and normalize paths
-	repoRoot, err := paths.RepoRoot()
+	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
 		return fmt.Errorf("failed to get repo root: %w", err)
 	}

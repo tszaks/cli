@@ -558,7 +558,7 @@ func GetRemoteMetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
 // The function first uses 'git rev-parse --show-toplevel' to find the repository
 // root, which works correctly even when called from a subdirectory within the repo.
 func OpenRepository() (*git.Repository, error) {
-	repoRoot, err := paths.RepoRoot()
+	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
 		// Fallback to current directory if git command fails
 		// (e.g., if git is not installed or we're not in a repo)
@@ -580,7 +580,7 @@ func OpenRepository() (*git.Repository, error) {
 // This function works correctly from any subdirectory within the repository.
 func IsInsideWorktree() bool {
 	// First find the repository root
-	repoRoot, err := GetWorktreePath()
+	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
 		return false
 	}
@@ -603,7 +603,7 @@ func IsInsideWorktree() bool {
 // See: https://git-scm.com/docs/gitrepository-layout
 func GetMainRepoRoot() (string, error) {
 	// First find the worktree/repo root
-	repoRoot, err := GetWorktreePath()
+	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
 		return "", fmt.Errorf("failed to get worktree path: %w", err)
 	}
@@ -652,24 +652,6 @@ func GetGitCommonDir() (string, error) {
 	}
 
 	return filepath.Clean(commonDir), nil
-}
-
-// GetWorktreePath returns the absolute path to the current worktree root.
-// This is the working directory path, not the git directory.
-// In a worktree, this returns the worktree's own root (not the main repo).
-// The result is cached per working directory via paths.RepoRoot().
-func GetWorktreePath() (string, error) {
-	root, err := paths.RepoRoot()
-	if err != nil {
-		return "", fmt.Errorf("failed to get worktree path: %w", err)
-	}
-	return root, nil
-}
-
-// ClearWorktreePathCache clears the cached worktree path.
-// This is primarily useful for testing when changing directories.
-func ClearWorktreePathCache() {
-	paths.ClearRepoRootCache()
 }
 
 // EnsureEntireGitignore ensures all required entries are in .entire/.gitignore
@@ -839,7 +821,7 @@ func checkCanRewindWithWarning() (bool, string, error) {
 
 	var changes []fileChange
 	// Use repo root, not cwd - git status returns paths relative to repo root
-	repoRoot, err := GetWorktreePath()
+	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
 		return true, "", nil //nolint:nilerr // Rewind allowed even if repo root lookup fails
 	}
@@ -1236,7 +1218,7 @@ func HardResetWithProtection(commitHash plumbing.Hash) (shortID string, err erro
 // avoiding bloated session state from large ignored directories like node_modules/.
 // Returns paths relative to the repository root.
 func collectUntrackedFiles() ([]string, error) {
-	repoRoot, err := GetWorktreePath()
+	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
 		repoRoot = "."
 	}

@@ -388,7 +388,7 @@ func resumeSession(sessionID string, checkpointID id.CheckpointID, force bool) e
 	)
 
 	// Get repo root for session directory lookup
-	repoRoot, err := paths.RepoRoot()
+	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
 		return fmt.Errorf("failed to get repository root: %w", err)
 	}
