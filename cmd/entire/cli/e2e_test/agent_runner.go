@@ -342,7 +342,9 @@ func NewOpenCodeRunner(config AgentRunnerConfig) *OpenCodeRunner {
 	model := config.Model
 	if model == "" {
 		model = os.Getenv("E2E_OPENCODE_MODEL")
-		// No default model - OpenCode uses whatever is configured in the project
+		if model == "" {
+			model = "anthropic/claude-haiku-4-5"
+		}
 	}
 
 	timeout := config.Timeout

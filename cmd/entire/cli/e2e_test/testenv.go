@@ -84,13 +84,23 @@ func NewFeatureBranchEnv(t *testing.T, strategyName string) *TestEnv {
 	// catch-all "ask" rule before specific "allow" rules (known issue).
 	// Include $schema to prevent OpenCode from modifying the file when it runs.
 	if defaultAgent == AgentNameOpenCode {
-		env.WriteFile("opencode.json", `{
+		opencodeConfig := `{
   "$schema": "https://opencode.ai/config.json",
   "permission": {
     "external_directory": "allow"
-  }
-}
-`)
+  }`
+		if os.Getenv("ANTHROPIC_API_KEY") != "" {
+			opencodeConfig += `,
+  "provider": {
+    "anthropic": {
+      "options": {
+        "apiKey": "` + os.Getenv("ANTHROPIC_API_KEY") + `"
+      }
+    }
+  }`
+		}
+		opencodeConfig += "\n}\n"
+		env.WriteFile("opencode.json", opencodeConfig)
 	}
 
 	// Use `entire enable` to set up everything (hooks, settings, etc.)
