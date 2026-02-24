@@ -131,7 +131,10 @@ func TestStashModificationsToTrackedFiles(t *testing.T) {
 
 		// Agent modifies both files.
 		_, err := s.RunPrompt(t, ctx,
-			"modify src/a.go to add a function Hello() string that returns \"hello\" and modify src/b.go to add a function World() string that returns \"world\". Do not ask for confirmation, just make the changes.")
+			"Modify two existing files. In src/a.go, add a function: func Hello() string { return \"hello\" }. "+
+				"In src/b.go, add a function: func World() string { return \"world\" }. "+
+				"Only modify these two files, do not create new files. Do not commit. "+
+				"Do not ask for confirmation, just make the changes.")
 		if err != nil {
 			t.Fatalf("agent failed: %v", err)
 		}

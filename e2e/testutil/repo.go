@@ -299,6 +299,32 @@ func ReadSessionMetadata(t *testing.T, dir string, checkpointID string, sessionI
 	return meta
 }
 
+// WaitForSessionMetadata polls until session metadata exists on the checkpoint
+// branch for the given checkpoint ID and session index, then returns it.
+// This handles the race where the checkpoint branch advances before session
+// metadata is fully committed.
+func WaitForSessionMetadata(t *testing.T, dir string, checkpointID string, sessionIndex int, timeout time.Duration) SessionMetadata {
+	t.Helper()
+
+	path := fmt.Sprintf("%s/%d/metadata.json", CheckpointPath(checkpointID), sessionIndex)
+	blob := fmt.Sprintf("entire/checkpoints/v1:%s", path)
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		raw := gitOutputSafe(dir, "show", blob)
+		if raw != "" {
+			var meta SessionMetadata
+			if err := json.Unmarshal([]byte(raw), &meta); err != nil {
+				t.Fatalf("unmarshal session metadata from %s: %v", blob, err)
+			}
+			return meta
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("session metadata %s did not appear within %s", blob, timeout)
+	return SessionMetadata{}
+}
+
 // SetupBareRemote creates a bare git repo, adds it as "origin", and pushes
 // the initial commit. Returns the bare repo path.
 func SetupBareRemote(t *testing.T, s *RepoState) string {

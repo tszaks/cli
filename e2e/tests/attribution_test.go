@@ -119,7 +119,7 @@ func TestAttributionMultiCommitSameSession(t *testing.T) {
 
 		testutil.WaitForCheckpointAdvanceFrom(t, s.Dir, cpBranch1, 15*time.Second)
 		cpID2 := testutil.AssertHasCheckpointTrailer(t, s.Dir, "HEAD")
-		sm := testutil.ReadSessionMetadata(t, s.Dir, cpID2, 0)
+		sm := testutil.WaitForSessionMetadata(t, s.Dir, cpID2, 0, 10*time.Second)
 
 		assert.Greater(t, sm.InitialAttribution.AgentLines, 0,
 			"agent lines should be > 0 on second commit")
