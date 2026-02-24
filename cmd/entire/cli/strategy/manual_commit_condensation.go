@@ -583,13 +583,13 @@ func extractUserPrompts(agentType agent.AgentType, content string) []string {
 // where the current checkpoint began, allowing calculation for only the portion
 // of the transcript since the last checkpoint.
 func calculateTokenUsage(agentType agent.AgentType, data []byte, startOffset int) *agent.TokenUsage {
-	if len(data) == 0 {
-		return &agent.TokenUsage{}
-	}
-
 	// No token usage information from Cursor yet
 	if agentType == agent.AgentTypeCursor {
 		return nil
+	}
+
+	if len(data) == 0 {
+		return &agent.TokenUsage{}
 	}
 
 	// OpenCode uses JSONL with token info on assistant messages (different schema from Claude Code)
