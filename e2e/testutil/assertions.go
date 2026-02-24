@@ -243,20 +243,13 @@ func ValidateCheckpointDeep(t *testing.T, dir string, v DeepCheckpointValidation
 	transcriptRaw := gitOutputSafe(dir, "show", transcriptBlob)
 	if assert.NotEmpty(t, transcriptRaw, "transcript should exist at %s", transcriptBlob) {
 		lines := strings.Split(transcriptRaw, "\n")
-		validLines := 0
-		for i, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			validLines++
-			var obj map[string]any
-			if err := json.Unmarshal([]byte(line), &obj); err != nil {
-				// Log but don't fail — non-Claude agents may have different formats
-				t.Logf("transcript line %d is not valid JSON: %v", i+1, err)
+		nonEmpty := 0
+		for _, line := range lines {
+			if strings.TrimSpace(line) != "" {
+				nonEmpty++
 			}
 		}
-		assert.Positive(t, validLines, "transcript should have at least one line")
+		assert.Positive(t, nonEmpty, "transcript should have at least one line")
 
 		for _, expected := range v.ExpectedTranscriptContent {
 			assert.Contains(t, transcriptRaw, expected,
