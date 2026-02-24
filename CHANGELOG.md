@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.7] - 2026-02-24
+
+### Fixed
+
+- Commits hanging for up to 3s per session while waiting for transcript updates that were already flushed ([#482](https://github.com/entireio/cli/pull/482))
+
+### Housekeeping
+
+- Updated README to include OpenCode in the supported agent list ([#476](https://github.com/entireio/cli/pull/476))
+
 ## [0.4.6] - 2026-02-24
 
 ### Added
