@@ -93,12 +93,15 @@ func (c *Claude) Bootstrap() error {
 	// On CI, write a config file so Claude Code uses the API key from the
 	// environment instead of trying OAuth/Keychain.
 	if os.Getenv("CI") == "" {
+		fmt.Fprintf(os.Stderr, "[e2e] claude Bootstrap: local mode, skipping (using Keychain auth)\n")
 		return nil
 	}
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	if apiKey == "" {
+		fmt.Fprintf(os.Stderr, "[e2e] claude Bootstrap: CI mode but ANTHROPIC_API_KEY not set, skipping\n")
 		return nil
 	}
+	fmt.Fprintf(os.Stderr, "[e2e] claude Bootstrap: CI mode, writing API key to ~/.claude/.claude.json\n")
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("get home dir: %w", err)
@@ -118,18 +121,29 @@ func (c *Claude) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 		o(cfg)
 	}
 
-	configDir, err := isolatedConfigDir()
-	if err != nil {
-		return Output{}, fmt.Errorf("create isolated config dir: %w", err)
+	env := append(cleanEnv(), "ACCESSIBLE=1", "ENTIRE_TEST_TTY=0")
+
+	// On CI (no macOS Keychain), use an isolated config dir so Claude Code
+	// picks up ANTHROPIC_API_KEY from the environment instead of trying OAuth.
+	// Locally, we skip CLAUDE_CONFIG_DIR so the Keychain-based auth works.
+	if os.Getenv("CI") != "" {
+		configDir, err := isolatedConfigDir()
+		if err != nil {
+			return Output{}, fmt.Errorf("create isolated config dir: %w", err)
+		}
+		defer os.RemoveAll(configDir)
+		env = append(env, "CLAUDE_CONFIG_DIR="+configDir)
+		fmt.Fprintf(os.Stderr, "[e2e] claude RunPrompt: CI mode, using isolated config dir %s\n", configDir)
+	} else {
+		fmt.Fprintf(os.Stderr, "[e2e] claude RunPrompt: local mode, using default Keychain auth (no CLAUDE_CONFIG_DIR)\n")
 	}
-	defer os.RemoveAll(configDir)
 
 	args := []string{"-p", prompt, "--model", cfg.Model, "--dangerously-skip-permissions"}
 	displayArgs := []string{"-p", fmt.Sprintf("%q", prompt), "--model", cfg.Model, "--dangerously-skip-permissions"}
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = dir
 	cmd.Stdin = nil
-	cmd.Env = append(cleanEnv(), "ACCESSIBLE=1", "ENTIRE_TEST_TTY=0", "CLAUDE_CONFIG_DIR="+configDir)
+	cmd.Env = env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
@@ -140,7 +154,7 @@ func (c *Claude) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err = cmd.Run()
+	err := cmd.Run()
 	exitCode := 0
 	exitErr := &exec.ExitError{}
 	if errors.As(err, &exitErr) {
@@ -167,7 +181,10 @@ func (c *Claude) StartSession(ctx context.Context, dir string) (Session, error) 
 		configDir, err := isolatedConfigDir()
 		if err == nil {
 			envArgs = append(envArgs, "CLAUDE_CONFIG_DIR="+configDir)
+			fmt.Fprintf(os.Stderr, "[e2e] claude StartSession: CI mode, using isolated config dir %s\n", configDir)
 		}
+	} else {
+		fmt.Fprintf(os.Stderr, "[e2e] claude StartSession: local mode, using default Keychain auth (no CLAUDE_CONFIG_DIR)\n")
 	}
 
 	args := append([]string{"env"}, envArgs...)
