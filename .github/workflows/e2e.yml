@@ -28,6 +28,12 @@ jobs:
       - name: Setup mise
         uses: jdx/mise-action@v3
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y tmux
+
+      - name: Build entire CLI
+        run: go build -o /usr/local/bin/entire ./cmd/entire
+
       - name: Install agent CLI
         run: |
           case "${{ matrix.agent }}" in
@@ -40,4 +46,5 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
+          entire version
           mise run test:e2e:${{ matrix.agent }}
