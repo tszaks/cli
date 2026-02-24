@@ -654,16 +654,57 @@ func GetGitCommonDir() (string, error) {
 	return filepath.Clean(commonDir), nil
 }
 
+// worktreePathCache caches the worktree path to avoid repeated git commands.
+// The cache is keyed by the current working directory to handle directory changes.
+var (
+	worktreePathMu       sync.RWMutex
+	worktreePathCache    string
+	worktreePathCacheDir string
+)
+
 // GetWorktreePath returns the absolute path to the current worktree root.
 // This is the working directory path, not the git directory.
+// The result is cached per working directory.
 func GetWorktreePath() (string, error) {
+	cwd, err := os.Getwd() //nolint:forbidigo // needed for cache key
+	if err != nil {
+		cwd = ""
+	}
+
+	// Check cache with read lock first
+	worktreePathMu.RLock()
+	if worktreePathCache != "" && worktreePathCacheDir == cwd {
+		cached := worktreePathCache
+		worktreePathMu.RUnlock()
+		return cached, nil
+	}
+	worktreePathMu.RUnlock()
+
+	// Cache miss - get worktree path and update cache with write lock
 	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get worktree path: %w", err)
 	}
-	return strings.TrimSpace(string(output)), nil
+
+	result := strings.TrimSpace(string(output))
+
+	worktreePathMu.Lock()
+	worktreePathCache = result
+	worktreePathCacheDir = cwd
+	worktreePathMu.Unlock()
+
+	return result, nil
+}
+
+// ClearWorktreePathCache clears the cached worktree path.
+// This is primarily useful for testing when changing directories.
+func ClearWorktreePathCache() {
+	worktreePathMu.Lock()
+	worktreePathCache = ""
+	worktreePathCacheDir = ""
+	worktreePathMu.Unlock()
 }
 
 // EnsureEntireGitignore ensures all required entries are in .entire/.gitignore
