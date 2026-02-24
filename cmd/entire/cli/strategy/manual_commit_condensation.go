@@ -587,6 +587,11 @@ func calculateTokenUsage(agentType agent.AgentType, data []byte, startOffset int
 		return &agent.TokenUsage{}
 	}
 
+	// No token usage information from Cursor yet
+	if agentType == agent.AgentTypeCursor {
+		return nil
+	}
+
 	// OpenCode uses JSONL with token info on assistant messages (different schema from Claude Code)
 	if agentType == agent.AgentTypeOpenCode {
 		return opencode.CalculateTokenUsageFromBytes(data, startOffset)
