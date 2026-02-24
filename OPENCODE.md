@@ -1,10 +1,10 @@
-# Entire - CLI 
+# Entire - CLI
 
 This repo contains the CLI for Entire.
 
 ## Architecture
 
-- CLI build with github.com/spf13/cobra and github.com/charmbracelet/huh 
+- CLI build with github.com/spf13/cobra and github.com/charmbracelet/huh
 
 ## Key Directories
 
@@ -46,10 +46,10 @@ Integration tests use the `//go:build integration` build tag and are located in 
 
 ### Running E2E Tests (Only When Explicitly Requested)
 
-**IMPORTANT: Do NOT run E2E tests proactively.** E2E tests make real API calls to Claude Code, which consume tokens and cost money. Only run them when the user explicitly asks for E2E testing.
+**IMPORTANT: Do NOT run E2E tests proactively.** E2E tests make real API calls to AI agents, which consume tokens and cost money. Only run them when the user explicitly asks for E2E testing.
 
 ```bash
-# Requires Claude Code to be installed and authenticated
+# Requires the agent to be installed and authenticated
 E2E_AGENT=claude-code go test -tags=e2e ./cmd/entire/cli/e2e_test/...
 
 # Run a specific test
@@ -59,7 +59,7 @@ E2E_AGENT=claude-code go test -tags=e2e -run TestE2E_BasicWorkflow ./cmd/entire/
 E2E tests:
 - Use the `//go:build e2e` build tag
 - Located in `cmd/entire/cli/e2e_test/`
-- Test real agent interactions (Claude Code creating files, committing, etc.)
+- Test real agent interactions (Claude Code, Gemini CLI, or OpenCode creating files, committing, etc.)
 - Validate checkpoint scenarios documented in `docs/architecture/checkpoint-scenarios.md`
 - Support multiple agents via `E2E_AGENT` env var (`claude-code`, `gemini`, `opencode`)
 
@@ -132,6 +132,45 @@ When duplication is found:
 1. Check if a helper already exists in `common.go` or nearby utility files
 2. If not, consider extracting the duplicated logic to a shared helper
 3. If duplication is intentional (e.g., test setup), add a `//nolint:dupl` comment with explanation
+
+## OpenCode Agent Details
+
+The OpenCode agent implementation is in `cmd/entire/cli/agent/opencode/`.
+
+### Plugin System
+
+OpenCode integrates via a TypeScript plugin installed at `.opencode/plugins/entire.ts`. The plugin runs in OpenCode's Bun runtime and fires hooks on session and turn lifecycle events.
+
+**Installation:** `entire enable --agent opencode` writes the plugin file. `entire disable --uninstall` removes it.
+
+### Hook Names
+
+| Hook Name (CLI subcommand) | Trigger | Purpose |
+|---|---|---|
+| `session-start` | Session created | Initialize Entire session ID |
+| `turn-start` | User submits prompt | Capture pre-prompt state |
+| `turn-end` | Agent finishes responding | Create checkpoint via `opencode export` |
+| `compaction` | Session messages compacted | Handle transcript compaction |
+| `session-end` | Session deleted/ended | Clean up session state |
+
+Hook commands: `entire hooks opencode <hook-name>`
+
+### Transcript Format
+
+OpenCode uses **JSON** (not JSONL). Transcripts are captured via `opencode export <sessionID>` which returns the full session as a JSON object with `info` and `messages` arrays.
+
+### Session Storage
+
+OpenCode stores sessions in **SQLite** at `~/.local/share/opencode/opencode.db` (XDG default path on all platforms, NOT `~/Library/Application Support/` on macOS).
+
+**Resume/Rewind workflow:**
+1. Delete existing session: `opencode session delete <sessionID>`
+2. Write export JSON to temp file
+3. Import: `opencode import <temp-file>`
+
+### Protected Directory
+
+`.opencode` — excluded from git operations and checkpoint file tracking.
 
 ## Code Patterns
 
@@ -243,7 +282,7 @@ Regression tests in `hard_reset_test.go` verify this behavior - if go-git v6 fix
 
 **Always use repo root (not `os.Getwd()`) when working with git-relative paths.**
 
-Git commands like `git status` and `worktree.Status()` return paths relative to the **repository root**, not the current working directory. When Claude runs from a subdirectory (e.g., `/repo/frontend`), using `os.Getwd()` to construct absolute paths will produce incorrect results for files in sibling directories.
+Git commands like `git status` and `worktree.Status()` return paths relative to the **repository root**, not the current working directory. When an agent runs from a subdirectory (e.g., `/repo/frontend`), using `os.Getwd()` to construct absolute paths will produce incorrect results for files in sibling directories.
 
 ```go
 // WRONG - breaks when running from subdirectory
@@ -253,18 +292,6 @@ absPath := filepath.Join(cwd, file)  // file="api/src/types.ts" → /repo/fronte
 // CORRECT - use repo root
 repoRoot, _ := paths.RepoRoot()  // or strategy.GetWorktreePath()
 absPath := filepath.Join(repoRoot, file)  // → /repo/api/src/types.ts (CORRECT)
-```
-
-This also affects path filtering. The `paths.ToRelativePath()` function rejects paths starting with `..`, so computing relative paths from cwd instead of repo root will filter out files in sibling directories:
-
-```go
-// WRONG - filters out sibling directory files
-cwd, _ := os.Getwd()  // /repo/frontend
-relPath := paths.ToRelativePath("/repo/api/file.ts", cwd)  // returns "" (filtered out as "../api/file.ts")
-
-// CORRECT - keeps all repo files
-repoRoot, _ := paths.RepoRoot()
-relPath := paths.ToRelativePath("/repo/api/file.ts", repoRoot)  // returns "api/file.ts"
 ```
 
 **When to use `os.Getwd()`:** Only when you actually need the current directory (e.g., finding agent session directories that are cwd-relative).
@@ -297,15 +324,11 @@ All strategies implement:
 **Manual-Commit Strategy** (`manual_commit*.go`) - Default
 - **Does not modify** the active branch - no commits created on the working branch
 - Creates shadow branch `entire/<HEAD-commit-hash[:7]>-<worktreeHash[:6]>` per base commit + worktree
-- **Worktree-specific branches** - each git worktree gets its own shadow branch namespace, preventing conflicts
-- **Supports multiple concurrent sessions** - checkpoints from different sessions in the same directory interleave on the same shadow branch
 - Session logs are condensed to permanent `entire/checkpoints/v1` branch on user commits
 - Builds git trees in-memory using go-git plumbing APIs
 - Rewind restores files from shadow branch commit tree (does not use `git reset`)
-- **Location-independent transcript resolution** - transcript paths are always computed dynamically from the current repo location (via `agent.GetSessionDir` + `agent.ResolveSessionFile`), never stored in checkpoint metadata. This ensures restore/rewind works after repo relocation or across machines.
+- **Location-independent transcript resolution** - transcript paths are always computed dynamically from the current repo location (via `agent.GetSessionDir` + `agent.ResolveSessionFile`), never stored in checkpoint metadata
 - Tracks session state in `.git/entire-sessions/` (shared across worktrees)
-- **Shadow branch migration** - if user does stash/pull/rebase (HEAD changes without commit), shadow branch is automatically moved to new base commit
-- **Orphaned branch cleanup** - if a shadow branch exists without a corresponding session state file, it is automatically reset when a new session starts
 - PrePush hook can push `entire/checkpoints/v1` branch alongside user pushes
 - `AllowsMainBranch() = true` - safe to use on main/master since it never modifies commit history
 
@@ -317,225 +340,13 @@ All strategies implement:
 - Full rewind allowed if commit is only on current branch (not in main); otherwise logs-only
 - Rewind via `git reset --hard`
 - PrePush hook can push `entire/checkpoints/v1` branch alongside user pushes
-- `AllowsMainBranch() = true` - creates commits on active branch, safe to use on main/master
-
-#### Key Files
-
-- `strategy.go` - Interface definition and context structs (`StepContext`, `TaskStepContext`, `RewindPoint`, etc.)
-- `registry.go` - Strategy registration/discovery (factory pattern with `Get()`, `List()`, `Default()`)
-- `common.go` - Shared helpers for metadata extraction, tree building, rewind validation, `ListCheckpoints()`
-- `session.go` - Session/checkpoint data structures
-- `push_common.go` - Shared PrePush logic for pushing `entire/checkpoints/v1` branch
-- `manual_commit.go` - Manual-commit strategy main implementation
-- `manual_commit_types.go` - Type definitions: `SessionState`, `CheckpointInfo`, `CondenseResult`
-- `manual_commit_session.go` - Session state management (load/save/list session states)
-- `manual_commit_condensation.go` - Condense logic for copying logs to `entire/checkpoints/v1`
-- `manual_commit_rewind.go` - Rewind implementation: file restoration from checkpoint trees
-- `manual_commit_git.go` - Git operations: checkpoint commits, tree building
-- `manual_commit_logs.go` - Session log retrieval and session listing
-- `manual_commit_hooks.go` - Git hook handlers (prepare-commit-msg, post-commit, pre-push)
-- `manual_commit_reset.go` - Shadow branch reset/cleanup functionality
-- `session_state.go` - Package-level session state functions (`LoadSessionState`, `SaveSessionState`, `ListSessionStates`, `FindMostRecentSession`)
-- `auto_commit.go` - Auto-commit strategy implementation
-- `hooks.go` - Git hook installation
-
-#### Checkpoint Package (`cmd/entire/cli/checkpoint/`)
-- `checkpoint.go` - Data types (`Checkpoint`, `TemporaryCheckpoint`, `CommittedCheckpoint`)
-- `store.go` - `GitStore` struct wrapping git repository
-- `temporary.go` - Shadow branch operations (`WriteTemporary`, `ReadTemporary`, `ListTemporary`)
-- `committed.go` - Metadata branch operations (`WriteCommitted`, `ReadCommitted`, `ListCommitted`)
-
-#### Session Package (`cmd/entire/cli/session/`)
-- `session.go` - Session data types and interfaces
-- `state.go` - `StateStore` for managing `.git/entire-sessions/` files
-- `phase.go` - Session phase state machine (phases, events, transitions, actions)
-
-#### Session Phase State Machine
-
-Sessions track their lifecycle through phases managed by a state machine in `session/phase.go`:
-
-**Phases:** `ACTIVE`, `IDLE`, `ENDED`
-
-**Events:**
-- `TurnStart` - Agent begins a turn (UserPromptSubmit hook)
-- `TurnEnd` - Agent finishes a turn (Stop hook)
-- `GitCommit` - A git commit was made (PostCommit hook)
-- `SessionStart` - New session started
-- `SessionStop` - Session explicitly stopped
-
-**Key transitions:**
-- `IDLE + TurnStart → ACTIVE` - Agent starts working
-- `ACTIVE + TurnEnd → IDLE` - Agent finishes turn
-- `ACTIVE + GitCommit → ACTIVE` - User commits while agent is working (condense immediately)
-- `IDLE + GitCommit → IDLE` - User commits between turns (condense immediately)
-- `ENDED + GitCommit → ENDED` - Post-session commit (condense if files touched)
-
-The state machine emits **actions** (e.g., `ActionCondense`, `ActionUpdateLastInteraction`) that hook handlers dispatch to strategy-specific implementations.
-
-#### Metadata Structure
-
-**Shadow Strategy** - Shadow branches (`entire/<commit-hash[:7]>-<worktreeHash[:6]>`):
-```
-.entire/metadata/<session-id>/
-├── full.jsonl               # Session transcript
-├── prompt.txt               # User prompts
-├── context.md               # Generated context
-└── tasks/<tool-use-id>/     # Task checkpoints
-    ├── checkpoint.json      # UUID mapping for rewind
-    └── agent-<id>.jsonl     # Subagent transcript
-```
-
-**Both Strategies** - Metadata branch (`entire/checkpoints/v1`) - sharded checkpoint format:
-```
-<checkpoint-id[:2]>/<checkpoint-id[2:]>/
-├── metadata.json            # CheckpointSummary (aggregated stats)
-├── 0/                       # First session (0-based indexing)
-│   ├── metadata.json        # Session-specific metadata
-│   ├── full.jsonl           # Session transcript
-│   ├── prompt.txt           # User prompts
-│   ├── context.md           # Generated context
-│   ├── content_hash.txt     # SHA256 of transcript
-│   └── tasks/<tool-use-id>/ # Task checkpoints (if applicable)
-│       ├── checkpoint.json  # UUID mapping
-│       └── agent-<id>.jsonl # Subagent transcript
-├── 1/                       # Second session (if multiple sessions)
-│   ├── metadata.json
-│   ├── full.jsonl
-│   └── ...
-└── ...
-```
-
-**Multi-session metadata.json format:**
-```json
-{
-  "checkpoint_id": "abc123def456",
-  "session_id": "2026-01-13-uuid",      // Current/latest session
-  "session_ids": ["2026-01-13-uuid1", "2026-01-13-uuid2"],  // All sessions
-  "session_count": 2,                    // Number of sessions in this checkpoint
-  "strategy": "manual-commit",
-  "created_at": "2026-01-13T12:00:00Z",
-  "files_touched": ["file1.txt", "file2.txt"]  // Merged from all sessions
-}
-```
-
-When multiple sessions are condensed to the same checkpoint (same base commit):
-- Sessions are stored in numbered subfolders using 0-based indexing (`0/`, `1/`, `2/`, etc.)
-- Latest session is always in the highest-numbered folder
-- `session_ids` array tracks all sessions, `session_count` increments
-
-**Session State** (filesystem, `.git/entire-sessions/`):
-```
-<session-id>.json            # Active session state (base_commit, checkpoint_count, etc.)
-```
-
-#### Checkpoint ID Linking
-
-Both strategies use a **12-hex-char random checkpoint ID** (e.g., `a3b2c4d5e6f7`) as the stable identifier linking user commits to metadata.
-
-**How checkpoint IDs work:**
-
-1. **Generated once per checkpoint**: Either when saving (auto-commit) or when condensing (manual-commit)
-
-2. **Added to user commits** via `Entire-Checkpoint` trailer:
-   - **Auto-commit**: Added programmatically when creating the commit
-   - **Manual-commit**: Added via `prepare-commit-msg` hook (user can remove it before committing)
-
-3. **Used for directory sharding** on `entire/checkpoints/v1` branch:
-   - Path format: `<id[:2]>/<id[2:]>/`
-   - Example: `a3b2c4d5e6f7` → `a3/b2c4d5e6f7/`
-   - Creates 256 shards to avoid directory bloat
-
-4. **Appears in commit subject** on `entire/checkpoints/v1` commits:
-   - Format: `Checkpoint: a3b2c4d5e6f7`
-   - Makes `git log entire/checkpoints/v1` readable and searchable
-
-**Bidirectional linking:**
-
-```
-User commit → Metadata:
-  Extract "Entire-Checkpoint: a3b2c4d5e6f7" trailer
-  → Read a3/b2c4d5e6f7/ directory from entire/checkpoints/v1 tree at HEAD
-
-Metadata → User commits:
-  Given checkpoint ID a3b2c4d5e6f7
-  → Search user branch history for commits with "Entire-Checkpoint: a3b2c4d5e6f7" trailer
-```
-
-Note: Commit subjects on `entire/checkpoints/v1` (e.g., `Checkpoint: a3b2c4d5e6f7`) are
-for human readability in `git log` only. The CLI always reads from the tree at HEAD.
-
-**Example:**
-```
-User's commit (on main branch):
-  "Implement login feature
-
-  Entire-Checkpoint: a3b2c4d5e6f7"
-       ↓ ↑
-       Linked via checkpoint ID
-       ↓ ↑
-entire/checkpoints/v1 commit:
-  Subject: "Checkpoint: a3b2c4d5e6f7"
-
-  Tree: a3/b2c4d5e6f7/
-    ├── metadata.json (checkpoint_id: "a3b2c4d5e6f7")
-    ├── full.jsonl (session transcript)
-    ├── prompt.txt
-    └── context.md
-```
-
-#### Commit Trailers
-
-**On user's active branch commits (both strategies):**
-- `Entire-Checkpoint: <checkpoint-id>` - 12-hex-char ID linking to metadata on `entire/checkpoints/v1`
-  - Auto-commit: Always added when creating commits
-  - Manual-commit: Added by hook; user can remove to skip linking
-
-**On shadow branch commits (`entire/<commit-hash[:7]>-<worktreeHash[:6]>`) - manual-commit only:**
-- `Entire-Session: <session-id>` - Session identifier
-- `Entire-Metadata: <path>` - Path to metadata directory within the tree
-- `Entire-Task-Metadata: <path>` - Path to task metadata directory (for task checkpoints)
-- `Entire-Strategy: manual-commit` - Strategy that created the commit
-
-**On metadata branch commits (`entire/checkpoints/v1`) - both strategies:**
-
-Commit subject: `Checkpoint: <checkpoint-id>` (or custom subject for task checkpoints)
-
-Trailers:
-- `Entire-Session: <session-id>` - Session identifier
-- `Entire-Strategy: <strategy>` - Strategy name (manual-commit or auto-commit)
-- `Entire-Agent: <agent-name>` - Agent name (optional, e.g., "Claude Code")
-- `Ephemeral-branch: <branch>` - Shadow branch name (optional, manual-commit only)
-- `Entire-Metadata-Task: <path>` - Task metadata path (optional, for task checkpoints)
-
-**Note:** Both strategies keep active branch history **clean** - the only addition to user commits is the single `Entire-Checkpoint` trailer. Manual-commit never creates commits on the active branch (user creates them manually). Auto-commit creates commits but only adds the checkpoint trailer. All detailed session data (transcripts, prompts, context) is stored on the `entire/checkpoints/v1` orphan branch or shadow branches.
-
-#### Multi-Session Behavior
-
-**Concurrent Sessions:**
-- When a second session starts in the same directory while another has uncommitted checkpoints, a warning is shown
-- Both sessions can proceed - their checkpoints interleave on the same shadow branch
-- Each session's `RewindPoint` includes `SessionID` and `SessionPrompt` to help identify which checkpoint belongs to which session
-- On commit, all sessions are condensed together with archived sessions in numbered subfolders
-- Note: Different git worktrees have separate shadow branches (worktree-specific naming), so concurrent sessions in different worktrees do not conflict
-
-**Orphaned Shadow Branches:**
-- A shadow branch is "orphaned" if it exists but has no corresponding session state file
-- This can happen if the state file is manually deleted or lost
-- When a new session starts with an orphaned branch, the branch is automatically reset
-- If the existing session DOES have a state file (concurrent session in same directory), a `SessionIDConflictError` is returned
-
-**Shadow Branch Migration (Pull/Rebase):**
-- If user does stash → pull → apply (or rebase), HEAD changes but work isn't committed
-- The shadow branch would be orphaned at the old commit
-- Detection: base commit changed AND old shadow branch still exists (would be deleted if user committed)
-- Action: shadow branch is renamed from `entire/<old-hash>-<worktreeHash>` to `entire/<new-hash>-<worktreeHash>`
-- Session continues seamlessly with checkpoints preserved
+- `AllowsMainBranch() = true` - creates commits on active branch
 
 #### When Modifying Strategies
 - All strategies must implement the full `Strategy` interface
 - Register new strategies in `init()` using `Register()`
 - Test with `mise run test` - strategy tests are in `*_test.go` files
-- **Update this CLAUDE.md** when adding or modifying strategies to keep documentation current
+- **Update this OPENCODE.md** when adding or modifying strategies to keep documentation current
 
 # Important Notes
 
