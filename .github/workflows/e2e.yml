@@ -42,6 +42,19 @@ jobs:
           esac
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
+      - name: Configure Claude Code API key auth
+        if: matrix.agent == 'claude'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          mkdir -p "$HOME/.claude"
+          cat > "$HOME/.claude/.claude.json" << EOF
+          {
+            "primaryApiKey": "$ANTHROPIC_API_KEY",
+            "hasCompletedOnboarding": true
+          }
+          EOF
+
       - name: Run E2E Tests
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
