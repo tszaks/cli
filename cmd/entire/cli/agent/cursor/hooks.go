@@ -122,9 +122,9 @@ func (c *CursorAgent) InstallHooks(localDev bool, force bool) (int, error) {
 		cmdPrefix = "entire hooks cursor "
 	}
 
-	sessionStartCmd := cmdPrefix + "session-start"
-	sessionEndCmd := cmdPrefix + "session-end"
-	beforeSubmitPromptCmd := cmdPrefix + "before-submit-prompt"
+	sessionStartCmd := cmdPrefix + HookNameSessionStart
+	sessionEndCmd := cmdPrefix + HookNameSessionEnd
+	beforeSubmitPromptCmd := cmdPrefix + HookNameBeforeSubmitPrompt
 	stopCmd := cmdPrefix + HookNameStop
 	preCompactCmd := cmdPrefix + HookNamePreCompact
 	subagentStartCmd := cmdPrefix + HookNameSubagentStart

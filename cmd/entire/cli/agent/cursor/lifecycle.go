@@ -128,12 +128,13 @@ func (c *CursorAgent) parseSubagentStart(stdin io.Reader) (*agent.Event, error) 
 		return nil, nil //nolint:nilnil // nil event = no lifecycle action
 	}
 	return &agent.Event{
-		Type:       agent.SubagentStart,
-		SessionID:  raw.ConversationID,
-		SessionRef: raw.TranscriptPath,
-		ToolUseID:  raw.SubagentID,
-		// TODO ToolInput:  raw.Task,
-		Timestamp: time.Now(),
+		Type:            agent.SubagentStart,
+		SessionID:       raw.ConversationID,
+		SessionRef:      raw.TranscriptPath,
+		ToolUseID:       raw.SubagentID,
+		SubagentType:    raw.SubagentType,
+		TaskDescription: raw.Task,
+		Timestamp:       time.Now(),
 	}, nil
 }
 
@@ -146,15 +147,14 @@ func (c *CursorAgent) parseSubagentStop(stdin io.Reader) (*agent.Event, error) {
 		return nil, nil //nolint:nilnil // nil event = no lifecycle action
 	}
 	event := &agent.Event{
-		Type:       agent.SubagentEnd,
-		SessionID:  raw.ConversationID,
-		SessionRef: raw.TranscriptPath,
-		ToolUseID:  raw.SubagentID,
-		// TODO ToolInput:  raw.Task,
-		Timestamp: time.Now(),
-	}
-	if raw.SubagentID != "" {
-		event.SubagentID = raw.SubagentID
+		Type:            agent.SubagentEnd,
+		SessionID:       raw.ConversationID,
+		SessionRef:      raw.TranscriptPath,
+		ToolUseID:       raw.SubagentID,
+		SubagentType:    raw.SubagentType,
+		TaskDescription: raw.Task,
+		Timestamp:       time.Now(),
+		SubagentID:      raw.SubagentID,
 	}
 	return event, nil
 }

@@ -87,7 +87,13 @@ type Event struct {
 	SubagentID string
 
 	// ToolInput is the raw tool input JSON (for subagent type/description extraction).
+	// Used when either SubagentType or TaskDescription is not available
 	ToolInput json.RawMessage
+
+	// SubagentType is the kind of subagent (for SubagentStart/SubagentEnd events).
+	// Used with TaskDescription instead of ToolInput
+	SubagentType    string
+	TaskDescription string
 
 	// ResponseMessage is an optional message to display to the user via the agent.
 	ResponseMessage string

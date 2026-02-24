@@ -501,8 +501,10 @@ func handleLifecycleSubagentEnd(ag agent.Agent, event *agent.Event) error {
 		slog.String("subagent_id", event.SubagentID),
 	)
 
-	// Extract subagent type and description from tool input
-	subagentType, taskDescription := ParseSubagentTypeAndDescription(event.ToolInput)
+	if event.SubagentType == "" && event.TaskDescription == "" {
+		// Extract subagent type and description from tool input
+		event.SubagentType, event.TaskDescription = ParseSubagentTypeAndDescription(event.ToolInput)
+	}
 
 	// Determine subagent transcript path
 	transcriptDir := filepath.Dir(event.SessionRef)
@@ -603,8 +605,8 @@ func handleLifecycleSubagentEnd(ag agent.Agent, event *agent.Event) error {
 		CheckpointUUID:         checkpointUUID,
 		AuthorName:             author.Name,
 		AuthorEmail:            author.Email,
-		SubagentType:           subagentType,
-		TaskDescription:        taskDescription,
+		SubagentType:           event.SubagentType,
+		TaskDescription:        event.TaskDescription,
 		AgentType:              agentType,
 	}
 
