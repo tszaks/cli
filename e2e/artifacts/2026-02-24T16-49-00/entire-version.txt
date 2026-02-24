@@ -1,0 +1,3 @@
+Entire CLI v0.4.5-165-g00c8469a (00c8469a)
+Go version: go1.25.6
+OS/Arch: darwin/arm64
