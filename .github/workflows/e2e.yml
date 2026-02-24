@@ -44,18 +44,19 @@ jobs:
 
       - name: Warm up opencode (first-run initialization)
         if: matrix.agent == 'opencode'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          # opencode has a first-run DB migration and node_modules resolve
-          # that can race with test execution (upstream issue #6935).
-          # Retry --version until it succeeds to ensure initialization is done.
-          for i in 1 2 3 4 5; do
-            output=$(opencode --version 2>&1) && echo "$output" && break
-            if echo "$output" | grep -q "Cannot find package"; then
-              echo "Attempt $i: opencode first-run init in progress, retrying in 5s..."
-              sleep 5
+          # opencode has first-run DB migration + node_modules resolution
+          # that races with parallel test execution (upstream issue #6935).
+          # Run a trivial prompt to force full initialization before tests.
+          for i in 1 2 3; do
+            if opencode run --model anthropic/claude-haiku-4-5 "say hi" 2>&1; then
+              echo "opencode warmup complete"
+              break
             else
-              echo "Unexpected error: $output"
-              exit 1
+              echo "Attempt $i failed, retrying in 5s..."
+              sleep 5
             fi
           done
 
