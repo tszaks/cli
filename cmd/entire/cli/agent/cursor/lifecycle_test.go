@@ -110,12 +110,11 @@ func TestParseHookEvent_SubagentStart(t *testing.T) {
 	t.Parallel()
 
 	ag := &CursorAgent{}
-	toolInput := json.RawMessage(`{"description": "test task", "prompt": "do something"}`)
 	inputData := map[string]any{
 		"conversation_id": "main-session",
 		"transcript_path": "/tmp/main.jsonl",
-		"tool_use_id":     "toolu_abc123",
-		"tool_input":      toolInput,
+		"subagent_id":     "sub_abc123",
+		"task":            "do something",
 	}
 	inputBytes, marshalErr := json.Marshal(inputData)
 	if marshalErr != nil {
@@ -136,11 +135,8 @@ func TestParseHookEvent_SubagentStart(t *testing.T) {
 	if event.SessionID != "main-session" {
 		t.Errorf("expected session_id 'main-session', got %q", event.SessionID)
 	}
-	if event.ToolUseID != "toolu_abc123" {
-		t.Errorf("expected tool_use_id 'toolu_abc123', got %q", event.ToolUseID)
-	}
-	if event.ToolInput == nil {
-		t.Error("expected tool_input to be set")
+	if event.ToolUseID != "sub_abc123" {
+		t.Errorf("expected tool_use_id 'sub_abc123', got %q", event.ToolUseID)
 	}
 }
 
@@ -151,8 +147,8 @@ func TestParseHookEvent_SubagentEnd(t *testing.T) {
 	inputData := map[string]any{
 		"conversation_id": "main-session",
 		"transcript_path": "/tmp/main.jsonl",
-		"tool_use_id":     "toolu_xyz789",
-		"tool_input":      json.RawMessage(`{"prompt": "task done"}`),
+		"subagent_id":     "sub_xyz789",
+		"task":            "task done",
 	}
 	inputBytes, marshalErr := json.Marshal(inputData)
 	if marshalErr != nil {
@@ -170,8 +166,8 @@ func TestParseHookEvent_SubagentEnd(t *testing.T) {
 	if event.Type != agent.SubagentEnd {
 		t.Errorf("expected event type %v, got %v", agent.SubagentEnd, event.Type)
 	}
-	if event.ToolUseID != "toolu_xyz789" {
-		t.Errorf("expected tool_use_id 'toolu_xyz789', got %q", event.ToolUseID)
+	if event.ToolUseID != "sub_xyz789" {
+		t.Errorf("expected tool_use_id 'sub_xyz789', got %q", event.ToolUseID)
 	}
 }
 
@@ -239,7 +235,7 @@ func TestParseHookEvent_ConversationIDFallback(t *testing.T) {
 
 	t.Run("conversation_id fallback for subagent start", func(t *testing.T) {
 		t.Parallel()
-		input := `{"conversation_id": "conv-sub", "transcript_path": "/tmp/t.jsonl", "tool_use_id": "t1", "tool_input": {}}`
+		input := `{"conversation_id": "conv-sub", "transcript_path": "/tmp/t.jsonl", "subagent_id": "s1", "task": "do something"}`
 
 		event, err := ag.ParseHookEvent(HookNameSubagentStart, strings.NewReader(input))
 		if err != nil {
@@ -252,7 +248,7 @@ func TestParseHookEvent_ConversationIDFallback(t *testing.T) {
 
 	t.Run("conversation_id fallback for subagent end", func(t *testing.T) {
 		t.Parallel()
-		input := `{"conversation_id": "conv-end", "transcript_path": "/tmp/t.jsonl", "tool_use_id": "t2", "tool_input": {}, "tool_response": {}}`
+		input := `{"conversation_id": "conv-end", "transcript_path": "/tmp/t.jsonl", "subagent_id": "s2", "task": "do something"}`
 
 		event, err := ag.ParseHookEvent(HookNameSubagentStop, strings.NewReader(input))
 		if err != nil {
@@ -312,12 +308,12 @@ func TestParseHookEvent_AllHookTypes(t *testing.T) {
 		{
 			hookName:      HookNameSubagentStart,
 			expectedType:  agent.SubagentStart,
-			inputTemplate: `{"session_id": "s5", "transcript_path": "/t", "tool_use_id": "t1", "tool_input": {}}`,
+			inputTemplate: `{"conversation_id": "s5", "transcript_path": "/t", "subagent_id": "sub1", "task": "do something"}`,
 		},
 		{
 			hookName:      HookNameSubagentStop,
 			expectedType:  agent.SubagentEnd,
-			inputTemplate: `{"session_id": "s6", "transcript_path": "/t", "tool_use_id": "t2", "tool_input": {}, "tool_response": {}}`,
+			inputTemplate: `{"conversation_id": "s6", "transcript_path": "/t", "subagent_id": "sub2", "task": "do something"}`,
 		},
 	}
 

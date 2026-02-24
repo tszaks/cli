@@ -17,8 +17,8 @@ func TestInstallHooks_FreshInstall(t *testing.T) {
 		t.Fatalf("InstallHooks() error = %v", err)
 	}
 
-	if count != 6 {
-		t.Errorf("InstallHooks() count = %d, want 6", count)
+	if count != 7 {
+		t.Errorf("InstallHooks() count = %d, want 7", count)
 	}
 
 	hooksFile := readHooksFile(t, tempDir)
@@ -36,11 +36,12 @@ func TestInstallHooks_FreshInstall(t *testing.T) {
 	if len(hooksFile.Hooks.Stop) != 1 {
 		t.Errorf("Stop hooks = %d, want 1", len(hooksFile.Hooks.Stop))
 	}
-	// SubagentStart has 1 (Task)
+	if len(hooksFile.Hooks.PreCompact) != 1 {
+		t.Errorf("PreCompact hooks = %d, want 1", len(hooksFile.Hooks.PreCompact))
+	}
 	if len(hooksFile.Hooks.SubagentStart) != 1 {
 		t.Errorf("SubagentStart hooks = %d, want 1", len(hooksFile.Hooks.SubagentStart))
 	}
-	// SubagentStop has 1 (Task)
 	if len(hooksFile.Hooks.SubagentStop) != 1 {
 		t.Errorf("SubagentStop hooks = %d, want 1", len(hooksFile.Hooks.SubagentStop))
 	}
@@ -54,10 +55,9 @@ func TestInstallHooks_FreshInstall(t *testing.T) {
 	assertEntryCommand(t, hooksFile.Hooks.Stop, "entire hooks cursor stop")
 	assertEntryCommand(t, hooksFile.Hooks.SessionStart, "entire hooks cursor session-start")
 	assertEntryCommand(t, hooksFile.Hooks.BeforeSubmitPrompt, "entire hooks cursor before-submit-prompt")
-
-	// Verify matchers on tool hooks
-	assertEntryWithMatcher(t, hooksFile.Hooks.SubagentStart, "Subagent", "entire hooks cursor pre-tool")
-	assertEntryWithMatcher(t, hooksFile.Hooks.SubagentStop, "Subagent", "entire hooks cursor post-tool")
+	assertEntryCommand(t, hooksFile.Hooks.PreCompact, "entire hooks cursor pre-compact")
+	assertEntryCommand(t, hooksFile.Hooks.SubagentStart, "entire hooks cursor subagent-start")
+	assertEntryCommand(t, hooksFile.Hooks.SubagentStop, "entire hooks cursor subagent-stop")
 }
 
 func TestInstallHooks_Idempotent(t *testing.T) {
@@ -71,8 +71,8 @@ func TestInstallHooks_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first InstallHooks() error = %v", err)
 	}
-	if count1 != 6 {
-		t.Errorf("first InstallHooks() count = %d, want 6", count1)
+	if count1 != 7 {
+		t.Errorf("first InstallHooks() count = %d, want 7", count1)
 	}
 
 	// Second install
@@ -173,8 +173,8 @@ func TestInstallHooks_ForceReinstall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("force InstallHooks() error = %v", err)
 	}
-	if count != 6 {
-		t.Errorf("force InstallHooks() count = %d, want 6", count)
+	if count != 7 {
+		t.Errorf("force InstallHooks() count = %d, want 7", count)
 	}
 
 	// Verify no duplicates
@@ -216,12 +216,12 @@ func TestInstallHooks_PreservesExistingHooks(t *testing.T) {
 	assertEntryCommand(t, hooksFile.Hooks.Stop, "echo user hook")
 	assertEntryCommand(t, hooksFile.Hooks.Stop, "entire hooks cursor stop")
 
-	// SubagentStop should have user Write hook + Task hook + TodoWrite hook
+	// SubagentStop should have user Write hook + Entire hook
 	if len(hooksFile.Hooks.SubagentStop) != 2 {
-		t.Errorf("SubagentStop hooks = %d, want 2 (user Write + Task)", len(hooksFile.Hooks.SubagentStop))
+		t.Errorf("SubagentStop hooks = %d, want 2 (user Write + Entire)", len(hooksFile.Hooks.SubagentStop))
 	}
 	assertEntryWithMatcher(t, hooksFile.Hooks.SubagentStop, "Write", "echo file written")
-	assertEntryWithMatcher(t, hooksFile.Hooks.SubagentStop, "Subagent", "entire hooks cursor post-tool")
+	assertEntryCommand(t, hooksFile.Hooks.SubagentStop, "entire hooks cursor subagent-stop")
 }
 
 func TestInstallHooks_LocalDev(t *testing.T) {
@@ -265,8 +265,8 @@ func TestInstallHooks_PreservesUnknownFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InstallHooks() error = %v", err)
 	}
-	if count != 6 {
-		t.Errorf("InstallHooks() count = %d, want 6", count)
+	if count != 7 {
+		t.Errorf("InstallHooks() count = %d, want 7", count)
 	}
 
 	// Read the raw JSON to verify unknown fields are preserved
