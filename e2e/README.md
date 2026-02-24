@@ -57,6 +57,8 @@ e2e/
 
 Artifacts are captured to `e2e/artifacts/` on every run (git-log, git-tree, console.log, checkpoint metadata, entire logs). Set `E2E_KEEP_REPOS=1` to preserve the temp repo — a symlink appears in the artifact dir pointing to it.
 
+Use the `debug-e2e` skill (`.claude/skills/debug-e2e/`) for a structured workflow when investigating failures.
+
 ### Reading artifacts
 
 - `console.log` — full operation transcript including agent stdout/stderr
