@@ -10,7 +10,7 @@ on:
 # Cancel previous runs when new one starts
 concurrency:
   group: e2e-tests
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   e2e-tests:
