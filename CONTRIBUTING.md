@@ -339,7 +339,7 @@ Join the Entire community:
 - [README](README.md) - Setup and usage documentation
 - [CLAUDE.md](CLAUDE.md) - Architecture and development reference (Claude Code)
 - [GEMINI.md](GEMINI.md) - Architecture and development reference (Gemini CLI)
-- [OPENCODE.md](OPENCODE.md) - Architecture and development reference (OpenCode)
+- [AGENTS.md](AGENTS.md) - Architecture and development reference (OpenCode)
 - [Code of Conduct](CODE_OF_CONDUCT.md) - Community guidelines
 - [Security Policy](SECURITY.md) - Reporting security vulnerabilities
 

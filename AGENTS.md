@@ -46,7 +46,7 @@ Integration tests use the `//go:build integration` build tag and are located in 
 
 ### Running E2E Tests (Only When Explicitly Requested)
 
-**IMPORTANT: Do NOT run E2E tests proactively.** E2E tests make real API calls to AI agents, which consume tokens and cost money. Only run them when the user explicitly asks for E2E testing.
+**IMPORTANT: Do NOT run E2E tests proactively.** E2E tests make real API calls through AI agents, which consume tokens and cost money. Only run them when the user explicitly asks for E2E testing.
 
 ```bash
 # Requires the agent to be installed and authenticated
@@ -346,7 +346,7 @@ All strategies implement:
 - All strategies must implement the full `Strategy` interface
 - Register new strategies in `init()` using `Register()`
 - Test with `mise run test` - strategy tests are in `*_test.go` files
-- **Update this OPENCODE.md** when adding or modifying strategies to keep documentation current
+- **Update this AGENTS.md** when adding or modifying strategies to keep documentation current
 
 # Important Notes
 

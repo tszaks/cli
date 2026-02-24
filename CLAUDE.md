@@ -46,7 +46,7 @@ Integration tests use the `//go:build integration` build tag and are located in 
 
 ### Running E2E Tests (Only When Explicitly Requested)
 
-**IMPORTANT: Do NOT run E2E tests proactively.** E2E tests make real API calls to Claude Code, which consume tokens and cost money. Only run them when the user explicitly asks for E2E testing.
+**IMPORTANT: Do NOT run E2E tests proactively.** E2E tests make real API calls through AI agents, which consume tokens and cost money. Only run them when the user explicitly asks for E2E testing.
 
 ```bash
 # Requires Claude Code to be installed and authenticated
