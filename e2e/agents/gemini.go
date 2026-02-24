@@ -72,14 +72,14 @@ func (g *Gemini) StartSession(ctx context.Context, dir string) (Session, error) 
 		return nil, err
 	}
 
-	// Dismiss startup dialogs (workspace trust, etc.)
-	for range 5 {
-		content, err := s.WaitFor(`(Type your message|trust)`, 30*time.Second)
+	// Dismiss startup dialogs (auth, workspace trust, etc.)
+	for range 10 {
+		content, err := s.WaitFor(`(Type your message|trust|Enter to select|Enter to confirm)`, 30*time.Second)
 		if err != nil {
 			_ = s.Close()
 			return nil, fmt.Errorf("waiting for startup prompt: %w", err)
 		}
-		if !strings.Contains(content, "trust") {
+		if strings.Contains(content, "Type your message") {
 			break
 		}
 		_ = s.SendKeys("Enter")
