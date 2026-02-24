@@ -61,6 +61,20 @@ jobs:
             fi
           done
 
+      - name: Configure Gemini CLI auth
+        if: matrix.agent == 'gemini'
+        run: |
+          mkdir -p "$HOME/.gemini"
+          cat > "$HOME/.gemini/settings.json" << 'EOF'
+          {
+            "security": {
+              "auth": {
+                "selectedType": "gemini-api-key"
+              }
+            }
+          }
+          EOF
+
       - name: Configure Claude Code API key auth
         if: matrix.agent == 'claude'
         env:
