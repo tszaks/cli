@@ -57,6 +57,8 @@ func SetupRepo(t *testing.T, agent agents.Agent) *RepoState {
 	}
 
 	Git(t, dir, "init")
+	Git(t, dir, "config", "user.name", "E2E Test")
+	Git(t, dir, "config", "user.email", "e2e@test.local")
 	Git(t, dir, "commit", "--allow-empty", "-m", "initial commit")
 
 	entire.Enable(t, dir, agent.EntireAgent(), "")
