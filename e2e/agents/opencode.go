@@ -90,17 +90,30 @@ func (a *openCodeAgent) RunPrompt(ctx context.Context, dir string, prompt string
 }
 
 func (a *openCodeAgent) StartSession(ctx context.Context, dir string) (Session, error) {
-	name := fmt.Sprintf("opencode-test-%d", time.Now().UnixNano())
-	s, err := NewTmuxSession(name, dir, nil, "env", "ENTIRE_TEST_TTY=0", "opencode", "--model", a.model)
-	if err != nil {
-		return nil, err
-	}
+	// opencode's TUI occasionally fails to render on CI (empty pane).
+	// Retry once if the first attempt produces no output at all.
+	var s *TmuxSession
+	var lastErr error
+	for attempt := range 2 {
+		name := fmt.Sprintf("opencode-test-%d", time.Now().UnixNano())
+		var err error
+		s, err = NewTmuxSession(name, dir, nil, "env", "ENTIRE_TEST_TTY=0", "opencode", "--model", a.model)
+		if err != nil {
+			return nil, err
+		}
 
-	// Wait for TUI to be ready (input area with placeholder text).
-	if _, err := s.WaitFor(`Ask anything`, 15*time.Second); err != nil {
-		return s, fmt.Errorf("waiting for startup: %w", err)
+		// Wait for TUI to be ready (input area with placeholder text).
+		if _, err := s.WaitFor(`Ask anything`, 15*time.Second); err != nil {
+			content := s.Capture()
+			_ = s.Close()
+			if strings.TrimSpace(content) == "" && attempt == 0 {
+				lastErr = err
+				continue
+			}
+			return s, fmt.Errorf("waiting for startup: %w", err)
+		}
+		s.stableAtSend = ""
+		return s, nil
 	}
-	s.stableAtSend = ""
-
-	return s, nil
+	return nil, fmt.Errorf("opencode TUI failed to start after retry: %w", lastErr)
 }
