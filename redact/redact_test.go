@@ -408,10 +408,10 @@ func TestJSONLContent_PathFieldsPreserved(t *testing.T) {
 
 	// Structural fields should be preserved
 	mustContain := []string{
-		"ses_37273a1fdffegpYbwUTqEkPsQ0",     // session_id (skipped by *id rule)
-		"/private/var/folders",                 // file_path (skipped by path rule)
-		"controller.go",                       // filename in file_path
-		"/tmp/TestE2E_ExistingFiles",          // directory (skipped by path rule)
+		"ses_37273a1fdffegpYbwUTqEkPsQ0", // session_id (skipped by *id rule)
+		"/private/var/folders",           // file_path (skipped by path rule)
+		"controller.go",                  // filename in file_path
+		"/tmp/TestE2E_ExistingFiles",     // directory (skipped by path rule)
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(result, s) {
