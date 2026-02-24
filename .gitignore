@@ -42,6 +42,9 @@ go.work.sum
 completions
 
 
+# E2E test artifacts
+e2e/artifacts/
+
 # worktrees
 .worktrees/
 test-gemini.txt
