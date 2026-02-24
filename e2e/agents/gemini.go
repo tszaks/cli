@@ -74,7 +74,8 @@ func (g *Gemini) StartSession(ctx context.Context, dir string) (Session, error) 
 	for range 5 {
 		content, err := s.WaitFor(`(Type your message|trust)`, 15*time.Second)
 		if err != nil {
-			return s, fmt.Errorf("waiting for startup prompt: %w", err)
+			_ = s.Close()
+			return nil, fmt.Errorf("waiting for startup prompt: %w", err)
 		}
 		if !strings.Contains(content, "trust") {
 			break
