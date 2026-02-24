@@ -68,6 +68,29 @@ func (c *Claude) EntireAgent() string        { return "claude-code" }
 func (c *Claude) PromptPattern() string      { return `❯` }
 func (c *Claude) TimeoutMultiplier() float64 { return 1.0 }
 
+func (c *Claude) Bootstrap() error {
+	// On CI, write a config file so Claude Code uses the API key from the
+	// environment instead of trying OAuth/Keychain.
+	if os.Getenv("CI") == "" {
+		return nil
+	}
+	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+	if apiKey == "" {
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("get home dir: %w", err)
+	}
+	dir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dir, err)
+	}
+	config := fmt.Sprintf(`{"primaryApiKey":%q,"hasCompletedOnboarding":true}`, apiKey)
+	path := filepath.Join(dir, ".claude.json")
+	return os.WriteFile(path, []byte(config), 0o644)
+}
+
 func (c *Claude) RunPrompt(ctx context.Context, dir string, prompt string, opts ...Option) (Output, error) {
 	cfg := &runConfig{Model: "haiku"}
 	for _, o := range opts {

@@ -34,6 +34,29 @@ func (a *openCodeAgent) EntireAgent() string        { return "opencode" }
 func (a *openCodeAgent) PromptPattern() string      { return `(Ask anything|▣)` }
 func (a *openCodeAgent) TimeoutMultiplier() float64 { return 2.0 }
 
+func (a *openCodeAgent) Bootstrap() error {
+	// opencode has first-run DB migration + node_modules resolution that
+	// races with parallel test execution (upstream issue #6935).
+	// Run a trivial prompt to force full initialization before tests.
+	for i := range 3 {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		cmd := exec.CommandContext(ctx, "opencode", "run", "--model", a.model, "say hi")
+		cmd.Env = os.Environ()
+		out, err := cmd.CombinedOutput()
+		cancel()
+		if err == nil {
+			return nil
+		}
+		if i < 2 {
+			fmt.Fprintf(os.Stderr, "opencode warmup attempt %d failed: %s\n%s\n", i+1, err, out)
+			time.Sleep(5 * time.Second)
+		}
+	}
+	// Non-fatal: warmup failure shouldn't block tests entirely.
+	fmt.Fprintln(os.Stderr, "opencode warmup failed after 3 attempts, proceeding anyway")
+	return nil
+}
+
 func (a *openCodeAgent) RunPrompt(ctx context.Context, dir string, prompt string, opts ...Option) (Output, error) {
 	cfg := &runConfig{}
 	for _, o := range opts {

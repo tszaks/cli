@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -25,6 +26,20 @@ func (g *Gemini) Name() string               { return "gemini-cli" }
 func (g *Gemini) EntireAgent() string        { return "gemini" }
 func (g *Gemini) PromptPattern() string      { return `Type your message` }
 func (g *Gemini) TimeoutMultiplier() float64 { return 2.5 }
+
+func (g *Gemini) Bootstrap() error {
+	// Pre-configure auth so gemini doesn't show the onboarding dialog.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("get home dir: %w", err)
+	}
+	dir := filepath.Join(home, ".gemini")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dir, err)
+	}
+	config := `{"security":{"auth":{"selectedType":"gemini-api-key"}}}`
+	return os.WriteFile(filepath.Join(dir, "settings.json"), []byte(config), 0o644)
+}
 
 func (g *Gemini) RunPrompt(ctx context.Context, dir string, prompt string, opts ...Option) (Output, error) {
 	cfg := &runConfig{Model: "gemini-3-flash-preview"}

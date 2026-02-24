@@ -35,6 +35,9 @@ type Agent interface {
 	TimeoutMultiplier() float64
 	RunPrompt(ctx context.Context, dir string, prompt string, opts ...Option) (Output, error)
 	StartSession(ctx context.Context, dir string) (Session, error)
+	// Bootstrap performs one-time CI setup (auth config, warmup, etc.).
+	// Called before any tests run. Implementations should be idempotent.
+	Bootstrap() error
 }
 
 type Session interface {
