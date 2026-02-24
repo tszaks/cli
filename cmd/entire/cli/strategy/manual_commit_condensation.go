@@ -221,7 +221,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 					slog.String("error", sliceErr.Error()))
 			}
 			scopedTranscript = scoped
-		case agent.AgentTypeClaudeCode, agent.AgentTypeUnknown:
+		case agent.AgentTypeClaudeCode, agent.AgentTypeCursor, agent.AgentTypeUnknown:
 			scopedTranscript = transcript.SliceFromLine(sessionData.Transcript, state.CheckpointTranscriptStart)
 		}
 		if len(scopedTranscript) > 0 {

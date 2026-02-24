@@ -77,11 +77,11 @@ type preCompactHookInputRaw struct {
 
 	// hook specific
 	Trigger             string      `json:"trigger"`               // "auto" | "manual",
-	ContextUsagePercent json.Number `json:"context_usage_percent"` //: 85,
+	ContextUsagePercent json.Number `json:"context_usage_percent"` // : 85,
 	ContextTokens       json.Number `json:"context_tokens"`        // 120000,
-	ContextWindowSize   json.Number `json:"context_window_size"`   //: 128000,
+	ContextWindowSize   json.Number `json:"context_window_size"`   // : 128000,
 	MessageCount        json.Number `json:"message_count"`         // 45,
-	MessagesToCompact   json.Number `json:"messages_to_compact"`   //: 30,
+	MessagesToCompact   json.Number `json:"messages_to_compact"`   // : 30,
 	IsFirstCompaction   bool        `json:"is_first_compaction"`   // true | false
 }
 
@@ -98,7 +98,7 @@ type subagentStartHookInputRaw struct {
 	TranscriptPath string   `json:"transcript_path"`
 
 	// hook specific
-	SubagentId           string `json:"subagent_id"`
+	SubagentID           string `json:"subagent_id"`
 	SubagentType         string `json:"subagent_type"`
 	SubagentModel        string `json:"subagent_model"`
 	Task                 string `json:"task"`
@@ -120,7 +120,7 @@ type subagentStopHookInputRaw struct {
 	TranscriptPath string   `json:"transcript_path"`
 
 	// hook specific
-	SubagentId           string      `json:"subagent_id"`
+	SubagentID           string      `json:"subagent_id"`
 	SubagentType         string      `json:"subagent_type"`
 	Status               string      `json:"status"`
 	Duration             json.Number `json:"duration_ms"`
