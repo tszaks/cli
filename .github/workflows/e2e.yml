@@ -42,6 +42,23 @@ jobs:
           esac
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
+      - name: Warm up opencode (first-run initialization)
+        if: matrix.agent == 'opencode'
+        run: |
+          # opencode has a first-run DB migration and node_modules resolve
+          # that can race with test execution (upstream issue #6935).
+          # Retry --version until it succeeds to ensure initialization is done.
+          for i in 1 2 3 4 5; do
+            output=$(opencode --version 2>&1) && echo "$output" && break
+            if echo "$output" | grep -q "Cannot find package"; then
+              echo "Attempt $i: opencode first-run init in progress, retrying in 5s..."
+              sleep 5
+            else
+              echo "Unexpected error: $output"
+              exit 1
+            fi
+          done
+
       - name: Configure Claude Code API key auth
         if: matrix.agent == 'claude'
         env:
