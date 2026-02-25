@@ -222,7 +222,7 @@ func TestResumeFromCurrentBranch_WithEntireCheckpointTrailer(t *testing.T) {
 
 	// Set up the auto-commit strategy and create checkpoint metadata on entire/checkpoints/v1 branch
 	strat := strategy.NewAutoCommitStrategy()
-	if err := strat.EnsureSetup(); err != nil {
+	if err := strat.EnsureSetup(context.Background()); err != nil {
 		t.Fatalf("Failed to ensure setup: %v", err)
 	}
 

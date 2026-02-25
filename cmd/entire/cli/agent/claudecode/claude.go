@@ -136,7 +136,7 @@ func (c *ClaudeCodeAgent) ReadSession(input *agent.HookInput) (*agent.AgentSessi
 // WriteSession writes a session to Claude's storage (JSONL transcript file).
 // Uses the NativeData field which contains raw JSONL bytes.
 // The session must have been created by Claude Code (AgentName check).
-func (c *ClaudeCodeAgent) WriteSession(session *agent.AgentSession) error {
+func (c *ClaudeCodeAgent) WriteSession(_ context.Context, session *agent.AgentSession) error {
 	if session == nil {
 		return errors.New("session is nil")
 	}

@@ -30,9 +30,9 @@ type ManualCommitStrategy struct {
 
 // getStateStore returns the session state store, initializing it lazily if needed.
 // Thread-safe via sync.Once.
-func (s *ManualCommitStrategy) getStateStore(ctx context.Context) (*session.StateStore, error) {
+func (s *ManualCommitStrategy) getStateStore(_ context.Context) (*session.StateStore, error) {
 	s.stateStoreOnce.Do(func() {
-		store, err := session.NewStateStore(ctx)
+		store, err := session.NewStateStore(context.Background()) //nolint:contextcheck // sync.Once must use background context to avoid caching errors from a cancelled caller context
 		if err != nil {
 			s.stateStoreErr = fmt.Errorf("failed to create state store: %w", err)
 			return
@@ -97,13 +97,13 @@ func (s *ManualCommitStrategy) ValidateRepository() error {
 }
 
 // EnsureSetup ensures the strategy is properly set up.
-func (s *ManualCommitStrategy) EnsureSetup() error {
-	if err := EnsureEntireGitignore(context.Background()); err != nil { //nolint:contextcheck // EnsureSetup is called at initialization, no ctx available
+func (s *ManualCommitStrategy) EnsureSetup(ctx context.Context) error {
+	if err := EnsureEntireGitignore(ctx); err != nil {
 		return err
 	}
 
 	// Ensure the entire/checkpoints/v1 orphan branch exists for permanent session storage
-	repo, err := OpenRepository(context.Background())
+	repo, err := OpenRepository(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
 	}
@@ -112,8 +112,8 @@ func (s *ManualCommitStrategy) EnsureSetup() error {
 	}
 
 	// Install generic hooks (they delegate to strategy at runtime)
-	if !IsGitHookInstalled(context.Background()) {
-		if _, err := InstallGitHook(context.Background(), true); err != nil {
+	if !IsGitHookInstalled(ctx) {
+		if _, err := InstallGitHook(ctx, true); err != nil {
 			return fmt.Errorf("failed to install git hooks: %w", err)
 		}
 	}

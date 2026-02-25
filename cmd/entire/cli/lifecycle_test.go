@@ -66,7 +66,7 @@ func (m *mockLifecycleAgent) ReadSession(_ *agent.HookInput) (*agent.AgentSessio
 	return nil, nil
 }
 
-func (m *mockLifecycleAgent) WriteSession(_ *agent.AgentSession) error {
+func (m *mockLifecycleAgent) WriteSession(_ context.Context, _ *agent.AgentSession) error {
 	return nil
 }
 

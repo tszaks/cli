@@ -372,7 +372,7 @@ type Strategy interface {
 	// EnsureSetup ensures the strategy's required setup is in place,
 	// installing any missing pieces (git hooks, gitignore entries, etc.).
 	// Returns nil if setup is complete or was successfully installed.
-	EnsureSetup() error
+	EnsureSetup(ctx context.Context) error
 
 	// NOTE: ListSessions and GetSession are standalone functions in session.go.
 	// They read from entire/checkpoints/v1 and merge with SessionSource if implemented.

@@ -28,8 +28,8 @@ type EntireSettings = settings.EntireSettings
 // then applies any overrides from .entire/settings.local.json if it exists.
 // Returns default settings if neither file exists.
 // Works correctly from any subdirectory within the repository.
-func LoadEntireSettings() (*settings.EntireSettings, error) {
-	s, err := settings.Load(context.TODO()) //nolint:contextcheck // Convenience wrapper without ctx; callers can use settings.Load(ctx) directly
+func LoadEntireSettings(ctx context.Context) (*settings.EntireSettings, error) {
+	s, err := settings.Load(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("loading settings: %w", err)
 	}
@@ -54,8 +54,8 @@ func SaveEntireSettingsLocal(ctx context.Context, s *settings.EntireSettings) er
 
 // IsEnabled returns whether Entire is currently enabled.
 // Returns true by default if settings cannot be loaded.
-func IsEnabled() (bool, error) {
-	s, err := settings.Load(context.TODO()) //nolint:contextcheck // Convenience wrapper without ctx
+func IsEnabled(ctx context.Context) (bool, error) {
+	s, err := settings.Load(ctx)
 	if err != nil {
 		return true, err //nolint:wrapcheck // already present in codebase
 	}
@@ -66,11 +66,11 @@ func IsEnabled() (bool, error) {
 // Falls back to default if the configured strategy is not found.
 //
 
-func GetStrategy() strategy.Strategy {
-	s, err := settings.Load(context.TODO()) //nolint:contextcheck // Called from many places without ctx; future work to thread ctx
+func GetStrategy(ctx context.Context) strategy.Strategy {
+	s, err := settings.Load(ctx)
 	if err != nil {
 		// Fall back to default on error
-		logging.Info(context.TODO(), "falling back to default strategy - failed to load settings",
+		logging.Info(ctx, "falling back to default strategy - failed to load settings",
 			slog.String("error", err.Error()))
 		return strategy.Default()
 	}
@@ -78,7 +78,7 @@ func GetStrategy() strategy.Strategy {
 	strat, err := strategy.Get(s.Strategy)
 	if err != nil {
 		// Fall back to default if strategy not found
-		logging.Info(context.TODO(), "falling back to default strategy - configured strategy not found",
+		logging.Info(ctx, "falling back to default strategy - configured strategy not found",
 			slog.String("configured", s.Strategy),
 			slog.String("error", err.Error()))
 		return strategy.Default()

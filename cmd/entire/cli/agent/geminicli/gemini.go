@@ -154,7 +154,7 @@ func (g *GeminiCLIAgent) ReadSession(input *agent.HookInput) (*agent.AgentSessio
 
 // WriteSession writes a session to Gemini's storage (JSON transcript file).
 // Uses the NativeData field which contains raw JSON bytes.
-func (g *GeminiCLIAgent) WriteSession(session *agent.AgentSession) error {
+func (g *GeminiCLIAgent) WriteSession(_ context.Context, session *agent.AgentSession) error {
 	if session == nil {
 		return errors.New("session is nil")
 	}

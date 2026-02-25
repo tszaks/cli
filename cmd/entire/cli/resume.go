@@ -405,7 +405,7 @@ func resumeSession(ctx context.Context, sessionID string, checkpointID id.Checkp
 	}
 
 	// Get strategy and restore sessions using full checkpoint data
-	strat := GetStrategy()
+	strat := GetStrategy(ctx)
 
 	// Use RestoreLogsOnly via LogsOnlyRestorer interface for multi-session support
 	if restorer, ok := strat.(strategy.LogsOnlyRestorer); ok {
@@ -554,7 +554,7 @@ func resumeSingleSession(ctx context.Context, ag agent.Agent, sessionID string, 
 	}
 
 	// Write the session using the agent's WriteSession method
-	if err := ag.WriteSession(agentSession); err != nil {
+	if err := ag.WriteSession(ctx, agentSession); err != nil {
 		logging.Error(ctx, "resume session failed during write",
 			slog.String("checkpoint_id", checkpointID.String()),
 			slog.String("session_id", sessionID),

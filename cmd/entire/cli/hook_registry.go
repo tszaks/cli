@@ -99,7 +99,7 @@ func newAgentHookVerbCmdWithLogging(agentName agent.AgentName, hookName string) 
 			}
 
 			// Skip if Entire is not enabled
-			enabled, err := IsEnabled()
+			enabled, err := IsEnabled(cmd.Context())
 			if err == nil && !enabled {
 				return nil
 			}
@@ -110,7 +110,7 @@ func newAgentHookVerbCmdWithLogging(agentName agent.AgentName, hookName string) 
 			ctx := logging.WithAgent(logging.WithComponent(cmd.Context(), "hooks"), agentName)
 
 			// Get strategy name for logging
-			strategyName := GetStrategy().Name()
+			strategyName := GetStrategy(ctx).Name()
 
 			hookType := getHookType(hookName)
 

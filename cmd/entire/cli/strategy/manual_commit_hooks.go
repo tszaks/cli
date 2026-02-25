@@ -257,7 +257,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 
 	// Handle amend (source="commit") separately: preserve or restore trailer
 	if source == "commit" {
-		return s.handleAmendCommitMsg(ctx, logCtx, commitMsgFile)
+		return s.handleAmendCommitMsg(ctx, commitMsgFile)
 	}
 
 	repo, err := OpenRepository(ctx)
@@ -390,7 +390,8 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 
 // handleAmendCommitMsg handles the prepare-commit-msg hook for amend operations
 // (source="commit"). It preserves existing trailers or restores from LastCheckpointID.
-func (s *ManualCommitStrategy) handleAmendCommitMsg(ctx context.Context, logCtx context.Context, commitMsgFile string) error {
+func (s *ManualCommitStrategy) handleAmendCommitMsg(ctx context.Context, commitMsgFile string) error {
+	logCtx := logging.WithComponent(ctx, "checkpoint")
 	// Read current commit message
 	content, err := os.ReadFile(commitMsgFile) //nolint:gosec // commitMsgFile is provided by git hook
 	if err != nil {
@@ -486,7 +487,6 @@ func (s *ManualCommitStrategy) handleAmendCommitMsg(ctx context.Context, logCtx 
 type postCommitActionHandler struct {
 	s                      *ManualCommitStrategy
 	ctx                    context.Context
-	logCtx                 context.Context
 	repo                   *git.Repository
 	checkpointID           id.CheckpointID
 	head                   *plumbing.Reference
@@ -503,9 +503,10 @@ type postCommitActionHandler struct {
 }
 
 func (h *postCommitActionHandler) HandleCondense(state *session.State) error {
+	logCtx := logging.WithComponent(h.ctx, "checkpoint")
 	shouldCondense := h.shouldCondenseWithOverlapCheck(state.Phase.IsActive())
 
-	logging.Debug(h.logCtx, "post-commit: HandleCondense decision",
+	logging.Debug(logCtx, "post-commit: HandleCondense decision",
 		slog.String("session_id", state.SessionID),
 		slog.String("phase", string(state.Phase)),
 		slog.Bool("has_new", h.hasNew),
@@ -514,17 +515,18 @@ func (h *postCommitActionHandler) HandleCondense(state *session.State) error {
 	)
 
 	if shouldCondense {
-		h.condensed = h.s.condenseAndUpdateState(h.ctx, h.logCtx, h.repo, h.checkpointID, state, h.head, h.shadowBranchName, h.shadowBranchesToDelete, h.committedFileSet)
+		h.condensed = h.s.condenseAndUpdateState(h.ctx, h.repo, h.checkpointID, state, h.head, h.shadowBranchName, h.shadowBranchesToDelete, h.committedFileSet)
 	} else {
-		h.s.updateBaseCommitIfChanged(h.logCtx, state, h.newHead)
+		h.s.updateBaseCommitIfChanged(h.ctx, state, h.newHead)
 	}
 	return nil
 }
 
 func (h *postCommitActionHandler) HandleCondenseIfFilesTouched(state *session.State) error {
+	logCtx := logging.WithComponent(h.ctx, "checkpoint")
 	shouldCondense := len(state.FilesTouched) > 0 && h.shouldCondenseWithOverlapCheck(state.Phase.IsActive())
 
-	logging.Debug(h.logCtx, "post-commit: HandleCondenseIfFilesTouched decision",
+	logging.Debug(logCtx, "post-commit: HandleCondenseIfFilesTouched decision",
 		slog.String("session_id", state.SessionID),
 		slog.String("phase", string(state.Phase)),
 		slog.Bool("has_new", h.hasNew),
@@ -534,9 +536,9 @@ func (h *postCommitActionHandler) HandleCondenseIfFilesTouched(state *session.St
 	)
 
 	if shouldCondense {
-		h.condensed = h.s.condenseAndUpdateState(h.ctx, h.logCtx, h.repo, h.checkpointID, state, h.head, h.shadowBranchName, h.shadowBranchesToDelete, h.committedFileSet)
+		h.condensed = h.s.condenseAndUpdateState(h.ctx, h.repo, h.checkpointID, state, h.head, h.shadowBranchName, h.shadowBranchesToDelete, h.committedFileSet)
 	} else {
-		h.s.updateBaseCommitIfChanged(h.logCtx, state, h.newHead)
+		h.s.updateBaseCommitIfChanged(h.ctx, state, h.newHead)
 	}
 	return nil
 }
@@ -584,11 +586,11 @@ func (h *postCommitActionHandler) shouldCondenseWithOverlapCheck(isActive bool) 
 
 func (h *postCommitActionHandler) HandleDiscardIfNoFiles(state *session.State) error {
 	if len(state.FilesTouched) == 0 {
-		logging.Debug(h.logCtx, "post-commit: skipping empty ended session (no files to condense)",
+		logging.Debug(logging.WithComponent(h.ctx, "checkpoint"), "post-commit: skipping empty ended session (no files to condense)",
 			slog.String("session_id", state.SessionID),
 		)
 	}
-	h.s.updateBaseCommitIfChanged(h.logCtx, state, h.newHead)
+	h.s.updateBaseCommitIfChanged(h.ctx, state, h.newHead)
 	return nil
 }
 
@@ -624,7 +626,7 @@ func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error {
 	if !found {
 		// No trailer — user removed it or it was never added (mid-turn commit).
 		// Still update BaseCommit for active sessions so future commits can match.
-		s.postCommitUpdateBaseCommitOnly(ctx, logCtx, head)
+		s.postCommitUpdateBaseCommitOnly(ctx, head)
 		return nil
 	}
 
@@ -716,7 +718,6 @@ func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error {
 		handler := &postCommitActionHandler{
 			s:                      s,
 			ctx:                    ctx,
-			logCtx:                 logCtx,
 			repo:                   repo,
 			checkpointID:           checkpointID,
 			head:                   head,
@@ -759,7 +760,7 @@ func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error {
 				slog.Any("committed_files", committedFileSet),
 			)
 			if len(remainingFiles) > 0 {
-				s.carryForwardToNewShadowBranch(ctx, logCtx, repo, state, remainingFiles)
+				s.carryForwardToNewShadowBranch(ctx, repo, state, remainingFiles)
 			}
 		}
 
@@ -802,7 +803,6 @@ func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error {
 // Returns true if condensation succeeded.
 func (s *ManualCommitStrategy) condenseAndUpdateState(
 	ctx context.Context,
-	logCtx context.Context,
 	repo *git.Repository,
 	checkpointID id.CheckpointID,
 	state *SessionState,
@@ -811,6 +811,7 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 	shadowBranchesToDelete map[string]struct{},
 	committedFiles map[string]struct{},
 ) bool {
+	logCtx := logging.WithComponent(ctx, "checkpoint")
 	result, err := s.CondenseSession(ctx, repo, checkpointID, state, committedFiles)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[entire] Warning: condensation failed for session %s: %v\n",
@@ -861,7 +862,8 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 // Only updates ACTIVE sessions. IDLE/ENDED sessions should NOT have their
 // BaseCommit updated, as this would cause them to be incorrectly associated
 // with a new shadow branch and potentially condensed on future commits.
-func (s *ManualCommitStrategy) updateBaseCommitIfChanged(logCtx context.Context, state *SessionState, newHead string) {
+func (s *ManualCommitStrategy) updateBaseCommitIfChanged(ctx context.Context, state *SessionState, newHead string) {
+	logCtx := logging.WithComponent(ctx, "checkpoint")
 	// Only update ACTIVE sessions. IDLE/ENDED sessions are kept around for
 	// LastCheckpointID reuse and should not be advanced to HEAD.
 	if !state.Phase.IsActive() {
@@ -887,7 +889,8 @@ func (s *ManualCommitStrategy) updateBaseCommitIfChanged(logCtx context.Context,
 //
 // Unlike the full PostCommit flow, this does NOT fire EventGitCommit or trigger
 // condensation — it only keeps BaseCommit in sync with HEAD.
-func (s *ManualCommitStrategy) postCommitUpdateBaseCommitOnly(ctx context.Context, logCtx context.Context, head *plumbing.Reference) {
+func (s *ManualCommitStrategy) postCommitUpdateBaseCommitOnly(ctx context.Context, head *plumbing.Reference) {
+	logCtx := logging.WithComponent(ctx, "checkpoint")
 	worktreePath, err := GetWorktreePath(ctx)
 	if err != nil {
 		return // Silent failure — hooks must be resilient
@@ -1882,11 +1885,11 @@ func subtractFiles(files []string, exclude map[string]struct{}) []string {
 // This enables the next commit to get its own unique checkpoint.
 func (s *ManualCommitStrategy) carryForwardToNewShadowBranch(
 	ctx context.Context,
-	logCtx context.Context,
 	repo *git.Repository,
 	state *SessionState,
 	remainingFiles []string,
 ) {
+	logCtx := logging.WithComponent(ctx, "checkpoint")
 	store := checkpoint.NewGitStore(repo)
 
 	// Don't include metadata directory in carry-forward. The carry-forward branch

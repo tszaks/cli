@@ -1523,7 +1523,7 @@ func TestGetBranchCheckpoints_ReadsPromptFromShadowBranch(t *testing.T) {
 	}
 
 	// Now call getBranchCheckpoints and verify the prompt is read
-	points, err := getBranchCheckpoints(repo, 10)
+	points, err := getBranchCheckpoints(context.Background(), repo, 10)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints() error = %v", err)
 	}
@@ -1556,10 +1556,10 @@ func TestGetCurrentWorktreeHash_MainWorktree(t *testing.T) {
 		t.Fatalf("failed to init git repo: %v", err)
 	}
 
-	hash := getCurrentWorktreeHash()
+	hash := getCurrentWorktreeHash(context.Background())
 	expected := checkpoint.HashWorktreeID("") // Main worktree has empty ID
 	if hash != expected {
-		t.Errorf("getCurrentWorktreeHash() = %q, want %q (hash of empty worktree ID)", hash, expected)
+		t.Errorf("getCurrentWorktreeHash(context.Background()) = %q, want %q (hash of empty worktree ID)", hash, expected)
 	}
 }
 
@@ -1643,7 +1643,7 @@ func TestGetReachableTemporaryCheckpoints_FiltersByWorktree(t *testing.T) {
 	writeCheckpoints(sessionIDOther, "other-worktree") // Different worktree
 
 	// getBranchCheckpoints should only include local worktree's checkpoints
-	points, err := getBranchCheckpoints(repo, 20)
+	points, err := getBranchCheckpoints(context.Background(), repo, 20)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints error: %v", err)
 	}
@@ -1826,7 +1826,7 @@ func TestGetBranchCheckpoints_OnFeatureBranch(t *testing.T) {
 	}
 
 	// Get checkpoints (should be empty, but shouldn't error)
-	points, err := getBranchCheckpoints(repo, 20)
+	points, err := getBranchCheckpoints(context.Background(), repo, 20)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints() error = %v", err)
 	}
@@ -2117,7 +2117,7 @@ func TestGetBranchCheckpoints_FiltersMainCommits(t *testing.T) {
 	// Get checkpoints - should only include feature branch commits, not main
 	// Note: Without actual checkpoint data in entire/checkpoints/v1, this returns empty
 	// but the important thing is it doesn't error and the filtering logic runs
-	points, err := getBranchCheckpoints(repo, 20)
+	points, err := getBranchCheckpoints(context.Background(), repo, 20)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints() error = %v", err)
 	}
@@ -3550,7 +3550,7 @@ func TestGetBranchCheckpoints_DefaultBranchFindsMergedCheckpoints(t *testing.T) 
 	}
 
 	// getBranchCheckpoints on master should find the checkpoint from the merged feature branch
-	points, err := getBranchCheckpoints(repo, 100)
+	points, err := getBranchCheckpoints(context.Background(), repo, 100)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints error: %v", err)
 	}

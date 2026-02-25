@@ -793,8 +793,8 @@ var errStopIteration = errors.New("stop iteration")
 
 // getCurrentWorktreeHash returns the hashed worktree ID for the current working directory.
 // This is used to filter shadow branches to only those belonging to this worktree.
-func getCurrentWorktreeHash() string {
-	repoRoot, err := paths.RepoRoot(context.TODO())
+func getCurrentWorktreeHash(ctx context.Context) string {
+	repoRoot, err := paths.RepoRoot(ctx)
 	if err != nil {
 		return ""
 	}
@@ -885,11 +885,11 @@ func walkFirstParentCommits(repo *git.Repository, from plumbing.Hash, limit int,
 //   - On feature branches: only show checkpoints unique to this branch (not in main)
 //   - On default branch (main/master): show all checkpoints in history (up to limit)
 //   - Includes both committed checkpoints (entire/checkpoints/v1) and temporary checkpoints (shadow branches)
-func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoint, error) {
+func getBranchCheckpoints(ctx context.Context, repo *git.Repository, limit int) ([]strategy.RewindPoint, error) {
 	store := checkpoint.NewGitStore(repo)
 
 	// Get all committed checkpoints for lookup
-	committedInfos, err := store.ListCommitted(context.TODO())
+	committedInfos, err := store.ListCommitted(ctx)
 	if err != nil {
 		committedInfos = nil // Continue without committed checkpoints
 	}
@@ -939,7 +939,7 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 			Agent:            cpInfo.Agent,
 		}
 		// Read session prompt from metadata branch (best-effort)
-		content, _ := store.ReadLatestSessionContent(context.TODO(), cpID) //nolint:errcheck  // Best-effort
+		content, _ := store.ReadLatestSessionContent(ctx, cpID) //nolint:errcheck  // Best-effort
 		if content != nil {
 			scopedTranscript := scopeTranscriptForCheckpoint(content.Transcript, content.Metadata.GetTranscriptStart(), content.Metadata.Agent)
 			scopedPrompts := extractPromptsFromTranscript(scopedTranscript, content.Metadata.Agent)
@@ -993,7 +993,7 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 	}
 
 	// Get temporary checkpoints from ALL shadow branches whose base commit is reachable from HEAD.
-	tempPoints := getReachableTemporaryCheckpoints(repo, store, head.Hash(), isOnDefault, limit)
+	tempPoints := getReachableTemporaryCheckpoints(ctx, repo, store, head.Hash(), isOnDefault, limit)
 	points = append(points, tempPoints...)
 
 	// Sort by date, most recent first
@@ -1013,13 +1013,13 @@ func getBranchCheckpoints(repo *git.Repository, limit int) ([]strategy.RewindPoi
 // whose base commit is reachable from the given HEAD hash and that belong to this worktree.
 // For default branches, all shadow branches for this worktree are included.
 // For feature branches, only shadow branches whose base commit is in HEAD's history are included.
-func getReachableTemporaryCheckpoints(repo *git.Repository, store *checkpoint.GitStore, headHash plumbing.Hash, isOnDefault bool, limit int) []strategy.RewindPoint {
+func getReachableTemporaryCheckpoints(ctx context.Context, repo *git.Repository, store *checkpoint.GitStore, headHash plumbing.Hash, isOnDefault bool, limit int) []strategy.RewindPoint {
 	var points []strategy.RewindPoint
 
 	// Compute current worktree's hash for filtering shadow branches
-	currentWorktreeHash := getCurrentWorktreeHash()
+	currentWorktreeHash := getCurrentWorktreeHash(ctx)
 
-	shadowBranches, _ := store.ListTemporary(context.TODO()) //nolint:errcheck // Best-effort
+	shadowBranches, _ := store.ListTemporary(ctx) //nolint:errcheck // Best-effort
 	for _, sb := range shadowBranches {
 		// Filter by worktree: only show shadow branches belonging to this worktree.
 		// Skip filtering if currentWorktreeHash is empty (error computing it) to avoid
@@ -1035,7 +1035,7 @@ func getReachableTemporaryCheckpoints(repo *git.Repository, store *checkpoint.Gi
 		}
 
 		// List checkpoints from this shadow branch
-		tempCheckpoints, _ := store.ListCheckpointsForBranch(context.TODO(), sb.BranchName, "", limit) //nolint:errcheck // Best-effort
+		tempCheckpoints, _ := store.ListCheckpointsForBranch(ctx, sb.BranchName, "", limit) //nolint:errcheck // Best-effort
 		for _, tc := range tempCheckpoints {
 			point := convertTemporaryCheckpoint(repo, tc)
 			if point != nil {
@@ -1130,7 +1130,7 @@ func runExplainBranchWithFilter(ctx context.Context, w io.Writer, noPager bool, 
 	}
 
 	// Get checkpoints for this branch (strategy-agnostic)
-	points, err := getBranchCheckpoints(repo, branchCheckpointsLimit)
+	points, err := getBranchCheckpoints(ctx, repo, branchCheckpointsLimit)
 	if err != nil {
 		// Log the error but continue with empty list so user sees helpful message
 		logging.Warn(ctx, "failed to get branch checkpoints", "error", err)

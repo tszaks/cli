@@ -82,7 +82,7 @@ func handleClaudeCodePostTodoFromReader(ctx context.Context, reader io.Reader) e
 	}
 
 	// Get the active strategy
-	strat := GetStrategy()
+	strat := GetStrategy(ctx)
 
 	// Get the session ID from the transcript path or input, then transform to Entire session ID
 	sessionID := input.SessionID

@@ -217,7 +217,7 @@ func runEnableWithStrategy(ctx context.Context, w io.Writer, agents []agent.Agen
 	}
 
 	// Load existing settings to preserve other options (like strategy_options.push)
-	settings, err := LoadEntireSettings()
+	settings, err := LoadEntireSettings(ctx)
 	if err != nil {
 		// If we can't load, start with defaults
 		settings = &EntireSettings{}
@@ -275,7 +275,7 @@ func runEnableWithStrategy(ctx context.Context, w io.Writer, agents []agent.Agen
 	fmt.Fprintf(w, "✓ Project configured (%s)\n", configDisplay)
 
 	// Let the strategy handle its own setup requirements
-	if err := strat.EnsureSetup(); err != nil {
+	if err := strat.EnsureSetup(ctx); err != nil {
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 
@@ -308,7 +308,7 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 	internalStrategy := strategy.DefaultStrategyName
 
 	// Load existing settings to preserve other options (like strategy_options.push)
-	settings, err := LoadEntireSettings()
+	settings, err := LoadEntireSettings(ctx)
 	if err != nil {
 		// If we can't load, start with defaults
 		settings = &EntireSettings{}
@@ -380,7 +380,7 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 	if err != nil {
 		return fmt.Errorf("failed to get strategy: %w", err)
 	}
-	if err := strat.EnsureSetup(); err != nil {
+	if err := strat.EnsureSetup(ctx); err != nil {
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 
@@ -391,7 +391,7 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 
 // runEnable is a simple enable that just sets the enabled flag (for programmatic use).
 func runEnable(ctx context.Context, w io.Writer) error {
-	settings, err := LoadEntireSettings()
+	settings, err := LoadEntireSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load settings: %w", err)
 	}
@@ -406,7 +406,7 @@ func runEnable(ctx context.Context, w io.Writer) error {
 }
 
 func runDisable(ctx context.Context, w io.Writer, useProjectSettings bool) error {
-	settings, err := LoadEntireSettings()
+	settings, err := LoadEntireSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load settings: %w", err)
 	}
@@ -436,7 +436,7 @@ const DisabledMessage = "Entire is disabled. Run `entire enable` to re-enable."
 // Returns true if the caller should exit (i.e., Entire is disabled).
 // On error reading settings, defaults to enabled (returns false).
 func checkDisabledGuard(w io.Writer) bool {
-	enabled, err := IsEnabled()
+	enabled, err := IsEnabled(context.TODO()) //nolint:contextcheck // checkDisabledGuard has no ctx param; callers are Cobra RunE closures
 	if err != nil {
 		// Default to enabled on error
 		return false
@@ -727,7 +727,7 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 	}
 
 	// Load existing settings to preserve other options (like strategy_options.push)
-	settings, err := LoadEntireSettings()
+	settings, err := LoadEntireSettings(ctx)
 	if err != nil {
 		// If we can't load, start with defaults
 		settings = &EntireSettings{Strategy: strategy.DefaultStrategyName}
@@ -797,7 +797,7 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 	if err != nil {
 		return fmt.Errorf("failed to get strategy: %w", err)
 	}
-	if err := strat.EnsureSetup(); err != nil {
+	if err := strat.EnsureSetup(ctx); err != nil {
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 

@@ -282,7 +282,7 @@ func TestAgentSessionOperations(t *testing.T) {
 		dstPath := filepath.Join(env.RepoDir, "dst.jsonl")
 		session.SessionRef = dstPath
 
-		if err := ag.WriteSession(session); err != nil {
+		if err := ag.WriteSession(context.Background(), session); err != nil {
 			t.Fatalf("WriteSession() error = %v", err)
 		}
 
@@ -308,7 +308,7 @@ func TestAgentSessionOperations(t *testing.T) {
 			NativeData: []byte("data"),
 		}
 
-		err := ag.WriteSession(session)
+		err := ag.WriteSession(context.Background(), session)
 		if err == nil {
 			t.Error("WriteSession() should reject session from different agent")
 		}
@@ -771,7 +771,7 @@ func TestGeminiCLISessionOperations(t *testing.T) {
 		dstPath := filepath.Join(env.RepoDir, "dst.json")
 		session.SessionRef = dstPath
 
-		if err := ag.WriteSession(session); err != nil {
+		if err := ag.WriteSession(context.Background(), session); err != nil {
 			t.Fatalf("WriteSession() error = %v", err)
 		}
 
@@ -797,7 +797,7 @@ func TestGeminiCLISessionOperations(t *testing.T) {
 			NativeData: []byte("data"),
 		}
 
-		err := ag.WriteSession(session)
+		err := ag.WriteSession(context.Background(), session)
 		if err == nil {
 			t.Error("WriteSession() should reject session from different agent")
 		}
@@ -1042,10 +1042,10 @@ func TestOpenCodeSessionOperations(t *testing.T) {
 
 		ag, _ := agent.Get("opencode")
 
-		if err := ag.WriteSession(nil); err == nil {
+		if err := ag.WriteSession(context.Background(), nil); err == nil {
 			t.Error("WriteSession(nil) should error")
 		}
-		if err := ag.WriteSession(&agent.AgentSession{}); err == nil {
+		if err := ag.WriteSession(context.Background(), &agent.AgentSession{}); err == nil {
 			t.Error("WriteSession with empty NativeData should error")
 		}
 	})

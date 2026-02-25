@@ -247,7 +247,7 @@ func TestWriteSession(t *testing.T) {
 		NativeData: []byte(`{"messages": []}`),
 	}
 
-	err := ag.WriteSession(session)
+	err := ag.WriteSession(context.Background(), session)
 	if err != nil {
 		t.Fatalf("WriteSession() error = %v", err)
 	}
@@ -266,7 +266,7 @@ func TestWriteSession(t *testing.T) {
 func TestWriteSession_Nil(t *testing.T) {
 	ag := &GeminiCLIAgent{}
 
-	err := ag.WriteSession(nil)
+	err := ag.WriteSession(context.Background(), nil)
 	if err == nil {
 		t.Error("WriteSession(nil) should error")
 	}
@@ -280,7 +280,7 @@ func TestWriteSession_WrongAgent(t *testing.T) {
 		NativeData: []byte("{}"),
 	}
 
-	err := ag.WriteSession(session)
+	err := ag.WriteSession(context.Background(), session)
 	if err == nil {
 		t.Error("WriteSession() should error for wrong agent")
 	}
@@ -293,7 +293,7 @@ func TestWriteSession_NoSessionRef(t *testing.T) {
 		NativeData: []byte("{}"),
 	}
 
-	err := ag.WriteSession(session)
+	err := ag.WriteSession(context.Background(), session)
 	if err == nil {
 		t.Error("WriteSession() should error when SessionRef is empty")
 	}
@@ -306,7 +306,7 @@ func TestWriteSession_NoNativeData(t *testing.T) {
 		SessionRef: "/path/to/file",
 	}
 
-	err := ag.WriteSession(session)
+	err := ag.WriteSession(context.Background(), session)
 	if err == nil {
 		t.Error("WriteSession() should error when NativeData is empty")
 	}

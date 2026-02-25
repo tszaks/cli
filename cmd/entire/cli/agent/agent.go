@@ -69,7 +69,7 @@ type Agent interface {
 	ReadSession(input *HookInput) (*AgentSession, error)
 
 	// WriteSession writes session data for resumption.
-	WriteSession(session *AgentSession) error
+	WriteSession(ctx context.Context, session *AgentSession) error
 
 	// FormatResumeCommand returns command to resume a session.
 	FormatResumeCommand(sessionID string) string

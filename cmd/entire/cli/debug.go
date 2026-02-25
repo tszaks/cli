@@ -68,7 +68,7 @@ func runDebugAutoCommit(ctx context.Context, w io.Writer, transcriptPath string)
 	fmt.Fprintf(w, "Repository: %s\n\n", repoRoot)
 
 	// Print strategy info
-	strat := GetStrategy()
+	strat := GetStrategy(ctx)
 	isAutoCommit := strat.Name() == strategy.StrategyNameAutoCommit
 	printStrategyInfo(ctx, w, strat, isAutoCommit)
 

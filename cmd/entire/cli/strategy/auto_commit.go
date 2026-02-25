@@ -459,12 +459,12 @@ func (s *AutoCommitStrategy) PreviewRewind(_ context.Context, _ RewindPoint) (*R
 // - Ensure .entire/.gitignore has all required entries
 // - Create orphan entire/checkpoints/v1 branch if it doesn't exist
 // - Install git hooks if missing (self-healing for third-party overwrites)
-func (s *AutoCommitStrategy) EnsureSetup() error {
-	if err := EnsureEntireGitignore(context.Background()); err != nil { //nolint:contextcheck // EnsureSetup is called at initialization, no ctx available
+func (s *AutoCommitStrategy) EnsureSetup(ctx context.Context) error {
+	if err := EnsureEntireGitignore(ctx); err != nil {
 		return err
 	}
 
-	repo, err := OpenRepository(context.Background())
+	repo, err := OpenRepository(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to open git repository: %w", err)
 	}
@@ -475,8 +475,8 @@ func (s *AutoCommitStrategy) EnsureSetup() error {
 	}
 
 	// Install generic hooks if missing (they delegate to strategy at runtime)
-	if !IsGitHookInstalled(context.Background()) {
-		if _, err := InstallGitHook(context.Background(), true); err != nil {
+	if !IsGitHookInstalled(ctx) {
+		if _, err := InstallGitHook(ctx, true); err != nil {
 			return fmt.Errorf("failed to install git hooks: %w", err)
 		}
 	}

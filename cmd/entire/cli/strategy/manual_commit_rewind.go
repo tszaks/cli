@@ -686,7 +686,7 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(ctx context.Context, point Rewind
 			SessionRef: sessionFile,
 			NativeData: content.Transcript,
 		}
-		if writeErr := sessionAgent.WriteSession(agentSession); writeErr != nil {
+		if writeErr := sessionAgent.WriteSession(ctx, agentSession); writeErr != nil {
 			if totalSessions > 1 {
 				fmt.Fprintf(os.Stderr, "    Warning: failed to write session: %v\n", writeErr)
 				continue

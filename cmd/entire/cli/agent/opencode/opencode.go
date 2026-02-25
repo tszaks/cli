@@ -207,7 +207,7 @@ func (a *OpenCodeAgent) ReadSession(input *agent.HookInput) (*agent.AgentSession
 	}, nil
 }
 
-func (a *OpenCodeAgent) WriteSession(session *agent.AgentSession) error {
+func (a *OpenCodeAgent) WriteSession(ctx context.Context, session *agent.AgentSession) error {
 	if session == nil {
 		return errors.New("nil session")
 	}
@@ -217,7 +217,7 @@ func (a *OpenCodeAgent) WriteSession(session *agent.AgentSession) error {
 
 	// Import the session into OpenCode's database.
 	// This enables `opencode -s <id>` for both resume and rewind.
-	return a.importSessionIntoOpenCode(context.TODO(), session.SessionID, session.NativeData) //nolint:contextcheck // WriteSession interface doesn't have ctx yet
+	return a.importSessionIntoOpenCode(ctx, session.SessionID, session.NativeData)
 }
 
 // importSessionIntoOpenCode writes the export JSON to a temp file and runs

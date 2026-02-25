@@ -80,7 +80,7 @@ your agent's context.`,
 
 func runRewindInteractive(ctx context.Context) error { //nolint:maintidx // already present in codebase
 	// Get the configured strategy
-	start := GetStrategy()
+	start := GetStrategy(ctx)
 
 	// Check for uncommitted changes first
 	canRewind, changeMsg, err := start.CanRewind(ctx)
@@ -331,7 +331,7 @@ func runRewindInteractive(ctx context.Context) error { //nolint:maintidx // alre
 }
 
 func runRewindList(ctx context.Context) error {
-	start := GetStrategy()
+	start := GetStrategy(ctx)
 
 	points, err := start.GetRewindPoints(ctx, 20)
 	if err != nil {
@@ -382,7 +382,7 @@ func runRewindToWithOptions(ctx context.Context, commitID string, logsOnly bool,
 }
 
 func runRewindToInternal(ctx context.Context, commitID string, logsOnly bool, reset bool) error {
-	start := GetStrategy()
+	start := GetStrategy(ctx)
 
 	// Check for uncommitted changes (skip for reset which handles this itself)
 	if !reset {
@@ -694,7 +694,7 @@ func restoreSessionTranscriptFromStrategy(ctx context.Context, cpID id.Checkpoin
 		SessionRef: sessionFile,
 		NativeData: content,
 	}
-	if err := agent.WriteSession(agentSession); err != nil {
+	if err := agent.WriteSession(ctx, agentSession); err != nil {
 		return "", fmt.Errorf("failed to write session: %w", err)
 	}
 	return sessionID, nil
@@ -735,7 +735,7 @@ func restoreSessionTranscriptFromShadow(ctx context.Context, commitHash, metadat
 		SessionRef: sessionFile,
 		NativeData: content,
 	}
-	if err := agent.WriteSession(agentSession); err != nil {
+	if err := agent.WriteSession(ctx, agentSession); err != nil {
 		return "", fmt.Errorf("failed to write session: %w", err)
 	}
 	return sessionID, nil

@@ -77,7 +77,7 @@ func handleLifecycleSessionStart(ctx context.Context, ag agent.Agent, event *age
 	message := "\n\nPowered by Entire:\n  This conversation will be linked to your next commit."
 
 	// Check for concurrent sessions and append count if any
-	strat := GetStrategy()
+	strat := GetStrategy(ctx)
 	if concurrentChecker, ok := strat.(strategy.ConcurrentSessionChecker); ok {
 		if count, err := concurrentChecker.CountOtherActiveSessionsWithCheckpoints(ctx, event.SessionID); err == nil && count > 0 {
 			message += fmt.Sprintf("\n  %d other active conversation(s) in this workspace will also be included.\n  Use 'entire status' for more information.", count)
@@ -131,9 +131,9 @@ func handleLifecycleTurnStart(ctx context.Context, ag agent.Agent, event *agent.
 	}
 
 	// Ensure strategy setup and initialize session
-	strat := GetStrategy()
+	strat := GetStrategy(ctx)
 
-	if err := strat.EnsureSetup(); err != nil {
+	if err := strat.EnsureSetup(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to ensure strategy setup: %v\n", err)
 	}
 
@@ -346,7 +346,7 @@ func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Ev
 	}
 
 	// Get strategy and agent type
-	strat := GetStrategy()
+	strat := GetStrategy(ctx)
 	agentType := ag.Type()
 
 	// Get transcript position/identifier from pre-prompt state
@@ -588,7 +588,7 @@ func handleLifecycleSubagentEnd(ctx context.Context, ag agent.Agent, event *agen
 	}
 
 	// Build task checkpoint context
-	strat := GetStrategy()
+	strat := GetStrategy(ctx)
 	agentType := ag.Type()
 
 	taskStepCtx := strategy.TaskStepContext{
@@ -717,7 +717,7 @@ func transitionSessionTurnEnd(ctx context.Context, sessionID string) {
 
 	// Always dispatch to strategy for turn-end handling. The strategy reads
 	// work items from state (e.g. TurnCheckpointIDs), not the action list.
-	strat := GetStrategy()
+	strat := GetStrategy(ctx)
 	if handler, ok := strat.(strategy.TurnEndHandler); ok {
 		if err := handler.HandleTurnEnd(ctx, turnState); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: turn-end action dispatch failed: %v\n", err)

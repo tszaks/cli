@@ -67,9 +67,9 @@ func TestRunEnable(t *testing.T) {
 		t.Errorf("Expected output to contain 'enabled', got: %s", stdout.String())
 	}
 
-	enabled, err := IsEnabled()
+	enabled, err := IsEnabled(context.Background())
 	if err != nil {
-		t.Fatalf("IsEnabled() error = %v", err)
+		t.Fatalf("IsEnabled(context.Background()) error = %v", err)
 	}
 	if !enabled {
 		t.Error("Entire should be enabled after running enable command")
@@ -103,9 +103,9 @@ func TestRunDisable(t *testing.T) {
 		t.Errorf("Expected output to contain 'disabled', got: %s", stdout.String())
 	}
 
-	enabled, err := IsEnabled()
+	enabled, err := IsEnabled(context.Background())
 	if err != nil {
-		t.Fatalf("IsEnabled() error = %v", err)
+		t.Fatalf("IsEnabled(context.Background()) error = %v", err)
 	}
 	if enabled {
 		t.Error("Entire should be disabled after running disable command")
@@ -184,9 +184,9 @@ func TestRunDisable_WithLocalSettings(t *testing.T) {
 	}
 
 	// Should be disabled because runDisable updates local settings when it exists
-	enabled, err := IsEnabled()
+	enabled, err := IsEnabled(context.Background())
 	if err != nil {
-		t.Fatalf("IsEnabled() error = %v", err)
+		t.Fatalf("IsEnabled(context.Background()) error = %v", err)
 	}
 	if enabled {
 		t.Error("Entire should be disabled after running disable command (local settings should be updated)")
@@ -247,9 +247,9 @@ func TestRunDisable_CreatesLocalSettingsWhenMissing(t *testing.T) {
 	}
 
 	// Should be disabled
-	enabled, err := IsEnabled()
+	enabled, err := IsEnabled(context.Background())
 	if err != nil {
-		t.Fatalf("IsEnabled() error = %v", err)
+		t.Fatalf("IsEnabled(context.Background()) error = %v", err)
 	}
 	if enabled {
 		t.Error("Entire should be disabled after running disable command")
@@ -369,9 +369,9 @@ func TestRunEnableWithStrategy_PreservesExistingSettings(t *testing.T) {
 	}
 
 	// Load the saved settings and verify strategy_options were preserved
-	settings, err := LoadEntireSettings()
+	settings, err := LoadEntireSettings(context.Background())
 	if err != nil {
-		t.Fatalf("LoadEntireSettings() error = %v", err)
+		t.Fatalf("LoadEntireSettings(context.Background()) error = %v", err)
 	}
 
 	// Strategy should be updated
@@ -414,9 +414,9 @@ func TestRunEnableWithStrategy_PreservesLocalSettings(t *testing.T) {
 	}
 
 	// Load the merged settings (project + local)
-	settings, err := LoadEntireSettings()
+	settings, err := LoadEntireSettings(context.Background())
 	if err != nil {
-		t.Fatalf("LoadEntireSettings() error = %v", err)
+		t.Fatalf("LoadEntireSettings(context.Background()) error = %v", err)
 	}
 
 	// Strategy should be updated (from local)

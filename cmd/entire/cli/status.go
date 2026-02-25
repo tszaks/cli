@@ -79,7 +79,7 @@ func runStatus(ctx context.Context, w io.Writer, detailed bool) error {
 	}
 
 	// Short output: just show the effective/merged state
-	s, err := LoadEntireSettings()
+	s, err := LoadEntireSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load settings: %w", err)
 	}
@@ -97,7 +97,7 @@ func runStatus(ctx context.Context, w io.Writer, detailed bool) error {
 // runStatusDetailed shows the effective status plus detailed status for each settings file.
 func runStatusDetailed(ctx context.Context, w io.Writer, sty statusStyles, settingsPath, localSettingsPath string, projectExists, localExists bool) error {
 	// First show the effective/merged status
-	effectiveSettings, err := LoadEntireSettings()
+	effectiveSettings, err := LoadEntireSettings(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load settings: %w", err)
 	}

@@ -48,7 +48,7 @@ func NewRootCmd() *cobra.Command {
 
 			// Load settings once for telemetry and version check
 			var telemetryEnabled *bool
-			settings, err := LoadEntireSettings()
+			settings, err := LoadEntireSettings(cmd.Context())
 			if err == nil {
 				telemetryEnabled = settings.Telemetry
 			}

@@ -35,7 +35,7 @@ func newGitHookContext(ctx context.Context, hookName string) *gitHookContext {
 		ctx:          logging.WithComponent(ctx, "hooks"),
 		strategyName: unknownStrategyName,
 	}
-	g.strategy = GetStrategy()
+	g.strategy = GetStrategy(ctx)
 	g.strategyName = g.strategy.Name()
 	return g
 }

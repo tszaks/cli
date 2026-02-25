@@ -59,7 +59,7 @@ func TestAutoCommitStrategy_SaveStep_CommitHasMetadataRef(t *testing.T) {
 
 	// Setup strategy and ensure entire/checkpoints/v1 branch exists
 	s := NewAutoCommitStrategy()
-	if err := s.EnsureSetup(); err != nil {
+	if err := s.EnsureSetup(context.Background()); err != nil {
 		t.Fatalf("EnsureSetup() error = %v", err)
 	}
 
@@ -173,7 +173,7 @@ func TestAutoCommitStrategy_SaveStep_MetadataRefPointsToValidCommit(t *testing.T
 
 	// Setup strategy
 	s := NewAutoCommitStrategy()
-	if err := s.EnsureSetup(); err != nil {
+	if err := s.EnsureSetup(context.Background()); err != nil {
 		t.Fatalf("EnsureSetup() error = %v", err)
 	}
 
@@ -288,7 +288,7 @@ func TestAutoCommitStrategy_SaveTaskStep_CommitHasMetadataRef(t *testing.T) {
 
 	// Setup strategy
 	s := NewAutoCommitStrategy()
-	if err := s.EnsureSetup(); err != nil {
+	if err := s.EnsureSetup(context.Background()); err != nil {
 		t.Fatalf("EnsureSetup() error = %v", err)
 	}
 
@@ -389,7 +389,7 @@ func TestAutoCommitStrategy_SaveTaskStep_NoChangesSkipsCommit(t *testing.T) {
 
 	// Setup strategy
 	s := NewAutoCommitStrategy()
-	if err := s.EnsureSetup(); err != nil {
+	if err := s.EnsureSetup(context.Background()); err != nil {
 		t.Fatalf("EnsureSetup() error = %v", err)
 	}
 
@@ -485,7 +485,7 @@ func TestAutoCommitStrategy_GetSessionContext(t *testing.T) {
 
 	// Setup strategy
 	s := NewAutoCommitStrategy()
-	if err := s.EnsureSetup(); err != nil {
+	if err := s.EnsureSetup(context.Background()); err != nil {
 		t.Fatalf("EnsureSetup() error = %v", err)
 	}
 
@@ -572,7 +572,7 @@ func TestAutoCommitStrategy_ListSessions_HasDescription(t *testing.T) {
 
 	// Setup strategy
 	s := NewAutoCommitStrategy()
-	if err := s.EnsureSetup(); err != nil {
+	if err := s.EnsureSetup(context.Background()); err != nil {
 		t.Fatalf("EnsureSetup() error = %v", err)
 	}
 
@@ -756,7 +756,7 @@ func TestAutoCommitStrategy_GetCheckpointLog_ReadsFullJsonl(t *testing.T) {
 
 	// Setup strategy
 	s := NewAutoCommitStrategy()
-	if err := s.EnsureSetup(); err != nil {
+	if err := s.EnsureSetup(context.Background()); err != nil {
 		t.Fatalf("EnsureSetup() error = %v", err)
 	}
 
@@ -859,7 +859,7 @@ func TestAutoCommitStrategy_SaveStep_FilesAlreadyCommitted(t *testing.T) {
 
 	// Setup strategy
 	s := NewAutoCommitStrategy()
-	if err := s.EnsureSetup(); err != nil {
+	if err := s.EnsureSetup(context.Background()); err != nil {
 		t.Fatalf("EnsureSetup() error = %v", err)
 	}
 
@@ -973,7 +973,7 @@ func TestAutoCommitStrategy_SaveStep_NoChangesSkipped(t *testing.T) {
 
 	// Setup strategy
 	s := NewAutoCommitStrategy()
-	if err := s.EnsureSetup(); err != nil {
+	if err := s.EnsureSetup(context.Background()); err != nil {
 		t.Fatalf("EnsureSetup() error = %v", err)
 	}
 

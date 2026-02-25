@@ -47,7 +47,7 @@ Without --force, prompts for confirmation before deleting.`,
 			}
 
 			// Get current strategy
-			strat := GetStrategy()
+			strat := GetStrategy(ctx)
 
 			// Check if strategy supports reset
 			resetter, ok := strat.(strategy.SessionResetter)

@@ -95,7 +95,7 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 	}
 
 	// Get the current strategy for condense operations
-	strat := GetStrategy()
+	strat := GetStrategy(ctx)
 	condenser, canCondense := strat.(strategy.SessionCondenser)
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Found %d stuck session(s):\n\n", len(stuck))
