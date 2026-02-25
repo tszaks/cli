@@ -42,6 +42,13 @@ These parameters are shared across all commands. Collect them on first invocatio
 | `LIVE_COMMAND` | "windsurf --project ." | Full command to launch agent |
 | `EVENTS_OR_UNKNOWN` | "unknown" | Known hook event names, or "unknown" |
 
+## Architecture References
+
+These documents define the agent integration contract. All commands reference them:
+
+- **Implementation guide**: `docs/architecture/agent-guide.md` — Step-by-step code templates, event mapping, testing patterns
+- **Integration checklist**: `docs/architecture/agent-integration-checklist.md` — Design principles and validation criteria
+
 ## Command Routing
 
 When the user invokes this skill:
