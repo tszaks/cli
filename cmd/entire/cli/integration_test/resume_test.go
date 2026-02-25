@@ -1078,7 +1078,7 @@ func TestResume_LocalLogNoTimestamp(t *testing.T) {
 // checkpoint creation time.
 func TestResume_RelocatedRepo(t *testing.T) {
 	t.Parallel()
-	env := NewFeatureBranchEnv(t, strategy.StrategyNameAutoCommit)
+	env := NewFeatureBranchEnv(t)
 
 	// Create a session on the feature branch
 	session := env.NewSession()
@@ -1096,6 +1096,9 @@ func TestResume_RelocatedRepo(t *testing.T) {
 	if err := env.SimulateStop(session.ID, session.TranscriptPath); err != nil {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
+
+	// Commit the file (manual-commit requires user to commit with hooks)
+	env.GitCommitWithShadowHooks("Create a hello script", "hello.rb")
 
 	featureBranch := env.GetCurrentBranch()
 	originalClaudeProjectDir := env.ClaudeProjectDir
