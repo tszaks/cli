@@ -4,11 +4,11 @@ Entire hooks into your Git workflow to capture AI agent sessions as you work. Se
 
 With Entire, you can:
 
-* **Understand why code changed** — see the full prompt/response transcript and files touched
-* **Recover instantly** — rewind to a known-good checkpoint when an agent goes sideways and resume seamlessly
-* **Keep Git history clean** — preserve agent context on a separate branch
-* **Onboard faster** — show the path from prompt → change → commit
-* **Maintain traceability** — support audit and compliance requirements when needed
+- **Understand why code changed** — see the full prompt/response transcript and files touched
+- **Recover instantly** — rewind to a known-good checkpoint when an agent goes sideways and resume seamlessly
+- **Keep Git history clean** — preserve agent context on a separate branch
+- **Onboard faster** — show the path from prompt → change → commit
+- **Maintain traceability** — support audit and compliance requirements when needed
 
 ## Table of Contents
 
@@ -16,7 +16,7 @@ With Entire, you can:
 - [Typical Workflow](#typical-workflow)
 - [Key Concepts](#key-concepts)
   - [How It Works](#how-it-works)
-  - [Strategies](#strategies)
+  - [Strategy](#strategy)
 - [Commands Reference](#commands-reference)
 - [Configuration](#configuration)
 - [Security & Privacy](#security--privacy)
@@ -29,7 +29,7 @@ With Entire, you can:
 
 - Git
 - macOS or Linux (Windows via WSL)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Gemini CLI](https://github.com/google-gemini/gemini-cli) installed and authenticated
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Gemini CLI](https://github.com/google-gemini/gemini-cli), or [OpenCode](https://opencode.ai/docs/cli/) installed and authenticated
 
 ## Quick Start
 
@@ -56,11 +56,9 @@ entire status
 entire enable
 ```
 
-This installs agent and git hooks to work with your AI agent (Claude Code, Gemini CLI or OpenCode). The hooks capture session data at specific points in your workflow. Your code commits stay clean—all session metadata is stored on a separate `entire/checkpoints/v1` branch.
+This installs agent and git hooks to work with your AI agent (Claude Code, Gemini CLI or OpenCode). You'll be prompted to select which agents to enable. To enable a specific agent non-interactively, use `entire enable --agent <name>` (e.g., `entire enable --agent opencode`).
 
-**When checkpoints are created** depends on your chosen strategy (default is `manual-commit`):
-- **Manual-commit**: Checkpoints are created when you or the agent make a git commit
-- **Auto-commit**: Checkpoints are created after each agent response
+The hooks capture session data as you work. Checkpoints are created when you or the agent make a git commit. Your code commits stay clean, Entire never creates commits on your active branch. All session metadata is stored on a separate `entire/checkpoints/v1` branch.
 
 ### 2. Work with Your AI Agent
 
@@ -112,12 +110,7 @@ Sessions are stored separately from your code commits on the `entire/checkpoints
 
 A **checkpoint** is a snapshot within a session that you can rewind to—a "save point" in your work.
 
-**When checkpoints are created:**
-
-- **Manual-commit strategy**: When you or the agent make a git commit
-- **Auto-commit strategy**: After each agent response
-
-**Checkpoint IDs** are 12-character hex strings (e.g., `a3b2c4d5e6f7`).
+Checkpoints are created when you or the agent make a git commit. **Checkpoint IDs** are 12-character hex strings (e.g., `a3b2c4d5e6f7`).
 
 ### How It Works
 
@@ -129,7 +122,7 @@ Your Branch                    entire/checkpoints/v1
      │                                  │
      │  ┌─── Agent works ───┐           │
      │  │  Step 1           │           │
-     │  │  Step 2           │           │ 
+     │  │  Step 2           │           │
      │  │  Step 3           │           │
      │  └───────────────────┘           │
      │                                  │
@@ -142,16 +135,14 @@ Your Branch                    entire/checkpoints/v1
 
 Checkpoints are saved as you work. When you commit, session metadata is permanently stored on the `entire/checkpoints/v1` branch and linked to your commit.
 
-### Strategies
+### Strategy
 
-Entire offers two strategies for capturing your work:
+Entire uses a manual-commit strategy that keeps your git history clean:
 
-| Aspect              | Manual-Commit                            | Auto-Commit                                        |
-| ------------------- | ---------------------------------------- | -------------------------------------------------- |
-| Code commits        | None on your branch                      | Created automatically after each agent response    |
-| Safe on main branch | Yes                                      | Use caution - creates commits on active branch     |
-| Rewind              | Always possible, non-destructive         | Full rewind on feature branches; logs-only on main |
-| Best for            | Most workflows - keeps git history clean | Teams wanting automatic code commits               |
+- **No commits on your branch** — Entire never creates commits on the active branch
+- **Safe on any branch** — works on main, master, and feature branches alike
+- **Non-destructive rewind** — restore files from any checkpoint without altering commit history
+- **Metadata stored separately** — all session data lives on the `entire/checkpoints/v1` branch
 
 ### Git Worktrees
 
@@ -163,37 +154,33 @@ Multiple AI sessions can run on the same commit. If you start a second session w
 
 ## Commands Reference
 
-| Command          | Description                                                                   |
-| ---------------- | ----------------------------------------------------------------------------- |
-| `entire clean`   | Clean up orphaned Entire data                                                 |
-| `entire disable` | Remove Entire hooks from repository                                           |
-| `entire doctor`  | Fix or clean up stuck sessions                                                |
-| `entire enable`  | Enable Entire in your repository (uses `manual-commit` by default)            |
-| `entire explain` | Explain a session or commit                                                   |
-| `entire reset`   | Delete the shadow branch and session state for the current HEAD commit        |
+| Command          | Description                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| `entire clean`   | Clean up orphaned Entire data                                                                     |
+| `entire disable` | Remove Entire hooks from repository                                                               |
+| `entire doctor`  | Fix or clean up stuck sessions                                                                    |
+| `entire enable`  | Enable Entire in your repository                                                                  |
+| `entire explain` | Explain a session or commit                                                                       |
+| `entire reset`   | Delete the shadow branch and session state for the current HEAD commit                            |
 | `entire resume`  | Switch to a branch, restore latest checkpointed session metadata, and show command(s) to continue |
-| `entire rewind`  | Rewind to a previous checkpoint                                               |
-| `entire status`  | Show current session and strategy info                                        |
-| `entire version` | Show Entire CLI version                                                       |
+| `entire rewind`  | Rewind to a previous checkpoint                                                                   |
+| `entire status`  | Show current session info                                                                         |
+| `entire version` | Show Entire CLI version                                                                           |
 
 ### `entire enable` Flags
 
-| Flag                   | Description                                                        |
-|------------------------|--------------------------------------------------------------------|
-| `--agent <name>`       | AI agent to install hooks for: `claude-code` (default) or `gemini` |
-| `--force`, `-f`        | Force reinstall hooks (removes existing Entire hooks first)        |
-| `--local`              | Write settings to `settings.local.json` instead of `settings.json` |
-| `--project`            | Write settings to `settings.json` even if it already exists        |
-| `--skip-push-sessions` | Disable automatic pushing of session logs on git push              |
-| `--strategy <name>`    | Strategy to use: `manual-commit` (default) or `auto-commit`        |
-| `--telemetry=false`    | Disable anonymous usage analytics                                  |
+| Flag                   | Description                                                           |
+| ---------------------- | --------------------------------------------------------------------- |
+| `--agent <name>`       | AI agent to install hooks for: `claude-code`, `gemini`, or `opencode` |
+| `--force`, `-f`        | Force reinstall hooks (removes existing Entire hooks first)           |
+| `--local`              | Write settings to `settings.local.json` instead of `settings.json`    |
+| `--project`            | Write settings to `settings.json` even if it already exists           |
+| `--skip-push-sessions` | Disable automatic pushing of session logs on git push                 |
+| `--telemetry=false`    | Disable anonymous usage analytics                                     |
 
 **Examples:**
 
 ```
-# Use auto-commit strategy
-entire enable --strategy auto-commit
-
 # Force reinstall hooks
 entire enable --force
 
@@ -211,8 +198,6 @@ Shared across the team, typically committed to git:
 
 ```json
 {
-  "strategy": "manual-commit",
-  "agent": "claude-code",
   "enabled": true
 }
 ```
@@ -231,13 +216,24 @@ Personal overrides, gitignored by default:
 ### Configuration Options
 
 | Option                               | Values                           | Description                                          |
-|--------------------------------------|----------------------------------|------------------------------------------------------|
+| ------------------------------------ | -------------------------------- | ---------------------------------------------------- |
 | `enabled`                            | `true`, `false`                  | Enable/disable Entire                                |
 | `log_level`                          | `debug`, `info`, `warn`, `error` | Logging verbosity                                    |
-| `strategy`                           | `manual-commit`, `auto-commit`   | Session capture strategy                             |
 | `strategy_options.push_sessions`     | `true`, `false`                  | Auto-push `entire/checkpoints/v1` branch on git push |
 | `strategy_options.summarize.enabled` | `true`, `false`                  | Auto-generate AI summaries at commit time            |
 | `telemetry`                          | `true`, `false`                  | Send anonymous usage statistics to Posthog           |
+
+### Agent Hook Configuration
+
+Each agent stores its hook configuration in its own directory. When you run `entire enable`, hooks are installed in the appropriate location for each selected agent:
+
+| Agent       | Hook Location                 | Format            |
+| ----------- | ----------------------------- | ----------------- |
+| Claude Code | `.claude/settings.json`       | JSON hooks config |
+| Gemini CLI  | `.gemini/settings.json`       | JSON hooks config |
+| OpenCode    | `.opencode/plugins/entire.ts` | TypeScript plugin |
+
+You can enable multiple agents at the same time — each agent's hooks are independent. Entire detects which agents are active by checking for installed hooks, not by a setting in `settings.json`.
 
 ### Auto-Summarization
 
@@ -254,6 +250,7 @@ When enabled, Entire automatically generates AI summaries for checkpoints at com
 ```
 
 **Requirements:**
+
 - Claude CLI must be installed and authenticated (`claude` command available in PATH)
 - Summary generation is non-blocking: failures are logged but don't prevent commits
 
@@ -263,9 +260,9 @@ When enabled, Entire automatically generates AI summaries for checkpoints at com
 
 Local settings override project settings field-by-field. When you run `entire status`, it shows both project and local (effective) settings.
 
-### Gemini CLI (Preview)
+### Gemini CLI
 
-Gemini CLI support is currently in preview. Entire can work with [Gemini CLI](https://github.com/google-gemini/gemini-cli) as an alternative to Claude Code, or alongside it — you can have both agents' hooks enabled at the same time.
+Gemini CLI support is currently in preview. Entire can work with [Gemini CLI](https://github.com/google-gemini/gemini-cli) as an alternative to Claude Code, or alongside it — you can have multiple agents' hooks enabled at the same time.
 
 To enable:
 
@@ -277,6 +274,22 @@ All commands (`rewind`, `status`, `doctor`, etc.) work the same regardless of wh
 
 If you run into any issues with Gemini CLI integration, please [open an issue](https://github.com/entireio/cli/issues).
 
+### OpenCode
+
+OpenCode support is currently in preview. Entire can work with [OpenCode](https://opencode.ai/docs/cli/) as an alternative to Claude Code, or alongside it — you can have multiple agents' hooks enabled at the same time.
+
+To enable:
+
+```bash
+entire enable --agent opencode
+```
+
+Or select OpenCode from the interactive agent picker when running `entire enable`.
+
+All commands (`rewind`, `status`, `doctor`, etc.) work the same regardless of which agent is configured.
+
+If you run into any issues with OpenCode integration, please [open an issue](https://github.com/entireio/cli/issues).
+
 ## Security & Privacy
 
 **Your session transcripts are stored in your git repository** on the `entire/checkpoints/v1` branch. If your repository is public, this data is visible to anyone.
@@ -287,12 +300,12 @@ Entire automatically redacts detected secrets (API keys, tokens, credentials) wh
 
 ### Common Issues
 
-| Issue                    | Solution                                                                                  |
-|--------------------------|-------------------------------------------------------------------------------------------|
-| "Not a git repository"   | Navigate to a Git repository first                                                        |
-| "Entire is disabled"     | Run `entire enable`                                                                       |
-| "No rewind points found" | Work with your configured agent and commit (manual-commit) or wait for an agent response (auto-commit) |
-| "shadow branch conflict" | Run `entire reset --force`                                                                |
+| Issue                    | Solution                                                |
+| ------------------------ | ------------------------------------------------------- |
+| "Not a git repository"   | Navigate to a Git repository first                      |
+| "Entire is disabled"     | Run `entire enable`                                     |
+| "No rewind points found" | Work with your configured agent and commit your changes |
+| "shadow branch conflict" | Run `entire reset --force`                              |
 
 ### SSH Authentication Errors
 

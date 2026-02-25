@@ -239,7 +239,7 @@ type WriteCommittedOptions struct {
 	// This is useful for copying task metadata files, subagent transcripts, etc.
 	MetadataDir string
 
-	// Task checkpoint fields (for auto-commit strategy task checkpoints)
+	// Task checkpoint fields (for task/subagent checkpoints)
 	IsTask    bool   // Whether this is a task checkpoint
 	ToolUseID string // Tool use ID for task checkpoints
 
