@@ -369,11 +369,6 @@ func calculateSessionAttributions(repo *git.Repository, shadowRef *plumbing.Refe
 			logging.Debug(logCtx, "attribution: using HEAD as shadow (no shadow branch)")
 			shadowTree = headTree
 		}
-	} else if shadowRef == nil {
-		// Cache provided a shadow tree but shadowRef is nil — this shouldn't happen
-		// in practice, but handle gracefully: use HEAD as shadow.
-		logging.Debug(logCtx, "attribution: using HEAD as shadow (no shadow ref, ignoring cached tree)")
-		shadowTree = headTree
 	}
 
 	// Get base tree (state before session started)
