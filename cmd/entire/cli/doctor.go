@@ -98,7 +98,6 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 
 	// Get the current strategy for condense operations
 	strat := GetStrategy()
-	condenser, canCondense := strat.(strategy.SessionCondenser)
 
 	fmt.Fprintf(cmd.OutOrStdout(), "Found %d stuck session(s):\n\n", len(stuck))
 
@@ -106,8 +105,8 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 		displayStuckSession(cmd, ss)
 
 		if force {
-			if canCondense && ss.HasShadowBranch && ss.CheckpointCount > 0 {
-				if err := condenser.CondenseSessionByID(ss.State.SessionID); err != nil {
+			if ss.HasShadowBranch && ss.CheckpointCount > 0 {
+				if err := strat.CondenseSessionByID(ss.State.SessionID); err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to condense session %s: %v\n", ss.State.SessionID, err)
 				} else {
 					fmt.Fprintf(cmd.OutOrStdout(), "  -> Condensed session %s\n\n", ss.State.SessionID)
@@ -124,7 +123,7 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 		}
 
 		// Interactive: prompt for action
-		action, err := promptSessionAction(ss, canCondense)
+		action, err := promptSessionAction(ss)
 		if err != nil {
 			if errors.Is(err, huh.ErrUserAborted) {
 				return nil
@@ -134,11 +133,7 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 
 		switch action {
 		case "condense":
-			if !canCondense {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Strategy %s does not support condensation\n", strat.Name())
-				continue
-			}
-			if err := condenser.CondenseSessionByID(ss.State.SessionID); err != nil {
+			if err := strat.CondenseSessionByID(ss.State.SessionID); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to condense session %s: %v\n", ss.State.SessionID, err)
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "  -> Condensed session %s\n\n", ss.State.SessionID)
@@ -235,11 +230,11 @@ func displayStuckSession(cmd *cobra.Command, ss stuckSession) {
 }
 
 // promptSessionAction asks the user what to do with a stuck session.
-func promptSessionAction(ss stuckSession, canCondense bool) (string, error) {
+func promptSessionAction(ss stuckSession) (string, error) {
 	var action string
 
 	options := make([]huh.Option[string], 0, 3)
-	if canCondense && ss.HasShadowBranch && ss.CheckpointCount > 0 {
+	if ss.HasShadowBranch && ss.CheckpointCount > 0 {
 		options = append(options, huh.NewOption("Condense (save to permanent storage)", "condense"))
 	}
 	options = append(options,

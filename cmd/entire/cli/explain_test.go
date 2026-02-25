@@ -492,14 +492,8 @@ func TestStrategySessionSourceInterface(t *testing.T) {
 	// This ensures manual-commit strategy implements SessionSource
 	var s = strategy.NewManualCommitStrategy()
 
-	// Cast to SessionSource - manual-commit strategy should implement it
-	source, ok := s.(strategy.SessionSource)
-	if !ok {
-		t.Fatal("ManualCommitStrategy should implement SessionSource interface")
-	}
-
 	// GetAdditionalSessions should exist and be callable
-	_, err := source.GetAdditionalSessions()
+	_, err := s.GetAdditionalSessions()
 	if err != nil {
 		t.Logf("GetAdditionalSessions returned error: %v", err)
 	}

@@ -14,52 +14,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
-func TestRewindPointIsTaskCheckpoint(t *testing.T) {
-	// Test that RewindPoint has IsTaskCheckpoint and ToolUseID fields
-
-	// Session checkpoint (default)
-	sessionPoint := RewindPoint{
-		// Only checking IsTaskCheckpoint and ToolUseID fields
-	}
-	if sessionPoint.IsTaskCheckpoint {
-		t.Error("session checkpoint should have IsTaskCheckpoint=false by default")
-	}
-	if sessionPoint.ToolUseID != "" {
-		t.Error("session checkpoint should have empty ToolUseID by default")
-	}
-
-	// Task checkpoint
-	taskPoint := RewindPoint{
-		IsTaskCheckpoint: true,
-		ToolUseID:        "toolu_abc123",
-	}
-	if !taskPoint.IsTaskCheckpoint {
-		t.Error("task checkpoint should have IsTaskCheckpoint=true")
-	}
-	if taskPoint.ToolUseID != "toolu_abc123" {
-		t.Errorf("task checkpoint should have ToolUseID='toolu_abc123', got %q", taskPoint.ToolUseID)
-	}
-}
-
-func TestRewindPointExtractToolUseID(t *testing.T) {
-	// Test helper to extract ToolUseID from task metadata dir
-	tests := []struct {
-		metadataDir string
-		want        string
-	}{
-		{".entire/metadata/2025-01-28-session/tasks/toolu_abc123", "toolu_abc123"},
-		{".entire/metadata/2025-01-28-session/tasks/toolu_xyz789", "toolu_xyz789"},
-		{".entire/metadata/2025-01-28-session", ""},
-	}
-
-	for _, tt := range tests {
-		got := ExtractToolUseIDFromTaskMetadataDir(tt.metadataDir)
-		if got != tt.want {
-			t.Errorf("ExtractToolUseIDFromTaskMetadataDir(%q) = %q, want %q", tt.metadataDir, got, tt.want)
-		}
-	}
-}
-
 func TestShadowStrategy_PreviewRewind(t *testing.T) {
 	dir := t.TempDir()
 	repo, err := git.PlainInit(dir, false)

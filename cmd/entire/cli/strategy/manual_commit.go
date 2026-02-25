@@ -121,8 +121,5 @@ func (s *ManualCommitStrategy) ListOrphanedItems() ([]CleanupItem, error) {
 	return items, nil
 }
 
-//nolint:gochecknoinits // Standard pattern for strategy registration
-func init() {
-	// Register manual-commit as the primary strategy name
-	Register(StrategyNameManualCommit, NewManualCommitStrategy)
-}
+// Compile-time check that ManualCommitStrategy implements SessionSource
+var _ Strategy = (*ManualCommitStrategy)(nil)

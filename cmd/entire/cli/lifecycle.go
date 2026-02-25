@@ -78,10 +78,8 @@ func handleLifecycleSessionStart(ag agent.Agent, event *agent.Event) error {
 
 	// Check for concurrent sessions and append count if any
 	strat := GetStrategy()
-	if concurrentChecker, ok := strat.(strategy.ConcurrentSessionChecker); ok {
-		if count, err := concurrentChecker.CountOtherActiveSessionsWithCheckpoints(event.SessionID); err == nil && count > 0 {
-			message += fmt.Sprintf("\n  %d other active conversation(s) in this workspace will also be included.\n  Use 'entire status' for more information.", count)
-		}
+	if count, err := strat.CountOtherActiveSessionsWithCheckpoints(event.SessionID); err == nil && count > 0 {
+		message += fmt.Sprintf("\n  %d other active conversation(s) in this workspace will also be included.\n  Use 'entire status' for more information.", count)
 	}
 
 	// Output informational message
@@ -136,11 +134,8 @@ func handleLifecycleTurnStart(ag agent.Agent, event *agent.Event) error {
 	}
 
 	strat := GetStrategy()
-	if initializer, ok := strat.(strategy.SessionInitializer); ok {
-		agentType := ag.Type()
-		if err := initializer.InitializeSession(sessionID, agentType, event.SessionRef, event.Prompt); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to initialize session state: %v\n", err)
-		}
+	if err := strat.InitializeSession(sessionID, ag.Type(), event.SessionRef, event.Prompt); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to initialize session state: %v\n", err)
 	}
 
 	return nil
@@ -683,10 +678,8 @@ func transitionSessionTurnEnd(sessionID string) {
 	// Always dispatch to strategy for turn-end handling. The strategy reads
 	// work items from state (e.g. TurnCheckpointIDs), not the action list.
 	strat := GetStrategy()
-	if handler, ok := strat.(strategy.TurnEndHandler); ok {
-		if err := handler.HandleTurnEnd(turnState); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: turn-end action dispatch failed: %v\n", err)
-		}
+	if err := strat.HandleTurnEnd(turnState); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: turn-end action dispatch failed: %v\n", err)
 	}
 
 	if updateErr := strategy.SaveSessionState(turnState); updateErr != nil {
