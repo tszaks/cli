@@ -16,7 +16,7 @@ With Entire, you can:
 - [Typical Workflow](#typical-workflow)
 - [Key Concepts](#key-concepts)
   - [How It Works](#how-it-works)
-  - [Strategies](#strategies)
+  - [Strategy](#strategy)
 - [Commands Reference](#commands-reference)
 - [Configuration](#configuration)
 - [Security & Privacy](#security--privacy)
@@ -58,12 +58,7 @@ entire enable
 
 This installs agent and git hooks to work with your AI agent (Claude Code, Gemini CLI or OpenCode). You'll be prompted to select which agents to enable. To enable a specific agent non-interactively, use `entire enable --agent <name>` (e.g., `entire enable --agent opencode`).
 
-The hooks capture session data at specific points in your workflow. Your code commits stay clean—all session metadata is stored on a separate `entire/checkpoints/v1` branch.
-
-**When checkpoints are created** depends on your chosen strategy (default is `manual-commit`):
-
-- **Manual-commit**: Checkpoints are created when you or the agent make a git commit
-- **Auto-commit**: Checkpoints are created after each agent response
+The hooks capture session data as you work. Checkpoints are created when you or the agent make a git commit. Your code commits stay clean, Entire never creates commits on your active branch. All session metadata is stored on a separate `entire/checkpoints/v1` branch.
 
 ### 2. Work with Your AI Agent
 
@@ -115,12 +110,7 @@ Sessions are stored separately from your code commits on the `entire/checkpoints
 
 A **checkpoint** is a snapshot within a session that you can rewind to—a "save point" in your work.
 
-**When checkpoints are created:**
-
-- **Manual-commit strategy**: When you or the agent make a git commit
-- **Auto-commit strategy**: After each agent response
-
-**Checkpoint IDs** are 12-character hex strings (e.g., `a3b2c4d5e6f7`).
+Checkpoints are created when you or the agent make a git commit. **Checkpoint IDs** are 12-character hex strings (e.g., `a3b2c4d5e6f7`).
 
 ### How It Works
 
@@ -145,16 +135,14 @@ Your Branch                    entire/checkpoints/v1
 
 Checkpoints are saved as you work. When you commit, session metadata is permanently stored on the `entire/checkpoints/v1` branch and linked to your commit.
 
-### Strategies
+### Strategy
 
-Entire offers two strategies for capturing your work:
+Entire uses a manual-commit strategy that keeps your git history clean:
 
-| Aspect              | Manual-Commit                            | Auto-Commit                                        |
-| ------------------- | ---------------------------------------- | -------------------------------------------------- |
-| Code commits        | None on your branch                      | Created automatically after each agent response    |
-| Safe on main branch | Yes                                      | Use caution - creates commits on active branch     |
-| Rewind              | Always possible, non-destructive         | Full rewind on feature branches; logs-only on main |
-| Best for            | Most workflows - keeps git history clean | Teams wanting automatic code commits               |
+- **No commits on your branch** — Entire never creates commits on the active branch
+- **Safe on any branch** — works on main, master, and feature branches alike
+- **Non-destructive rewind** — restore files from any checkpoint without altering commit history
+- **Metadata stored separately** — all session data lives on the `entire/checkpoints/v1` branch
 
 ### Git Worktrees
 
@@ -171,12 +159,12 @@ Multiple AI sessions can run on the same commit. If you start a second session w
 | `entire clean`   | Clean up orphaned Entire data                                                                     |
 | `entire disable` | Remove Entire hooks from repository                                                               |
 | `entire doctor`  | Fix or clean up stuck sessions                                                                    |
-| `entire enable`  | Enable Entire in your repository (uses `manual-commit` by default)                                |
+| `entire enable`  | Enable Entire in your repository                                                                  |
 | `entire explain` | Explain a session or commit                                                                       |
 | `entire reset`   | Delete the shadow branch and session state for the current HEAD commit                            |
 | `entire resume`  | Switch to a branch, restore latest checkpointed session metadata, and show command(s) to continue |
 | `entire rewind`  | Rewind to a previous checkpoint                                                                   |
-| `entire status`  | Show current session and strategy info                                                            |
+| `entire status`  | Show current session info                                                                         |
 | `entire version` | Show Entire CLI version                                                                           |
 
 ### `entire enable` Flags
