@@ -34,7 +34,9 @@ type CursorHookEntry struct {
 }
 
 // sessionInfoRaw is the JSON structure from SessionStart/SessionEnd/Stop hooks.
-// Cursor may provide session_id or conversation_id (fallback).
+// Cursor occasionally provides session_id, so we ignore it.
+// Cursor always provides conversation_id.
+// session_id and conversation_id are identical and interchangeable.
 type sessionInfoRaw struct {
 	// common
 	ConversationID string   `json:"conversation_id"`
