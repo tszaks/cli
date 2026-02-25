@@ -28,6 +28,8 @@ func WithPermissionMode(mode string) Option {
 
 type Agent interface {
 	Name() string
+	// Binary returns the CLI binary name (e.g. "claude", "gemini").
+	Binary() string
 	EntireAgent() string
 	PromptPattern() string
 	// TimeoutMultiplier returns a factor applied to per-test timeouts.

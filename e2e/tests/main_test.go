@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"testing"
 
-	_ "github.com/entireio/cli/e2e/agents"
+	"github.com/entireio/cli/e2e/agents"
 	"github.com/entireio/cli/e2e/testutil"
 )
 
@@ -23,6 +23,23 @@ func TestMain(m *testing.M) {
 	}
 	_ = os.MkdirAll(runDir, 0o755)
 	testutil.SetRunDir(runDir)
+
+	// Preflight: verify required dependencies before running any tests.
+	var missing []string
+	for _, bin := range []string{"git", "tmux", "entire"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			missing = append(missing, bin)
+		}
+	}
+	for _, a := range agents.All() {
+		if _, err := exec.LookPath(a.Binary()); err != nil {
+			missing = append(missing, a.Binary())
+		}
+	}
+	if len(missing) > 0 {
+		fmt.Fprintf(os.Stderr, "preflight: missing required binaries: %v\n", missing)
+		os.Exit(1)
+	}
 
 	version := "unknown"
 	if out, err := exec.Command("entire", "version").Output(); err == nil {

@@ -30,6 +30,7 @@ func init() {
 }
 
 func (a *openCodeAgent) Name() string               { return "opencode" }
+func (a *openCodeAgent) Binary() string              { return "opencode" }
 func (a *openCodeAgent) EntireAgent() string        { return "opencode" }
 func (a *openCodeAgent) PromptPattern() string      { return `(Ask anything|▣)` }
 func (a *openCodeAgent) TimeoutMultiplier() float64 { return 2.0 }
@@ -61,7 +62,7 @@ func (a *openCodeAgent) Bootstrap() error {
 	// Run a trivial prompt to force full initialization before tests.
 	for i := range 3 {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		cmd := exec.CommandContext(ctx, "opencode", "run", "--model", a.model, "say hi")
+		cmd := exec.CommandContext(ctx, a.Binary(), "run", "--model", a.model, "say hi")
 		cmd.Env = os.Environ()
 		out, err := cmd.CombinedOutput()
 		cancel()
@@ -105,7 +106,7 @@ func (a *openCodeAgent) RunPrompt(ctx context.Context, dir string, prompt string
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "opencode", args...)
+	cmd := exec.CommandContext(ctx, a.Binary(), args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "ENTIRE_TEST_TTY=0")
 
@@ -115,7 +116,7 @@ func (a *openCodeAgent) RunPrompt(ctx context.Context, dir string, prompt string
 
 	err := cmd.Run()
 	out := Output{
-		Command: "opencode " + strings.Join(args, " "),
+		Command: a.Binary() + " " + strings.Join(args, " "),
 		Stdout:  stdout.String(),
 		Stderr:  stderr.String(),
 	}
@@ -141,7 +142,7 @@ func (a *openCodeAgent) StartSession(ctx context.Context, dir string) (Session, 
 	for attempt := range 2 {
 		name := fmt.Sprintf("opencode-test-%d", time.Now().UnixNano())
 		var err error
-		s, err = NewTmuxSession(name, dir, nil, "env", "ENTIRE_TEST_TTY=0", "opencode", "--model", a.model)
+		s, err = NewTmuxSession(name, dir, nil, "env", "ENTIRE_TEST_TTY=0", a.Binary(), "--model", a.model)
 		if err != nil {
 			return nil, err
 		}

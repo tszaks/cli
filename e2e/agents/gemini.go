@@ -23,6 +23,7 @@ func init() {
 type Gemini struct{}
 
 func (g *Gemini) Name() string               { return "gemini-cli" }
+func (g *Gemini) Binary() string             { return "gemini" }
 func (g *Gemini) EntireAgent() string        { return "gemini" }
 func (g *Gemini) PromptPattern() string      { return `Type your message` }
 func (g *Gemini) TimeoutMultiplier() float64 { return 2.5 }
@@ -72,7 +73,7 @@ func (g *Gemini) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 
 	args := []string{"-p", prompt, "--model", cfg.Model, "-y"}
 	displayArgs := []string{"-p", fmt.Sprintf("%q", prompt), "--model", cfg.Model, "-y"}
-	cmd := exec.CommandContext(ctx, "gemini", args...)
+	cmd := exec.CommandContext(ctx, g.Binary(), args...)
 	cmd.Dir = dir
 	cmd.Stdin = nil
 	cmd.Env = append(os.Environ(), "ACCESSIBLE=1", "ENTIRE_TEST_TTY=0")
@@ -94,7 +95,7 @@ func (g *Gemini) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 	}
 
 	return Output{
-		Command:  "gemini " + strings.Join(displayArgs, " "),
+		Command:  g.Binary() + " " + strings.Join(displayArgs, " "),
 		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
 		ExitCode: exitCode,
@@ -105,7 +106,7 @@ func (g *Gemini) StartSession(ctx context.Context, dir string) (Session, error) 
 	name := fmt.Sprintf("gemini-test-%d", time.Now().UnixNano())
 	// Unset CI and GITHUB_ACTIONS so gemini doesn't force headless mode —
 	// it checks both in isHeadlessMode() and skips interactive TUI entirely.
-	s, err := NewTmuxSession(name, dir, []string{"CI", "GITHUB_ACTIONS"}, "env", "ACCESSIBLE=1", "ENTIRE_TEST_TTY=0", "gemini", "--model", "gemini-3-flash-preview", "-y")
+	s, err := NewTmuxSession(name, dir, []string{"CI", "GITHUB_ACTIONS"}, "env", "ACCESSIBLE=1", "ENTIRE_TEST_TTY=0", g.Binary(), "--model", "gemini-3-flash-preview", "-y")
 	if err != nil {
 		return nil, err
 	}

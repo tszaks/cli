@@ -64,6 +64,7 @@ func init() {
 type Claude struct{}
 
 func (c *Claude) Name() string               { return "claude-code" }
+func (c *Claude) Binary() string             { return "claude" }
 func (c *Claude) EntireAgent() string        { return "claude-code" }
 func (c *Claude) PromptPattern() string      { return `❯` }
 func (c *Claude) TimeoutMultiplier() float64 { return 1.0 }
@@ -128,13 +129,13 @@ func (c *Claude) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 		if err != nil {
 			return Output{}, fmt.Errorf("create isolated config dir: %w", err)
 		}
-		defer os.RemoveAll(configDir)
+		defer func() { _ = os.RemoveAll(configDir) }()
 		env = append(env, "CLAUDE_CONFIG_DIR="+configDir)
 	}
 
 	args := []string{"-p", prompt, "--model", cfg.Model, "--dangerously-skip-permissions"}
 	displayArgs := []string{"-p", fmt.Sprintf("%q", prompt), "--model", cfg.Model, "--dangerously-skip-permissions"}
-	cmd := exec.CommandContext(ctx, "claude", args...)
+	cmd := exec.CommandContext(ctx, c.Binary(), args...)
 	cmd.Dir = dir
 	cmd.Stdin = nil
 	cmd.Env = env
@@ -156,7 +157,7 @@ func (c *Claude) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 	}
 
 	return Output{
-		Command:  "claude " + strings.Join(displayArgs, " "),
+		Command:  c.Binary() + " " + strings.Join(displayArgs, " "),
 		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
 		ExitCode: exitCode,
@@ -179,7 +180,7 @@ func (c *Claude) StartSession(ctx context.Context, dir string) (Session, error) 
 	}
 
 	args := append([]string{"env"}, envArgs...)
-	args = append(args, "claude", "--dangerously-skip-permissions")
+	args = append(args, c.Binary(), "--dangerously-skip-permissions")
 	s, err := NewTmuxSession(name, dir, []string{"CLAUDECODE"}, args[0], args[1:]...)
 	if err != nil {
 		return nil, err
