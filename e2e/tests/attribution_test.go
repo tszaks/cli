@@ -40,6 +40,7 @@ func TestLineAttributionReasonable(t *testing.T) {
 			"total committed should be > 0")
 		assert.Greater(t, sm.InitialAttribution.AgentPercentage, 50.0,
 			"agent created 100%% of content, percentage should be > 50%%")
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -69,6 +70,7 @@ func TestAttributionOnAgentCommit(t *testing.T) {
 			"agent lines should be > 0 on first agent commit")
 		assert.Greater(t, sm.InitialAttribution.TotalCommitted, 0,
 			"total committed should be > 0 on first agent commit")
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -109,6 +111,7 @@ func TestAttributionMultiCommitSameSession(t *testing.T) {
 			"total committed should be > 0 on second commit")
 		assert.Greater(t, sm.InitialAttribution.AgentPercentage, 50.0,
 			"agent wrote all content, percentage should be > 50%%")
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -132,20 +135,7 @@ func TestShadowBranchCleanedAfterAgentCommit(t *testing.T) {
 
 		testutil.WaitForCheckpoint(t, s, 15*time.Second)
 
-		// List all entire/* branches, excluding entire/checkpoints/*.
-		// Shadow branches (entire/{hash}-{hash}) share the entire/ prefix
-		// with the checkpoint branch (entire/checkpoints/v1).
-		branches := testutil.GitOutput(t, s.Dir, "for-each-ref", "--format=%(refname:short)", "refs/heads/entire/")
-		var shadow []string
-		for _, b := range strings.Split(branches, "\n") {
-			b = strings.TrimSpace(b)
-			if b == "" || strings.HasPrefix(b, "entire/checkpoints") {
-				continue
-			}
-			shadow = append(shadow, b)
-		}
-		assert.Empty(t, shadow,
-			"shadow branches should be cleaned up after agent commit, found: %v", shadow)
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -195,5 +185,6 @@ func TestAttributionMixedHumanAndAgent(t *testing.T) {
 			"agent_percentage should be > 0 when agent wrote content")
 		assert.Less(t, sm.InitialAttribution.AgentPercentage, 100.0,
 			"agent_percentage should be < 100 when human also wrote content")
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }

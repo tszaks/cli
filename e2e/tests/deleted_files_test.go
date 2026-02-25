@@ -56,5 +56,6 @@ func TestDeletedFilesCommitDeletion(t *testing.T) {
 		} else {
 			t.Log("deletion commit has no checkpoint (deleted files may not carry forward)")
 		}
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }

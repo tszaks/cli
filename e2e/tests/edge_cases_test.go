@@ -53,6 +53,7 @@ func TestAgentContinuesAfterCommit(t *testing.T) {
 		assert.NotEqual(t, cpID1, cpID2, "checkpoint IDs should be distinct")
 		testutil.AssertCheckpointExists(t, s.Dir, cpID1)
 		testutil.AssertCheckpointExists(t, s.Dir, cpID2)
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -84,6 +85,7 @@ func TestAgentAmendsCommit(t *testing.T) {
 		// The amended commit should still carry a valid checkpoint trailer.
 		cpID := testutil.AssertHasCheckpointTrailer(t, s.Dir, "HEAD")
 		testutil.AssertCheckpointExists(t, s.Dir, cpID)
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -117,6 +119,7 @@ func TestDirtyWorkingTree(t *testing.T) {
 		assert.Equal(t, "# Human notes\n", string(data), "human file should be untouched")
 
 		testutil.AssertCommitLinkedToCheckpoint(t, s.Dir, "HEAD")
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -141,6 +144,7 @@ func TestRapidSequentialCommits(t *testing.T) {
 			ref := fmt.Sprintf("HEAD~%d", i)
 			testutil.AssertHasCheckpointTrailer(t, s.Dir, ref)
 		}
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -180,5 +184,6 @@ func TestAgentCommitsMidTurnUserCommitsRemainder(t *testing.T) {
 			"user and agent checkpoints should have distinct IDs")
 		testutil.AssertCheckpointExists(t, s.Dir, userCpID)
 		testutil.AssertCheckpointExists(t, s.Dir, agentCpID)
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }

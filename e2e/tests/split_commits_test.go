@@ -45,6 +45,7 @@ func TestUserSplitsAgentChanges(t *testing.T) {
 		assert.NotEqual(t, cpID1, cpID2, "checkpoint IDs should be distinct")
 		testutil.AssertCheckpointExists(t, s.Dir, cpID1)
 		testutil.AssertCheckpointExists(t, s.Dir, cpID2)
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -93,6 +94,7 @@ func TestPartialStaging(t *testing.T) {
 		assert.NotEqual(t, cpID1, cpID2, "checkpoint IDs should be distinct")
 		testutil.AssertCheckpointExists(t, s.Dir, cpID1)
 		testutil.AssertCheckpointExists(t, s.Dir, cpID2)
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -150,5 +152,6 @@ func TestSplitModificationsToExistingFiles(t *testing.T) {
 		testutil.AssertCheckpointExists(t, s.Dir, cpID1)
 		testutil.AssertCheckpointExists(t, s.Dir, cpID2)
 		testutil.AssertCheckpointExists(t, s.Dir, cpID3)
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }

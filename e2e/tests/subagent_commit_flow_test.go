@@ -42,5 +42,6 @@ func TestSubagentCommitFlow(t *testing.T) {
 		sm := testutil.ReadSessionMetadata(t, s.Dir, cpID, 0)
 		assert.NotEmpty(t, sm.Agent, "session agent field should be populated")
 		assert.NotEmpty(t, sm.SessionID, "session_id should be set")
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }

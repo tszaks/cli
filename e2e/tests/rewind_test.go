@@ -107,6 +107,7 @@ func TestRewindAfterCommit(t *testing.T) {
 
 		// Working directory should be unchanged — file still committed.
 		testutil.AssertFileExists(t, s.Dir, "docs/red.md")
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 

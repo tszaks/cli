@@ -94,6 +94,24 @@ func WaitForCheckpoint(t *testing.T, s *RepoState, timeout time.Duration) {
 	t.Fatalf("checkpoint branch did not advance within %s", timeout)
 }
 
+// AssertNoShadowBranches asserts that no shadow branches (entire/*) remain,
+// excluding entire/checkpoints/*. Shadow branches should be cleaned up after
+// commits condense session data to the metadata branch.
+func AssertNoShadowBranches(t *testing.T, dir string) {
+	t.Helper()
+	branches := GitOutput(t, dir, "for-each-ref", "--format=%(refname:short)", "refs/heads/entire/")
+	var shadow []string
+	for _, b := range strings.Split(branches, "\n") {
+		b = strings.TrimSpace(b)
+		if b == "" || strings.HasPrefix(b, "entire/checkpoints") {
+			continue
+		}
+		shadow = append(shadow, b)
+	}
+	assert.Empty(t, shadow,
+		"shadow branches should be cleaned up after commit, found: %v", shadow)
+}
+
 // AssertCheckpointAdvanced asserts the checkpoint branch moved forward.
 func AssertCheckpointAdvanced(t *testing.T, s *RepoState) {
 	t.Helper()

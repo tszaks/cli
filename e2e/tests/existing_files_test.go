@@ -42,6 +42,7 @@ func TestModifyExistingTrackedFile(t *testing.T) {
 
 		cpID := testutil.AssertHasCheckpointTrailer(t, s.Dir, "HEAD")
 		testutil.AssertCheckpointExists(t, s.Dir, cpID)
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -85,6 +86,7 @@ func TestMixedNewAndModifiedFiles(t *testing.T) {
 		assert.NotEqual(t, cpID1, cpID2, "checkpoint IDs should be distinct")
 		testutil.AssertCheckpointExists(t, s.Dir, cpID1)
 		testutil.AssertCheckpointExists(t, s.Dir, cpID2)
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -113,6 +115,7 @@ func TestContentOverlapRevertNewFile(t *testing.T) {
 
 		testutil.AssertNoCheckpointTrailer(t, s.Dir, "HEAD")
 		testutil.AssertCheckpointNotAdvanced(t, s)
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
 
@@ -152,5 +155,6 @@ func TestModifiedFileAlwaysGetsCheckpoint(t *testing.T) {
 
 		cpID := testutil.AssertHasCheckpointTrailer(t, s.Dir, "HEAD")
 		testutil.AssertCheckpointExists(t, s.Dir, cpID)
+		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }
