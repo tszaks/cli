@@ -110,7 +110,11 @@ func SetupRepo(t *testing.T, agent agents.Agent) *RepoState {
 func ForEachAgent(t *testing.T, timeout time.Duration, fn func(t *testing.T, s *RepoState, ctx context.Context)) {
 	t.Helper()
 	t.Parallel()
-	for _, agent := range agents.All() {
+	all := agents.All()
+	if len(all) == 0 {
+		t.Skip("no agents registered (check E2E_AGENT filter)")
+	}
+	for _, agent := range all {
 		t.Run(agent.Name(), func(t *testing.T) {
 			s := SetupRepo(t, agent)
 

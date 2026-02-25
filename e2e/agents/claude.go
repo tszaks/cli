@@ -192,8 +192,10 @@ func (c *Claude) StartSession(ctx context.Context, dir string) (Session, error) 
 	// On CI (no macOS Keychain), use an isolated config dir so Claude Code
 	// picks up ANTHROPIC_API_KEY from the environment instead of trying OAuth.
 	// Locally, we skip CLAUDE_CONFIG_DIR so the Keychain-based auth works.
+	var configDir string
 	if os.Getenv("CI") != "" {
-		configDir, err := isolatedConfigDir()
+		var err error
+		configDir, err = isolatedConfigDir()
 		if err == nil {
 			envArgs = append(envArgs, "CLAUDE_CONFIG_DIR="+configDir)
 		}
@@ -203,7 +205,13 @@ func (c *Claude) StartSession(ctx context.Context, dir string) (Session, error) 
 	args = append(args, c.Binary(), "--dangerously-skip-permissions")
 	s, err := NewTmuxSession(name, dir, []string{"CLAUDECODE"}, args[0], args[1:]...)
 	if err != nil {
+		if configDir != "" {
+			_ = os.RemoveAll(configDir)
+		}
 		return nil, err
+	}
+	if configDir != "" {
+		s.OnClose(func() { _ = os.RemoveAll(configDir) })
 	}
 
 	// Dismiss startup dialogs until we reach the input prompt.

@@ -11,7 +11,13 @@ import (
 // TmuxSession implements Session using tmux for PTY-based interactive agents.
 type TmuxSession struct {
 	name         string
-	stableAtSend string // stable content snapshot when Send was last called
+	stableAtSend string   // stable content snapshot when Send was last called
+	cleanups     []func() // run on Close
+}
+
+// OnClose registers a function to run when the session is closed.
+func (s *TmuxSession) OnClose(fn func()) {
+	s.cleanups = append(s.cleanups, fn)
 }
 
 // NewTmuxSession creates a new tmux session running the given command in dir.
@@ -20,20 +26,17 @@ func NewTmuxSession(name string, dir string, unsetEnv []string, command string, 
 	s := &TmuxSession{name: name}
 
 	tmuxArgs := []string{"new-session", "-d", "-s", name, "-c", dir}
-	// Build the shell command, prefixed with env -u for each var to strip.
-	shellCmd := ""
-	var shellCmdSb25 strings.Builder
+	// Build a shell command string, prefixed with env -u for each var to strip.
+	// All arguments are shell-quoted to prevent injection or splitting.
+	var parts []string
 	for _, v := range unsetEnv {
-		shellCmdSb25.WriteString("env -u " + v + " ")
+		parts = append(parts, "env", "-u", shellQuote(v))
 	}
-	shellCmd += shellCmdSb25.String()
-	shellCmd += command
-	var shellCmdSb29 strings.Builder
+	parts = append(parts, shellQuote(command))
 	for _, a := range args {
-		shellCmdSb29.WriteString(" " + a)
+		parts = append(parts, shellQuote(a))
 	}
-	shellCmd += shellCmdSb29.String()
-	tmuxArgs = append(tmuxArgs, shellCmd)
+	tmuxArgs = append(tmuxArgs, strings.Join(parts, " "))
 
 	cmd := exec.Command("tmux", tmuxArgs...)
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -67,7 +70,10 @@ func (s *TmuxSession) SendKeys(keys ...string) error {
 	return nil
 }
 
-const settleTime = 2 * time.Second
+const (
+	settleTime   = 2 * time.Second
+	pollInterval = 500 * time.Millisecond
+)
 
 // stableContent returns the content with the last few lines stripped,
 // so that TUI status bar updates don't prevent the settle timer.
@@ -98,7 +104,7 @@ func (s *TmuxSession) WaitFor(pattern string, timeout time.Duration) (string, er
 			// Pattern lost — reset
 			matchedAt = time.Time{}
 			lastStable = ""
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(pollInterval)
 			continue
 		}
 
@@ -111,7 +117,7 @@ func (s *TmuxSession) WaitFor(pattern string, timeout time.Duration) (string, er
 			// Pattern matches but content is still changing — reset settle timer
 			matchedAt = time.Now()
 			lastStable = stable
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(pollInterval)
 			continue
 		}
 
@@ -122,7 +128,7 @@ func (s *TmuxSession) WaitFor(pattern string, timeout time.Duration) (string, er
 			return content, nil
 		}
 
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(pollInterval)
 	}
 	content := s.Capture()
 	return content, fmt.Errorf("timed out waiting for %q after %s\n--- pane content ---\n%s\n--- end pane content ---", pattern, timeout, content)
@@ -135,10 +141,18 @@ func (s *TmuxSession) Capture() string {
 }
 
 func (s *TmuxSession) Close() error {
+	for _, fn := range s.cleanups {
+		fn()
+	}
 	cmd := exec.Command("tmux", "kill-session", "-t", s.name)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("tmux kill-session: %w\n%s", err, out)
 	}
 	return nil
+}
+
+// shellQuote wraps s in single quotes with proper escaping for POSIX shells.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
