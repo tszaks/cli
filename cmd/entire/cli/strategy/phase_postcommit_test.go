@@ -920,6 +920,50 @@ func TestFilesChangedInCommit_InitialCommit(t *testing.T) {
 	assert.Len(t, changed, 1)
 }
 
+// TestFilesChangedInCommit_CacheEquivalence verifies that passing pre-resolved
+// trees produces the same result as passing nil (fallback resolution).
+func TestFilesChangedInCommit_CacheEquivalence(t *testing.T) {
+	dir := setupGitRepo(t)
+	t.Chdir(dir)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+
+	// Create a second commit with changes (setupGitRepo already created initial commit)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("modified"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new"), 0o644))
+	_, err = wt.Add("test.txt")
+	require.NoError(t, err)
+	_, err = wt.Add("new.txt")
+	require.NoError(t, err)
+	headHash, err := wt.Commit("changes", &git.CommitOptions{})
+	require.NoError(t, err)
+
+	commit, err := repo.CommitObject(headHash)
+	require.NoError(t, err)
+
+	// Resolve trees
+	headTree, err := commit.Tree()
+	require.NoError(t, err)
+	parent, err := commit.Parent(0)
+	require.NoError(t, err)
+	parentTree, err := parent.Tree()
+	require.NoError(t, err)
+
+	// Cache miss (nil trees)
+	resultNil := filesChangedInCommit(commit, nil, nil)
+	// Cache hit (pre-resolved trees)
+	resultCached := filesChangedInCommit(commit, headTree, parentTree)
+
+	assert.Equal(t, resultNil, resultCached, "Cache hit and cache miss should produce identical results")
+	assert.Contains(t, resultCached, "test.txt")
+	assert.Contains(t, resultCached, "new.txt")
+	assert.Len(t, resultCached, 2)
+}
+
 // TestPostCommit_ActiveSession_CarryForward_PartialCommit verifies that when an
 // ACTIVE session has touched files A, B, C but only A and B are committed, the
 // remaining file C is carried forward to a new shadow branch.
