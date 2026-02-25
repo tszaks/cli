@@ -52,16 +52,12 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          E2E_ARTIFACT_DIR: ${{ github.workspace }}/e2e-artifacts
-        run: |
-          mkdir -p "$E2E_ARTIFACT_DIR"
-          entire version
-          mise run test:e2e:${{ matrix.agent }}
+        run: mise run test:e2e:${{ matrix.agent }}
 
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-artifacts-${{ matrix.agent }}
-          path: e2e-artifacts/
+          path: e2e/artifacts/
           retention-days: 7
