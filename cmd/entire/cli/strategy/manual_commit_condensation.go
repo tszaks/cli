@@ -646,9 +646,13 @@ func extractUserPromptsFromLines(lines []string) []string {
 			continue
 		}
 
-		// Check for user message (supports both "human" and "user" types)
-		msgType, ok := entry["type"].(string)
-		if !ok || (msgType != "human" && msgType != "user") {
+		// Check for user message:
+		// - Claude Code uses "type": "human" or "type": "user"
+		// - Cursor uses "role": "user"
+		msgType, _ := entry["type"].(string) //nolint:errcheck // type assertion on interface{} from JSON
+		msgRole, _ := entry["role"].(string) //nolint:errcheck // type assertion on interface{} from JSON
+		isUser := msgType == "human" || msgType == "user" || msgRole == "user"
+		if !isUser {
 			continue
 		}
 

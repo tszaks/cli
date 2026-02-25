@@ -81,6 +81,90 @@ func TestCalculateTokenUsage_ClaudeCodeWithOffset(t *testing.T) {
 	}
 }
 
+// cursorSampleTranscript is a subset of a real Cursor session transcript.
+// Cursor uses "role" (not "type") and wraps user text in <user_query> tags.
+var cursorSampleTranscript = strings.Join([]string{
+	`{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\ncreate a file with contents 'a' and commit, then create another file with contents 'b' and commit\n</user_query>"}]}}`,
+	`{"role":"assistant","message":{"content":[{"type":"text","text":"Creating two files (contents 'a' and 'b') and committing each."}]}}`,
+	`{"role":"assistant","message":{"content":[{"type":"text","text":"Both files are tracked and the working tree is clean."}]}}`,
+	`{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\ncreate a file with contents 'c' and commit\n</user_query>"}]}}`,
+	`{"role":"assistant","message":{"content":[{"type":"text","text":"Created c.txt with contents c and committed it."}]}}`,
+	`{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nadd a file called bingo and commit\n</user_query>"}]}}`,
+	`{"role":"assistant","message":{"content":[{"type":"text","text":"Created bingo and committed it."}]}}`,
+}, "\n") + "\n"
+
+func TestCountTranscriptItems_Cursor(t *testing.T) {
+	t.Parallel()
+
+	count := countTranscriptItems(agent.AgentTypeCursor, cursorSampleTranscript)
+	if count != 7 {
+		t.Errorf("countTranscriptItems(Cursor) = %d, want 7", count)
+	}
+}
+
+func TestCountTranscriptItems_CursorEmpty(t *testing.T) {
+	t.Parallel()
+
+	count := countTranscriptItems(agent.AgentTypeCursor, "")
+	if count != 0 {
+		t.Errorf("countTranscriptItems(Cursor, empty) = %d, want 0", count)
+	}
+}
+
+func TestExtractUserPrompts_Cursor(t *testing.T) {
+	t.Parallel()
+
+	// Cursor uses "role":"user" instead of "type":"human". extractUserPromptsFromLines
+	// handles both via the "role" fallback.
+	prompts := extractUserPrompts(agent.AgentTypeCursor, cursorSampleTranscript)
+	if len(prompts) != 3 {
+		t.Fatalf("extractUserPrompts(Cursor) returned %d prompts, want 3", len(prompts))
+	}
+
+	if !strings.Contains(prompts[0], "create a file with contents 'a'") {
+		t.Errorf("prompt[0] = %q, expected to contain file creation request", prompts[0])
+	}
+	if !strings.Contains(prompts[2], "bingo") {
+		t.Errorf("prompt[2] = %q, expected to contain 'bingo'", prompts[2])
+	}
+
+	// Verify <user_query> tags are stripped
+	for i, p := range prompts {
+		if strings.Contains(p, "<user_query>") || strings.Contains(p, "</user_query>") {
+			t.Errorf("prompt[%d] still contains <user_query> tags: %q", i, p)
+		}
+	}
+}
+
+func TestExtractUserPrompts_CursorEmpty(t *testing.T) {
+	t.Parallel()
+
+	prompts := extractUserPrompts(agent.AgentTypeCursor, "")
+	if len(prompts) != 0 {
+		t.Errorf("extractUserPrompts(Cursor, empty) = %v, want empty", prompts)
+	}
+}
+
+func TestCalculateTokenUsage_CursorRealTranscript(t *testing.T) {
+	t.Parallel()
+
+	// Even with a multi-line real transcript, Cursor should return nil
+	result := calculateTokenUsage(agent.AgentTypeCursor, []byte(cursorSampleTranscript), 0)
+	if result != nil {
+		t.Errorf("calculateTokenUsage(Cursor, real transcript) = %+v, want nil", result)
+	}
+}
+
+func TestCalculateTokenUsage_CursorWithOffset(t *testing.T) {
+	t.Parallel()
+
+	// Offset should not matter — Cursor always returns nil
+	result := calculateTokenUsage(agent.AgentTypeCursor, []byte(cursorSampleTranscript), 3)
+	if result != nil {
+		t.Errorf("calculateTokenUsage(Cursor, offset=3) = %+v, want nil", result)
+	}
+}
+
 func TestGenerateContextFromPrompts_CJKTruncation(t *testing.T) {
 	t.Parallel()
 
