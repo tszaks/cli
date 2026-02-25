@@ -329,7 +329,8 @@ func TestFilesWithRemainingAgentChanges_FullyCommitted(t *testing.T) {
 }
 
 // TestFilesWithRemainingAgentChanges_PartialCommit tests that files committed with
-// different content (partial commit via git add -p) ARE in the remaining list.
+// different content (partial commit via git add -p) ARE in the remaining list
+// when the working tree still has the full agent content.
 func TestFilesWithRemainingAgentChanges_PartialCommit(t *testing.T) {
 	t.Parallel()
 	dir := setupGitRepo(t)
@@ -356,15 +357,61 @@ func TestFilesWithRemainingAgentChanges_PartialCommit(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// After a real git add -p, the working tree still has the full content.
+	// Simulate this by writing the full content back to disk after the commit.
+	require.NoError(t, os.WriteFile(testFile, fullContent, 0o644))
+
 	commit, err := repo.CommitObject(headCommit)
 	require.NoError(t, err)
 
 	shadowBranch := checkpoint.ShadowBranchNameForCommit("ghi9012", "e3b0c4")
 	committedFiles := map[string]struct{}{"test.txt": {}}
 
-	// Content doesn't match - file should be in remaining (has more agent changes)
+	// Content doesn't match and working tree is dirty - file should be in remaining
 	remaining := filesWithRemainingAgentChanges(repo, shadowBranch, commit, []string{"test.txt"}, committedFiles)
-	assert.Equal(t, []string{"test.txt"}, remaining, "Partially committed file should be in remaining")
+	assert.Equal(t, []string{"test.txt"}, remaining, "Partially committed file with dirty working tree should be in remaining")
+}
+
+// TestFilesWithRemainingAgentChanges_ReplacedContent tests that files committed with
+// different content but a CLEAN working tree are NOT in the remaining list.
+// This is the scenario where the user intentionally replaced the agent's content.
+func TestFilesWithRemainingAgentChanges_ReplacedContent(t *testing.T) {
+	t.Parallel()
+	dir := setupGitRepo(t)
+
+	repo, err := git.PlainOpen(dir)
+	require.NoError(t, err)
+
+	// Shadow branch has the agent's content
+	agentContent := []byte("func GetPort() int { return 8080 }\n")
+	createShadowBranchWithContent(t, repo, "rep1234", "e3b0c4", map[string][]byte{
+		"config.go": agentContent,
+	})
+
+	// User writes completely different content and commits
+	userContent := []byte("func GetHost() string { return \"localhost\" }\n")
+	testFile := filepath.Join(dir, "config.go")
+	require.NoError(t, os.WriteFile(testFile, userContent, 0o644))
+	wt, err := repo.Worktree()
+	require.NoError(t, err)
+	_, err = wt.Add("config.go")
+	require.NoError(t, err)
+	headCommit, err := wt.Commit("Replace config", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	require.NoError(t, err)
+
+	// Working tree is clean — matches the commit (user committed everything)
+
+	commit, err := repo.CommitObject(headCommit)
+	require.NoError(t, err)
+
+	shadowBranch := checkpoint.ShadowBranchNameForCommit("rep1234", "e3b0c4")
+	committedFiles := map[string]struct{}{"config.go": {}}
+
+	// Content differs from shadow but working tree is clean — no carry-forward
+	remaining := filesWithRemainingAgentChanges(repo, shadowBranch, commit, []string{"config.go"}, committedFiles)
+	assert.Empty(t, remaining, "Replaced content with clean working tree should not be in remaining")
 }
 
 // TestFilesWithRemainingAgentChanges_NoShadowBranch tests fallback to file-level subtraction.
