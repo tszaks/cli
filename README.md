@@ -295,7 +295,7 @@ If you run into any issues with OpenCode integration, please [open an issue](htt
 
 Cursor support is currently in preview. Entire can work with [Cursor](https://www.cursor.com/) as an alternative to Claude Code, or alongside it — you can have multiple agents' hooks enabled at the same time.
 
-Entire supports Cursor IDE, but does not currently support Cursor Agent cli tool.
+Entire supports Cursor IDE, but does not currently support Cursor Agent CLI tool.
 
 To enable:
 
