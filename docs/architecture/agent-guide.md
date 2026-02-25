@@ -421,15 +421,15 @@ Test `ParseHookEvent` for every hook name your agent supports. See [Testing Patt
 
 The framework dispatcher (`DispatchLifecycleEvent` in `lifecycle.go`) handles each event type as follows:
 
-| Event Type | Framework Actions | Claude Code Hook | Gemini CLI Hook | Cursor Hook |
-|------------|-------------------|------------------|-----------------|-------------|
-| `SessionStart` | Shows banner, checks concurrent sessions, fires state machine transition | `session-start` | `session-start` | `session-start` |
+| Event Type | Framework Actions | Claude Code Hook | Gemini CLI Hook | Cursor IDE Hook        |
+|------------|-------------------|------------------|-----------------|------------------------|
+| `SessionStart` | Shows banner, checks concurrent sessions, fires state machine transition | `session-start` | `session-start` | `session-start`        |
 | `TurnStart` | Captures pre-prompt state (git status, transcript position), ensures strategy setup, initializes session | `user-prompt-submit` | `before-agent` | `before-submit-prompt` |
-| `TurnEnd` | Validates transcript, extracts metadata (prompts, summary, files), detects file changes via git status, saves step + checkpoint, transitions phase to IDLE | `stop` | `after-agent` | `stop` |
-| `Compaction` | Fires compaction transition (stays ACTIVE), resets transcript offset | *(not used)* | `pre-compress` | `pre-compact` |
-| `SessionEnd` | Marks session as ENDED in state machine | `session-end` | `session-end` | `session-end` |
-| `SubagentStart` | Captures pre-task state (git status snapshot) | `pre-task` (PreToolUse[Task]) | *(not used)* | `subagent-start` |
-| `SubagentEnd` | Extracts subagent modified files, detects changes, saves task checkpoint | `post-task` (PostToolUse[Task]) | *(not used)* | `subagent-stop` |
+| `TurnEnd` | Validates transcript, extracts metadata (prompts, summary, files), detects file changes via git status, saves step + checkpoint, transitions phase to IDLE | `stop` | `after-agent` | `stop`                 |
+| `Compaction` | Fires compaction transition (stays ACTIVE), resets transcript offset | *(not used)* | `pre-compress` | `pre-compact`          |
+| `SessionEnd` | Marks session as ENDED in state machine | `session-end` | `session-end` | `session-end`          |
+| `SubagentStart` | Captures pre-task state (git status snapshot) | `pre-task` (PreToolUse[Task]) | *(not used)* | `subagent-start`       |
+| `SubagentEnd` | Extracts subagent modified files, detects changes, saves task checkpoint | `post-task` (PostToolUse[Task]) | *(not used)* | `subagent-stop`        |
 
 ### Event Field Requirements
 
@@ -605,7 +605,7 @@ Key principles:
 
 Note: Gemini CLI requires `hooksConfig.enabled: true` and each hook entry requires a `name` field.
 
-### Example: Cursor Hook Config
+### Example: Cursor IDE Hook Config
 
 ```json
 {
@@ -748,9 +748,9 @@ func TestInstallHooks_Idempotent(t *testing.T) {
 - Gemini CLI lifecycle tests: `cmd/entire/cli/agent/geminicli/lifecycle_test.go`
 - Gemini CLI hooks tests: `cmd/entire/cli/agent/geminicli/hooks_test.go`
 - Gemini CLI transcript tests: `cmd/entire/cli/agent/geminicli/transcript_test.go`
-- Cursor lifecycle tests: `cmd/entire/cli/agent/cursor/lifecycle_test.go`
-- Cursor hooks tests: `cmd/entire/cli/agent/cursor/hooks_test.go`
-- Cursor session tests: `cmd/entire/cli/agent/cursor/cursor_test.go`
+- Cursor IDE lifecycle tests: `cmd/entire/cli/agent/cursor/lifecycle_test.go`
+- Cursor IDE hooks tests: `cmd/entire/cli/agent/cursor/hooks_test.go`
+- Cursor IDE session tests: `cmd/entire/cli/agent/cursor/cursor_test.go`
 
 ## Common Pitfalls
 
