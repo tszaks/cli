@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/entireio/cli/e2e/agents"
+	"github.com/entireio/cli/e2e/entire"
 	"github.com/entireio/cli/e2e/testutil"
 )
 
@@ -24,9 +25,12 @@ func TestMain(m *testing.M) {
 	_ = os.MkdirAll(runDir, 0o755)
 	testutil.SetRunDir(runDir)
 
+	// Resolve the entire binary (builds from source if E2E_ENTIRE_BIN is unset).
+	entireBin := entire.BinPath()
+
 	// Preflight: verify required dependencies before running any tests.
 	var missing []string
-	for _, bin := range []string{"git", "tmux", "entire"} {
+	for _, bin := range []string{"git", "tmux"} {
 		if _, err := exec.LookPath(bin); err != nil {
 			missing = append(missing, bin)
 		}
@@ -42,11 +46,12 @@ func TestMain(m *testing.M) {
 	}
 
 	version := "unknown"
-	if out, err := exec.Command("entire", "version").Output(); err == nil {
+	if out, err := exec.Command(entireBin, "version").Output(); err == nil {
 		version = string(out)
 		_ = os.WriteFile(filepath.Join(runDir, "entire-version.txt"), out, 0o644)
 	}
 
+	fmt.Fprintf(os.Stderr, "entire binary:  %s\n", entireBin)
 	fmt.Fprintf(os.Stderr, "entire version: %s", version)
 	fmt.Fprintf(os.Stderr, "artifact dir:   %s\n", runDir)
 

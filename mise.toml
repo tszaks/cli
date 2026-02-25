@@ -128,7 +128,6 @@ run = """
 E2E_ARTIFACT_DIR="$PWD/e2e/artifacts/$(date +%Y-%m-%dT%H-%M-%S)"
 export E2E_ARTIFACT_DIR
 mkdir -p "$E2E_ARTIFACT_DIR"
-echo "entire:    $(entire version 2>/dev/null || echo 'not found')"
 echo "artifacts: $E2E_ARTIFACT_DIR"
 gotestsum --format dots --jsonfile "$E2E_ARTIFACT_DIR/test-events.json" -- -tags=e2e -count=1 -timeout=30m ${usage_filter:+-run "$usage_filter"} ./e2e/tests/... || rc=$?
 go run ./e2e/cmd/testreport -color -o "$E2E_ARTIFACT_DIR/report.txt" "$E2E_ARTIFACT_DIR/test-events.json"

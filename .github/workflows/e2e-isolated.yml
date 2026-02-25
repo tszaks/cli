@@ -52,6 +52,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           E2E_ARTIFACT_DIR: ${{ github.workspace }}/e2e-artifacts
+          E2E_ENTIRE_BIN: /usr/local/bin/entire
         run: |
           mkdir -p "$E2E_ARTIFACT_DIR"
           mise run test:e2e:${{ inputs.agent }} "${{ inputs.test }}"

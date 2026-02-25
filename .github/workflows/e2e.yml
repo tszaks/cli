@@ -52,6 +52,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          E2E_ENTIRE_BIN: /usr/local/bin/entire
         run: mise run test:e2e:${{ matrix.agent }}
 
       - name: Upload artifacts

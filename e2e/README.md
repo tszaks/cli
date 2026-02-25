@@ -47,6 +47,7 @@ e2e/
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `E2E_AGENT` | Agent to test (`claude-code`, `gemini-cli`, `opencode`) | all registered |
+| `E2E_ENTIRE_BIN` | Path to a pre-built `entire` binary | builds from source |
 | `E2E_TIMEOUT` | Timeout per prompt | `2m` |
 | `E2E_KEEP_REPOS` | Set to `1` to preserve temp repos after test | unset |
 | `E2E_ARTIFACT_DIR` | Override artifact output directory | `e2e/artifacts/<timestamp>` |
