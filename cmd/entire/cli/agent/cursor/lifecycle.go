@@ -9,12 +9,6 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 )
 
-// HookNames returns the hook verbs Cursor supports.
-// Delegates to GetHookNames for backward compatibility.
-func (c *CursorAgent) HookNames() []string {
-	return c.GetHookNames()
-}
-
 // ParseHookEvent translates a Cursor hook into a normalized lifecycle Event.
 // Returns nil if the hook has no lifecycle significance.
 func (c *CursorAgent) ParseHookEvent(hookName string, stdin io.Reader) (*agent.Event, error) {

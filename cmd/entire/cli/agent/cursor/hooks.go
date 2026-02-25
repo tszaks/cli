@@ -12,7 +12,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
 
-// Ensure CursorAgent implements HookSupport and HookHandler
+// Ensure CursorAgent implements HookSupport
 var (
 	_ agent.HookSupport = (*CursorAgent)(nil)
 )
@@ -37,9 +37,9 @@ var entireHookPrefixes = []string{
 	"go run ${CURSOR_PROJECT_DIR}/cmd/entire/main.go ",
 }
 
-// GetHookNames returns the hook verbs Cursor supports.
+// HookNames returns the hook verbs Cursor supports.
 // These become subcommands: entire hooks cursor <verb>
-func (c *CursorAgent) GetHookNames() []string {
+func (c *CursorAgent) HookNames() []string {
 	return []string{
 		HookNameSessionStart,
 		HookNameSessionEnd,
@@ -56,15 +56,12 @@ func (c *CursorAgent) GetHookNames() []string {
 // Returns the number of hooks installed.
 // Unknown top-level fields and hook types are preserved on round-trip.
 func (c *CursorAgent) InstallHooks(localDev bool, force bool) (int, error) {
-	repoRoot, err := paths.RepoRoot()
+	worktreeRoot, err := paths.WorktreeRoot()
 	if err != nil {
-		repoRoot, err = os.Getwd() //nolint:forbidigo // Intentional fallback when RepoRoot() fails (tests run outside git repos)
-		if err != nil {
-			return 0, fmt.Errorf("failed to get current directory: %w", err)
-		}
+		worktreeRoot = "."
 	}
 
-	hooksPath := filepath.Join(repoRoot, ".cursor", HooksFileName)
+	hooksPath := filepath.Join(worktreeRoot, ".cursor", HooksFileName)
 
 	// Use raw maps to preserve unknown fields on round-trip
 	var rawFile map[string]json.RawMessage
@@ -202,11 +199,11 @@ func (c *CursorAgent) InstallHooks(localDev bool, force bool) (int, error) {
 // UninstallHooks removes Entire hooks from Cursor HooksFileName.
 // Unknown top-level fields and hook types are preserved on round-trip.
 func (c *CursorAgent) UninstallHooks() error {
-	repoRoot, err := paths.RepoRoot()
+	worktreeRoot, err := paths.WorktreeRoot()
 	if err != nil {
-		repoRoot = "."
+		worktreeRoot = "."
 	}
-	hooksPath := filepath.Join(repoRoot, ".cursor", HooksFileName)
+	hooksPath := filepath.Join(worktreeRoot, ".cursor", HooksFileName)
 	data, err := os.ReadFile(hooksPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return nil //nolint:nilerr // No hooks file means nothing to uninstall
@@ -280,11 +277,11 @@ func (c *CursorAgent) UninstallHooks() error {
 
 // AreHooksInstalled checks if Entire hooks are installed.
 func (c *CursorAgent) AreHooksInstalled() bool {
-	repoRoot, err := paths.RepoRoot()
+	worktreeRoot, err := paths.WorktreeRoot()
 	if err != nil {
-		repoRoot = "."
+		worktreeRoot = "."
 	}
-	hooksPath := filepath.Join(repoRoot, ".cursor", HooksFileName)
+	hooksPath := filepath.Join(worktreeRoot, ".cursor", HooksFileName)
 	data, err := os.ReadFile(hooksPath) //nolint:gosec // path is constructed from repo root + fixed path
 	if err != nil {
 		return false

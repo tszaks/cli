@@ -47,12 +47,12 @@ func (c *CursorAgent) IsPreview() bool { return true }
 
 // DetectPresence checks if Cursor is configured in the repository.
 func (c *CursorAgent) DetectPresence() (bool, error) {
-	repoRoot, err := paths.RepoRoot()
+	worktreeRoot, err := paths.WorktreeRoot()
 	if err != nil {
-		repoRoot = "."
+		worktreeRoot = "."
 	}
 
-	cursorDir := filepath.Join(repoRoot, ".cursor")
+	cursorDir := filepath.Join(worktreeRoot, ".cursor")
 	if _, err := os.Stat(cursorDir); err == nil {
 		return true, nil
 	}
