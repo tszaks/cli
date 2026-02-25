@@ -36,6 +36,26 @@ func AssertFileExists(t *testing.T, dir string, glob string) {
 	assert.NotEmpty(t, matches, "expected files matching %s in %s", glob, dir)
 }
 
+// WaitForFileExists polls until at least one file matches the glob pattern
+// relative to dir, or fails the test after timeout. Handles the race where an
+// interactive agent's prompt pattern appears before file writes land on disk.
+func WaitForFileExists(t *testing.T, dir string, glob string, timeout time.Duration) {
+	t.Helper()
+	pattern := filepath.Join(dir, glob)
+	deadline := time.Now().Add(timeout)
+	for {
+		matches, err := filepath.Glob(pattern)
+		require.NoError(t, err)
+		if len(matches) > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected files matching %s in %s within %s", glob, dir, timeout)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // AssertNewCommits polls until at least `atLeast` new commits exist since setup,
 // or fails after 10 seconds. Polling handles the race where an interactive
 // agent's prompt pattern appears before its git commit lands on disk.

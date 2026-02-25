@@ -31,7 +31,7 @@ func TestInteractiveMultiStep(t *testing.T) {
 		if _, err = session.WaitFor(prompt, 60*time.Second); err != nil {
 			t.Fatalf("waiting for prompt after file creation: %v", err)
 		}
-		testutil.AssertFileExists(t, s.Dir, "docs/*.md")
+		testutil.WaitForFileExists(t, s.Dir, "docs/*.md", 30*time.Second)
 
 		s.Send(t, session, "now commit it")
 		if _, err = session.WaitFor(prompt, 60*time.Second); err != nil {
