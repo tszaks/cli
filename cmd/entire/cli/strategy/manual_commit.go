@@ -95,30 +95,6 @@ func (s *ManualCommitStrategy) ValidateRepository() error {
 	return nil
 }
 
-// EnsureSetup ensures the strategy is properly set up.
-func (s *ManualCommitStrategy) EnsureSetup() error {
-	if err := EnsureEntireGitignore(); err != nil {
-		return err
-	}
-
-	// Ensure the entire/checkpoints/v1 orphan branch exists for permanent session storage
-	repo, err := OpenRepository()
-	if err != nil {
-		return fmt.Errorf("failed to open git repository: %w", err)
-	}
-	if err := EnsureMetadataBranch(repo); err != nil {
-		return fmt.Errorf("failed to ensure metadata branch: %w", err)
-	}
-
-	// Install generic hooks (they delegate to strategy at runtime)
-	if !IsGitHookInstalled() {
-		if _, err := InstallGitHook(true, isLocalDev()); err != nil {
-			return fmt.Errorf("failed to install git hooks: %w", err)
-		}
-	}
-	return nil
-}
-
 // ListOrphanedItems returns orphaned items created by the manual-commit strategy.
 // This includes:
 //   - Shadow branches that weren't auto-cleaned during commit condensation

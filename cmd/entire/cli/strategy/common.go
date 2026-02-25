@@ -39,6 +39,15 @@ const (
 // Each package needs its own package-scoped sentinel for git log iteration patterns.
 var errStop = errors.New("stop iteration")
 
+// IsEmptyRepository returns true if the repository has no commits yet.
+// After git-init, HEAD points to an unborn branch (e.g., refs/heads/main)
+// whose target does not yet exist. repo.Head() returns ErrReferenceNotFound
+// in this case.
+func IsEmptyRepository(repo *git.Repository) bool {
+	_, err := repo.Head()
+	return errors.Is(err, plumbing.ErrReferenceNotFound)
+}
+
 // EnsureSetup ensures the strategy is properly set up.
 func EnsureSetup() error {
 	if err := EnsureEntireGitignore(); err != nil {
@@ -56,20 +65,11 @@ func EnsureSetup() error {
 
 	// Install generic hooks (they delegate to strategy at runtime)
 	if !IsGitHookInstalled() {
-		if _, err := InstallGitHook(true); err != nil {
+		if _, err := InstallGitHook(true, isLocalDev()); err != nil {
 			return fmt.Errorf("failed to install git hooks: %w", err)
 		}
 	}
 	return nil
-}
-
-// IsEmptyRepository returns true if the repository has no commits yet.
-// After git-init, HEAD points to an unborn branch (e.g., refs/heads/main)
-// whose target does not yet exist. repo.Head() returns ErrReferenceNotFound
-// in this case.
-func IsEmptyRepository(repo *git.Repository) bool {
-	_, err := repo.Head()
-	return errors.Is(err, plumbing.ErrReferenceNotFound)
 }
 
 // IsAncestorOf checks if commit is an ancestor of (or equal to) target.

@@ -288,8 +288,8 @@ func TestRunStatus_BothProjectAndLocal(t *testing.T) {
 
 	output := stdout.String()
 	// Should show effective status first (local overrides project)
-	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "auto-commit") {
-		t.Errorf("Expected output to show effective 'Disabled' with 'auto-commit', got: %s", output)
+	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "manual-commit") {
+		t.Errorf("Expected output to show effective 'Disabled' with 'manual-commit', got: %s", output)
 	}
 	// Should show both settings separately
 	if !strings.Contains(output, "Project") || !strings.Contains(output, "manual-commit") {
@@ -315,8 +315,8 @@ func TestRunStatus_BothProjectAndLocal_Short(t *testing.T) {
 
 	output := stdout.String()
 	// Should show merged/effective state (local overrides project)
-	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "auto-commit") {
-		t.Errorf("Expected output to show 'Disabled' with 'auto-commit', got: %s", output)
+	if !strings.Contains(output, "Disabled") || !strings.Contains(output, "manual-commit") {
+		t.Errorf("Expected output to show 'Disabled' with 'manual-commit', got: %s", output)
 	}
 }
 
@@ -1033,7 +1033,7 @@ func TestFormatSettingsStatusShort_Disabled(t *testing.T) {
 	sty := statusStyles{colorEnabled: false, width: 60}
 	s := &EntireSettings{
 		Enabled:  false,
-		Strategy: "auto-commit",
+		Strategy: "manual-commit",
 	}
 
 	result := formatSettingsStatusShort(s, sty)
@@ -1044,7 +1044,7 @@ func TestFormatSettingsStatusShort_Disabled(t *testing.T) {
 	if !strings.Contains(result, "Disabled") {
 		t.Errorf("Expected 'Disabled' in output, got: %q", result)
 	}
-	if !strings.Contains(result, "auto-commit") {
+	if !strings.Contains(result, "manual-commit") {
 		t.Errorf("Expected strategy in output, got: %q", result)
 	}
 }
@@ -1077,7 +1077,7 @@ func TestFormatSettingsStatus_LocalDisabled(t *testing.T) {
 	sty := statusStyles{colorEnabled: false, width: 60}
 	s := &EntireSettings{
 		Enabled:  false,
-		Strategy: "auto-commit",
+		Strategy: "manual-commit",
 	}
 
 	result := formatSettingsStatus("Local", s, sty)
@@ -1088,7 +1088,7 @@ func TestFormatSettingsStatus_LocalDisabled(t *testing.T) {
 	if !strings.Contains(result, "disabled") {
 		t.Errorf("Expected 'disabled' in output, got: %q", result)
 	}
-	if !strings.Contains(result, "auto-commit") {
+	if !strings.Contains(result, "manual-commit") {
 		t.Errorf("Expected strategy in output, got: %q", result)
 	}
 }
