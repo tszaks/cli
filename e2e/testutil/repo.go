@@ -186,7 +186,6 @@ func (s *RepoState) StartSession(t *testing.T, ctx context.Context) agents.Sessi
 		return nil
 	}
 	s.session = session
-	t.Cleanup(func() { _ = session.Close() })
 	return session
 }
 

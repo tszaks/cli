@@ -61,10 +61,14 @@ func CaptureArtifacts(t *testing.T, s *RepoState) {
 	// console.log is written incrementally to disk via s.ConsoleLog (*os.File),
 	// so it already exists in the artifact dir and survives global timeouts.
 
-	// Capture final pane content from interactive sessions.
+	// Capture final pane content from interactive sessions, then close.
+	// Must happen here (not in a separate t.Cleanup) because cleanup
+	// functions run LIFO — closing first would kill the tmux session
+	// before we can capture.
 	if s.session != nil {
 		pane := s.session.Capture()
 		writeArtifact(t, dir, "pane.txt", pane)
+		_ = s.session.Close()
 	}
 
 	if t.Failed() {
