@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -111,8 +112,8 @@ func extractCommandLine(hookContent string) string {
 
 // CheckAndWarnHookManagers detects external hook managers and writes a warning
 // to w if any are found.
-func CheckAndWarnHookManagers(w io.Writer) {
-	repoRoot, err := paths.RepoRoot()
+func CheckAndWarnHookManagers(ctx context.Context, w io.Writer) {
+	repoRoot, err := paths.RepoRoot(ctx)
 	if err != nil {
 		return
 	}
@@ -122,7 +123,7 @@ func CheckAndWarnHookManagers(w io.Writer) {
 		return
 	}
 
-	warning := hookManagerWarning(managers, hookCmdPrefix())
+	warning := hookManagerWarning(managers, hookCmdPrefix(ctx))
 	if warning != "" {
 		fmt.Fprintln(w)
 		fmt.Fprint(w, warning)

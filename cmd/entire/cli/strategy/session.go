@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -62,14 +63,14 @@ type Checkpoint struct {
 // ListSessions returns all sessions from the entire/checkpoints/v1 branch,
 // plus any additional sessions from strategies implementing SessionSource.
 // It automatically discovers all registered strategies and merges their sessions.
-func ListSessions() ([]Session, error) {
-	repo, err := OpenRepository()
+func ListSessions(ctx context.Context) ([]Session, error) {
+	repo, err := OpenRepository(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open git repository: %w", err)
 	}
 
 	// Get checkpoints from the entire/checkpoints/v1 branch
-	checkpoints, err := ListCheckpoints()
+	checkpoints, err := ListCheckpoints(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list checkpoints: %w", err)
 	}
@@ -129,7 +130,7 @@ func ListSessions() ([]Session, error) {
 		if !ok {
 			continue
 		}
-		additionalSessions, addErr := source.GetAdditionalSessions()
+		additionalSessions, addErr := source.GetAdditionalSessions(ctx)
 		if addErr != nil {
 			continue // Skip strategies that fail to provide additional sessions
 		}
@@ -183,8 +184,8 @@ func ListSessions() ([]Session, error) {
 
 // GetSession finds a session by ID (supports prefix matching).
 // Returns ErrNoSession if no matching session is found.
-func GetSession(sessionID string) (*Session, error) {
-	sessions, err := ListSessions()
+func GetSession(ctx context.Context, sessionID string) (*Session, error) {
+	sessions, err := ListSessions(ctx)
 	if err != nil {
 		return nil, err
 	}

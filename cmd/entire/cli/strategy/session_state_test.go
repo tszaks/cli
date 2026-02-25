@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
@@ -30,13 +31,13 @@ func TestLoadSessionState_PackageLevel(t *testing.T) {
 	}
 
 	// Save using package-level function
-	err = SaveSessionState(state)
+	err = SaveSessionState(context.Background(), state)
 	if err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)
 	}
 
 	// Load using package-level function
-	loaded, err := LoadSessionState("test-session-pkg-123")
+	loaded, err := LoadSessionState(context.Background(), "test-session-pkg-123")
 	if err != nil {
 		t.Fatalf("LoadSessionState() error = %v", err)
 	}
@@ -85,12 +86,12 @@ func TestLoadSessionState_WithEndedAt(t *testing.T) {
 		StepCount:  5,
 	}
 
-	err = SaveSessionState(state)
+	err = SaveSessionState(context.Background(), state)
 	if err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)
 	}
 
-	loaded, err := LoadSessionState("test-session-ended")
+	loaded, err := LoadSessionState(context.Background(), "test-session-ended")
 	if err != nil {
 		t.Fatalf("LoadSessionState() error = %v", err)
 	}
@@ -115,12 +116,12 @@ func TestLoadSessionState_WithEndedAt(t *testing.T) {
 		StepCount:  1,
 	}
 
-	err = SaveSessionState(stateActive)
+	err = SaveSessionState(context.Background(), stateActive)
 	if err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)
 	}
 
-	loadedActive, err := LoadSessionState("test-session-active")
+	loadedActive, err := LoadSessionState(context.Background(), "test-session-active")
 	if err != nil {
 		t.Fatalf("LoadSessionState() error = %v", err)
 	}
@@ -154,12 +155,12 @@ func TestLoadSessionState_WithLastInteractionTime(t *testing.T) {
 		StepCount:           3,
 	}
 
-	err = SaveSessionState(state)
+	err = SaveSessionState(context.Background(), state)
 	if err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)
 	}
 
-	loaded, err := LoadSessionState("test-session-interaction")
+	loaded, err := LoadSessionState(context.Background(), "test-session-interaction")
 	if err != nil {
 		t.Fatalf("LoadSessionState() error = %v", err)
 	}
@@ -184,12 +185,12 @@ func TestLoadSessionState_WithLastInteractionTime(t *testing.T) {
 		StepCount:           1,
 	}
 
-	err = SaveSessionState(stateOld)
+	err = SaveSessionState(context.Background(), stateOld)
 	if err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)
 	}
 
-	loadedOld, err := LoadSessionState("test-session-no-interaction")
+	loadedOld, err := LoadSessionState(context.Background(), "test-session-no-interaction")
 	if err != nil {
 		t.Fatalf("LoadSessionState() error = %v", err)
 	}
@@ -213,7 +214,7 @@ func TestLoadSessionState_PackageLevel_NonExistent(t *testing.T) {
 
 	t.Chdir(dir)
 
-	loaded, err := LoadSessionState("nonexistent-session")
+	loaded, err := LoadSessionState(context.Background(), "nonexistent-session")
 	if err != nil {
 		t.Errorf("LoadSessionState() error = %v, want nil for nonexistent session", err)
 	}
@@ -240,13 +241,13 @@ func TestManualCommitStrategy_SessionState_UsesPackageFunctions(t *testing.T) {
 		StartedAt:  time.Now(),
 		StepCount:  2,
 	}
-	if err := SaveSessionState(state); err != nil {
+	if err := SaveSessionState(context.Background(), state); err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)
 	}
 
 	// Load using ManualCommitStrategy method - should find the same state
 	s := &ManualCommitStrategy{}
-	loaded, err := s.loadSessionState("cross-usage-test")
+	loaded, err := s.loadSessionState(context.Background(), "cross-usage-test")
 	if err != nil {
 		t.Fatalf("ManualCommitStrategy.loadSessionState() error = %v", err)
 	}
@@ -267,12 +268,12 @@ func TestManualCommitStrategy_SessionState_UsesPackageFunctions(t *testing.T) {
 		StartedAt:  time.Now(),
 		StepCount:  1,
 	}
-	if err := s.saveSessionState(state2); err != nil {
+	if err := s.saveSessionState(context.Background(), state2); err != nil {
 		t.Fatalf("ManualCommitStrategy.saveSessionState() error = %v", err)
 	}
 
 	// Load using package-level function - should find the state
-	loaded2, err := LoadSessionState("cross-usage-test-2")
+	loaded2, err := LoadSessionState(context.Background(), "cross-usage-test-2")
 	if err != nil {
 		t.Fatalf("LoadSessionState() error = %v", err)
 	}
@@ -299,9 +300,9 @@ func TestFindMostRecentSession_FiltersByWorktree(t *testing.T) {
 	t.Chdir(dir)
 
 	// Get the resolved worktree path (git resolves symlinks, e.g. /var → /private/var on macOS)
-	resolvedDir, err := GetWorktreePath()
+	resolvedDir, err := GetWorktreePath(context.Background())
 	if err != nil {
-		t.Fatalf("GetWorktreePath() error = %v", err)
+		t.Fatalf("GetWorktreePath(context.Background()) error = %v", err)
 	}
 
 	older := time.Now().Add(-1 * time.Hour)
@@ -327,18 +328,18 @@ func TestFindMostRecentSession_FiltersByWorktree(t *testing.T) {
 		Phase:               "idle",
 	}
 
-	if err := SaveSessionState(otherWorktree); err != nil {
+	if err := SaveSessionState(context.Background(), otherWorktree); err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)
 	}
-	if err := SaveSessionState(currentWorktree); err != nil {
+	if err := SaveSessionState(context.Background(), currentWorktree); err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)
 	}
 
 	// FindMostRecentSession should return the current worktree's session,
 	// not the other worktree's session (even though it's more recent).
-	result := FindMostRecentSession()
+	result := FindMostRecentSession(context.Background())
 	if result != "current-worktree-session" {
-		t.Errorf("FindMostRecentSession() = %q, want %q (should prefer current worktree)",
+		t.Errorf("FindMostRecentSession(context.Background()) = %q, want %q (should prefer current worktree)",
 			result, "current-worktree-session")
 	}
 }
@@ -366,14 +367,14 @@ func TestFindMostRecentSession_FallsBackWhenNoWorktreeMatch(t *testing.T) {
 		Phase:               "idle",
 	}
 
-	if err := SaveSessionState(otherWorktree); err != nil {
+	if err := SaveSessionState(context.Background(), otherWorktree); err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)
 	}
 
 	// Should fall back to the only available session since none match current worktree
-	result := FindMostRecentSession()
+	result := FindMostRecentSession(context.Background())
 	if result != "only-session" {
-		t.Errorf("FindMostRecentSession() = %q, want %q (should fall back when no worktree match)",
+		t.Errorf("FindMostRecentSession(context.Background()) = %q, want %q (should fall back when no worktree match)",
 			result, "only-session")
 	}
 
@@ -406,7 +407,7 @@ func TestTransitionAndLog_ReturnsHandlerError(t *testing.T) {
 
 	// IDLE + GitCommit → IDLE with ActionCondense.
 	// The handler will fail on ActionCondense, but the phase should still be IDLE.
-	err := TransitionAndLog(state, session.EventGitCommit, session.TransitionContext{}, &errorActionHandler{})
+	err := TransitionAndLog(context.Background(), state, session.EventGitCommit, session.TransitionContext{}, &errorActionHandler{})
 
 	if state.Phase != session.PhaseIdle {
 		t.Errorf("Phase = %q, want %q (should transition despite handler error)", state.Phase, session.PhaseIdle)
@@ -437,13 +438,13 @@ func TestLoadSessionState_DeletesStaleSession(t *testing.T) {
 		StepCount:           5,
 	}
 
-	err = SaveSessionState(state)
+	err = SaveSessionState(context.Background(), state)
 	if err != nil {
 		t.Fatalf("SaveSessionState() error = %v", err)
 	}
 
 	// Verify file exists before load
-	stateFile, err := sessionStateFile("stale-load-test")
+	stateFile, err := sessionStateFile(context.Background(), "stale-load-test")
 	if err != nil {
 		t.Fatalf("sessionStateFile() error = %v", err)
 	}
@@ -452,7 +453,7 @@ func TestLoadSessionState_DeletesStaleSession(t *testing.T) {
 	}
 
 	// Load should return (nil, nil) for stale session
-	loaded, err := LoadSessionState("stale-load-test")
+	loaded, err := LoadSessionState(context.Background(), "stale-load-test")
 	if err != nil {
 		t.Errorf("LoadSessionState() error = %v, want nil for stale session", err)
 	}

@@ -51,13 +51,13 @@ func TestOpenRepository(t *testing.T) {
 	t.Chdir(tmpDir)
 
 	// Test OpenRepository
-	openedRepo, err := OpenRepository()
+	openedRepo, err := OpenRepository(context.Background())
 	if err != nil {
-		t.Fatalf("OpenRepository() failed: %v", err)
+		t.Fatalf("OpenRepository(context.Background()) failed: %v", err)
 	}
 
 	if openedRepo == nil {
-		t.Fatal("OpenRepository() returned nil repository")
+		t.Fatal("OpenRepository(context.Background()) returned nil repository")
 	}
 
 	// Verify we can perform basic operations
@@ -89,9 +89,9 @@ func TestOpenRepositoryError(t *testing.T) {
 	t.Chdir(tmpDir)
 
 	// Test OpenRepository should fail
-	_, err := OpenRepository()
+	_, err := OpenRepository(context.Background())
 	if err == nil {
-		t.Fatal("OpenRepository() should have failed in non-repository directory")
+		t.Fatal("OpenRepository(context.Background()) should have failed in non-repository directory")
 	}
 }
 
@@ -101,8 +101,8 @@ func TestIsInsideWorktree(t *testing.T) {
 		initTestRepo(t, tmpDir)
 		t.Chdir(tmpDir)
 
-		if IsInsideWorktree() {
-			t.Error("IsInsideWorktree() should return false in main repo")
+		if IsInsideWorktree(context.Background()) {
+			t.Error("IsInsideWorktree(context.Background()) should return false in main repo")
 		}
 	})
 
@@ -121,8 +121,8 @@ func TestIsInsideWorktree(t *testing.T) {
 
 		t.Chdir(worktreeDir)
 
-		if !IsInsideWorktree() {
-			t.Error("IsInsideWorktree() should return true in worktree")
+		if !IsInsideWorktree(context.Background()) {
+			t.Error("IsInsideWorktree(context.Background()) should return true in worktree")
 		}
 	})
 
@@ -130,8 +130,8 @@ func TestIsInsideWorktree(t *testing.T) {
 		tmpDir := t.TempDir()
 		t.Chdir(tmpDir)
 
-		if IsInsideWorktree() {
-			t.Error("IsInsideWorktree() should return false in non-repo")
+		if IsInsideWorktree(context.Background()) {
+			t.Error("IsInsideWorktree(context.Background()) should return false in non-repo")
 		}
 	})
 }
@@ -150,13 +150,13 @@ func TestGetMainRepoRoot(t *testing.T) {
 		initTestRepo(t, tmpDir)
 		t.Chdir(tmpDir)
 
-		root, err := GetMainRepoRoot()
+		root, err := GetMainRepoRoot(context.Background())
 		if err != nil {
-			t.Fatalf("GetMainRepoRoot() failed: %v", err)
+			t.Fatalf("GetMainRepoRoot(context.Background()) failed: %v", err)
 		}
 
 		if root != tmpDir {
-			t.Errorf("GetMainRepoRoot() = %q, want %q", root, tmpDir)
+			t.Errorf("GetMainRepoRoot(context.Background()) = %q, want %q", root, tmpDir)
 		}
 	})
 
@@ -181,13 +181,13 @@ func TestGetMainRepoRoot(t *testing.T) {
 
 		t.Chdir(worktreeDir)
 
-		root, err := GetMainRepoRoot()
+		root, err := GetMainRepoRoot(context.Background())
 		if err != nil {
-			t.Fatalf("GetMainRepoRoot() failed: %v", err)
+			t.Fatalf("GetMainRepoRoot(context.Background()) failed: %v", err)
 		}
 
 		if root != tmpDir {
-			t.Errorf("GetMainRepoRoot() = %q, want %q", root, tmpDir)
+			t.Errorf("GetMainRepoRoot(context.Background()) = %q, want %q", root, tmpDir)
 		}
 	})
 }

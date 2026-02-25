@@ -35,9 +35,9 @@ func TestResolveWorktreeBranch_RegularRepo(t *testing.T) {
 	}
 	wantBranch := strings.TrimPrefix(strings.TrimSpace(string(headData)), "ref: refs/heads/")
 
-	branch := resolveWorktreeBranch(dir)
+	branch := resolveWorktreeBranch(context.Background(), dir)
 	if branch != wantBranch {
-		t.Errorf("resolveWorktreeBranch() = %q, want %q", branch, wantBranch)
+		t.Errorf("resolveWorktreeBranch(context.Background(),) = %q, want %q", branch, wantBranch)
 	}
 }
 
@@ -81,9 +81,9 @@ func TestResolveWorktreeBranch_DetachedHEAD(t *testing.T) {
 		t.Fatalf("write HEAD: %v", err)
 	}
 
-	branch := resolveWorktreeBranch(dir)
+	branch := resolveWorktreeBranch(context.Background(), dir)
 	if branch != "HEAD" {
-		t.Errorf("resolveWorktreeBranch() = %q, want %q for detached HEAD", branch, "HEAD")
+		t.Errorf("resolveWorktreeBranch(context.Background(),) = %q, want %q for detached HEAD", branch, "HEAD")
 	}
 }
 
@@ -114,9 +114,9 @@ func TestResolveWorktreeBranch_WorktreeGitFile(t *testing.T) {
 		t.Fatalf("write .git file: %v", err)
 	}
 
-	branch := resolveWorktreeBranch(worktreeDir)
+	branch := resolveWorktreeBranch(context.Background(), worktreeDir)
 	if branch != "feature-branch" {
-		t.Errorf("resolveWorktreeBranch() = %q, want %q", branch, "feature-branch")
+		t.Errorf("resolveWorktreeBranch(context.Background(),) = %q, want %q", branch, "feature-branch")
 	}
 }
 
@@ -149,26 +149,26 @@ func TestResolveWorktreeBranch_WorktreeRelativePath(t *testing.T) {
 		t.Fatalf("write .git file: %v", err)
 	}
 
-	branch := resolveWorktreeBranch(worktreeDir)
+	branch := resolveWorktreeBranch(context.Background(), worktreeDir)
 	if branch != "develop" {
-		t.Errorf("resolveWorktreeBranch() = %q, want %q", branch, "develop")
+		t.Errorf("resolveWorktreeBranch(context.Background(),) = %q, want %q", branch, "develop")
 	}
 }
 
 func TestResolveWorktreeBranch_NonExistentPath(t *testing.T) {
 	t.Parallel()
-	branch := resolveWorktreeBranch("/nonexistent/path/that/does/not/exist")
+	branch := resolveWorktreeBranch(context.Background(), "/nonexistent/path/that/does/not/exist")
 	if branch != "" {
-		t.Errorf("resolveWorktreeBranch() = %q, want empty string for non-existent path", branch)
+		t.Errorf("resolveWorktreeBranch(context.Background(),) = %q, want empty string for non-existent path", branch)
 	}
 }
 
 func TestResolveWorktreeBranch_NotARepo(t *testing.T) {
 	dir := t.TempDir()
 	// No .git directory or file
-	branch := resolveWorktreeBranch(dir)
+	branch := resolveWorktreeBranch(context.Background(), dir)
 	if branch != "" {
-		t.Errorf("resolveWorktreeBranch() = %q, want empty string for non-repo directory", branch)
+		t.Errorf("resolveWorktreeBranch(context.Background(),) = %q, want empty string for non-repo directory", branch)
 	}
 }
 
@@ -185,10 +185,10 @@ func TestResolveWorktreeBranch_ReftableStub(t *testing.T) {
 		t.Fatalf("write HEAD: %v", err)
 	}
 
-	branch := resolveWorktreeBranch(dir)
+	branch := resolveWorktreeBranch(context.Background(), dir)
 	// Should fall back to git, which will fail on this fake repo and return "HEAD"
 	if branch != "HEAD" {
-		t.Errorf("resolveWorktreeBranch() = %q, want %q for reftable stub", branch, "HEAD")
+		t.Errorf("resolveWorktreeBranch(context.Background(),) = %q, want %q for reftable stub", branch, "HEAD")
 	}
 }
 
@@ -197,8 +197,8 @@ func TestRunStatus_Enabled(t *testing.T) {
 	writeSettings(t, testSettingsEnabled)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout, false); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
+	if err := runStatus(context.Background(), &stdout, false); err != nil {
+		t.Fatalf("runStatus(context.Background(),) error = %v", err)
 	}
 
 	if !strings.Contains(stdout.String(), "Enabled") {
@@ -211,8 +211,8 @@ func TestRunStatus_Disabled(t *testing.T) {
 	writeSettings(t, testSettingsDisabled)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout, false); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
+	if err := runStatus(context.Background(), &stdout, false); err != nil {
+		t.Fatalf("runStatus(context.Background(),) error = %v", err)
 	}
 
 	if !strings.Contains(stdout.String(), "Disabled") {
@@ -224,8 +224,8 @@ func TestRunStatus_NotSetUp(t *testing.T) {
 	setupTestRepo(t)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout, false); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
+	if err := runStatus(context.Background(), &stdout, false); err != nil {
+		t.Fatalf("runStatus(context.Background(),) error = %v", err)
 	}
 
 	output := stdout.String()
@@ -241,8 +241,8 @@ func TestRunStatus_NotGitRepository(t *testing.T) {
 	setupTestDir(t) // No git init
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout, false); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
+	if err := runStatus(context.Background(), &stdout, false); err != nil {
+		t.Fatalf("runStatus(context.Background(),) error = %v", err)
 	}
 
 	if !strings.Contains(stdout.String(), "✕ not a git repository") {
@@ -255,8 +255,8 @@ func TestRunStatus_LocalSettingsOnly(t *testing.T) {
 	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": true}`)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout, true); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
+	if err := runStatus(context.Background(), &stdout, true); err != nil {
+		t.Fatalf("runStatus(context.Background(),) error = %v", err)
 	}
 
 	output := stdout.String()
@@ -285,8 +285,8 @@ func TestRunStatus_BothProjectAndLocal(t *testing.T) {
 	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": false}`)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout, true); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
+	if err := runStatus(context.Background(), &stdout, true); err != nil {
+		t.Fatalf("runStatus(context.Background(),) error = %v", err)
 	}
 
 	output := stdout.String()
@@ -312,8 +312,8 @@ func TestRunStatus_BothProjectAndLocal_Short(t *testing.T) {
 	writeLocalSettings(t, `{"strategy": "auto-commit", "enabled": false}`)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout, false); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
+	if err := runStatus(context.Background(), &stdout, false); err != nil {
+		t.Fatalf("runStatus(context.Background(),) error = %v", err)
 	}
 
 	output := stdout.String()
@@ -328,8 +328,8 @@ func TestRunStatus_ShowsStrategy(t *testing.T) {
 	writeSettings(t, `{"strategy": "auto-commit", "enabled": true}`)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout, false); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
+	if err := runStatus(context.Background(), &stdout, false); err != nil {
+		t.Fatalf("runStatus(context.Background(),) error = %v", err)
 	}
 
 	output := stdout.String()
@@ -343,8 +343,8 @@ func TestRunStatus_ShowsManualCommitStrategy(t *testing.T) {
 	writeSettings(t, `{"strategy": "manual-commit", "enabled": false}`)
 
 	var stdout bytes.Buffer
-	if err := runStatus(&stdout, true); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
+	if err := runStatus(context.Background(), &stdout, true); err != nil {
+		t.Fatalf("runStatus(context.Background(),) error = %v", err)
 	}
 
 	output := stdout.String()
@@ -390,7 +390,7 @@ func TestWriteActiveSessions(t *testing.T) {
 	setupTestRepo(t)
 
 	// Create a state store with test data
-	store, err := session.NewStateStore()
+	store, err := session.NewStateStore(context.Background())
 	if err != nil {
 		t.Fatalf("NewStateStore() error = %v", err)
 	}
@@ -438,7 +438,7 @@ func TestWriteActiveSessions(t *testing.T) {
 
 	var buf bytes.Buffer
 	sty := newStatusStyles(&buf)
-	writeActiveSessions(&buf, sty)
+	writeActiveSessions(context.Background(), &buf, sty)
 
 	output := buf.String()
 
@@ -517,7 +517,7 @@ func TestWriteActiveSessions(t *testing.T) {
 func TestWriteActiveSessions_ActiveTimeOmittedWhenClose(t *testing.T) {
 	setupTestRepo(t)
 
-	store, err := session.NewStateStore()
+	store, err := session.NewStateStore(context.Background())
 	if err != nil {
 		t.Fatalf("NewStateStore() error = %v", err)
 	}
@@ -542,7 +542,7 @@ func TestWriteActiveSessions_ActiveTimeOmittedWhenClose(t *testing.T) {
 
 	var buf bytes.Buffer
 	sty := newStatusStyles(&buf)
-	writeActiveSessions(&buf, sty)
+	writeActiveSessions(context.Background(), &buf, sty)
 
 	output := buf.String()
 	// Should not show "active Xm ago" when LastInteractionTime is close to StartedAt
@@ -557,7 +557,7 @@ func TestWriteActiveSessions_NoSessions(t *testing.T) {
 
 	var buf bytes.Buffer
 	sty := newStatusStyles(&buf)
-	writeActiveSessions(&buf, sty)
+	writeActiveSessions(context.Background(), &buf, sty)
 
 	// Should produce no output when there are no sessions
 	if buf.Len() != 0 {
@@ -568,7 +568,7 @@ func TestWriteActiveSessions_NoSessions(t *testing.T) {
 func TestWriteActiveSessions_EndedSessionsExcluded(t *testing.T) {
 	setupTestRepo(t)
 
-	store, err := session.NewStateStore()
+	store, err := session.NewStateStore(context.Background())
 	if err != nil {
 		t.Fatalf("NewStateStore() error = %v", err)
 	}
@@ -587,7 +587,7 @@ func TestWriteActiveSessions_EndedSessionsExcluded(t *testing.T) {
 
 	var buf bytes.Buffer
 	sty := newStatusStyles(&buf)
-	writeActiveSessions(&buf, sty)
+	writeActiveSessions(context.Background(), &buf, sty)
 
 	// Should produce no output when all sessions are ended
 	if buf.Len() != 0 {
@@ -984,7 +984,7 @@ func TestFormatSettingsStatusShort_Enabled(t *testing.T) {
 		Strategy: "manual-commit",
 	}
 
-	result := formatSettingsStatusShort(s, sty)
+	result := formatSettingsStatusShort(context.Background(), s, sty)
 
 	if !strings.Contains(result, "●") {
 		t.Errorf("Enabled status should have green dot, got: %q", result)
@@ -1006,7 +1006,7 @@ func TestFormatSettingsStatusShort_Disabled(t *testing.T) {
 		Strategy: "auto-commit",
 	}
 
-	result := formatSettingsStatusShort(s, sty)
+	result := formatSettingsStatusShort(context.Background(), s, sty)
 
 	if !strings.Contains(result, "○") {
 		t.Errorf("Disabled status should have open dot, got: %q", result)

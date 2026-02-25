@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -169,7 +170,7 @@ func TestWorktreeOpenRepository(t *testing.T) {
 		_ = os.Chdir(originalWd)
 	})
 
-	repo, err := strategy.OpenRepository()
+	repo, err := strategy.OpenRepository(context.Background())
 	if err != nil {
 		t.Fatalf("OpenRepository() failed in worktree: %v", err)
 	}

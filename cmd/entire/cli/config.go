@@ -29,7 +29,7 @@ type EntireSettings = settings.EntireSettings
 // Returns default settings if neither file exists.
 // Works correctly from any subdirectory within the repository.
 func LoadEntireSettings() (*settings.EntireSettings, error) {
-	s, err := settings.Load()
+	s, err := settings.Load(context.TODO()) //nolint:contextcheck // Convenience wrapper without ctx; callers can use settings.Load(ctx) directly
 	if err != nil {
 		return nil, fmt.Errorf("loading settings: %w", err)
 	}
@@ -37,16 +37,16 @@ func LoadEntireSettings() (*settings.EntireSettings, error) {
 }
 
 // SaveEntireSettings saves the Entire settings to .entire/settings.json.
-func SaveEntireSettings(s *settings.EntireSettings) error {
-	if err := settings.Save(s); err != nil {
+func SaveEntireSettings(ctx context.Context, s *settings.EntireSettings) error {
+	if err := settings.Save(ctx, s); err != nil {
 		return fmt.Errorf("saving settings: %w", err)
 	}
 	return nil
 }
 
 // SaveEntireSettingsLocal saves the Entire settings to .entire/settings.local.json.
-func SaveEntireSettingsLocal(s *settings.EntireSettings) error {
-	if err := settings.SaveLocal(s); err != nil {
+func SaveEntireSettingsLocal(ctx context.Context, s *settings.EntireSettings) error {
+	if err := settings.SaveLocal(ctx, s); err != nil {
 		return fmt.Errorf("saving local settings: %w", err)
 	}
 	return nil
@@ -55,7 +55,7 @@ func SaveEntireSettingsLocal(s *settings.EntireSettings) error {
 // IsEnabled returns whether Entire is currently enabled.
 // Returns true by default if settings cannot be loaded.
 func IsEnabled() (bool, error) {
-	s, err := settings.Load()
+	s, err := settings.Load(context.TODO()) //nolint:contextcheck // Convenience wrapper without ctx
 	if err != nil {
 		return true, err //nolint:wrapcheck // already present in codebase
 	}
@@ -67,10 +67,10 @@ func IsEnabled() (bool, error) {
 //
 
 func GetStrategy() strategy.Strategy {
-	s, err := settings.Load()
+	s, err := settings.Load(context.TODO()) //nolint:contextcheck // Called from many places without ctx; future work to thread ctx
 	if err != nil {
 		// Fall back to default on error
-		logging.Info(context.Background(), "falling back to default strategy - failed to load settings",
+		logging.Info(context.TODO(), "falling back to default strategy - failed to load settings",
 			slog.String("error", err.Error()))
 		return strategy.Default()
 	}
@@ -78,7 +78,7 @@ func GetStrategy() strategy.Strategy {
 	strat, err := strategy.Get(s.Strategy)
 	if err != nil {
 		// Fall back to default if strategy not found
-		logging.Info(context.Background(), "falling back to default strategy - configured strategy not found",
+		logging.Info(context.TODO(), "falling back to default strategy - configured strategy not found",
 			slog.String("configured", s.Strategy),
 			slog.String("error", err.Error()))
 		return strategy.Default()
@@ -91,7 +91,7 @@ func GetStrategy() strategy.Strategy {
 // Returns empty string if not configured (caller should use default).
 // Note: ENTIRE_LOG_LEVEL env var takes precedence; check it first.
 func GetLogLevel() string {
-	s, err := settings.Load()
+	s, err := settings.Load(context.TODO()) //nolint:contextcheck // Called as a callback via SetLogLevelGetter, no ctx available
 	if err != nil {
 		return ""
 	}
@@ -99,14 +99,14 @@ func GetLogLevel() string {
 }
 
 // GetAgentsWithHooksInstalled returns names of agents that have hooks installed.
-func GetAgentsWithHooksInstalled() []agent.AgentName {
+func GetAgentsWithHooksInstalled(ctx context.Context) []agent.AgentName {
 	var installed []agent.AgentName
 	for _, name := range agent.List() {
 		ag, err := agent.Get(name)
 		if err != nil {
 			continue
 		}
-		if hs, ok := ag.(agent.HookSupport); ok && hs.AreHooksInstalled() {
+		if hs, ok := ag.(agent.HookSupport); ok && hs.AreHooksInstalled(ctx) {
 			installed = append(installed, name)
 		}
 	}

@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -243,7 +244,7 @@ func TestUserPromptSubmit_ReinstallsOverwrittenHooks(t *testing.T) {
 		}
 
 		// Verify hooks are now installed
-		if !strategy.IsGitHookInstalledInDir(env.RepoDir) {
+		if !strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
 			t.Fatal("hooks should be installed after first SimulateUserPromptSubmit")
 		}
 
@@ -257,7 +258,7 @@ func TestUserPromptSubmit_ReinstallsOverwrittenHooks(t *testing.T) {
 		}
 
 		// Step 3: Verify hooks are no longer Entire hooks
-		if strategy.IsGitHookInstalledInDir(env.RepoDir) {
+		if strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
 			t.Fatal("hooks should NOT be detected as Entire hooks after overwrite")
 		}
 
@@ -268,7 +269,7 @@ func TestUserPromptSubmit_ReinstallsOverwrittenHooks(t *testing.T) {
 		}
 
 		// Step 5: Verify hooks are reinstalled
-		if !strategy.IsGitHookInstalledInDir(env.RepoDir) {
+		if !strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
 			t.Error("hooks should be reinstalled after second SimulateUserPromptSubmit")
 		}
 
@@ -298,7 +299,7 @@ func TestUserPromptSubmit_ReinstallsDeletedHooks(t *testing.T) {
 		}
 
 		// Verify hooks are now installed
-		if !strategy.IsGitHookInstalledInDir(env.RepoDir) {
+		if !strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
 			t.Fatal("hooks should be installed after first SimulateUserPromptSubmit")
 		}
 
@@ -311,7 +312,7 @@ func TestUserPromptSubmit_ReinstallsDeletedHooks(t *testing.T) {
 		}
 
 		// Step 3: Verify hooks are gone
-		if strategy.IsGitHookInstalledInDir(env.RepoDir) {
+		if strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
 			t.Fatal("hooks should NOT be detected after deletion")
 		}
 
@@ -322,7 +323,7 @@ func TestUserPromptSubmit_ReinstallsDeletedHooks(t *testing.T) {
 		}
 
 		// Step 5: Verify hooks are reinstalled
-		if !strategy.IsGitHookInstalledInDir(env.RepoDir) {
+		if !strategy.IsGitHookInstalledInDir(context.Background(), env.RepoDir) {
 			t.Error("hooks should be reinstalled after second SimulateUserPromptSubmit")
 		}
 	})

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -89,13 +90,13 @@ func (s *PrePromptState) normalizePrePromptState() {
 // The sessionRef parameter is optional — if empty, transcript position won't be captured.
 //
 // Works correctly from any subdirectory within the repository.
-func CapturePrePromptState(ag agent.Agent, sessionID, sessionRef string) error {
+func CapturePrePromptState(ctx context.Context, ag agent.Agent, sessionID, sessionRef string) error {
 	if sessionID == "" {
 		sessionID = unknownSessionID
 	}
 
 	// Get absolute path for tmp directory
-	tmpDirAbs, err := paths.AbsPath(paths.EntireTmpDir)
+	tmpDirAbs, err := paths.AbsPath(ctx, paths.EntireTmpDir)
 	if err != nil {
 		tmpDirAbs = paths.EntireTmpDir // Fallback to relative
 	}
@@ -106,7 +107,7 @@ func CapturePrePromptState(ag agent.Agent, sessionID, sessionRef string) error {
 	}
 
 	// Get list of untracked files (excluding .entire directory itself)
-	untrackedFiles, err := getUntrackedFilesForState()
+	untrackedFiles, err := getUntrackedFilesForState(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get untracked files: %w", err)
 	}
@@ -194,8 +195,8 @@ type FileChanges struct {
 // Modified includes both worktree and staging modified/added files.
 // Deleted includes both staged and unstaged deletions.
 // All results exclude .entire/ directory.
-func DetectFileChanges(previouslyUntracked []string) (*FileChanges, error) {
-	repo, err := openRepository()
+func DetectFileChanges(ctx context.Context, previouslyUntracked []string) (*FileChanges, error) {
+	repo, err := openRepository(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open repository: %w", err)
 	}
@@ -250,12 +251,12 @@ func DetectFileChanges(previouslyUntracked []string) (*FileChanges, error) {
 // (already condensed by PostCommit) back to FilesTouched via SaveStep. Files not in
 // HEAD or with different content in the working tree are kept. Fails open: if any git
 // operation errors, returns the original list unchanged.
-func filterToUncommittedFiles(files []string, repoRoot string) []string {
+func filterToUncommittedFiles(ctx context.Context, files []string, repoRoot string) []string {
 	if len(files) == 0 {
 		return files
 	}
 
-	repo, err := openRepository()
+	repo, err := openRepository(ctx)
 	if err != nil {
 		return files // fail open
 	}
@@ -329,7 +330,7 @@ func FilterAndNormalizePaths(files []string, cwd string) []string {
 // prePromptStateFile returns the absolute path to the pre-prompt state file for a session.
 // Works correctly from any subdirectory within the repository.
 func prePromptStateFile(sessionID string) string {
-	tmpDirAbs, err := paths.AbsPath(paths.EntireTmpDir)
+	tmpDirAbs, err := paths.AbsPath(context.TODO(), paths.EntireTmpDir)
 	if err != nil {
 		tmpDirAbs = paths.EntireTmpDir // Fallback to relative
 	}
@@ -338,8 +339,8 @@ func prePromptStateFile(sessionID string) string {
 
 // getUntrackedFilesForState returns a list of untracked files using go-git
 // Excludes .entire directory
-func getUntrackedFilesForState() ([]string, error) {
-	repo, err := openRepository()
+func getUntrackedFilesForState(ctx context.Context) ([]string, error) {
+	repo, err := openRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -389,13 +390,13 @@ func (s *PreTaskState) PreUntrackedFiles() []string {
 // CapturePreTaskState captures current untracked files before a Task execution
 // and saves them to a state file.
 // Works correctly from any subdirectory within the repository.
-func CapturePreTaskState(toolUseID string) error {
+func CapturePreTaskState(ctx context.Context, toolUseID string) error {
 	if toolUseID == "" {
 		return errors.New("tool_use_id is required")
 	}
 
 	// Get absolute path for tmp directory
-	tmpDirAbs, err := paths.AbsPath(paths.EntireTmpDir)
+	tmpDirAbs, err := paths.AbsPath(ctx, paths.EntireTmpDir)
 	if err != nil {
 		tmpDirAbs = paths.EntireTmpDir // Fallback to relative
 	}
@@ -406,7 +407,7 @@ func CapturePreTaskState(toolUseID string) error {
 	}
 
 	// Get list of untracked files (excluding .entire directory itself)
-	untrackedFiles, err := getUntrackedFilesForState()
+	untrackedFiles, err := getUntrackedFilesForState(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get untracked files: %w", err)
 	}
@@ -466,7 +467,7 @@ func CleanupPreTaskState(toolUseID string) error {
 // preTaskStateFile returns the absolute path to the pre-task state file for a tool use.
 // Works correctly from any subdirectory within the repository.
 func preTaskStateFile(toolUseID string) string {
-	tmpDirAbs, err := paths.AbsPath(paths.EntireTmpDir)
+	tmpDirAbs, err := paths.AbsPath(context.TODO(), paths.EntireTmpDir)
 	if err != nil {
 		tmpDirAbs = paths.EntireTmpDir // Fallback to relative
 	}
@@ -482,7 +483,7 @@ const preTaskFilePrefix = "pre-task-"
 // modified one.
 // Works correctly from any subdirectory within the repository.
 func FindActivePreTaskFile() (taskToolUseID string, found bool) {
-	tmpDirAbs, err := paths.AbsPath(paths.EntireTmpDir)
+	tmpDirAbs, err := paths.AbsPath(context.TODO(), paths.EntireTmpDir)
 	if err != nil {
 		tmpDirAbs = paths.EntireTmpDir // Fallback to relative
 	}

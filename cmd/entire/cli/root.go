@@ -56,14 +56,14 @@ func NewRootCmd() *cobra.Command {
 			// Check if telemetry is enabled
 			if telemetryEnabled != nil && *telemetryEnabled {
 				// Use detached tracking (non-blocking)
-				installedAgents := GetAgentsWithHooksInstalled()
+				installedAgents := GetAgentsWithHooksInstalled(cmd.Context())
 				agentStr := JoinAgentNames(installedAgents)
 				telemetry.TrackCommandDetached(cmd, settings.Strategy, agentStr, settings.Enabled, buildinfo.Version)
 			}
 
 			// Version check and notification (synchronous with 2s timeout)
 			// Runs AFTER command completes to avoid interfering with interactive modes
-			versioncheck.CheckAndNotify(cmd.OutOrStdout(), buildinfo.Version)
+			versioncheck.CheckAndNotify(cmd.Context(), cmd.OutOrStdout(), buildinfo.Version)
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()

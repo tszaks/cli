@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,7 +80,7 @@ func TestAutoCommitStrategy_SaveStep_CommitHasMetadataRef(t *testing.T) {
 		t.Fatalf("failed to write log file: %v", err)
 	}
 
-	metadataDirAbs, err := paths.AbsPath(metadataDir)
+	metadataDirAbs, err := paths.AbsPath(context.Background(), metadataDir)
 	if err != nil {
 		metadataDirAbs = metadataDir
 	}
@@ -96,7 +97,7 @@ func TestAutoCommitStrategy_SaveStep_CommitHasMetadataRef(t *testing.T) {
 		AuthorEmail:    "test@test.com",
 	}
 
-	if err := s.SaveStep(ctx); err != nil {
+	if err := s.SaveStep(context.Background(), ctx); err != nil {
 		t.Fatalf("SaveStep() error = %v", err)
 	}
 
@@ -193,7 +194,7 @@ func TestAutoCommitStrategy_SaveStep_MetadataRefPointsToValidCommit(t *testing.T
 		t.Fatalf("failed to write log file: %v", err)
 	}
 
-	metadataDirAbs, err := paths.AbsPath(metadataDir)
+	metadataDirAbs, err := paths.AbsPath(context.Background(), metadataDir)
 	if err != nil {
 		metadataDirAbs = metadataDir
 	}
@@ -210,7 +211,7 @@ func TestAutoCommitStrategy_SaveStep_MetadataRefPointsToValidCommit(t *testing.T
 		AuthorEmail:    "test@test.com",
 	}
 
-	if err := s.SaveStep(ctx); err != nil {
+	if err := s.SaveStep(context.Background(), ctx); err != nil {
 		t.Fatalf("SaveStep() error = %v", err)
 	}
 
@@ -318,7 +319,7 @@ func TestAutoCommitStrategy_SaveTaskStep_CommitHasMetadataRef(t *testing.T) {
 		AuthorEmail:    "test@test.com",
 	}
 
-	if err := s.SaveTaskStep(ctx); err != nil {
+	if err := s.SaveTaskStep(context.Background(), ctx); err != nil {
 		t.Fatalf("SaveTaskStep() error = %v", err)
 	}
 
@@ -408,7 +409,7 @@ func TestAutoCommitStrategy_SaveTaskStep_NoChangesSkipsCommit(t *testing.T) {
 		AuthorEmail:   "test@test.com",
 	}
 
-	if err := s.SaveTaskStep(ctx); err != nil {
+	if err := s.SaveTaskStep(context.Background(), ctx); err != nil {
 		t.Fatalf("SaveTaskStep() error = %v", err)
 	}
 
@@ -510,7 +511,7 @@ func TestAutoCommitStrategy_GetSessionContext(t *testing.T) {
 		t.Fatalf("failed to write context file: %v", err)
 	}
 
-	metadataDirAbs, err := paths.AbsPath(metadataDir)
+	metadataDirAbs, err := paths.AbsPath(context.Background(), metadataDir)
 	if err != nil {
 		metadataDirAbs = metadataDir
 	}
@@ -526,12 +527,12 @@ func TestAutoCommitStrategy_GetSessionContext(t *testing.T) {
 		AuthorName:     "Test",
 		AuthorEmail:    "test@test.com",
 	}
-	if err := s.SaveStep(ctx); err != nil {
+	if err := s.SaveStep(context.Background(), ctx); err != nil {
 		t.Fatalf("SaveStep() error = %v", err)
 	}
 
 	// Now retrieve the context using GetSessionContext
-	result := s.GetSessionContext(sessionID)
+	result := s.GetSessionContext(context.Background(), sessionID)
 	if result == "" {
 		t.Error("GetSessionContext() returned empty string")
 	}
@@ -599,7 +600,7 @@ func TestAutoCommitStrategy_ListSessions_HasDescription(t *testing.T) {
 		t.Fatalf("failed to write prompt file: %v", err)
 	}
 
-	metadataDirAbs, err := paths.AbsPath(metadataDir)
+	metadataDirAbs, err := paths.AbsPath(context.Background(), metadataDir)
 	if err != nil {
 		metadataDirAbs = metadataDir
 	}
@@ -616,11 +617,11 @@ func TestAutoCommitStrategy_ListSessions_HasDescription(t *testing.T) {
 		AuthorEmail:    "test@test.com",
 		SessionID:      sessionID,
 	}
-	if err := s.SaveStep(ctx); err != nil {
+	if err := s.SaveStep(context.Background(), ctx); err != nil {
 		t.Fatalf("SaveStep() error = %v", err)
 	}
 
-	sessions, err := ListSessions()
+	sessions, err := ListSessions(context.Background())
 	if err != nil {
 		t.Fatalf("ListSessions() error = %v", err)
 	}
@@ -700,12 +701,12 @@ func TestAutoCommitStrategy_InitializeSession_CreatesSessionState(t *testing.T) 
 	}
 
 	sessionID := "2025-12-22-test-session-init"
-	if err := initializer.InitializeSession(sessionID, "Claude Code", "", ""); err != nil {
+	if err := initializer.InitializeSession(context.Background(), sessionID, "Claude Code", "", ""); err != nil {
 		t.Fatalf("InitializeSession() error = %v", err)
 	}
 
 	// Verify session state was created
-	state, err := LoadSessionState(sessionID)
+	state, err := LoadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("LoadSessionState() error = %v", err)
 	}
@@ -789,11 +790,11 @@ func TestAutoCommitStrategy_GetCheckpointLog_ReadsFullJsonl(t *testing.T) {
 		AuthorEmail:    "test@test.com",
 	}
 
-	if err := s.SaveTaskStep(ctx); err != nil {
+	if err := s.SaveTaskStep(context.Background(), ctx); err != nil {
 		t.Fatalf("SaveTaskStep() error = %v", err)
 	}
 
-	sessions, err := ListSessions()
+	sessions, err := ListSessions(context.Background())
 	if err != nil {
 		t.Fatalf("ListSessions() error = %v", err)
 	}
@@ -814,7 +815,7 @@ func TestAutoCommitStrategy_GetCheckpointLog_ReadsFullJsonl(t *testing.T) {
 
 	// Get checkpoint log - should read full.jsonl
 	checkpoint := session.Checkpoints[0]
-	content, err := s.GetCheckpointLog(checkpoint)
+	content, err := s.GetCheckpointLog(context.Background(), checkpoint)
 	if err != nil {
 		t.Fatalf("GetCheckpointLog() error = %v", err)
 	}
@@ -895,7 +896,7 @@ func TestAutoCommitStrategy_SaveStep_FilesAlreadyCommitted(t *testing.T) {
 		t.Fatalf("failed to write log file: %v", err)
 	}
 
-	metadataDirAbs, err := paths.AbsPath(metadataDir)
+	metadataDirAbs, err := paths.AbsPath(context.Background(), metadataDir)
 	if err != nil {
 		metadataDirAbs = metadataDir
 	}
@@ -914,7 +915,7 @@ func TestAutoCommitStrategy_SaveStep_FilesAlreadyCommitted(t *testing.T) {
 	}
 
 	// SaveStep should succeed without error (skip is not an error)
-	if err := s.SaveStep(ctx); err != nil {
+	if err := s.SaveStep(context.Background(), ctx); err != nil {
 		t.Fatalf("SaveStep() error = %v", err)
 	}
 
@@ -994,7 +995,7 @@ func TestAutoCommitStrategy_SaveStep_NoChangesSkipped(t *testing.T) {
 		t.Fatalf("failed to write log file: %v", err)
 	}
 
-	metadataDirAbs, err := paths.AbsPath(metadataDir)
+	metadataDirAbs, err := paths.AbsPath(context.Background(), metadataDir)
 	if err != nil {
 		metadataDirAbs = metadataDir
 	}
@@ -1012,7 +1013,7 @@ func TestAutoCommitStrategy_SaveStep_NoChangesSkipped(t *testing.T) {
 	}
 
 	// SaveStep should succeed without error (skip is not an error)
-	if err := s.SaveStep(ctx); err != nil {
+	if err := s.SaveStep(context.Background(), ctx); err != nil {
 		t.Fatalf("SaveStep() error = %v", err)
 	}
 

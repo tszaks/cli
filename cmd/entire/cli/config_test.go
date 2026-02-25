@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,7 +86,7 @@ func TestSaveEntireSettings_PreservesEnabled(t *testing.T) {
 		Strategy: "manual-commit",
 		Enabled:  false,
 	}
-	if err := SaveEntireSettings(settings); err != nil {
+	if err := SaveEntireSettings(context.Background(), settings); err != nil {
 		t.Fatalf("SaveEntireSettings() error = %v", err)
 	}
 

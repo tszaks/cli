@@ -28,11 +28,11 @@ type gitHookContext struct {
 }
 
 // newGitHookContext creates a new git hook context with logging initialized.
-func newGitHookContext(hookName string) *gitHookContext {
+func newGitHookContext(ctx context.Context, hookName string) *gitHookContext {
 	g := &gitHookContext{
 		hookName:     hookName,
 		start:        time.Now(),
-		ctx:          logging.WithComponent(context.Background(), "hooks"),
+		ctx:          logging.WithComponent(ctx, "hooks"),
 		strategyName: unknownStrategyName,
 	}
 	g.strategy = GetStrategy()
@@ -65,10 +65,10 @@ func (g *gitHookContext) logCompleted(err error, extraAttrs ...any) {
 // initHookLogging initializes logging for hooks by finding the most recent session.
 // Returns a cleanup function that should be deferred.
 // If Entire is not set up or disabled, returns a no-op to avoid creating files.
-func initHookLogging() func() {
+func initHookLogging(ctx context.Context) func() {
 	// Don't create any files if Entire is not set up or disabled.
 	// This is checked here as defense-in-depth (also checked in PersistentPreRunE).
-	if !settings.IsSetUpAndEnabled() {
+	if !settings.IsSetUpAndEnabled(ctx) {
 		return func() {}
 	}
 
@@ -76,8 +76,8 @@ func initHookLogging() func() {
 	logging.SetLogLevelGetter(GetLogLevel)
 
 	// Read session ID for the slog attribute (empty string is fine - log file is fixed)
-	sessionID := strategy.FindMostRecentSession()
-	if err := logging.Init(sessionID); err != nil {
+	sessionID := strategy.FindMostRecentSession(ctx)
+	if err := logging.Init(ctx, sessionID); err != nil {
 		// Init failed - logging will use stderr fallback
 		return func() {}
 	}
@@ -94,15 +94,16 @@ func newHooksGitCmd() *cobra.Command {
 		Short:  "Git hook handlers",
 		Long:   "Commands called by git hooks. These delegate to the current strategy.",
 		Hidden: true, // Internal command, not for direct user use
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
 			// Check if Entire is set up and enabled before doing any work.
 			// This prevents global git hooks from doing anything in repos where
 			// Entire was never enabled or has been disabled.
-			if !settings.IsSetUpAndEnabled() {
+			if !settings.IsSetUpAndEnabled(ctx) {
 				gitHooksDisabled = true
 				return nil
 			}
-			hookLogCleanup = initHookLogging()
+			hookLogCleanup = initHookLogging(ctx)
 			return nil
 		},
 		PersistentPostRunE: func(_ *cobra.Command, _ []string) error {
@@ -126,7 +127,7 @@ func newHooksGitPrepareCommitMsgCmd() *cobra.Command {
 		Use:   "prepare-commit-msg <commit-msg-file> [source]",
 		Short: "Handle prepare-commit-msg git hook",
 		Args:  cobra.RangeArgs(1, 2),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if gitHooksDisabled {
 				return nil
 			}
@@ -137,11 +138,11 @@ func newHooksGitPrepareCommitMsgCmd() *cobra.Command {
 				source = args[1]
 			}
 
-			g := newGitHookContext("prepare-commit-msg")
+			g := newGitHookContext(cmd.Context(), "prepare-commit-msg")
 			g.logInvoked(slog.String("source", source))
 
 			if handler, ok := g.strategy.(strategy.PrepareCommitMsgHandler); ok {
-				hookErr := handler.PrepareCommitMsg(commitMsgFile, source)
+				hookErr := handler.PrepareCommitMsg(g.ctx, commitMsgFile, source)
 				g.logCompleted(hookErr, slog.String("source", source))
 			}
 
@@ -155,18 +156,18 @@ func newHooksGitCommitMsgCmd() *cobra.Command {
 		Use:   "commit-msg <commit-msg-file>",
 		Short: "Handle commit-msg git hook",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if gitHooksDisabled {
 				return nil
 			}
 
 			commitMsgFile := args[0]
 
-			g := newGitHookContext("commit-msg")
+			g := newGitHookContext(cmd.Context(), "commit-msg")
 			g.logInvoked()
 
 			if handler, ok := g.strategy.(strategy.CommitMsgHandler); ok {
-				hookErr := handler.CommitMsg(commitMsgFile)
+				hookErr := handler.CommitMsg(g.ctx, commitMsgFile)
 				g.logCompleted(hookErr)
 				return hookErr //nolint:wrapcheck // Thin delegation layer - wrapping adds no value
 			}
@@ -181,16 +182,16 @@ func newHooksGitPostCommitCmd() *cobra.Command {
 		Use:   "post-commit",
 		Short: "Handle post-commit git hook",
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			if gitHooksDisabled {
 				return nil
 			}
 
-			g := newGitHookContext("post-commit")
+			g := newGitHookContext(cmd.Context(), "post-commit")
 			g.logInvoked()
 
 			if handler, ok := g.strategy.(strategy.PostCommitHandler); ok {
-				hookErr := handler.PostCommit()
+				hookErr := handler.PostCommit(g.ctx)
 				g.logCompleted(hookErr)
 			}
 
@@ -204,18 +205,18 @@ func newHooksGitPrePushCmd() *cobra.Command {
 		Use:   "pre-push <remote>",
 		Short: "Handle pre-push git hook",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			if gitHooksDisabled {
 				return nil
 			}
 
 			remote := args[0]
 
-			g := newGitHookContext("pre-push")
+			g := newGitHookContext(cmd.Context(), "pre-push")
 			g.logInvoked(slog.String("remote", remote))
 
 			if handler, ok := g.strategy.(strategy.PrePushHandler); ok {
-				hookErr := handler.PrePush(remote)
+				hookErr := handler.PrePush(g.ctx, remote)
 				g.logCompleted(hookErr, slog.String("remote", remote))
 			}
 

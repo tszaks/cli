@@ -33,8 +33,8 @@ import (
 // content, using content-aware comparison to detect the "reverted and replaced" scenario.
 //
 // This is used in PostCommit to determine if a session has work in the commit.
-func filesOverlapWithContent(repo *git.Repository, shadowBranchName string, headCommit *object.Commit, filesTouched []string) bool {
-	logCtx := logging.WithComponent(context.Background(), "checkpoint")
+func filesOverlapWithContent(ctx context.Context, repo *git.Repository, shadowBranchName string, headCommit *object.Commit, filesTouched []string) bool {
+	logCtx := logging.WithComponent(ctx, "checkpoint")
 
 	// Build set of filesTouched for quick lookup
 	touchedSet := make(map[string]bool)
@@ -170,8 +170,8 @@ func filesOverlapWithContent(repo *git.Repository, shadowBranchName string, head
 // content match to detect the "reverted and replaced" scenario.
 //
 // This is used in PrepareCommitMsg for carry-forward scenarios.
-func stagedFilesOverlapWithContent(repo *git.Repository, shadowTree *object.Tree, stagedFiles, filesTouched []string) bool {
-	logCtx := logging.WithComponent(context.Background(), "checkpoint")
+func stagedFilesOverlapWithContent(ctx context.Context, repo *git.Repository, shadowTree *object.Tree, stagedFiles, filesTouched []string) bool {
+	logCtx := logging.WithComponent(ctx, "checkpoint")
 
 	// Build set of filesTouched for quick lookup
 	touchedSet := make(map[string]bool)
@@ -351,13 +351,14 @@ func hasOverlappingFiles(stagedFiles, filesTouched []string) bool {
 //
 // Falls back to file-level subtraction if shadow branch is unavailable.
 func filesWithRemainingAgentChanges(
+	ctx context.Context,
 	repo *git.Repository,
 	shadowBranchName string,
 	headCommit *object.Commit,
 	filesTouched []string,
 	committedFiles map[string]struct{},
 ) []string {
-	logCtx := logging.WithComponent(context.Background(), "checkpoint")
+	logCtx := logging.WithComponent(ctx, "checkpoint")
 
 	// Get HEAD commit tree (the committed content)
 	commitTree, err := headCommit.Tree()
@@ -365,7 +366,7 @@ func filesWithRemainingAgentChanges(
 		logging.Debug(logCtx, "filesWithRemainingAgentChanges: failed to get commit tree, falling back to file subtraction",
 			slog.String("error", err.Error()),
 		)
-		return subtractFilesByName(filesTouched, committedFiles)
+		return subtractFilesByName(ctx, filesTouched, committedFiles)
 	}
 
 	// Get shadow branch tree (the session's full content)
@@ -376,7 +377,7 @@ func filesWithRemainingAgentChanges(
 			slog.String("branch", shadowBranchName),
 			slog.String("error", err.Error()),
 		)
-		return subtractFilesByName(filesTouched, committedFiles)
+		return subtractFilesByName(ctx, filesTouched, committedFiles)
 	}
 
 	shadowCommit, err := repo.CommitObject(shadowRef.Hash())
@@ -384,7 +385,7 @@ func filesWithRemainingAgentChanges(
 		logging.Debug(logCtx, "filesWithRemainingAgentChanges: failed to get shadow commit, falling back to file subtraction",
 			slog.String("error", err.Error()),
 		)
-		return subtractFilesByName(filesTouched, committedFiles)
+		return subtractFilesByName(ctx, filesTouched, committedFiles)
 	}
 
 	shadowTree, err := shadowCommit.Tree()
@@ -392,7 +393,7 @@ func filesWithRemainingAgentChanges(
 		logging.Debug(logCtx, "filesWithRemainingAgentChanges: failed to get shadow tree, falling back to file subtraction",
 			slog.String("error", err.Error()),
 		)
-		return subtractFilesByName(filesTouched, committedFiles)
+		return subtractFilesByName(ctx, filesTouched, committedFiles)
 	}
 
 	var remaining []string
@@ -453,8 +454,8 @@ func filesWithRemainingAgentChanges(
 
 // subtractFilesByName returns files from filesTouched that are NOT in committedFiles.
 // This is a fallback when content-aware comparison isn't possible.
-func subtractFilesByName(filesTouched []string, committedFiles map[string]struct{}) []string {
-	logCtx := logging.WithComponent(context.Background(), "checkpoint")
+func subtractFilesByName(ctx context.Context, filesTouched []string, committedFiles map[string]struct{}) []string {
+	logCtx := logging.WithComponent(ctx, "checkpoint")
 	logging.Debug(logCtx, "subtractFilesByName: ",
 		slog.Any("filesTouched", filesTouched),
 		slog.Any("committedFiles", committedFiles),

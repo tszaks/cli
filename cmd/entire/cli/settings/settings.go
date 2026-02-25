@@ -5,6 +5,7 @@ package settings
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -55,13 +56,13 @@ type EntireSettings struct {
 // then applies any overrides from .entire/settings.local.json if it exists.
 // Returns default settings if neither file exists.
 // Works correctly from any subdirectory within the repository.
-func Load() (*EntireSettings, error) {
+func Load(ctx context.Context) (*EntireSettings, error) {
 	// Get absolute paths for settings files
-	settingsFileAbs, err := paths.AbsPath(EntireSettingsFile)
+	settingsFileAbs, err := paths.AbsPath(ctx, EntireSettingsFile)
 	if err != nil {
 		settingsFileAbs = EntireSettingsFile // Fallback to relative
 	}
-	localSettingsFileAbs, err := paths.AbsPath(EntireSettingsLocalFile)
+	localSettingsFileAbs, err := paths.AbsPath(ctx, EntireSettingsLocalFile)
 	if err != nil {
 		localSettingsFileAbs = EntireSettingsLocalFile // Fallback to relative
 	}
@@ -216,8 +217,8 @@ func applyDefaults(settings *EntireSettings) {
 // IsSetUp returns true if Entire has been set up in the current repository.
 // This checks if .entire/settings.json exists.
 // Use this to avoid creating files/directories in repos where Entire was never enabled.
-func IsSetUp() bool {
-	settingsFileAbs, err := paths.AbsPath(EntireSettingsFile)
+func IsSetUp(ctx context.Context) bool {
+	settingsFileAbs, err := paths.AbsPath(ctx, EntireSettingsFile)
 	if err != nil {
 		return false
 	}
@@ -228,11 +229,11 @@ func IsSetUp() bool {
 // IsSetUpAndEnabled returns true if Entire is both set up and enabled.
 // This checks if .entire/settings.json exists AND has enabled: true.
 // Use this for hooks that should be no-ops when Entire is not active.
-func IsSetUpAndEnabled() bool {
-	if !IsSetUp() {
+func IsSetUpAndEnabled(ctx context.Context) bool {
+	if !IsSetUp(ctx) {
 		return false
 	}
-	s, err := Load()
+	s, err := Load(ctx)
 	if err != nil {
 		return false
 	}
@@ -241,8 +242,8 @@ func IsSetUpAndEnabled() bool {
 
 // IsSummarizeEnabled checks if auto-summarize is enabled in settings.
 // Returns false by default if settings cannot be loaded or the key is missing.
-func IsSummarizeEnabled() bool {
-	settings, err := Load()
+func IsSummarizeEnabled(ctx context.Context) bool {
+	settings, err := Load(ctx)
 	if err != nil {
 		return false
 	}
@@ -282,19 +283,19 @@ func (s *EntireSettings) IsPushSessionsDisabled() bool {
 }
 
 // Save saves the settings to .entire/settings.json.
-func Save(settings *EntireSettings) error {
-	return saveToFile(settings, EntireSettingsFile)
+func Save(ctx context.Context, settings *EntireSettings) error {
+	return saveToFile(ctx, settings, EntireSettingsFile)
 }
 
 // SaveLocal saves the settings to .entire/settings.local.json.
-func SaveLocal(settings *EntireSettings) error {
-	return saveToFile(settings, EntireSettingsLocalFile)
+func SaveLocal(ctx context.Context, settings *EntireSettings) error {
+	return saveToFile(ctx, settings, EntireSettingsLocalFile)
 }
 
 // saveToFile saves settings to the specified file path.
-func saveToFile(settings *EntireSettings, filePath string) error {
+func saveToFile(ctx context.Context, settings *EntireSettings, filePath string) error {
 	// Get absolute path for the file
-	filePathAbs, err := paths.AbsPath(filePath)
+	filePathAbs, err := paths.AbsPath(ctx, filePath)
 	if err != nil {
 		filePathAbs = filePath // Fallback to relative
 	}

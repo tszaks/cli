@@ -109,7 +109,7 @@ func TestExplainCommit_NotFound(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	err := runExplainCommit(&stdout, "nonexistent", false, false, false, false)
+	err := runExplainCommit(context.Background(), &stdout, "nonexistent", false, false, false, false)
 
 	if err == nil {
 		t.Error("expected error for nonexistent commit, got nil")
@@ -153,7 +153,7 @@ func TestExplainCommit_NoEntireData(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	err = runExplainCommit(&stdout, commitHash.String(), false, false, false, false)
+	err = runExplainCommit(context.Background(), &stdout, commitHash.String(), false, false, false, false)
 	if err != nil {
 		t.Fatalf("runExplainCommit() should not error for non-Entire commits, got: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestExplainCommit_WithMetadataTrailerButNoCheckpoint(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	err = runExplainCommit(&stdout, commitHash.String(), false, false, false, false)
+	err = runExplainCommit(context.Background(), &stdout, commitHash.String(), false, false, false, false)
 	if err != nil {
 		t.Fatalf("runExplainCommit() error = %v", err)
 	}
@@ -278,7 +278,7 @@ func TestExplainDefault_ShowsBranchView(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	err = runExplainDefault(&stdout, true) // noPager=true for test
+	err = runExplainDefault(context.Background(), &stdout, true) // noPager=true for test
 
 	// Should NOT error - should show branch view
 	if err != nil {
@@ -334,7 +334,7 @@ func TestExplainDefault_NoCheckpoints_ShowsHelpfulMessage(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	err = runExplainDefault(&stdout, true) // noPager=true for test
+	err = runExplainDefault(context.Background(), &stdout, true) // noPager=true for test
 
 	// Should NOT error
 	if err != nil {
@@ -355,7 +355,7 @@ func TestExplainDefault_NoCheckpoints_ShowsHelpfulMessage(t *testing.T) {
 func TestExplainBothFlagsError(t *testing.T) {
 	// Test that providing both --session and --commit returns an error
 	var stdout, stderr bytes.Buffer
-	err := runExplain(&stdout, &stderr, "session-id", "commit-sha", "", false, false, false, false, false, false, false)
+	err := runExplain(context.Background(), &stdout, &stderr, "session-id", "commit-sha", "", false, false, false, false, false, false, false)
 
 	if err == nil {
 		t.Error("expected error when both flags provided, got nil")
@@ -499,7 +499,7 @@ func TestStrategySessionSourceInterface(t *testing.T) {
 	}
 
 	// GetAdditionalSessions should exist and be callable
-	_, err := source.GetAdditionalSessions()
+	_, err := source.GetAdditionalSessions(context.Background())
 	if err != nil {
 		t.Logf("GetAdditionalSessions returned error: %v", err)
 	}
@@ -815,7 +815,7 @@ func TestRunExplain_MutualExclusivityError(t *testing.T) {
 	var buf, errBuf bytes.Buffer
 
 	// Providing both --session and --checkpoint should error
-	err := runExplain(&buf, &errBuf, "session-id", "", "checkpoint-id", false, false, false, false, false, false, false)
+	err := runExplain(context.Background(), &buf, &errBuf, "session-id", "", "checkpoint-id", false, false, false, false, false, false, false)
 
 	if err == nil {
 		t.Error("expected error when multiple flags provided")
@@ -859,7 +859,7 @@ func TestRunExplainCheckpoint_NotFound(t *testing.T) {
 	}
 
 	var buf, errBuf bytes.Buffer
-	err = runExplainCheckpoint(&buf, &errBuf, "nonexistent123", false, false, false, false, false, false, false)
+	err = runExplainCheckpoint(context.Background(), &buf, &errBuf, "nonexistent123", false, false, false, false, false, false, false)
 
 	if err == nil {
 		t.Error("expected error for nonexistent checkpoint")
@@ -1709,7 +1709,7 @@ func TestRunExplainBranchDefault_DetachedHead(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	err = runExplainBranchDefault(&stdout, true)
+	err = runExplainBranchDefault(context.Background(), &stdout, true)
 
 	// Should NOT error
 	if err != nil {
@@ -2335,7 +2335,7 @@ func TestRunExplainCommit_NoCheckpointTrailer(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err = runExplainCommit(&buf, hash.String()[:7], false, false, false, false)
+	err = runExplainCommit(context.Background(), &buf, hash.String()[:7], false, false, false, false)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -2383,7 +2383,7 @@ func TestRunExplainCommit_WithCheckpointTrailer(t *testing.T) {
 	var buf bytes.Buffer
 	// This should try to look up the checkpoint and fail (checkpoint doesn't exist in store)
 	// but it should still attempt the lookup rather than showing commit details
-	err = runExplainCommit(&buf, hash.String()[:7], false, false, false, false)
+	err = runExplainCommit(context.Background(), &buf, hash.String()[:7], false, false, false, false)
 
 	// Should error because the checkpoint doesn't exist in the store
 	if err == nil {
@@ -2511,7 +2511,7 @@ func TestRunExplain_SessionFlagFiltersListView(t *testing.T) {
 	// When session is specified alone, it should NOT error for mutual exclusivity
 	// It should route to the list view with a filter (which may fail for other reasons
 	// like not being in a git repo, but not for mutual exclusivity)
-	err := runExplain(&buf, &errBuf, "some-session", "", "", false, false, false, false, false, false, false)
+	err := runExplain(context.Background(), &buf, &errBuf, "some-session", "", "", false, false, false, false, false, false, false)
 
 	// Should NOT be a mutual exclusivity error
 	if err != nil && strings.Contains(err.Error(), "cannot specify multiple") {
@@ -2523,7 +2523,7 @@ func TestRunExplain_SessionWithCheckpointStillMutuallyExclusive(t *testing.T) {
 	// Test that --session with --checkpoint is still an error
 	var buf, errBuf bytes.Buffer
 
-	err := runExplain(&buf, &errBuf, "some-session", "", "some-checkpoint", false, false, false, false, false, false, false)
+	err := runExplain(context.Background(), &buf, &errBuf, "some-session", "", "some-checkpoint", false, false, false, false, false, false, false)
 
 	if err == nil {
 		t.Error("expected error when --session and --checkpoint both specified")
@@ -2537,7 +2537,7 @@ func TestRunExplain_SessionWithCommitStillMutuallyExclusive(t *testing.T) {
 	// Test that --session with --commit is still an error
 	var buf, errBuf bytes.Buffer
 
-	err := runExplain(&buf, &errBuf, "some-session", "some-commit", "", false, false, false, false, false, false, false)
+	err := runExplain(context.Background(), &buf, &errBuf, "some-session", "some-commit", "", false, false, false, false, false, false, false)
 
 	if err == nil {
 		t.Error("expected error when --session and --commit both specified")

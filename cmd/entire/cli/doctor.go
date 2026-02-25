@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -59,8 +60,9 @@ type stuckSession struct {
 }
 
 func runSessionsFix(cmd *cobra.Command, force bool) error {
+	ctx := cmd.Context()
 	// Load all session states
-	states, err := strategy.ListSessionStates()
+	states, err := strategy.ListSessionStates(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list session states: %w", err)
 	}
@@ -71,7 +73,7 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 	}
 
 	// Open repository to check shadow branches (uses worktree-aware helper)
-	repo, err := openRepository()
+	repo, err := openRepository(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to open repository: %w", err)
 	}
@@ -103,14 +105,14 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 
 		if force {
 			if canCondense && ss.HasShadowBranch && ss.CheckpointCount > 0 {
-				if err := condenser.CondenseSessionByID(ss.State.SessionID); err != nil {
+				if err := condenser.CondenseSessionByID(ctx, ss.State.SessionID); err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to condense session %s: %v\n", ss.State.SessionID, err)
 				} else {
 					fmt.Fprintf(cmd.OutOrStdout(), "  -> Condensed session %s\n\n", ss.State.SessionID)
 				}
 			} else {
 				// Discard if we can't condense
-				if err := discardSession(ss, repo, cmd.ErrOrStderr()); err != nil {
+				if err := discardSession(ctx, ss, repo, cmd.ErrOrStderr()); err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to discard session %s: %v\n", ss.State.SessionID, err)
 				} else {
 					fmt.Fprintf(cmd.OutOrStdout(), "  -> Discarded session %s\n\n", ss.State.SessionID)
@@ -134,13 +136,13 @@ func runSessionsFix(cmd *cobra.Command, force bool) error {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Strategy %s does not support condensation\n", strat.Name())
 				continue
 			}
-			if err := condenser.CondenseSessionByID(ss.State.SessionID); err != nil {
+			if err := condenser.CondenseSessionByID(ctx, ss.State.SessionID); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to condense session %s: %v\n", ss.State.SessionID, err)
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "  -> Condensed session %s\n\n", ss.State.SessionID)
 			}
 		case "discard":
-			if err := discardSession(ss, repo, cmd.ErrOrStderr()); err != nil {
+			if err := discardSession(ctx, ss, repo, cmd.ErrOrStderr()); err != nil {
 				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to discard session %s: %v\n", ss.State.SessionID, err)
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "  -> Discarded session %s\n\n", ss.State.SessionID)
@@ -260,18 +262,18 @@ func promptSessionAction(ss stuckSession, canCondense bool) (string, error) {
 }
 
 // discardSession removes session state and cleans up the shadow branch.
-func discardSession(ss stuckSession, _ *git.Repository, errW io.Writer) error {
+func discardSession(ctx context.Context, ss stuckSession, _ *git.Repository, errW io.Writer) error {
 	// Clear session state file
-	if err := strategy.ClearSessionState(ss.State.SessionID); err != nil {
+	if err := strategy.ClearSessionState(ctx, ss.State.SessionID); err != nil {
 		return fmt.Errorf("failed to clear session state: %w", err)
 	}
 
 	// Delete shadow branch if it exists and no other sessions need it
 	if ss.HasShadowBranch {
-		if shouldDelete, err := canDeleteShadowBranch(ss.ShadowBranch, ss.State.SessionID); err != nil {
+		if shouldDelete, err := canDeleteShadowBranch(ctx, ss.ShadowBranch, ss.State.SessionID); err != nil {
 			fmt.Fprintf(errW, "Warning: could not check other sessions for shadow branch: %v\n", err)
 		} else if shouldDelete {
-			if err := strategy.DeleteBranchCLI(ss.ShadowBranch); err != nil {
+			if err := strategy.DeleteBranchCLI(ctx, ss.ShadowBranch); err != nil {
 				// Branch already gone is not an error — keeps discard idempotent
 				if !errors.Is(err, strategy.ErrBranchNotFound) {
 					return fmt.Errorf("failed to delete shadow branch: %w", err)
@@ -285,8 +287,8 @@ func discardSession(ss stuckSession, _ *git.Repository, errW io.Writer) error {
 
 // canDeleteShadowBranch checks if a shadow branch can be safely deleted.
 // Returns true if no other sessions (besides excludeSessionID) need this branch.
-func canDeleteShadowBranch(shadowBranch, excludeSessionID string) (bool, error) {
-	states, err := strategy.ListSessionStates()
+func canDeleteShadowBranch(ctx context.Context, shadowBranch, excludeSessionID string) (bool, error) {
+	states, err := strategy.ListSessionStates(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to list session states: %w", err)
 	}

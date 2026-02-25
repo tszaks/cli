@@ -31,13 +31,13 @@ import (
 
 // listCheckpoints returns all checkpoints from the metadata branch.
 // Uses checkpoint.GitStore.ListCommitted() for reading from entire/checkpoints/v1.
-func (s *ManualCommitStrategy) listCheckpoints() ([]CheckpointInfo, error) {
+func (s *ManualCommitStrategy) listCheckpoints(ctx context.Context) ([]CheckpointInfo, error) {
 	store, err := s.getCheckpointStore()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get checkpoint store: %w", err)
 	}
 
-	committed, err := store.ListCommitted(context.Background())
+	committed, err := store.ListCommitted(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list committed checkpoints: %w", err)
 	}
@@ -63,8 +63,8 @@ func (s *ManualCommitStrategy) listCheckpoints() ([]CheckpointInfo, error) {
 }
 
 // getCheckpointsForSession returns all checkpoints for a session ID.
-func (s *ManualCommitStrategy) getCheckpointsForSession(sessionID string) ([]CheckpointInfo, error) {
-	all, err := s.listCheckpoints()
+func (s *ManualCommitStrategy) getCheckpointsForSession(ctx context.Context, sessionID string) ([]CheckpointInfo, error) {
+	all, err := s.listCheckpoints(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -85,13 +85,13 @@ func (s *ManualCommitStrategy) getCheckpointsForSession(sessionID string) ([]Che
 
 // getCheckpointLog returns the transcript for a specific checkpoint ID.
 // Uses checkpoint.GitStore.ReadCommitted() for reading from entire/checkpoints/v1.
-func (s *ManualCommitStrategy) getCheckpointLog(checkpointID id.CheckpointID) ([]byte, error) {
+func (s *ManualCommitStrategy) getCheckpointLog(ctx context.Context, checkpointID id.CheckpointID) ([]byte, error) {
 	store, err := s.getCheckpointStore()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get checkpoint store: %w", err)
 	}
 
-	content, err := store.ReadLatestSessionContent(context.Background(), checkpointID)
+	content, err := store.ReadLatestSessionContent(ctx, checkpointID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read checkpoint: %w", err)
 	}
@@ -112,7 +112,7 @@ func (s *ManualCommitStrategy) getCheckpointLog(checkpointID id.CheckpointID) ([
 //
 // For mid-session commits (no Stop/SaveStep called yet), the shadow branch may not exist.
 // In this case, data is extracted from the live transcript instead.
-func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointID id.CheckpointID, state *SessionState, committedFiles map[string]struct{}) (*CondenseResult, error) {
+func (s *ManualCommitStrategy) CondenseSession(ctx context.Context, repo *git.Repository, checkpointID id.CheckpointID, state *SessionState, committedFiles map[string]struct{}) (*CondenseResult, error) {
 	// Get shadow branch (may not exist for mid-session commits)
 	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
 	refName := plumbing.NewBranchReferenceName(shadowBranchName)
@@ -128,7 +128,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		// potentially stale shadow branch copy (SaveStep may have been skipped if the
 		// last turn had no code changes).
 		// Pass CheckpointTranscriptStart for accurate token calculation (line offset for Claude, message index for Gemini).
-		sessionData, err = s.extractSessionData(repo, ref.Hash(), state.SessionID, state.FilesTouched, state.AgentType, state.TranscriptPath, state.CheckpointTranscriptStart)
+		sessionData, err = s.extractSessionData(ctx, repo, ref.Hash(), state.SessionID, state.FilesTouched, state.AgentType, state.TranscriptPath, state.CheckpointTranscriptStart)
 		if err != nil {
 			return nil, fmt.Errorf("failed to extract session data: %w", err)
 		}
@@ -139,8 +139,8 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 			return nil, errors.New("shadow branch not found and no live transcript available")
 		}
 		// Ensure transcript file exists (OpenCode creates it lazily via `opencode export`)
-		prepareTranscriptIfNeeded(state.AgentType, state.TranscriptPath)
-		sessionData, err = s.extractSessionDataFromLiveTranscript(state)
+		prepareTranscriptIfNeeded(ctx, state.AgentType, state.TranscriptPath)
+		sessionData, err = s.extractSessionDataFromLiveTranscript(ctx, state)
 		if err != nil {
 			return nil, fmt.Errorf("failed to extract session data from live transcript: %w", err)
 		}
@@ -190,15 +190,14 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 	// Calculate attribution. When no shadow branch exists (agent committed mid-turn
 	// before SaveStep), pass nil ref — the function uses HEAD as the shadow tree
 	// since the agent's commit IS HEAD (no user edits between agent work and commit).
-	attribution := calculateSessionAttributions(repo, ref, sessionData, state)
+	attribution := calculateSessionAttributions(ctx, repo, ref, sessionData, state)
 	// Get current branch name
 	branchName := GetCurrentBranchName(repo)
 
 	// Generate summary if enabled
 	var summary *cpkg.Summary
-	if settings.IsSummarizeEnabled() && len(sessionData.Transcript) > 0 {
-		logCtx := logging.WithComponent(context.Background(), "attribution")
-		summarizeCtx := logging.WithComponent(logCtx, "summarize")
+	if settings.IsSummarizeEnabled(ctx) && len(sessionData.Transcript) > 0 {
+		summarizeCtx := logging.WithComponent(ctx, "summarize")
 
 		// Scope transcript to this checkpoint's portion.
 		// For Claude Code (JSONL), CheckpointTranscriptStart is a line offset.
@@ -240,7 +239,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 	}
 
 	// Write checkpoint metadata using the checkpoint store
-	if err := store.WriteCommitted(context.Background(), cpkg.WriteCommittedOptions{
+	if err := store.WriteCommitted(ctx, cpkg.WriteCommittedOptions{
 		CheckpointID:                checkpointID,
 		SessionID:                   state.SessionID,
 		Strategy:                    StrategyNameManualCommit,
@@ -273,7 +272,7 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 	}, nil
 }
 
-func calculateSessionAttributions(repo *git.Repository, shadowRef *plumbing.Reference, sessionData *ExtractedSessionData, state *SessionState) *cpkg.InitialAttribution {
+func calculateSessionAttributions(ctx context.Context, repo *git.Repository, shadowRef *plumbing.Reference, sessionData *ExtractedSessionData, state *SessionState) *cpkg.InitialAttribution {
 	// Calculate initial attribution using accumulated prompt attribution data.
 	// This uses user edits captured at each prompt start (before agent works),
 	// plus any user edits after the final checkpoint (shadow → head).
@@ -281,7 +280,7 @@ func calculateSessionAttributions(repo *git.Repository, shadowRef *plumbing.Refe
 	// When shadowRef is nil (agent committed mid-turn before SaveStep),
 	// HEAD is used as the shadow tree. This is correct because the agent's
 	// commit IS HEAD — there are no user edits between agent work and commit.
-	logCtx := logging.WithComponent(context.Background(), "attribution")
+	logCtx := logging.WithComponent(ctx, "attribution")
 
 	headRef, headErr := repo.Head()
 	if headErr != nil {
@@ -392,7 +391,7 @@ func calculateSessionAttributions(repo *git.Repository, shadowRef *plumbing.Refe
 // This handles the case where SaveStep was skipped (no code changes) but the transcript
 // continued growing — the shadow branch copy would be stale.
 // checkpointTranscriptStart is the line offset (Claude) or message index (Gemini) where the current checkpoint began.
-func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRef plumbing.Hash, sessionID string, filesTouched []string, agentType agent.AgentType, liveTranscriptPath string, checkpointTranscriptStart int) (*ExtractedSessionData, error) {
+func (s *ManualCommitStrategy) extractSessionData(ctx context.Context, repo *git.Repository, shadowRef plumbing.Hash, sessionID string, filesTouched []string, agentType agent.AgentType, liveTranscriptPath string, checkpointTranscriptStart int) (*ExtractedSessionData, error) {
 	commit, err := repo.CommitObject(shadowRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit object: %w", err)
@@ -413,7 +412,7 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 	var fullTranscript string
 	if liveTranscriptPath != "" {
 		// Ensure transcript file exists (OpenCode creates it lazily via `opencode export`)
-		prepareTranscriptIfNeeded(agentType, liveTranscriptPath)
+		prepareTranscriptIfNeeded(ctx, agentType, liveTranscriptPath)
 		if liveData, readErr := os.ReadFile(liveTranscriptPath); readErr == nil && len(liveData) > 0 { //nolint:gosec // path from session state
 			fullTranscript = string(liveData)
 		}
@@ -452,7 +451,7 @@ func (s *ManualCommitStrategy) extractSessionData(repo *git.Repository, shadowRe
 
 // extractSessionDataFromLiveTranscript extracts session data directly from the live transcript file.
 // This is used for mid-session commits where no shadow branch exists yet.
-func (s *ManualCommitStrategy) extractSessionDataFromLiveTranscript(state *SessionState) (*ExtractedSessionData, error) {
+func (s *ManualCommitStrategy) extractSessionDataFromLiveTranscript(ctx context.Context, state *SessionState) (*ExtractedSessionData, error) {
 	data := &ExtractedSessionData{}
 
 	// Read the live transcript
@@ -481,7 +480,7 @@ func (s *ManualCommitStrategy) extractSessionDataFromLiveTranscript(state *Sessi
 		data.FilesTouched = state.FilesTouched
 	} else {
 		// Use the shared helper which includes subagent transcripts
-		data.FilesTouched = s.extractModifiedFilesFromLiveTranscript(state, state.CheckpointTranscriptStart)
+		data.FilesTouched = s.extractModifiedFilesFromLiveTranscript(ctx, state, state.CheckpointTranscriptStart)
 	}
 
 	// Calculate token usage from the extracted transcript portion
@@ -701,11 +700,11 @@ func generateContextFromPrompts(prompts []string) []byte {
 
 // CondenseSessionByID force-condenses a session by its ID and cleans up.
 // This is used by "entire doctor" to salvage stuck sessions.
-func (s *ManualCommitStrategy) CondenseSessionByID(sessionID string) error {
-	ctx := logging.WithComponent(context.Background(), "condense-by-id")
+func (s *ManualCommitStrategy) CondenseSessionByID(ctx context.Context, sessionID string) error {
+	logCtx := logging.WithComponent(ctx, "condense-by-id")
 
 	// Load session state
-	state, err := s.loadSessionState(sessionID)
+	state, err := s.loadSessionState(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("failed to load session state: %w", err)
 	}
@@ -714,7 +713,7 @@ func (s *ManualCommitStrategy) CondenseSessionByID(sessionID string) error {
 	}
 
 	// Open repository
-	repo, err := OpenRepository()
+	repo, err := OpenRepository(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to open repository: %w", err)
 	}
@@ -734,23 +733,23 @@ func (s *ManualCommitStrategy) CondenseSessionByID(sessionID string) error {
 	if !hasShadowBranch {
 		// No shadow branch means no checkpoint data to condense.
 		// Just clean up the state file.
-		logging.Info(ctx, "no shadow branch for session, clearing state only",
+		logging.Info(logCtx, "no shadow branch for session, clearing state only",
 			slog.String("session_id", sessionID),
 			slog.String("shadow_branch", shadowBranchName),
 		)
-		if err := s.clearSessionState(sessionID); err != nil {
+		if err := s.clearSessionState(ctx, sessionID); err != nil {
 			return fmt.Errorf("failed to clear session state: %w", err)
 		}
 		return nil
 	}
 
 	// Condense the session
-	result, err := s.CondenseSession(repo, checkpointID, state, nil)
+	result, err := s.CondenseSession(ctx, repo, checkpointID, state, nil)
 	if err != nil {
 		return fmt.Errorf("failed to condense session: %w", err)
 	}
 
-	logging.Info(ctx, "session condensed by ID",
+	logging.Info(logCtx, "session condensed by ID",
 		slog.String("session_id", sessionID),
 		slog.String("checkpoint_id", result.CheckpointID.String()),
 		slog.Int("checkpoints_condensed", result.CheckpointsCount),
@@ -765,13 +764,13 @@ func (s *ManualCommitStrategy) CondenseSessionByID(sessionID string) error {
 	state.PromptAttributions = nil
 	state.PendingPromptAttribution = nil
 
-	if err := s.saveSessionState(state); err != nil {
+	if err := s.saveSessionState(ctx, state); err != nil {
 		return fmt.Errorf("failed to save session state: %w", err)
 	}
 
 	// Clean up shadow branch if no other sessions need it
-	if err := s.cleanupShadowBranchIfUnused(repo, shadowBranchName, sessionID); err != nil {
-		logging.Warn(ctx, "failed to clean up shadow branch",
+	if err := s.cleanupShadowBranchIfUnused(ctx, repo, shadowBranchName, sessionID); err != nil {
+		logging.Warn(logCtx, "failed to clean up shadow branch",
 			slog.String("shadow_branch", shadowBranchName),
 			slog.String("error", err.Error()),
 		)
@@ -782,9 +781,9 @@ func (s *ManualCommitStrategy) CondenseSessionByID(sessionID string) error {
 }
 
 // cleanupShadowBranchIfUnused deletes a shadow branch if no other active sessions reference it.
-func (s *ManualCommitStrategy) cleanupShadowBranchIfUnused(_ *git.Repository, shadowBranchName, excludeSessionID string) error {
+func (s *ManualCommitStrategy) cleanupShadowBranchIfUnused(ctx context.Context, _ *git.Repository, shadowBranchName, excludeSessionID string) error {
 	// List all session states to check if any other session uses this shadow branch
-	allStates, err := s.listAllSessionStates()
+	allStates, err := s.listAllSessionStates(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list session states: %w", err)
 	}
@@ -802,7 +801,7 @@ func (s *ManualCommitStrategy) cleanupShadowBranchIfUnused(_ *git.Repository, sh
 
 	// No other sessions need it, delete the shadow branch via CLI
 	// (go-git v5's RemoveReference doesn't persist with packed refs/worktrees)
-	if err := DeleteBranchCLI(shadowBranchName); err != nil {
+	if err := DeleteBranchCLI(ctx, shadowBranchName); err != nil {
 		// Branch already gone is not an error
 		if errors.Is(err, ErrBranchNotFound) {
 			return nil

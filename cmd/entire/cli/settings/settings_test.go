@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,7 @@ func TestLoad_RejectsUnknownKeys(t *testing.T) {
 	t.Chdir(tmpDir)
 
 	// Try to load settings - should fail due to unknown key
-	_, err := Load()
+	_, err := Load(context.Background())
 	if err == nil {
 		t.Error("expected error for unknown key, got nil")
 	} else if !containsUnknownField(err.Error()) {
@@ -74,7 +75,7 @@ func TestLoad_AcceptsValidKeys(t *testing.T) {
 	t.Chdir(tmpDir)
 
 	// Load settings - should succeed
-	settings, err := Load()
+	settings, err := Load(context.Background())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestLoad_LocalSettingsRejectsUnknownKeys(t *testing.T) {
 	t.Chdir(tmpDir)
 
 	// Try to load settings - should fail due to unknown key in local settings
-	_, err := Load()
+	_, err := Load(context.Background())
 	if err == nil {
 		t.Error("expected error for unknown key in local settings, got nil")
 	} else if !containsUnknownField(err.Error()) {

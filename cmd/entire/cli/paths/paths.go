@@ -57,7 +57,7 @@ var (
 // Uses 'git rev-parse --show-toplevel' which works from any subdirectory.
 // The result is cached per working directory.
 // Returns an error if not inside a git repository.
-func RepoRoot() (string, error) {
+func RepoRoot(ctx context.Context) (string, error) {
 	// Get current working directory to check cache validity
 	cwd, err := os.Getwd() //nolint:forbidigo // already present in codebase
 	if err != nil {
@@ -74,7 +74,6 @@ func RepoRoot() (string, error) {
 	repoRootMu.RUnlock()
 
 	// Cache miss - get repo root and update cache with write lock
-	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 	output, err := cmd.Output()
 	if err != nil {
@@ -103,12 +102,12 @@ func ClearRepoRootCache() {
 // AbsPath returns the absolute path for a relative path within the repository.
 // If the path is already absolute, it is returned as-is.
 // Uses RepoRoot() to resolve paths relative to the repository root.
-func AbsPath(relPath string) (string, error) {
+func AbsPath(ctx context.Context, relPath string) (string, error) {
 	if filepath.IsAbs(relPath) {
 		return relPath, nil
 	}
 
-	root, err := RepoRoot()
+	root, err := RepoRoot(ctx)
 	if err != nil {
 		return "", err
 	}

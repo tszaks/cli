@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -47,7 +48,8 @@ This simulates what the Stop hook checks:
 
 Without --transcript, shows git status changes instead.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runDebugAutoCommit(cmd.OutOrStdout(), transcriptPath)
+			ctx := cmd.Context()
+			return runDebugAutoCommit(ctx, cmd.OutOrStdout(), transcriptPath)
 		},
 	}
 
@@ -56,9 +58,9 @@ Without --transcript, shows git status changes instead.`,
 	return cmd
 }
 
-func runDebugAutoCommit(w io.Writer, transcriptPath string) error {
+func runDebugAutoCommit(ctx context.Context, w io.Writer, transcriptPath string) error {
 	// Check if we're in a git repository
-	repoRoot, err := paths.RepoRoot()
+	repoRoot, err := paths.RepoRoot(ctx)
 	if err != nil {
 		fmt.Fprintln(w, "Not in a git repository")
 		return nil //nolint:nilerr // not being in a git repo is expected, not an error for status check
@@ -68,14 +70,14 @@ func runDebugAutoCommit(w io.Writer, transcriptPath string) error {
 	// Print strategy info
 	strat := GetStrategy()
 	isAutoCommit := strat.Name() == strategy.StrategyNameAutoCommit
-	printStrategyInfo(w, strat, isAutoCommit)
+	printStrategyInfo(ctx, w, strat, isAutoCommit)
 
 	// Print session state
-	currentSession := printSessionState(w)
+	currentSession := printSessionState(ctx, w)
 
 	// Auto-detect transcript if not provided
 	if transcriptPath == "" && currentSession != "" {
-		detected, detectErr := findTranscriptForSession(currentSession)
+		detected, detectErr := findTranscriptForSession(ctx, currentSession)
 		if detectErr != nil {
 			fmt.Fprintf(w, "\nCould not auto-detect transcript: %v\n", detectErr)
 		} else if detected != "" {
@@ -88,10 +90,10 @@ func runDebugAutoCommit(w io.Writer, transcriptPath string) error {
 	fmt.Fprintln(w, "\n=== File Changes ===")
 	var totalChanges int
 	if transcriptPath != "" {
-		totalChanges = printTranscriptChanges(w, transcriptPath, currentSession, repoRoot)
+		totalChanges = printTranscriptChanges(ctx, w, transcriptPath, currentSession, repoRoot)
 	} else {
 		var err error
-		totalChanges, err = printGitStatusChanges(w)
+		totalChanges, err = printGitStatusChanges(ctx, w)
 		if err != nil {
 			return err
 		}
@@ -108,11 +110,11 @@ func runDebugAutoCommit(w io.Writer, transcriptPath string) error {
 	return nil
 }
 
-func printStrategyInfo(w io.Writer, strat strategy.Strategy, isAutoCommit bool) {
+func printStrategyInfo(ctx context.Context, w io.Writer, strat strategy.Strategy, isAutoCommit bool) {
 	fmt.Fprintf(w, "Strategy: %s\n", strat.Name())
 	fmt.Fprintf(w, "Auto-commit strategy: %v\n", isAutoCommit)
 
-	_, branchName, err := IsOnDefaultBranch()
+	_, branchName, err := IsOnDefaultBranch(ctx)
 	if err != nil {
 		fmt.Fprintf(w, "Branch: (unable to determine: %v)\n\n", err)
 	} else {
@@ -120,10 +122,10 @@ func printStrategyInfo(w io.Writer, strat strategy.Strategy, isAutoCommit bool) 
 	}
 }
 
-func printSessionState(w io.Writer) string {
+func printSessionState(ctx context.Context, w io.Writer) string {
 	fmt.Fprintln(w, "=== Session State ===")
 
-	currentSession := strategy.FindMostRecentSession()
+	currentSession := strategy.FindMostRecentSession(ctx)
 	if currentSession == "" {
 		fmt.Fprintln(w, "Current session: (none - no active session)")
 		return ""
@@ -164,7 +166,7 @@ func printUntrackedFilesSummary(w io.Writer, files []string) {
 	}
 }
 
-func printTranscriptChanges(w io.Writer, transcriptPath, currentSession, repoRoot string) int {
+func printTranscriptChanges(ctx context.Context, w io.Writer, transcriptPath, currentSession, repoRoot string) int {
 	fmt.Fprintf(w, "\nParsing transcript: %s\n", transcriptPath)
 
 	var modifiedFromTranscript, newFiles, deletedFiles []string
@@ -188,7 +190,7 @@ func printTranscriptChanges(w io.Writer, transcriptPath, currentSession, repoRoo
 		}
 	}
 	// Always call DetectFileChanges - deleted files don't depend on preState
-	fileChanges, err := DetectFileChanges(preState.PreUntrackedFiles())
+	fileChanges, err := DetectFileChanges(ctx, preState.PreUntrackedFiles())
 	if err != nil {
 		fmt.Fprintf(w, "  Error computing file changes: %v\n", err)
 	}
@@ -215,11 +217,11 @@ func printTranscriptChanges(w io.Writer, transcriptPath, currentSession, repoRoo
 	return totalChanges
 }
 
-func printGitStatusChanges(w io.Writer) (int, error) {
+func printGitStatusChanges(ctx context.Context, w io.Writer) (int, error) {
 	fmt.Fprintln(w, "\n(No --transcript provided, showing git status instead)")
 	fmt.Fprintln(w, "Note: Stop hook uses transcript parsing, not git status")
 
-	modifiedFiles, untrackedFiles, deletedFiles, stagedFiles, err := getFileChanges()
+	modifiedFiles, untrackedFiles, deletedFiles, stagedFiles, err := getFileChanges(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get file changes: %w", err)
 	}
@@ -281,8 +283,8 @@ func printTranscriptHelp(w io.Writer) {
 
 // getFileChanges returns the current file changes from git status.
 // Returns (modifiedFiles, untrackedFiles, deletedFiles, stagedFiles, error)
-func getFileChanges() ([]string, []string, []string, []string, error) {
-	repo, err := openRepository()
+func getFileChanges(ctx context.Context) ([]string, []string, []string, []string, error) {
+	repo, err := openRepository(ctx)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -341,9 +343,9 @@ func getFileChanges() ([]string, []string, []string, []string, error) {
 
 // findTranscriptForSession attempts to find the transcript file for a session.
 // Returns the path if found, empty string if not found, or error on failure.
-func findTranscriptForSession(sessionID string) (string, error) {
+func findTranscriptForSession(ctx context.Context, sessionID string) (string, error) {
 	// Try to get agent type from session state
-	sessionState, err := strategy.LoadSessionState(sessionID)
+	sessionState, err := strategy.LoadSessionState(ctx, sessionID)
 	if err != nil {
 		return "", fmt.Errorf("failed to load session state: %w", err)
 	}

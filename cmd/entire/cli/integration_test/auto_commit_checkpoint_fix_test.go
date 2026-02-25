@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -243,7 +244,7 @@ func TestDualStrategy_SessionStateTracksTranscriptOffset(t *testing.T) {
 	// Session state is created by InitializeSession during UserPromptSubmit
 	// We need to change to the repo directory to load session state (it uses GetGitCommonDir)
 	t.Chdir(env.RepoDir)
-	state, err := strategy.LoadSessionState(session.ID)
+	state, err := strategy.LoadSessionState(context.Background(), session.ID)
 	if err != nil {
 		t.Fatalf("LoadSessionState failed: %v", err)
 	}
@@ -270,7 +271,7 @@ func TestDualStrategy_SessionStateTracksTranscriptOffset(t *testing.T) {
 	}
 
 	// Verify session state was updated with transcript position
-	state, err = strategy.LoadSessionState(session.ID)
+	state, err = strategy.LoadSessionState(context.Background(), session.ID)
 	if err != nil {
 		t.Fatalf("LoadSessionState after stop failed: %v", err)
 	}
@@ -305,7 +306,7 @@ func TestDualStrategy_SessionStateTracksTranscriptOffset(t *testing.T) {
 	}
 
 	// Verify session state was updated again
-	state, err = strategy.LoadSessionState(session.ID)
+	state, err = strategy.LoadSessionState(context.Background(), session.ID)
 	if err != nil {
 		t.Fatalf("LoadSessionState after second stop failed: %v", err)
 	}

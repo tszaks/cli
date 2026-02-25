@@ -80,8 +80,8 @@ func IsAncestorOf(repo *git.Repository, commit, target plumbing.Hash) bool {
 // ListCheckpoints returns all checkpoints from the entire/checkpoints/v1 branch.
 // Scans sharded paths: <id[:2]>/<id[2:]>/ directories containing metadata.json.
 // Used by both manual-commit and auto-commit strategies.
-func ListCheckpoints() ([]CheckpointInfo, error) {
-	repo, err := OpenRepository()
+func ListCheckpoints(ctx context.Context) ([]CheckpointInfo, error) {
+	repo, err := OpenRepository(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open git repository: %w", err)
 	}
@@ -557,10 +557,10 @@ func GetRemoteMetadataBranchTree(repo *git.Repository) (*object.Tree, error) {
 //
 // The function first uses 'git rev-parse --show-toplevel' to find the repository
 // root, which works correctly even when called from a subdirectory within the repo.
-func OpenRepository() (*git.Repository, error) {
+func OpenRepository(ctx context.Context) (*git.Repository, error) {
 	// First, find the repository root using git rev-parse --show-toplevel
 	// This works correctly from any subdirectory within the repository
-	repoRoot, err := GetWorktreePath()
+	repoRoot, err := GetWorktreePath(ctx)
 	if err != nil {
 		// Fallback to current directory if git command fails
 		// (e.g., if git is not installed or we're not in a repo)
@@ -580,9 +580,9 @@ func OpenRepository() (*git.Repository, error) {
 // (as opposed to the main repository). Worktrees have .git as a file pointing
 // to the main repo, while the main repo has .git as a directory.
 // This function works correctly from any subdirectory within the repository.
-func IsInsideWorktree() bool {
+func IsInsideWorktree(ctx context.Context) bool {
 	// First find the repository root
-	repoRoot, err := GetWorktreePath()
+	repoRoot, err := GetWorktreePath(ctx)
 	if err != nil {
 		return false
 	}
@@ -603,14 +603,14 @@ func IsInsideWorktree() bool {
 // Per gitrepository-layout(5), a worktree's .git file is a "gitfile" containing
 // "gitdir: <path>" pointing to $GIT_DIR/worktrees/<id> in the main repository.
 // See: https://git-scm.com/docs/gitrepository-layout
-func GetMainRepoRoot() (string, error) {
+func GetMainRepoRoot(ctx context.Context) (string, error) {
 	// First find the worktree/repo root
-	repoRoot, err := GetWorktreePath()
+	repoRoot, err := GetWorktreePath(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get worktree path: %w", err)
 	}
 
-	if !IsInsideWorktree() {
+	if !IsInsideWorktree(ctx) {
 		return repoRoot, nil
 	}
 
@@ -636,8 +636,7 @@ func GetMainRepoRoot() (string, error) {
 // In a regular checkout, this is .git/
 // In a worktree, this is the main repo's .git/ (not .git/worktrees/<name>/)
 // Uses git rev-parse --git-common-dir for reliable handling of worktrees.
-func GetGitCommonDir() (string, error) {
-	ctx := context.Background()
+func GetGitCommonDir(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--git-common-dir")
 	cmd.Dir = "."
 	output, err := cmd.Output()
@@ -658,8 +657,7 @@ func GetGitCommonDir() (string, error) {
 
 // GetWorktreePath returns the absolute path to the current worktree root.
 // This is the working directory path, not the git directory.
-func GetWorktreePath() (string, error) {
-	ctx := context.Background()
+func GetWorktreePath(ctx context.Context) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "rev-parse", "--show-toplevel")
 	output, err := cmd.Output()
 	if err != nil {
@@ -670,9 +668,9 @@ func GetWorktreePath() (string, error) {
 
 // EnsureEntireGitignore ensures all required entries are in .entire/.gitignore
 // Works correctly from any subdirectory within the repository.
-func EnsureEntireGitignore() error {
+func EnsureEntireGitignore(ctx context.Context) error {
 	// Get absolute path for the gitignore file
-	gitignoreAbs, err := paths.AbsPath(entireGitignore)
+	gitignoreAbs, err := paths.AbsPath(ctx, entireGitignore)
 	if err != nil {
 		gitignoreAbs = entireGitignore // Fallback to relative
 	}
@@ -724,8 +722,8 @@ func EnsureEntireGitignore() error {
 
 // checkCanRewind checks if working directory is clean enough for rewind.
 // Returns (canRewind, reason, error). Shared by shadow and linear-shadow strategies.
-func checkCanRewind() (bool, string, error) {
-	repo, err := OpenRepository()
+func checkCanRewind(ctx context.Context) (bool, string, error) {
+	repo, err := OpenRepository(ctx)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to open git repository: %w", err)
 	}
@@ -789,8 +787,8 @@ func checkCanRewind() (bool, string, error) {
 // checkCanRewindWithWarning checks working directory and returns a warning with diff stats.
 // Unlike checkCanRewind, this always returns canRewind=true but includes a warning message
 // with +/- line stats for uncommitted changes. Used by manual-commit strategy.
-func checkCanRewindWithWarning() (bool, string, error) {
-	repo, err := OpenRepository()
+func checkCanRewindWithWarning(ctx context.Context) (bool, string, error) {
+	repo, err := OpenRepository(ctx)
 	if err != nil {
 		// Can't open repo - still allow rewind but without stats
 		return true, "", nil //nolint:nilerr // Rewind allowed even if repo can't be opened
@@ -835,7 +833,7 @@ func checkCanRewindWithWarning() (bool, string, error) {
 
 	var changes []fileChange
 	// Use repo root, not cwd - git status returns paths relative to repo root
-	repoRoot, err := GetWorktreePath()
+	repoRoot, err := GetWorktreePath(ctx)
 	if err != nil {
 		return true, "", nil //nolint:nilerr // Rewind allowed even if repo root lookup fails
 	}
@@ -1072,12 +1070,12 @@ func StageFiles(worktree *git.Worktree, modified, newFiles, deleted []string, st
 
 // getTaskCheckpointFromTree retrieves a task checkpoint from a commit tree.
 // Shared implementation for shadow and linear-shadow strategies.
-func getTaskCheckpointFromTree(point RewindPoint) (*TaskCheckpoint, error) {
+func getTaskCheckpointFromTree(ctx context.Context, point RewindPoint) (*TaskCheckpoint, error) {
 	if !point.IsTaskCheckpoint {
 		return nil, ErrNotTaskCheckpoint
 	}
 
-	repo, err := OpenRepository()
+	repo, err := OpenRepository(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open repository: %w", err)
 	}
@@ -1115,12 +1113,12 @@ func getTaskCheckpointFromTree(point RewindPoint) (*TaskCheckpoint, error) {
 
 // getTaskTranscriptFromTree retrieves a task transcript from a commit tree.
 // Shared implementation for shadow and linear-shadow strategies.
-func getTaskTranscriptFromTree(point RewindPoint) ([]byte, error) {
+func getTaskTranscriptFromTree(ctx context.Context, point RewindPoint) ([]byte, error) {
 	if !point.IsTaskCheckpoint {
 		return nil, ErrNotTaskCheckpoint
 	}
 
-	repo, err := OpenRepository()
+	repo, err := OpenRepository(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open repository: %w", err)
 	}
@@ -1170,9 +1168,7 @@ var ErrBranchNotFound = errors.New("branch not found")
 //
 // Returns ErrBranchNotFound if the branch does not exist, allowing callers
 // to use errors.Is for idempotent deletion patterns.
-func DeleteBranchCLI(branchName string) error {
-	ctx := context.Background()
-
+func DeleteBranchCLI(ctx context.Context, branchName string) error {
 	// Pre-check: verify the branch exists so callers get a structured error
 	// instead of parsing git's output string (which varies across locales).
 	// git show-ref exits 1 for "not found" and 128+ for fatal errors (corrupt
@@ -1196,8 +1192,7 @@ func DeleteBranchCLI(branchName string) error {
 
 // branchExistsCLI checks if a branch exists using git CLI.
 // Returns nil if the branch exists, or an error if it does not.
-func branchExistsCLI(branchName string) error {
-	ctx := context.Background()
+func branchExistsCLI(ctx context.Context, branchName string) error {
 	cmd := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName) //nolint:gosec // branchName comes from internal shadow branch naming
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("branch %s not found: %w", branchName, err)
@@ -1209,8 +1204,7 @@ func branchExistsCLI(branchName string) error {
 // Uses the git CLI instead of go-git because go-git's HardReset incorrectly
 // deletes untracked directories (like .entire/) even when they're in .gitignore.
 // Returns the short commit ID (7 chars) on success for display purposes.
-func HardResetWithProtection(commitHash plumbing.Hash) (shortID string, err error) {
-	ctx := context.Background()
+func HardResetWithProtection(ctx context.Context, commitHash plumbing.Hash) (shortID string, err error) {
 	hashStr := commitHash.String()
 	cmd := exec.CommandContext(ctx, "git", "reset", "--hard", hashStr) //nolint:gosec // hashStr is a plumbing.Hash, not user input
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -1231,13 +1225,13 @@ func HardResetWithProtection(commitHash plumbing.Hash) (shortID string, err erro
 // Uses "git ls-files --others --exclude-standard -z" to respect .gitignore rules,
 // avoiding bloated session state from large ignored directories like node_modules/.
 // Returns paths relative to the repository root.
-func collectUntrackedFiles() ([]string, error) {
-	repoRoot, err := GetWorktreePath()
+func collectUntrackedFiles(ctx context.Context) ([]string, error) {
+	repoRoot, err := GetWorktreePath(ctx)
 	if err != nil {
 		repoRoot = "."
 	}
 
-	cmd := exec.CommandContext(context.Background(), "git", "ls-files", "--others", "--exclude-standard", "-z")
+	cmd := exec.CommandContext(ctx, "git", "ls-files", "--others", "--exclude-standard", "-z")
 	cmd.Dir = repoRoot
 	output, err := cmd.Output()
 	if err != nil {
@@ -1499,7 +1493,7 @@ func IsOnDefaultBranch(repo *git.Repository) (bool, string) {
 // the TranscriptPreparer interface. This ensures transcript files exist before
 // they are read (e.g., OpenCode creates its transcript lazily via `opencode export`).
 // Errors are silently ignored — this is best-effort for hook paths.
-func prepareTranscriptIfNeeded(agentType agent.AgentType, transcriptPath string) {
+func prepareTranscriptIfNeeded(ctx context.Context, agentType agent.AgentType, transcriptPath string) {
 	if transcriptPath == "" {
 		return
 	}
@@ -1510,6 +1504,6 @@ func prepareTranscriptIfNeeded(agentType agent.AgentType, transcriptPath string)
 	if preparer, ok := ag.(agent.TranscriptPreparer); ok {
 		// Best-effort: callers handle missing files gracefully.
 		// Transcript may not be available yet (e.g., agent not installed).
-		_ = preparer.PrepareTranscript(transcriptPath) //nolint:errcheck // Best-effort in hook path
+		_ = preparer.PrepareTranscript(ctx, transcriptPath) //nolint:errcheck // Best-effort in hook path
 	}
 }

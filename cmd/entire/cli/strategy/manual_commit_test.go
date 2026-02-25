@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -96,7 +97,7 @@ func TestShadowStrategy_SessionState_SaveLoad(t *testing.T) {
 	}
 
 	// Save state
-	err = s.saveSessionState(state)
+	err = s.saveSessionState(context.Background(), state)
 	if err != nil {
 		t.Fatalf("saveSessionState() error = %v", err)
 	}
@@ -108,7 +109,7 @@ func TestShadowStrategy_SessionState_SaveLoad(t *testing.T) {
 	}
 
 	// Load state
-	loaded, err := s.loadSessionState("test-session-123")
+	loaded, err := s.loadSessionState(context.Background(), "test-session-123")
 	if err != nil {
 		t.Fatalf("loadSessionState() error = %v", err)
 	}
@@ -138,7 +139,7 @@ func TestShadowStrategy_SessionState_LoadNonExistent(t *testing.T) {
 
 	s := &ManualCommitStrategy{}
 
-	loaded, err := s.loadSessionState("nonexistent-session")
+	loaded, err := s.loadSessionState(context.Background(), "nonexistent-session")
 	if err != nil {
 		t.Errorf("loadSessionState() error = %v, want nil for nonexistent session", err)
 	}
@@ -188,15 +189,15 @@ func TestShadowStrategy_ListAllSessionStates(t *testing.T) {
 		StepCount:  2,
 	}
 
-	if err := s.saveSessionState(state1); err != nil {
+	if err := s.saveSessionState(context.Background(), state1); err != nil {
 		t.Fatalf("saveSessionState() error = %v", err)
 	}
-	if err := s.saveSessionState(state2); err != nil {
+	if err := s.saveSessionState(context.Background(), state2); err != nil {
 		t.Fatalf("saveSessionState() error = %v", err)
 	}
 
 	// List all states
-	states, err := s.listAllSessionStates()
+	states, err := s.listAllSessionStates(context.Background())
 	if err != nil {
 		t.Fatalf("listAllSessionStates() error = %v", err)
 	}
@@ -275,12 +276,12 @@ func TestShadowStrategy_ListAllSessionStates_CleansUpStaleSessions(t *testing.T)
 	}
 
 	for _, state := range []*SessionState{staleEmpty, staleIdle, staleEnded, activeNoShadow, condensedIdle} {
-		if err := s.saveSessionState(state); err != nil {
+		if err := s.saveSessionState(context.Background(), state); err != nil {
 			t.Fatalf("saveSessionState(%s) error = %v", state.SessionID, err)
 		}
 	}
 
-	states, err := s.listAllSessionStates()
+	states, err := s.listAllSessionStates(context.Background())
 	if err != nil {
 		t.Fatalf("listAllSessionStates() error = %v", err)
 	}
@@ -307,7 +308,7 @@ func TestShadowStrategy_ListAllSessionStates_CleansUpStaleSessions(t *testing.T)
 
 	// Verify stale sessions were actually cleared from disk
 	for _, staleID := range []string{"stale-empty-phase", "stale-idle", "stale-ended"} {
-		loaded, err := LoadSessionState(staleID)
+		loaded, err := LoadSessionState(context.Background(), staleID)
 		if err != nil {
 			t.Errorf("LoadSessionState(%s) error = %v", staleID, err)
 		}
@@ -367,13 +368,13 @@ func TestShadowStrategy_FindSessionsForCommit(t *testing.T) {
 	}
 
 	for _, state := range []*SessionState{state1, state2, state3} {
-		if err := s.saveSessionState(state); err != nil {
+		if err := s.saveSessionState(context.Background(), state); err != nil {
 			t.Fatalf("saveSessionState() error = %v", err)
 		}
 	}
 
 	// Find sessions for base commit "abc1234"
-	matching, err := s.findSessionsForCommit("abc1234")
+	matching, err := s.findSessionsForCommit(context.Background(), "abc1234")
 	if err != nil {
 		t.Fatalf("findSessionsForCommit() error = %v", err)
 	}
@@ -383,7 +384,7 @@ func TestShadowStrategy_FindSessionsForCommit(t *testing.T) {
 	}
 
 	// Find sessions for base commit "xyz7890"
-	matching, err = s.findSessionsForCommit("xyz7890")
+	matching, err = s.findSessionsForCommit(context.Background(), "xyz7890")
 	if err != nil {
 		t.Fatalf("findSessionsForCommit() error = %v", err)
 	}
@@ -393,7 +394,7 @@ func TestShadowStrategy_FindSessionsForCommit(t *testing.T) {
 	}
 
 	// Find sessions for nonexistent base commit
-	matching, err = s.findSessionsForCommit("nonexistent")
+	matching, err = s.findSessionsForCommit(context.Background(), "nonexistent")
 	if err != nil {
 		t.Fatalf("findSessionsForCommit() error = %v", err)
 	}
@@ -422,12 +423,12 @@ func TestShadowStrategy_ClearSessionState(t *testing.T) {
 	}
 
 	// Save state
-	if err := s.saveSessionState(state); err != nil {
+	if err := s.saveSessionState(context.Background(), state); err != nil {
 		t.Fatalf("saveSessionState() error = %v", err)
 	}
 
 	// Verify it exists
-	loaded, loadErr := s.loadSessionState("test-session")
+	loaded, loadErr := s.loadSessionState(context.Background(), "test-session")
 	if loadErr != nil {
 		t.Fatalf("loadSessionState() error = %v", loadErr)
 	}
@@ -436,12 +437,12 @@ func TestShadowStrategy_ClearSessionState(t *testing.T) {
 	}
 
 	// Clear state
-	if err := s.clearSessionState("test-session"); err != nil {
+	if err := s.clearSessionState(context.Background(), "test-session"); err != nil {
 		t.Fatalf("clearSessionState() error = %v", err)
 	}
 
 	// Verify it's gone
-	loaded, loadErr = s.loadSessionState("test-session")
+	loaded, loadErr = s.loadSessionState(context.Background(), "test-session")
 	if loadErr != nil {
 		t.Fatalf("loadSessionState() error = %v", loadErr)
 	}
@@ -479,7 +480,7 @@ func TestShadowStrategy_GetRewindPoints_NoShadowBranch(t *testing.T) {
 	t.Chdir(dir)
 
 	s := NewManualCommitStrategy()
-	points, err := s.GetRewindPoints(10)
+	points, err := s.GetRewindPoints(context.Background(), 10)
 	if err != nil {
 		t.Errorf("GetRewindPoints() error = %v", err)
 	}
@@ -497,12 +498,12 @@ func TestShadowStrategy_ListSessions_Empty(t *testing.T) {
 
 	t.Chdir(dir)
 
-	sessions, err := ListSessions()
+	sessions, err := ListSessions(context.Background())
 	if err != nil {
-		t.Errorf("ListSessions() error = %v", err)
+		t.Errorf("ListSessions(context.Background()) error = %v", err)
 	}
 	if len(sessions) != 0 {
-		t.Errorf("ListSessions() returned %d sessions, want 0", len(sessions))
+		t.Errorf("ListSessions(context.Background()) returned %d sessions, want 0", len(sessions))
 	}
 }
 
@@ -515,7 +516,7 @@ func TestShadowStrategy_GetSession_NotFound(t *testing.T) {
 
 	t.Chdir(dir)
 
-	_, err = GetSession("nonexistent")
+	_, err = GetSession(context.Background(), "nonexistent")
 	if !errors.Is(err, ErrNoSession) {
 		t.Errorf("GetSession() error = %v, want ErrNoSession", err)
 	}
@@ -550,7 +551,7 @@ func TestShadowStrategy_GetSessionInfo_NoShadowBranch(t *testing.T) {
 	t.Chdir(dir)
 
 	s := NewManualCommitStrategy()
-	_, err = s.GetSessionInfo()
+	_, err = s.GetSessionInfo(context.Background())
 	if !errors.Is(err, ErrNoSession) {
 		t.Errorf("GetSessionInfo() error = %v, want ErrNoSession", err)
 	}
@@ -585,7 +586,7 @@ func TestShadowStrategy_CanRewind_CleanRepo(t *testing.T) {
 	t.Chdir(dir)
 
 	s := NewManualCommitStrategy()
-	can, reason, err := s.CanRewind()
+	can, reason, err := s.CanRewind(context.Background())
 	if err != nil {
 		t.Errorf("CanRewind() error = %v", err)
 	}
@@ -635,7 +636,7 @@ func TestShadowStrategy_CanRewind_DirtyRepo(t *testing.T) {
 	t.Chdir(dir)
 
 	s := NewManualCommitStrategy()
-	can, reason, err := s.CanRewind()
+	can, reason, err := s.CanRewind(context.Background())
 	if err != nil {
 		t.Errorf("CanRewind() error = %v", err)
 	}
@@ -660,7 +661,7 @@ func TestShadowStrategy_CanRewind_NoRepo(t *testing.T) {
 	t.Chdir(dir)
 
 	s := NewManualCommitStrategy()
-	can, reason, err := s.CanRewind()
+	can, reason, err := s.CanRewind(context.Background())
 	if err != nil {
 		t.Errorf("CanRewind() error = %v", err)
 	}
@@ -688,7 +689,7 @@ func TestShadowStrategy_GetTaskCheckpoint_NotTaskCheckpoint(t *testing.T) {
 		IsTaskCheckpoint: false,
 	}
 
-	_, err = s.GetTaskCheckpoint(point)
+	_, err = s.GetTaskCheckpoint(context.Background(), point)
 	if !errors.Is(err, ErrNotTaskCheckpoint) {
 		t.Errorf("GetTaskCheckpoint() error = %v, want ErrNotTaskCheckpoint", err)
 	}
@@ -710,7 +711,7 @@ func TestShadowStrategy_GetTaskCheckpointTranscript_NotTaskCheckpoint(t *testing
 		IsTaskCheckpoint: false,
 	}
 
-	_, err = s.GetTaskCheckpointTranscript(point)
+	_, err = s.GetTaskCheckpointTranscript(context.Background(), point)
 	if !errors.Is(err, ErrNotTaskCheckpoint) {
 		t.Errorf("GetTaskCheckpointTranscript() error = %v, want ErrNotTaskCheckpoint", err)
 	}
@@ -802,7 +803,7 @@ func TestShadowStrategy_PrepareCommitMsg_NoActiveSession(t *testing.T) {
 	if !ok {
 		t.Fatal("failed to cast to ManualCommitStrategy")
 	}
-	prepErr := sv2.PrepareCommitMsg(commitMsgFile, "")
+	prepErr := sv2.PrepareCommitMsg(context.Background(), commitMsgFile, "")
 	if prepErr != nil {
 		t.Errorf("PrepareCommitMsg() error = %v", prepErr)
 	}
@@ -843,7 +844,7 @@ func TestShadowStrategy_PrepareCommitMsg_SkipSources(t *testing.T) {
 				t.Fatalf("failed to write commit message file: %v", err)
 			}
 
-			prepErr := sv2.PrepareCommitMsg(commitMsgFile, source)
+			prepErr := sv2.PrepareCommitMsg(context.Background(), commitMsgFile, source)
 			if prepErr != nil {
 				t.Errorf("PrepareCommitMsg() error = %v", prepErr)
 			}
@@ -1076,7 +1077,7 @@ func TestShadowStrategy_GetCheckpointLog_WithCheckpointID(t *testing.T) {
 	// This should attempt to call getCheckpointLog (which will fail because
 	// there's no entire/checkpoints/v1 branch), but the important thing is it uses
 	// the checkpoint ID to look up metadata
-	_, err = s.GetCheckpointLog(checkpoint)
+	_, err = s.GetCheckpointLog(context.Background(), checkpoint)
 	if err == nil {
 		t.Error("GetCheckpointLog() expected error (no sessions branch), got nil")
 	}
@@ -1106,7 +1107,7 @@ func TestShadowStrategy_GetCheckpointLog_NoCheckpointID(t *testing.T) {
 	}
 
 	// This should return ErrNoMetadata since there's no checkpoint ID
-	_, err = s.GetCheckpointLog(checkpoint)
+	_, err = s.GetCheckpointLog(context.Background(), checkpoint)
 	if err == nil {
 		t.Error("GetCheckpointLog() expected error for missing checkpoint ID, got nil")
 	}
@@ -1175,7 +1176,7 @@ func TestShadowStrategy_FilesTouched_OnlyModifiedFiles(t *testing.T) {
 
 	// First checkpoint using SaveStep - captures ALL working directory files
 	// (for rewind purposes), but tracks only modified files in FilesTouched
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{}, // No files modified yet
 		NewFiles:       []string{},
@@ -1198,7 +1199,7 @@ func TestShadowStrategy_FilesTouched_OnlyModifiedFiles(t *testing.T) {
 	}
 
 	// Second checkpoint using SaveStep - only modified file should be tracked
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"existing1.txt"}, // Only this file was modified
 		NewFiles:       []string{},
@@ -1214,14 +1215,14 @@ func TestShadowStrategy_FilesTouched_OnlyModifiedFiles(t *testing.T) {
 	}
 
 	// Load session state to verify FilesTouched
-	state, err := s.loadSessionState(sessionID)
+	state, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("loadSessionState() error = %v", err)
 	}
 
 	// Now condense the session
 	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
-	result, err := s.CondenseSession(repo, checkpointID, state, nil)
+	result, err := s.CondenseSession(context.Background(), repo, checkpointID, state, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -1291,7 +1292,7 @@ func TestDeleteShadowBranch(t *testing.T) {
 	}
 
 	// Delete the shadow branch
-	err = deleteShadowBranch(repo, shadowBranchName)
+	err = deleteShadowBranch(context.Background(), repo, shadowBranchName)
 	if err != nil {
 		t.Fatalf("deleteShadowBranch() error = %v", err)
 	}
@@ -1314,7 +1315,7 @@ func TestDeleteShadowBranch_NonExistent(t *testing.T) {
 	t.Chdir(dir)
 
 	// Try to delete a branch that doesn't exist - should not error
-	err = deleteShadowBranch(repo, "entire/nonexistent")
+	err = deleteShadowBranch(context.Background(), repo, "entire/nonexistent")
 	if err != nil {
 		t.Errorf("deleteShadowBranch() for non-existent branch should not error, got: %v", err)
 	}
@@ -1342,13 +1343,13 @@ func TestSessionState_LastCheckpointID(t *testing.T) {
 	}
 
 	// Save state
-	err = s.saveSessionState(state)
+	err = s.saveSessionState(context.Background(), state)
 	if err != nil {
 		t.Fatalf("saveSessionState() error = %v", err)
 	}
 
 	// Load state and verify LastCheckpointID
-	loaded, err := s.loadSessionState("test-session-123")
+	loaded, err := s.loadSessionState(context.Background(), "test-session-123")
 	if err != nil {
 		t.Fatalf("loadSessionState() error = %v", err)
 	}
@@ -1393,13 +1394,13 @@ func TestSessionState_TokenUsagePersistence(t *testing.T) {
 	}
 
 	// Save state
-	err = s.saveSessionState(state)
+	err = s.saveSessionState(context.Background(), state)
 	if err != nil {
 		t.Fatalf("saveSessionState() error = %v", err)
 	}
 
 	// Load state and verify token usage fields are persisted
-	loaded, err := s.loadSessionState("test-session-token-usage")
+	loaded, err := s.loadSessionState(context.Background(), "test-session-token-usage")
 	if err != nil {
 		t.Fatalf("loadSessionState() error = %v", err)
 	}
@@ -1481,7 +1482,7 @@ func TestShadowStrategy_PrepareCommitMsg_ReusesLastCheckpointID(t *testing.T) {
 		CheckpointTranscriptStart: 10, // Already condensed
 		LastCheckpointID:          "abc123def456",
 	}
-	if err := s.saveSessionState(state); err != nil {
+	if err := s.saveSessionState(context.Background(), state); err != nil {
 		t.Fatalf("saveSessionState() error = %v", err)
 	}
 
@@ -1490,7 +1491,7 @@ func TestShadowStrategy_PrepareCommitMsg_ReusesLastCheckpointID(t *testing.T) {
 	// The actual behavior is tested through integration tests
 
 	// Verify the state was saved correctly
-	loaded, err := s.loadSessionState("test-session")
+	loaded, err := s.loadSessionState(context.Background(), "test-session")
 	if err != nil {
 		t.Fatalf("loadSessionState() error = %v", err)
 	}
@@ -1550,7 +1551,7 @@ func TestShadowStrategy_CondenseSession_EphemeralBranchTrailer(t *testing.T) {
 	}
 
 	// Use SaveStep to create a checkpoint (this creates the shadow branch)
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{},
@@ -1566,14 +1567,14 @@ func TestShadowStrategy_CondenseSession_EphemeralBranchTrailer(t *testing.T) {
 	}
 
 	// Load session state
-	state, err := s.loadSessionState(sessionID)
+	state, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("loadSessionState() error = %v", err)
 	}
 
 	// Condense the session
 	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
-	_, err = s.CondenseSession(repo, checkpointID, state, nil)
+	_, err = s.CondenseSession(context.Background(), repo, checkpointID, state, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -1638,7 +1639,7 @@ func TestSaveStep_EmptyBaseCommit_Recovery(t *testing.T) {
 		BaseCommit: "", // Empty! This is the bug scenario
 		StartedAt:  time.Now(),
 	}
-	if err := s.saveSessionState(partialState); err != nil {
+	if err := s.saveSessionState(context.Background(), partialState); err != nil {
 		t.Fatalf("failed to save partial state: %v", err)
 	}
 
@@ -1654,7 +1655,7 @@ func TestSaveStep_EmptyBaseCommit_Recovery(t *testing.T) {
 	}
 
 	// SaveStep should recover by re-initializing the session state
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{},
@@ -1670,7 +1671,7 @@ func TestSaveStep_EmptyBaseCommit_Recovery(t *testing.T) {
 	}
 
 	// Verify session state now has a valid BaseCommit
-	loaded, err := s.loadSessionState(sessionID)
+	loaded, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("failed to load session state: %v", err)
 	}
@@ -1726,7 +1727,7 @@ func TestSaveStep_UsesCtxAgentType_WhenNoSessionState(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{},
@@ -1742,7 +1743,7 @@ func TestSaveStep_UsesCtxAgentType_WhenNoSessionState(t *testing.T) {
 		t.Fatalf("SaveStep() error = %v", err)
 	}
 
-	loaded, err := s.loadSessionState(sessionID)
+	loaded, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("failed to load session state: %v", err)
 	}
@@ -1787,7 +1788,7 @@ func TestSaveStep_UsesCtxAgentType_WhenPartialState(t *testing.T) {
 		BaseCommit: "",
 		StartedAt:  time.Now(),
 	}
-	if err := s.saveSessionState(partialState); err != nil {
+	if err := s.saveSessionState(context.Background(), partialState); err != nil {
 		t.Fatalf("failed to save partial state: %v", err)
 	}
 
@@ -1801,7 +1802,7 @@ func TestSaveStep_UsesCtxAgentType_WhenPartialState(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{},
@@ -1817,7 +1818,7 @@ func TestSaveStep_UsesCtxAgentType_WhenPartialState(t *testing.T) {
 		t.Fatalf("SaveStep() error = %v", err)
 	}
 
-	loaded, err := s.loadSessionState(sessionID)
+	loaded, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("failed to load session state: %v", err)
 	}
@@ -1838,26 +1839,26 @@ func TestInitializeSession_BackfillsUnknownAgentType(t *testing.T) {
 	sessionID := "2026-02-06-backfill-agent-type"
 
 	// First call: initialize with correct type
-	if err := s.InitializeSession(sessionID, agent.AgentTypeClaudeCode, "", ""); err != nil {
+	if err := s.InitializeSession(context.Background(), sessionID, agent.AgentTypeClaudeCode, "", ""); err != nil {
 		t.Fatalf("InitializeSession() error = %v", err)
 	}
 
 	// Simulate the bug: manually set AgentType to "Agent" (as if session was created with default)
-	state, err := s.loadSessionState(sessionID)
+	state, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("failed to load session state: %v", err)
 	}
 	state.AgentType = agent.AgentTypeUnknown
-	if err := s.saveSessionState(state); err != nil {
+	if err := s.saveSessionState(context.Background(), state); err != nil {
 		t.Fatalf("failed to save state: %v", err)
 	}
 
 	// Second call with correct agent type should fix the "Agent" value
-	if err := s.InitializeSession(sessionID, agent.AgentTypeClaudeCode, "", ""); err != nil {
+	if err := s.InitializeSession(context.Background(), sessionID, agent.AgentTypeClaudeCode, "", ""); err != nil {
 		t.Fatalf("InitializeSession() second call error = %v", err)
 	}
 
-	loaded, err := s.loadSessionState(sessionID)
+	loaded, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("failed to load session state: %v", err)
 	}
@@ -2107,7 +2108,7 @@ func TestCondenseSession_IncludesInitialAttribution(t *testing.T) {
 	}
 
 	// First checkpoint - captures agent's work on shadow branch
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"test.go"},
 		NewFiles:       []string{},
@@ -2140,14 +2141,14 @@ func TestCondenseSession_IncludesInitialAttribution(t *testing.T) {
 	}
 
 	// Load session state
-	state, err := s.loadSessionState(sessionID)
+	state, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("loadSessionState() error = %v", err)
 	}
 
 	// Condense the session - this should calculate InitialAttribution
 	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
-	result, err := s.CondenseSession(repo, checkpointID, state, nil)
+	result, err := s.CondenseSession(context.Background(), repo, checkpointID, state, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -2318,7 +2319,7 @@ func TestCondenseSession_AttributionWithoutShadowBranch(t *testing.T) {
 
 	// Condense — no shadow branch exists, but attribution should still work
 	committedFiles := map[string]struct{}{"src/main.go": {}, "README.md": {}}
-	result, err := s.CondenseSession(repo, checkpointID, state, committedFiles)
+	result, err := s.CondenseSession(context.Background(), repo, checkpointID, state, committedFiles)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -2484,7 +2485,7 @@ func TestCondenseSession_AttributionWithoutShadowBranch_MixedHumanAgent(t *testi
 	checkpointID := id.MustCheckpointID("d4e5f6a7b8c9")
 
 	committedFiles := map[string]struct{}{"src/app.go": {}, "docs/notes.md": {}}
-	result, err := s.CondenseSession(repo, checkpointID, state, committedFiles)
+	result, err := s.CondenseSession(context.Background(), repo, checkpointID, state, committedFiles)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -2687,7 +2688,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 
 	// === PROMPT 1 START: Initialize session (simulates UserPromptSubmit) ===
 	// This must happen BEFORE agent makes any changes
-	if err := s.InitializeSession(sessionID, "Claude Code", "", ""); err != nil {
+	if err := s.InitializeSession(context.Background(), sessionID, "Claude Code", "", ""); err != nil {
 		t.Fatalf("InitializeSession() prompt 1 error = %v", err)
 	}
 
@@ -2697,7 +2698,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 		t.Fatalf("failed to write agent changes 1: %v", err)
 	}
 
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"agent.go"},
 		NewFiles:       []string{},
@@ -2713,7 +2714,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 	}
 
 	// Verify PromptAttribution was recorded for checkpoint 1
-	state1, err := s.loadSessionState(sessionID)
+	state1, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("loadSessionState() after checkpoint 1 error = %v", err)
 	}
@@ -2733,7 +2734,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 
 	// === PROMPT 2 START: Initialize session again (simulates UserPromptSubmit) ===
 	// This captures the user's edits to user.go BEFORE the agent runs
-	if err := s.InitializeSession(sessionID, "Claude Code", "", ""); err != nil {
+	if err := s.InitializeSession(context.Background(), sessionID, "Claude Code", "", ""); err != nil {
 		t.Fatalf("InitializeSession() prompt 2 error = %v", err)
 	}
 
@@ -2743,7 +2744,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 		t.Fatalf("failed to write agent changes 2: %v", err)
 	}
 
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"agent.go"},
 		NewFiles:       []string{},
@@ -2759,7 +2760,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 	}
 
 	// Verify PromptAttribution was recorded for checkpoint 2
-	state2, err := s.loadSessionState(sessionID)
+	state2, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("loadSessionState() after checkpoint 2 error = %v", err)
 	}
@@ -2795,7 +2796,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 
 	// === CONDENSE AND VERIFY ATTRIBUTION ===
 	checkpointID := id.MustCheckpointID("b2c3d4e5f6a7")
-	result, err := s.CondenseSession(repo, checkpointID, state2, nil)
+	result, err := s.CondenseSession(context.Background(), repo, checkpointID, state2, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -2930,7 +2931,7 @@ func TestCondenseSession_PrefersLiveTranscript(t *testing.T) {
 	}
 
 	// SaveStep to create shadow branch with the stale transcript
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{},
@@ -2959,18 +2960,18 @@ func TestCondenseSession_PrefersLiveTranscript(t *testing.T) {
 	}
 
 	// Load session state and set TranscriptPath to the live file
-	state, err := s.loadSessionState(sessionID)
+	state, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("loadSessionState() error = %v", err)
 	}
 	state.TranscriptPath = liveTranscriptFile
-	if err := s.saveSessionState(state); err != nil {
+	if err := s.saveSessionState(context.Background(), state); err != nil {
 		t.Fatalf("saveSessionState() error = %v", err)
 	}
 
 	// Condense — this should read the live transcript, not the shadow branch copy
 	checkpointID := id.MustCheckpointID("b2c3d4e5f6a1")
-	result, err := s.CondenseSession(repo, checkpointID, state, nil)
+	result, err := s.CondenseSession(context.Background(), repo, checkpointID, state, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -3063,7 +3064,7 @@ func TestCondenseSession_GeminiTranscript(t *testing.T) {
 	}
 
 	// Save checkpoint (creates shadow branch)
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"test.txt"},
 		NewFiles:       []string{},
@@ -3080,7 +3081,7 @@ func TestCondenseSession_GeminiTranscript(t *testing.T) {
 	}
 
 	// Load session state
-	state, err := s.loadSessionState(sessionID)
+	state, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("loadSessionState() error = %v", err)
 	}
@@ -3090,7 +3091,7 @@ func TestCondenseSession_GeminiTranscript(t *testing.T) {
 
 	// Condense the session
 	checkpointID := id.MustCheckpointID("aabbcc112233")
-	result, err := s.CondenseSession(repo, checkpointID, state, nil)
+	result, err := s.CondenseSession(context.Background(), repo, checkpointID, state, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -3217,7 +3218,7 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 	}
 
 	// Save checkpoint 1
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"code.go"},
 		NewFiles:       []string{},
@@ -3234,7 +3235,7 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 	}
 
 	// Load and verify state after checkpoint 1
-	state, err := s.loadSessionState(sessionID)
+	state, err := s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("loadSessionState() error = %v", err)
 	}
@@ -3289,12 +3290,12 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 	// what would happen after condensing checkpoint 1
 	state.CheckpointTranscriptStart = 2 // Start from message index 2 (the second user prompt)
 	state.StepCount = 1                 // Set to 1 (will be incremented to 2 by SaveStep)
-	if err := s.saveSessionState(state); err != nil {
+	if err := s.saveSessionState(context.Background(), state); err != nil {
 		t.Fatalf("failed to update session state: %v", err)
 	}
 
 	// Save checkpoint 2
-	err = s.SaveStep(StepContext{
+	err = s.SaveStep(context.Background(), StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"code.go"},
 		NewFiles:       []string{},
@@ -3311,14 +3312,14 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 	}
 
 	// Reload state to get updated values
-	state, err = s.loadSessionState(sessionID)
+	state, err = s.loadSessionState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("loadSessionState() error = %v", err)
 	}
 
 	// Condense the session - this should calculate token usage ONLY from message index 2 onwards
 	checkpointID := id.MustCheckpointID("ddeeff998877")
-	result, err := s.CondenseSession(repo, checkpointID, state, nil)
+	result, err := s.CondenseSession(context.Background(), repo, checkpointID, state, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -3443,7 +3444,7 @@ func TestCondenseSession_FilesTouchedFallback_EmptyState(t *testing.T) {
 
 	// Condense with committedFiles - should fallback since FilesTouched is empty
 	committedFiles := map[string]struct{}{"agent.go": {}}
-	result, err := s.CondenseSession(repo, checkpointID, state, committedFiles)
+	result, err := s.CondenseSession(context.Background(), repo, checkpointID, state, committedFiles)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -3560,7 +3561,7 @@ func TestCondenseSession_FilesTouchedNoFallback_NoOverlap(t *testing.T) {
 
 	// Condense with committedFiles that don't overlap
 	committedFiles := map[string]struct{}{"other_file.go": {}}
-	result, err := s.CondenseSession(repo, checkpointID, state, committedFiles)
+	result, err := s.CondenseSession(context.Background(), repo, checkpointID, state, committedFiles)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}

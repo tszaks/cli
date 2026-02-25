@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -58,7 +59,7 @@ func TestRunEnable(t *testing.T) {
 	writeSettings(t, testSettingsDisabled)
 
 	var stdout bytes.Buffer
-	if err := runEnable(&stdout); err != nil {
+	if err := runEnable(context.Background(), &stdout); err != nil {
 		t.Fatalf("runEnable() error = %v", err)
 	}
 
@@ -80,7 +81,7 @@ func TestRunEnable_AlreadyEnabled(t *testing.T) {
 	writeSettings(t, testSettingsEnabled)
 
 	var stdout bytes.Buffer
-	if err := runEnable(&stdout); err != nil {
+	if err := runEnable(context.Background(), &stdout); err != nil {
 		t.Fatalf("runEnable() error = %v", err)
 	}
 
@@ -94,7 +95,7 @@ func TestRunDisable(t *testing.T) {
 	writeSettings(t, testSettingsEnabled)
 
 	var stdout bytes.Buffer
-	if err := runDisable(&stdout, false); err != nil {
+	if err := runDisable(context.Background(), &stdout, false); err != nil {
 		t.Fatalf("runDisable() error = %v", err)
 	}
 
@@ -116,7 +117,7 @@ func TestRunDisable_AlreadyDisabled(t *testing.T) {
 	writeSettings(t, testSettingsDisabled)
 
 	var stdout bytes.Buffer
-	if err := runDisable(&stdout, false); err != nil {
+	if err := runDisable(context.Background(), &stdout, false); err != nil {
 		t.Fatalf("runDisable() error = %v", err)
 	}
 
@@ -178,7 +179,7 @@ func TestRunDisable_WithLocalSettings(t *testing.T) {
 	writeLocalSettings(t, `{"enabled": true}`)
 
 	var stdout bytes.Buffer
-	if err := runDisable(&stdout, false); err != nil {
+	if err := runDisable(context.Background(), &stdout, false); err != nil {
 		t.Fatalf("runDisable() error = %v", err)
 	}
 
@@ -209,7 +210,7 @@ func TestRunDisable_WithProjectFlag(t *testing.T) {
 
 	var stdout bytes.Buffer
 	// Use --project flag (useProjectSettings = true)
-	if err := runDisable(&stdout, true); err != nil {
+	if err := runDisable(context.Background(), &stdout, true); err != nil {
 		t.Fatalf("runDisable() error = %v", err)
 	}
 
@@ -241,7 +242,7 @@ func TestRunDisable_CreatesLocalSettingsWhenMissing(t *testing.T) {
 	writeSettings(t, testSettingsEnabled)
 
 	var stdout bytes.Buffer
-	if err := runDisable(&stdout, false); err != nil {
+	if err := runDisable(context.Background(), &stdout, false); err != nil {
 		t.Fatalf("runDisable() error = %v", err)
 	}
 
@@ -362,7 +363,7 @@ func TestRunEnableWithStrategy_PreservesExistingSettings(t *testing.T) {
 	// Run enable with a different strategy — pass agents directly (no TTY needed)
 	defaultAgent := agent.Default()
 	var stdout bytes.Buffer
-	err := runEnableWithStrategy(&stdout, []agent.Agent{defaultAgent}, "auto-commit", false, false, true, false, false, false)
+	err := runEnableWithStrategy(context.Background(), &stdout, []agent.Agent{defaultAgent}, "auto-commit", false, false, true, false, false, false)
 	if err != nil {
 		t.Fatalf("runEnableWithStrategy() error = %v", err)
 	}
@@ -407,7 +408,7 @@ func TestRunEnableWithStrategy_PreservesLocalSettings(t *testing.T) {
 	// Run enable with --local flag — pass agents directly (no TTY needed)
 	defaultAgent := agent.Default()
 	var stdout bytes.Buffer
-	err := runEnableWithStrategy(&stdout, []agent.Agent{defaultAgent}, "auto-commit", false, true, false, false, false, false)
+	err := runEnableWithStrategy(context.Background(), &stdout, []agent.Agent{defaultAgent}, "auto-commit", false, true, false, false, false, false)
 	if err != nil {
 		t.Fatalf("runEnableWithStrategy() error = %v", err)
 	}
@@ -438,7 +439,7 @@ func TestRunUninstall_Force_NothingInstalled(t *testing.T) {
 	setupTestRepo(t)
 
 	var stdout, stderr bytes.Buffer
-	err := runUninstall(&stdout, &stderr, true)
+	err := runUninstall(context.Background(), &stdout, &stderr, true)
 	if err != nil {
 		t.Fatalf("runUninstall() error = %v", err)
 	}
@@ -462,7 +463,7 @@ func TestRunUninstall_Force_RemovesEntireDirectory(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	err := runUninstall(&stdout, &stderr, true)
+	err := runUninstall(context.Background(), &stdout, &stderr, true)
 	if err != nil {
 		t.Fatalf("runUninstall() error = %v", err)
 	}
@@ -485,23 +486,23 @@ func TestRunUninstall_Force_RemovesGitHooks(t *testing.T) {
 	writeSettings(t, testSettingsEnabled)
 
 	// Install git hooks
-	if _, err := strategy.InstallGitHook(true); err != nil {
+	if _, err := strategy.InstallGitHook(context.Background(), true); err != nil {
 		t.Fatalf("InstallGitHook() error = %v", err)
 	}
 
 	// Verify hooks are installed
-	if !strategy.IsGitHookInstalled() {
+	if !strategy.IsGitHookInstalled(context.Background()) {
 		t.Fatal("git hooks should be installed before uninstall")
 	}
 
 	var stdout, stderr bytes.Buffer
-	err := runUninstall(&stdout, &stderr, true)
+	err := runUninstall(context.Background(), &stdout, &stderr, true)
 	if err != nil {
 		t.Fatalf("runUninstall() error = %v", err)
 	}
 
 	// Verify hooks are removed
-	if strategy.IsGitHookInstalled() {
+	if strategy.IsGitHookInstalled(context.Background()) {
 		t.Error("git hooks should be removed after uninstall")
 	}
 
@@ -518,7 +519,7 @@ func TestRunUninstall_NotAGitRepo(t *testing.T) {
 	paths.ClearRepoRootCache()
 
 	var stdout, stderr bytes.Buffer
-	err := runUninstall(&stdout, &stderr, true)
+	err := runUninstall(context.Background(), &stdout, &stderr, true)
 
 	// Should return an error (silent error)
 	if err == nil {
@@ -536,8 +537,8 @@ func TestCheckEntireDirExists(t *testing.T) {
 	setupTestDir(t)
 
 	// Should be false when directory doesn't exist
-	if checkEntireDirExists() {
-		t.Error("checkEntireDirExists() should return false when .entire doesn't exist")
+	if checkEntireDirExists(context.Background()) {
+		t.Error("checkEntireDirExists(context.Background()) should return false when .entire doesn't exist")
 	}
 
 	// Create the directory
@@ -546,8 +547,8 @@ func TestCheckEntireDirExists(t *testing.T) {
 	}
 
 	// Should be true now
-	if !checkEntireDirExists() {
-		t.Error("checkEntireDirExists() should return true when .entire exists")
+	if !checkEntireDirExists(context.Background()) {
+		t.Error("checkEntireDirExists(context.Background()) should return true when .entire exists")
 	}
 }
 
@@ -555,9 +556,9 @@ func TestCountSessionStates(t *testing.T) {
 	setupTestRepo(t)
 
 	// Should be 0 when no session states exist
-	count := countSessionStates()
+	count := countSessionStates(context.Background())
 	if count != 0 {
-		t.Errorf("countSessionStates() = %d, want 0", count)
+		t.Errorf("countSessionStates(context.Background()) = %d, want 0", count)
 	}
 }
 
@@ -565,9 +566,9 @@ func TestCountShadowBranches(t *testing.T) {
 	setupTestRepo(t)
 
 	// Should be 0 when no shadow branches exist
-	count := countShadowBranches()
+	count := countShadowBranches(context.Background())
 	if count != 0 {
-		t.Errorf("countShadowBranches() = %d, want 0", count)
+		t.Errorf("countShadowBranches(context.Background()) = %d, want 0", count)
 	}
 }
 
@@ -584,8 +585,8 @@ func TestRemoveEntireDirectory(t *testing.T) {
 	}
 
 	// Remove the directory
-	if err := removeEntireDirectory(); err != nil {
-		t.Fatalf("removeEntireDirectory() error = %v", err)
+	if err := removeEntireDirectory(context.Background()); err != nil {
+		t.Fatalf("removeEntireDirectory(context.Background()) error = %v", err)
 	}
 
 	// Verify it's removed
@@ -765,8 +766,8 @@ func TestRemoveEntireDirectory_NotExists(t *testing.T) {
 	setupTestDir(t)
 
 	// Should not error when directory doesn't exist
-	if err := removeEntireDirectory(); err != nil {
-		t.Fatalf("removeEntireDirectory() should not error when directory doesn't exist: %v", err)
+	if err := removeEntireDirectory(context.Background()); err != nil {
+		t.Fatalf("removeEntireDirectory(context.Background()) should not error when directory doesn't exist: %v", err)
 	}
 }
 
@@ -904,7 +905,7 @@ func TestDetectOrSelectAgent_AgentDetected(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf, nil)
+	agents, err := detectOrSelectAgent(context.Background(), &buf, nil)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -936,7 +937,7 @@ func TestDetectOrSelectAgent_GeminiDetected(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf, nil)
+	agents, err := detectOrSelectAgent(context.Background(), &buf, nil)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -963,7 +964,7 @@ func TestDetectOrSelectAgent_NoDetection_NoTTY_FallsBackToDefault(t *testing.T) 
 	// No .claude or .gemini directory - detection will fail
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf, nil)
+	agents, err := detectOrSelectAgent(context.Background(), &buf, nil)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -1002,7 +1003,7 @@ func TestDetectOrSelectAgent_NoDetection_WithTTY_ShowsPromptMessages(t *testing.
 	}
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf, selectFn)
+	agents, err := detectOrSelectAgent(context.Background(), &buf, selectFn)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -1037,7 +1038,7 @@ func TestDetectOrSelectAgent_SelectionCancelled(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	_, err := detectOrSelectAgent(&buf, selectFn)
+	_, err := detectOrSelectAgent(context.Background(), &buf, selectFn)
 	if err == nil {
 		t.Fatal("expected error when selection is cancelled")
 	}
@@ -1056,7 +1057,7 @@ func TestDetectOrSelectAgent_NoneSelected(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	_, err := detectOrSelectAgent(&buf, selectFn)
+	_, err := detectOrSelectAgent(context.Background(), &buf, selectFn)
 	if err == nil {
 		t.Fatal("expected error when no agents selected")
 	}
@@ -1087,7 +1088,7 @@ func TestDetectOrSelectAgent_BothDirectoriesExist_PromptsUser(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf, selectFn)
+	agents, err := detectOrSelectAgent(context.Background(), &buf, selectFn)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -1126,7 +1127,7 @@ func TestDetectOrSelectAgent_BothDirectoriesExist_NoTTY_UsesAll(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf, nil)
+	agents, err := detectOrSelectAgent(context.Background(), &buf, nil)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -1181,7 +1182,7 @@ func TestDetectOrSelectAgent_ReRun_AlwaysPromptsWithInstalledPreSelected(t *test
 	writeClaudeHooksFixture(t)
 
 	// Verify hooks are detected as installed
-	installed := GetAgentsWithHooksInstalled()
+	installed := GetAgentsWithHooksInstalled(context.Background())
 	if len(installed) == 0 {
 		t.Fatal("Expected Claude Code hooks to be detected as installed")
 	}
@@ -1195,7 +1196,7 @@ func TestDetectOrSelectAgent_ReRun_AlwaysPromptsWithInstalledPreSelected(t *test
 	}
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf, selectFn)
+	agents, err := detectOrSelectAgent(context.Background(), &buf, selectFn)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -1226,7 +1227,7 @@ func TestDetectOrSelectAgent_ReRun_NoTTY_KeepsInstalled(t *testing.T) {
 	writeClaudeHooksFixture(t)
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf, nil)
+	agents, err := detectOrSelectAgent(context.Background(), &buf, nil)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -1250,7 +1251,7 @@ func checkClaudeCodeHooksInstalled() bool {
 	if !ok {
 		return false
 	}
-	return hookAgent.AreHooksInstalled()
+	return hookAgent.AreHooksInstalled(context.Background())
 }
 
 // checkGeminiCLIHooksInstalled checks if Gemini CLI hooks are installed.
@@ -1263,7 +1264,7 @@ func checkGeminiCLIHooksInstalled() bool {
 	if !ok {
 		return false
 	}
-	return hookAgent.AreHooksInstalled()
+	return hookAgent.AreHooksInstalled(context.Background())
 }
 
 func TestUninstallDeselectedAgentHooks(t *testing.T) {
@@ -1280,7 +1281,7 @@ func TestUninstallDeselectedAgentHooks(t *testing.T) {
 
 	// Call uninstallDeselectedAgentHooks with an empty selection (deselect claude-code)
 	var buf bytes.Buffer
-	err := uninstallDeselectedAgentHooks(&buf, []agent.Agent{})
+	err := uninstallDeselectedAgentHooks(context.Background(), &buf, []agent.Agent{})
 	if err != nil {
 		t.Fatalf("uninstallDeselectedAgentHooks() error = %v", err)
 	}
@@ -1310,7 +1311,7 @@ func TestUninstallDeselectedAgentHooks_KeepsSelectedAgents(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err = uninstallDeselectedAgentHooks(&buf, []agent.Agent{claudeAgent})
+	err = uninstallDeselectedAgentHooks(context.Background(), &buf, []agent.Agent{claudeAgent})
 	if err != nil {
 		t.Fatalf("uninstallDeselectedAgentHooks() error = %v", err)
 	}
@@ -1335,7 +1336,7 @@ func TestUninstallDeselectedAgentHooks_MultipleInstalled_DeselectOne(t *testing.
 	writeGeminiHooksFixture(t)
 
 	// Verify both are installed
-	installed := GetAgentsWithHooksInstalled()
+	installed := GetAgentsWithHooksInstalled(context.Background())
 	if len(installed) < 2 {
 		t.Fatalf("Expected at least 2 agents installed, got %d", len(installed))
 	}
@@ -1347,7 +1348,7 @@ func TestUninstallDeselectedAgentHooks_MultipleInstalled_DeselectOne(t *testing.
 	}
 
 	var buf bytes.Buffer
-	err = uninstallDeselectedAgentHooks(&buf, []agent.Agent{claudeAgent})
+	err = uninstallDeselectedAgentHooks(context.Background(), &buf, []agent.Agent{claudeAgent})
 	if err != nil {
 		t.Fatalf("uninstallDeselectedAgentHooks() error = %v", err)
 	}
@@ -1390,7 +1391,7 @@ func TestDetectOrSelectAgent_ReRun_NewlyDetectedAgentAvailableNotPreSelected(t *
 	}
 
 	var buf bytes.Buffer
-	agents, err := detectOrSelectAgent(&buf, selectFn)
+	agents, err := detectOrSelectAgent(context.Background(), &buf, selectFn)
 	if err != nil {
 		t.Fatalf("detectOrSelectAgent() error = %v", err)
 	}
@@ -1424,7 +1425,7 @@ func TestDetectOrSelectAgent_ReRun_EmptySelection_ReturnsError(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	_, err := detectOrSelectAgent(&buf, selectFn)
+	_, err := detectOrSelectAgent(context.Background(), &buf, selectFn)
 	if err == nil {
 		t.Fatal("Expected error when no agents selected on re-run")
 	}

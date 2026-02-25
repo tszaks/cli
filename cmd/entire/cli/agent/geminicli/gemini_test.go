@@ -1,6 +1,7 @@
 package geminicli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -47,7 +48,7 @@ func TestDetectPresence(t *testing.T) {
 		t.Chdir(tempDir)
 
 		ag := &GeminiCLIAgent{}
-		present, err := ag.DetectPresence()
+		present, err := ag.DetectPresence(context.Background())
 		if err != nil {
 			t.Fatalf("DetectPresence() error = %v", err)
 		}
@@ -66,7 +67,7 @@ func TestDetectPresence(t *testing.T) {
 		}
 
 		ag := &GeminiCLIAgent{}
-		present, err := ag.DetectPresence()
+		present, err := ag.DetectPresence(context.Background())
 		if err != nil {
 			t.Fatalf("DetectPresence() error = %v", err)
 		}
@@ -340,7 +341,7 @@ func TestChunkTranscript_SmallContent(t *testing.T) {
 
 	content := []byte(`{"messages":[{"type":"user","content":"hello"},{"type":"gemini","content":"hi there"}]}`)
 
-	chunks, err := ag.ChunkTranscript(content, agent.MaxChunkSize)
+	chunks, err := ag.ChunkTranscript(context.Background(), content, agent.MaxChunkSize)
 	if err != nil {
 		t.Fatalf("ChunkTranscript() error = %v", err)
 	}
@@ -369,7 +370,7 @@ func TestChunkTranscript_LargeContent(t *testing.T) {
 
 	// Use a small maxSize to force chunking
 	maxSize := 5000
-	chunks, err := ag.ChunkTranscript(content, maxSize)
+	chunks, err := ag.ChunkTranscript(context.Background(), content, maxSize)
 	if err != nil {
 		t.Fatalf("ChunkTranscript() error = %v", err)
 	}
@@ -410,7 +411,7 @@ func TestChunkTranscript_EmptyMessages(t *testing.T) {
 
 	content := []byte(`{"messages":[]}`)
 
-	chunks, err := ag.ChunkTranscript(content, agent.MaxChunkSize)
+	chunks, err := ag.ChunkTranscript(context.Background(), content, agent.MaxChunkSize)
 	if err != nil {
 		t.Fatalf("ChunkTranscript() error = %v", err)
 	}
@@ -429,7 +430,7 @@ func TestChunkTranscript_InvalidJSON_FallsBackToJSONL(t *testing.T) {
 	content := []byte(`{"type":"user","content":"hello"}
 {"type":"gemini","content":"hi"}`)
 
-	chunks, err := ag.ChunkTranscript(content, agent.MaxChunkSize)
+	chunks, err := ag.ChunkTranscript(context.Background(), content, agent.MaxChunkSize)
 	if err != nil {
 		t.Fatalf("ChunkTranscript() error = %v", err)
 	}
@@ -463,7 +464,7 @@ func TestChunkTranscript_RoundTrip(t *testing.T) {
 
 	// Use small maxSize to force chunking
 	maxSize := 200
-	chunks, err := ag.ChunkTranscript(content, maxSize)
+	chunks, err := ag.ChunkTranscript(context.Background(), content, maxSize)
 	if err != nil {
 		t.Fatalf("ChunkTranscript() error = %v", err)
 	}
@@ -594,7 +595,7 @@ func TestChunkTranscript_SingleOversizedMessage(t *testing.T) {
 
 	// maxSize smaller than the single message
 	maxSize := 100
-	chunks, err := ag.ChunkTranscript(content, maxSize)
+	chunks, err := ag.ChunkTranscript(context.Background(), content, maxSize)
 	if err != nil {
 		t.Fatalf("ChunkTranscript() error = %v", err)
 	}
@@ -636,7 +637,7 @@ func TestChunkTranscript_ChunkBoundary(t *testing.T) {
 	// Each message is roughly 25-30 chars including comma
 	maxSize := 100
 
-	chunks, err := ag.ChunkTranscript(content, maxSize)
+	chunks, err := ag.ChunkTranscript(context.Background(), content, maxSize)
 	if err != nil {
 		t.Fatalf("ChunkTranscript() error = %v", err)
 	}
@@ -675,7 +676,7 @@ func TestChunkTranscript_PreservesMessageOrder(t *testing.T) {
 	}
 
 	// Small maxSize to force multiple chunks
-	chunks, err := ag.ChunkTranscript(content, 200)
+	chunks, err := ag.ChunkTranscript(context.Background(), content, 200)
 	if err != nil {
 		t.Fatalf("ChunkTranscript() error = %v", err)
 	}
