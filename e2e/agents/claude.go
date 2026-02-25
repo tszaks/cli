@@ -93,15 +93,12 @@ func (c *Claude) Bootstrap() error {
 	// On CI, write a config file so Claude Code uses the API key from the
 	// environment instead of trying OAuth/Keychain.
 	if os.Getenv("CI") == "" {
-		fmt.Fprintf(os.Stderr, "[e2e] claude Bootstrap: local mode, skipping (using Keychain auth)\n")
 		return nil
 	}
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	if apiKey == "" {
-		fmt.Fprintf(os.Stderr, "[e2e] claude Bootstrap: CI mode but ANTHROPIC_API_KEY not set, skipping\n")
 		return nil
 	}
-	fmt.Fprintf(os.Stderr, "[e2e] claude Bootstrap: CI mode, writing API key to ~/.claude/.claude.json\n")
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("get home dir: %w", err)
@@ -133,9 +130,6 @@ func (c *Claude) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 		}
 		defer os.RemoveAll(configDir)
 		env = append(env, "CLAUDE_CONFIG_DIR="+configDir)
-		fmt.Fprintf(os.Stderr, "[e2e] claude RunPrompt: CI mode, using isolated config dir %s\n", configDir)
-	} else {
-		fmt.Fprintf(os.Stderr, "[e2e] claude RunPrompt: local mode, using default Keychain auth (no CLAUDE_CONFIG_DIR)\n")
 	}
 
 	args := []string{"-p", prompt, "--model", cfg.Model, "--dangerously-skip-permissions"}
@@ -181,10 +175,7 @@ func (c *Claude) StartSession(ctx context.Context, dir string) (Session, error) 
 		configDir, err := isolatedConfigDir()
 		if err == nil {
 			envArgs = append(envArgs, "CLAUDE_CONFIG_DIR="+configDir)
-			fmt.Fprintf(os.Stderr, "[e2e] claude StartSession: CI mode, using isolated config dir %s\n", configDir)
 		}
-	} else {
-		fmt.Fprintf(os.Stderr, "[e2e] claude StartSession: local mode, using default Keychain auth (no CLAUDE_CONFIG_DIR)\n")
 	}
 
 	args := append([]string{"env"}, envArgs...)
