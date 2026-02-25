@@ -109,7 +109,7 @@ func TestInteractiveContentOverlapRevertNewFile(t *testing.T) {
 
 		s.Send(t, session, "create a markdown file at docs/red.md with a paragraph about the colour red. Do not ask for confirmation, just make the change.")
 		s.WaitFor(t, session, prompt, 60*time.Second)
-		testutil.WaitForFileExists(t, s.Dir, "docs/*.md", 30*time.Second)
+		testutil.WaitForFileExists(t, s.Dir, "docs/red.md", 30*time.Second)
 
 		// Session is now idle (turn ended, waiting for next prompt).
 		// User replaces the content entirely.
@@ -127,6 +127,7 @@ func TestInteractiveContentOverlapRevertNewFile(t *testing.T) {
 		testutil.AssertCheckpointNotAdvanced(t, s)
 		// Shadow branch correctly persists: session is idle and no
 		// condensation occurred (content mismatch on new file).
+		testutil.AssertHasShadowBranches(t, s.Dir)
 	})
 }
 
