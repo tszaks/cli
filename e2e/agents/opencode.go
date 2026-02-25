@@ -175,7 +175,7 @@ func (a *openCodeAgent) StartSession(ctx context.Context, dir string) (Session, 
 				lastErr = err
 				continue
 			}
-			return s, fmt.Errorf("waiting for startup: %w", err)
+			return nil, fmt.Errorf("waiting for startup: %w", err)
 		}
 		s.stableAtSend = ""
 		return s, nil

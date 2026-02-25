@@ -89,9 +89,13 @@ func (g *Gemini) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 
 	err := cmd.Run()
 	exitCode := 0
-	exitErr := &exec.ExitError{}
-	if errors.As(err, &exitErr) {
-		exitCode = exitErr.ExitCode()
+	if err != nil {
+		exitErr := &exec.ExitError{}
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = -1
+		}
 	}
 
 	return Output{
