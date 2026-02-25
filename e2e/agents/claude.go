@@ -119,7 +119,17 @@ func (c *Claude) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 		o(cfg)
 	}
 
-	env := append(cleanEnv(), "ACCESSIBLE=1", "ENTIRE_TEST_TTY=0")
+	env := append(cleanEnv(),
+		"ACCESSIBLE=1",
+		"ENTIRE_TEST_TTY=0",
+
+		// See https://code.claude.com/docs/en/settings - without this setting Claude was going off and
+		// trying to Git-clone its plugin marketplace, which meant calling git commands that could fail
+		// due to a user's exotic config (e.g. in paul's case, needing SSH-keychain access granted every
+		// time).  That's no good, so for the E2E tests, we tell Claude not to make calls to auto-update
+		// itself, clone its plugins, etc.
+		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
+	)
 
 	// On CI (no macOS Keychain), use an isolated config dir so Claude Code
 	// picks up ANTHROPIC_API_KEY from the environment instead of trying OAuth.
@@ -167,7 +177,17 @@ func (c *Claude) RunPrompt(ctx context.Context, dir string, prompt string, opts 
 func (c *Claude) StartSession(ctx context.Context, dir string) (Session, error) {
 	name := fmt.Sprintf("claude-test-%d", time.Now().UnixNano())
 
-	envArgs := []string{"ACCESSIBLE=1", "ENTIRE_TEST_TTY=0"}
+	envArgs := []string{
+		"ACCESSIBLE=1",
+		"ENTIRE_TEST_TTY=0",
+
+		// See https://code.claude.com/docs/en/settings - without this setting Claude was going off and
+		// trying to Git-clone its plugin marketplace, which meant calling git commands that could fail
+		// due to a user's exotic config (e.g. in paul's case, needing SSH-keychain access granted every
+		// time).  That's no good, so for the E2E tests, we tell Claude not to make calls to auto-update
+		// itself, clone its plugins, etc.
+		"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
+	}
 
 	// On CI (no macOS Keychain), use an isolated config dir so Claude Code
 	// picks up ANTHROPIC_API_KEY from the environment instead of trying OAuth.
