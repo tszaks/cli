@@ -135,7 +135,7 @@ func runStatusDetailed(w io.Writer, sty statusStyles, settingsPath, localSetting
 }
 
 // formatSettingsStatusShort formats a short settings status line.
-// Output format: "● Enabled · manual-commit · branch main" or "○ Disabled · auto-commit"
+// Output format: "● Enabled · manual-commit · branch main" or "○ Disabled"
 func formatSettingsStatusShort(s *EntireSettings, sty statusStyles) string {
 	displayName := strategy.StrategyNameManualCommit
 
@@ -167,7 +167,7 @@ func formatSettingsStatusShort(s *EntireSettings, sty statusStyles) string {
 }
 
 // formatSettingsStatus formats a settings status line with source prefix.
-// Output format: "Project · enabled · manual-commit" or "Local · disabled · auto-commit"
+// Output format: "Project · enabled · manual-commit" or "Local · disabled"
 func formatSettingsStatus(prefix string, s *EntireSettings, sty statusStyles) string {
 	displayName := strategy.StrategyNameManualCommit
 

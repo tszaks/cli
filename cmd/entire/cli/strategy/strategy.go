@@ -301,10 +301,7 @@ type Strategy interface {
 
 	// SaveTaskStep is called by PostToolUse[Task] hook when a subagent completes.
 	// Creates a checkpoint commit with task metadata for later rewind.
-	// Different strategies may handle this differently:
-	// - Commit strategy: commits to active branch
-	// - Manual-commit strategy: commits to shadow branch
-	// - Auto-commit strategy: commits logs to shadow only (code deferred to Stop)
+	// Commits to shadow branch for later condensation.
 	SaveTaskStep(ctx TaskStepContext) error
 
 	// GetRewindPoints returns available points to rewind to.
