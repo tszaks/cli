@@ -24,7 +24,7 @@ func newCleanCmd() *cobra.Command {
 This command finds and removes orphaned data from any strategy:
 
   Shadow branches (entire/<commit-hash>)
-    Created by manual-commit strategy. Normally auto-cleaned when sessions
+    Normally auto-cleaned when sessions
     are condensed during commits.
 
   Session state files (.git/entire-sessions/)
