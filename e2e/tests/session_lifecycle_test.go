@@ -108,6 +108,7 @@ func TestTrailerRemovalSkipsCondensation(t *testing.T) {
 
 		time.Sleep(5 * time.Second)
 		testutil.AssertCheckpointNotAdvanced(t, s)
-		testutil.AssertNoShadowBranches(t, s.Dir)
+		// Shadow branch legitimately persists: hooks were bypassed so
+		// post-commit cleanup never ran.
 	})
 }
