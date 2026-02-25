@@ -63,7 +63,7 @@ func SetupRepo(t *testing.T, agent agents.Agent) *RepoState {
 	Git(t, dir, "config", "user.email", "e2e@test.local")
 	Git(t, dir, "commit", "--allow-empty", "-m", "initial commit")
 
-	entire.Enable(t, dir, agent.EntireAgent(), "")
+	entire.Enable(t, dir, agent.EntireAgent())
 	PatchSettings(t, dir, map[string]any{"log_level": "debug"})
 
 	// OpenCode's non-interactive mode auto-rejects external_directory permission

@@ -20,13 +20,9 @@ type RewindPoint struct {
 }
 
 // Enable runs `entire enable` for the given agent with telemetry disabled.
-// Strategy defaults to "manual-commit" if empty.
-func Enable(t *testing.T, dir, agent, strategy string) {
+func Enable(t *testing.T, dir, agent string) {
 	t.Helper()
-	if strategy == "" {
-		strategy = "manual-commit"
-	}
-	run(t, dir, "enable", "--agent", agent, "--strategy", strategy, "--telemetry=false")
+	run(t, dir, "enable", "--agent", agent, "--telemetry=false")
 }
 
 // Disable runs `entire disable` in the given directory.
