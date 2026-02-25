@@ -50,5 +50,9 @@ func TestMain(m *testing.M) {
 	fmt.Fprintf(os.Stderr, "entire version: %s", version)
 	fmt.Fprintf(os.Stderr, "artifact dir:   %s\n", runDir)
 
+	// Don't look at user's Git config, ignore everything except the project-local Git settings.
+	// This avoids oddball configs in ~/.gitconfig messing with our E2E tests.
+	os.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+
 	os.Exit(m.Run())
 }
