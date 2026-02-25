@@ -47,4 +47,4 @@ Collected once and reused across commands:
 - Implementation guide: `docs/architecture/agent-guide.md`
 - Integration checklist: `docs/architecture/agent-integration-checklist.md`
 - E2E test infrastructure: `cmd/entire/cli/e2e_test/`
-- Existing agents: `cmd/entire/cli/agent/{claudecode,geminicli,opencode,factoryaidroid}/`
+- Existing agents: Discover via `Glob("cmd/entire/cli/agent/*/")`

@@ -15,20 +15,16 @@ Read these files to understand the existing test patterns:
 
 1. `cmd/entire/cli/e2e_test/setup_test.go` — `TestMain` builds CLI binary, checks agent availability, manages PATH
 2. `cmd/entire/cli/e2e_test/testenv.go` — `TestEnv` and `NewFeatureBranchEnv` helpers (repo setup, git operations, rewind points, checkpoint validation)
-3. `cmd/entire/cli/e2e_test/agent_runner.go` — `AgentRunner` interface and existing runners (`ClaudeCodeRunner`, `GeminiCLIRunner`, `FactoryAIDroidRunner`, `OpenCodeRunner`)
+3. `cmd/entire/cli/e2e_test/agent_runner.go` — `AgentRunner` interface and existing runner implementations. Read the file to discover all current runners and the `NewAgentRunner` factory.
 4. `cmd/entire/cli/e2e_test/prompts.go` — `PromptTemplate` definitions for deterministic test prompts
 5. `cmd/entire/cli/e2e_test/assertions.go` — Shared assertion helpers (`AssertAgentSuccess`, `AssertHelloWorldProgram`, etc.)
 
 ### Step 2: Read Existing E2E Scenario Tests
 
-Read these for the test patterns and conventions:
-
-1. `cmd/entire/cli/e2e_test/scenario_basic_workflow_test.go` — Basic: agent creates file, user commits, checkpoint verified
-2. `cmd/entire/cli/e2e_test/scenario_checkpoint_test.go` — Checkpoint metadata validation
-3. `cmd/entire/cli/e2e_test/scenario_rewind_test.go` — Rewind to previous checkpoint
-4. `cmd/entire/cli/e2e_test/scenario_subagent_test.go` — Subagent/task checkpoint creation
-5. `cmd/entire/cli/e2e_test/scenario_agent_commit_test.go` — Agent-initiated commits
-6. `cmd/entire/cli/e2e_test/scenario_checkpoint_workflows_test.go` — Multi-step checkpoint workflows
+Run `Glob("cmd/entire/cli/e2e_test/scenario_*_test.go")` to find all existing scenario tests. Read each to understand the patterns:
+- How scenarios use `TestEnv` and `AgentRunner`
+- How prompts are structured for determinism
+- How assertions validate checkpoints, rewind, etc.
 
 ### Step 3: Read Checkpoint Scenarios Doc
 
@@ -55,8 +51,8 @@ func (r *${AGENT_NAME}Runner) RunPromptWithTools(ctx, workDir, prompt, tools) (*
 ```
 
 Key implementation details:
-- Add `AgentName${AGENT_NAME}` constant (e.g., `const AgentNameWindsurf = "windsurf"`)
-- Register in `NewAgentRunner` switch statement
+- Add an agent name constant following the pattern of existing constants in `agent_runner.go`
+- Register in the `NewAgentRunner` factory (search for `func NewAgentRunner` to find it)
 - `IsAvailable()` checks binary exists + any auth requirements
 - `RunPrompt()` constructs the CLI command using the agent's non-interactive/headless mode
 - Use the probe report to determine:
@@ -93,7 +89,7 @@ cmd/entire/cli/e2e_test/scenario_${AGENT_SLUG}_specific_test.go
 After writing the code:
 
 1. **Lint check**: `mise run lint` — ensure no lint errors
-2. **Compile check**: `go build ./cmd/entire/cli/e2e_test/...` — but do NOT actually use `-tags=e2e` for compile-check, just verify the code structure
+2. **Compile check**: `go test -c -tags=e2e ./cmd/entire/cli/e2e_test` — compile-only with the build tag to verify the code compiles
 3. **List what to run**: Print the exact E2E commands but do NOT run them (they cost money):
    ```bash
    E2E_AGENT=$AGENT_SLUG go test -tags=e2e -run TestE2E_BasicWorkflow ./cmd/entire/cli/e2e_test/...

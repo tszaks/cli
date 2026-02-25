@@ -10,21 +10,14 @@ Read these repo files to understand the Entire lifecycle model that the agent mu
 
 **Required reading:**
 
-1. `cmd/entire/cli/agent/agent.go` — The `Agent` interface (19 methods + 6 optional interfaces)
-2. `cmd/entire/cli/agent/event.go` — 7 normalized EventTypes: `SessionStart`, `TurnStart`, `TurnEnd`, `Compaction`, `SessionEnd`, `SubagentStart`, `SubagentEnd`
+1. `cmd/entire/cli/agent/agent.go` — Read to find the `Agent` interface and all optional capability interfaces
+2. `cmd/entire/cli/agent/event.go` — Read to find all `EventType` constants (the normalized lifecycle events agents must map to)
 3. `cmd/entire/cli/hook_registry.go` — How native hook names are registered and routed
 4. `cmd/entire/cli/lifecycle.go` — `DispatchLifecycleEvent` handler
 5. `docs/architecture/agent-guide.md` — Full implementation guide
 6. `docs/architecture/agent-integration-checklist.md` — Validation criteria
 
-**Reference implementations** (read 1-2 for patterns):
-
-- `cmd/entire/cli/agent/claudecode/` — Most complete, has all optional interfaces
-- `cmd/entire/cli/agent/factoryaidroid/` — Newer, simpler pattern
-- `cmd/entire/cli/agent/geminicli/` — File-watcher based hook model
-- `cmd/entire/cli/agent/opencode/` — Plugin-based hook model
-
-Focus on `types.go` (hook input structs), `lifecycle.go` (ParseHookEvent), and `hooks.go` (HookSupport) in each.
+**Reference implementations:** Run `Glob("cmd/entire/cli/agent/*/")` to discover all existing agent packages. Pick 1-2 as reference. In each, focus on `lifecycle.go` (ParseHookEvent), `hooks.go` (HookSupport), and `types.go` (hook input structs).
 
 ### Phase 2: Static Capability Checks
 
@@ -107,27 +100,20 @@ Generate structured markdown output directly to the user:
 
 ## Lifecycle Event Mapping
 
+For each EventType constant found in `cmd/entire/cli/agent/event.go`, create a row:
+
 | Entire EventType | Native Hook | Status | Fields Available |
 |-----------------|-------------|--------|-----------------|
-| SessionStart | ? | MAPPED/PARTIAL/MISSING | |
-| TurnStart | ? | MAPPED/PARTIAL/MISSING | |
-| TurnEnd | ? | MAPPED/PARTIAL/MISSING | |
-| Compaction | ? | MAPPED/PARTIAL/MISSING | |
-| SessionEnd | ? | MAPPED/PARTIAL/MISSING | |
-| SubagentStart | ? | MAPPED/PARTIAL/MISSING | |
-| SubagentEnd | ? | MAPPED/PARTIAL/MISSING | |
+| (one row per EventType from event.go) | ? | MAPPED/PARTIAL/MISSING | |
 
 ## Required Interface Feasibility
+
+For each interface defined in `cmd/entire/cli/agent/agent.go`, assess feasibility:
 
 | Interface | Feasible | Complexity | Notes |
 |-----------|----------|------------|-------|
 | Agent (core) | Yes/No/Partial | Low/Med/High | |
-| HookSupport | Yes/No/Partial | Low/Med/High | |
-| TranscriptAnalyzer | Yes/No/Partial | Low/Med/High | |
-| TranscriptPreparer | Yes/No/N/A | Low/Med/High | |
-| TokenCalculator | Yes/No/N/A | Low/Med/High | |
-| SubagentAwareExtractor | Yes/No/N/A | Low/Med/High | |
-| FileWatcher | Yes/No/N/A | Low/Med/High | |
+| (one row per optional interface from agent.go) | ... | ... | |
 
 ## Integration Gaps
 
@@ -145,7 +131,7 @@ Generate structured markdown output directly to the user:
 
 - Test script: `scripts/test-$AGENT_SLUG-agent-integration.sh`
 - Captured payloads: `.entire/tmp/probe-$AGENT_SLUG-*/captures/`
-
+```
 
 ## Blocker Handling
 
