@@ -61,6 +61,12 @@ func CaptureArtifacts(t *testing.T, s *RepoState) {
 	// console.log is written incrementally to disk via s.ConsoleLog (*os.File),
 	// so it already exists in the artifact dir and survives global timeouts.
 
+	// Capture final pane content from interactive sessions.
+	if s.session != nil {
+		pane := s.session.Capture()
+		writeArtifact(t, dir, "pane.txt", pane)
+	}
+
 	if t.Failed() {
 		writeArtifact(t, dir, "FAIL", "")
 	} else {

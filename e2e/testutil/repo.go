@@ -24,6 +24,7 @@ type RepoState struct {
 	HeadBefore       string
 	CheckpointBefore string
 	ConsoleLog       *os.File
+	session          agents.Session // interactive session, if started via StartSession
 }
 
 // SetupRepo creates a fresh git repository in a temporary directory, seeds it
@@ -170,6 +171,34 @@ func (s *RepoState) Git(t *testing.T, args ...string) {
 	t.Helper()
 	s.ConsoleLog.WriteString("> git " + strings.Join(args, " ") + "\n")
 	Git(t, s.Dir, args...)
+}
+
+// StartSession starts an interactive session and registers it for pane
+// capture in artifacts. Returns nil if the agent does not support interactive
+// mode. The session is closed automatically during test cleanup.
+func (s *RepoState) StartSession(t *testing.T, ctx context.Context) agents.Session {
+	t.Helper()
+	session, err := s.Agent.StartSession(ctx, s.Dir)
+	if err != nil {
+		t.Fatalf("start session: %v", err)
+	}
+	if session == nil {
+		return nil
+	}
+	s.session = session
+	t.Cleanup(func() { _ = session.Close() })
+	return session
+}
+
+// WaitFor waits for a pattern in the interactive session's pane and logs the
+// pane content to ConsoleLog after the wait completes (success or failure).
+func (s *RepoState) WaitFor(t *testing.T, session agents.Session, pattern string, timeout time.Duration) {
+	t.Helper()
+	content, err := session.WaitFor(pattern, timeout)
+	fmt.Fprintf(s.ConsoleLog, "> pane after WaitFor(%q):\n%s\n", pattern, content)
+	if err != nil {
+		t.Fatalf("WaitFor(%q): %v", pattern, err)
+	}
 }
 
 // Send sends input to an interactive session and logs it to ConsoleLog.

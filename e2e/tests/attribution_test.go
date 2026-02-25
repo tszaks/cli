@@ -50,23 +50,15 @@ func TestAttributionOnAgentCommit(t *testing.T) {
 	testutil.ForEachAgent(t, 3*time.Minute, func(t *testing.T, s *testutil.RepoState, ctx context.Context) {
 		prompt := s.Agent.PromptPattern()
 
-		session, err := s.Agent.StartSession(ctx, s.Dir)
-		if err != nil {
-			t.Fatalf("start session: %v", err)
-		}
+		session := s.StartSession(t, ctx)
 		if session == nil {
 			t.Skipf("agent %s does not support interactive mode", s.Agent.Name())
 		}
-		defer func() { _ = session.Close() }()
 
-		if _, err = session.WaitFor(prompt, 30*time.Second); err != nil {
-			t.Fatalf("waiting for initial prompt: %v", err)
-		}
+		s.WaitFor(t, session, prompt, 30*time.Second)
 
 		s.Send(t, session, "create a file called hello.txt containing 'hello world', then commit it. Do not ask for confirmation.")
-		if _, err = session.WaitFor(prompt, 90*time.Second); err != nil {
-			t.Fatalf("waiting for prompt after agent commit: %v", err)
-		}
+		s.WaitFor(t, session, prompt, 90*time.Second)
 		testutil.AssertNewCommits(t, s, 1)
 
 		testutil.WaitForCheckpoint(t, s, 15*time.Second)
@@ -87,24 +79,16 @@ func TestAttributionMultiCommitSameSession(t *testing.T) {
 	testutil.ForEachAgent(t, 4*time.Minute, func(t *testing.T, s *testutil.RepoState, ctx context.Context) {
 		prompt := s.Agent.PromptPattern()
 
-		session, err := s.Agent.StartSession(ctx, s.Dir)
-		if err != nil {
-			t.Fatalf("start session: %v", err)
-		}
+		session := s.StartSession(t, ctx)
 		if session == nil {
 			t.Skipf("agent %s does not support interactive mode", s.Agent.Name())
 		}
-		defer func() { _ = session.Close() }()
 
-		if _, err = session.WaitFor(prompt, 30*time.Second); err != nil {
-			t.Fatalf("waiting for initial prompt: %v", err)
-		}
+		s.WaitFor(t, session, prompt, 30*time.Second)
 
 		// First prompt: create file and commit.
 		s.Send(t, session, "create a file called poem.txt with a short poem about coding, then commit it. Do not ask for confirmation.")
-		if _, err = session.WaitFor(prompt, 60*time.Second); err != nil {
-			t.Fatalf("waiting for prompt after first commit: %v", err)
-		}
+		s.WaitFor(t, session, prompt, 60*time.Second)
 		testutil.AssertNewCommits(t, s, 1)
 
 		testutil.WaitForCheckpoint(t, s, 15*time.Second)
@@ -112,9 +96,7 @@ func TestAttributionMultiCommitSameSession(t *testing.T) {
 
 		// Second prompt: modify same file and commit again.
 		s.Send(t, session, "add another stanza to poem.txt about debugging, then create a NEW commit (do not amend). Do not ask for confirmation.")
-		if _, err = session.WaitFor(prompt, 90*time.Second); err != nil {
-			t.Fatalf("waiting for prompt after second commit: %v", err)
-		}
+		s.WaitFor(t, session, prompt, 90*time.Second)
 		testutil.AssertNewCommits(t, s, 2)
 
 		testutil.WaitForCheckpointAdvanceFrom(t, s.Dir, cpBranch1, 15*time.Second)
@@ -137,23 +119,15 @@ func TestShadowBranchCleanedAfterAgentCommit(t *testing.T) {
 	testutil.ForEachAgent(t, 3*time.Minute, func(t *testing.T, s *testutil.RepoState, ctx context.Context) {
 		prompt := s.Agent.PromptPattern()
 
-		session, err := s.Agent.StartSession(ctx, s.Dir)
-		if err != nil {
-			t.Fatalf("start session: %v", err)
-		}
+		session := s.StartSession(t, ctx)
 		if session == nil {
 			t.Skipf("agent %s does not support interactive mode", s.Agent.Name())
 		}
-		defer func() { _ = session.Close() }()
 
-		if _, err = session.WaitFor(prompt, 30*time.Second); err != nil {
-			t.Fatalf("waiting for initial prompt: %v", err)
-		}
+		s.WaitFor(t, session, prompt, 30*time.Second)
 
 		s.Send(t, session, "create a file called hello.txt containing 'hello world', then commit it. Do not ask for confirmation.")
-		if _, err = session.WaitFor(prompt, 90*time.Second); err != nil {
-			t.Fatalf("waiting for prompt after agent commit: %v", err)
-		}
+		s.WaitFor(t, session, prompt, 90*time.Second)
 		testutil.AssertNewCommits(t, s, 1)
 
 		testutil.WaitForCheckpoint(t, s, 15*time.Second)
