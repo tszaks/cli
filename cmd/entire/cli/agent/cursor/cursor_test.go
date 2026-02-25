@@ -79,7 +79,7 @@ func TestCursorAgent_FormatResumeCommand(t *testing.T) {
 	t.Parallel()
 	ag := &CursorAgent{}
 	cmd := ag.FormatResumeCommand("some-session-id")
-	if !strings.Contains(cmd, "Cursor") {
+	if !strings.Contains(cmd, "Cursor IDE") {
 		t.Errorf("FormatResumeCommand() = %q, expected mention of Cursor", cmd)
 	}
 }

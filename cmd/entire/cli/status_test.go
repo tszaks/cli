@@ -447,7 +447,7 @@ func TestWriteActiveSessions(t *testing.T) {
 			WorktreePath: "/Users/test/repo",
 			StartedAt:    now.Add(-15 * time.Minute),
 			FirstPrompt:  "Add dark mode support for the entire application and all components",
-			AgentType:    agent.AgentType("Cursor"),
+			AgentType:    agent.AgentTypeCursor,
 			TokenUsage: &agent.TokenUsage{
 				InputTokens:  500,
 				OutputTokens: 300,
@@ -481,7 +481,7 @@ func TestWriteActiveSessions(t *testing.T) {
 	if !strings.Contains(output, "Claude Code") {
 		t.Errorf("Expected agent label 'Claude Code', got: %s", output)
 	}
-	if !strings.Contains(output, "Cursor") {
+	if !strings.Contains(output, "Cursor IDE") {
 		t.Errorf("Expected agent label 'Cursor', got: %s", output)
 	}
 	// Session without AgentType should show unknown placeholder
@@ -516,7 +516,7 @@ func TestWriteActiveSessions(t *testing.T) {
 
 	// Session started 15m ago with no LastInteractionTime should NOT show "active" in stats
 	for _, line := range lines {
-		if strings.Contains(line, "Cursor") {
+		if strings.Contains(line, "Cursor IDE") {
 			if strings.Contains(line, "active") {
 				t.Errorf("Session without LastInteractionTime should not show 'active', got: %s", line)
 			}

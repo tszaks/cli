@@ -74,7 +74,7 @@ type RewindPoint struct {
 	CheckpointID id.CheckpointID
 
 	// Agent is the human-readable name of the agent that created this checkpoint
-	// (e.g., "Claude Code", "Cursor")
+	// (e.g., "Claude Code", "Cursor IDE")
 	Agent agent.AgentType
 
 	// SessionID is the session identifier for this checkpoint.
@@ -151,7 +151,7 @@ type StepContext struct {
 	// AuthorEmail is the email to use for commits
 	AuthorEmail string
 
-	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
+	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor IDE")
 	AgentType agent.AgentType
 
 	// Transcript position at step/turn start - tracks what was added during this step
@@ -236,7 +236,7 @@ type TaskStepContext struct {
 	// Used for descriptive incremental checkpoint messages
 	TodoContent string
 
-	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor")
+	// AgentType is the human-readable agent name (e.g., "Claude Code", "Cursor IDE")
 	AgentType agent.AgentType
 }
 
