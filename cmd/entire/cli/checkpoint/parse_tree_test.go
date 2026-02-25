@@ -404,6 +404,44 @@ func TestUpdateSubtree_EmptyPathSegments(t *testing.T) {
 	}
 }
 
+func TestUpdateSubtree_FileToDirectoryCollision(t *testing.T) {
+	t.Parallel()
+	repo := mustInitBareRepo(t)
+
+	blobFile := storeBlob(t, repo, "i-am-a-file")
+	blobNew := storeBlob(t, repo, "new-content")
+
+	// Build a tree where "a3" is a regular file (not a directory)
+	rootTree := mustStoreTree(t, repo, []object.TreeEntry{
+		{Name: "a3", Mode: filemode.Regular, Hash: blobFile},
+	})
+
+	// UpdateSubtree should replace the file "a3" with a directory "a3/ckpt/"
+	newRoot, err := UpdateSubtree(repo, rootTree, []string{"a3", "ckpt"}, []object.TreeEntry{
+		{Name: "data.json", Mode: filemode.Regular, Hash: blobNew},
+	}, UpdateSubtreeOptions{})
+	if err != nil {
+		t.Fatalf("UpdateSubtree() error = %v", err)
+	}
+
+	// "a3" should now be a directory containing ckpt/data.json
+	files := flattenTreeHelper(t, repo, newRoot, "")
+	if len(files) != 1 {
+		t.Fatalf("expected 1 file, got %d: %v", len(files), files)
+	}
+	if files["a3/ckpt/data.json"] != blobNew {
+		t.Error("a3/ckpt/data.json not found or wrong hash")
+	}
+
+	// Verify "a3" is now a directory, not a file
+	root := mustTreeObject(t, repo, newRoot)
+	for _, e := range root.Entries {
+		if e.Name == "a3" && e.Mode != filemode.Dir {
+			t.Errorf("a3 should be a directory, got mode %v", e.Mode)
+		}
+	}
+}
+
 func TestApplyTreeChanges_Empty(t *testing.T) {
 	t.Parallel()
 	repo := mustInitBareRepo(t)

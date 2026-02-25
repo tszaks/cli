@@ -128,7 +128,10 @@ func (s *GitStore) flattenCheckpointEntries(rootTreeHash plumbing.Hash, checkpoi
 
 	rootTree, err := s.repo.TreeObject(rootTreeHash)
 	if err != nil {
-		return entries, nil //nolint:nilerr // New tree, no existing entries
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			return entries, nil // Tree doesn't exist yet
+		}
+		return nil, fmt.Errorf("failed to read root tree %s: %w", rootTreeHash, err)
 	}
 
 	subtree, err := rootTree.Tree(checkpointPath)
