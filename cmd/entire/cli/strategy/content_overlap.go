@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 
 	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/go-git/go-git/v5"
@@ -347,7 +349,11 @@ func hasOverlappingFiles(stagedFiles, filesTouched []string) bool {
 // A file has remaining agent changes if:
 //   - It wasn't committed at all (not in committedFiles), OR
 //   - It was committed but the committed content doesn't match the shadow branch
-//     (user committed partial changes, e.g., via git add -p)
+//     AND the working tree still has changes (e.g., user did git add -p)
+//
+// When committed content differs from the shadow but the working tree is clean
+// (matches the commit), the user intentionally wrote different content — there
+// is nothing left to carry forward.
 //
 // Falls back to file-level subtraction if shadow branch is unavailable.
 func filesWithRemainingAgentChanges(
@@ -395,6 +401,13 @@ func filesWithRemainingAgentChanges(
 		return subtractFilesByName(filesTouched, committedFiles)
 	}
 
+	// Get worktree root for working tree checks when committed content
+	// differs from shadow (distinguishes replacement from partial staging).
+	var worktreeRoot string
+	if wt, wtErr := repo.Worktree(); wtErr == nil {
+		worktreeRoot = wt.Filesystem.Root()
+	}
+
 	var remaining []string
 
 	for _, filePath := range filesTouched {
@@ -427,19 +440,31 @@ func filesWithRemainingAgentChanges(
 			continue
 		}
 
-		// Compare hashes - if different, there are still uncommitted agent changes
-		if commitFile.Hash != shadowFile.Hash {
-			remaining = append(remaining, filePath)
-			logging.Debug(logCtx, "filesWithRemainingAgentChanges: content mismatch, keeping for carry-forward",
+		if commitFile.Hash == shadowFile.Hash {
+			logging.Debug(logCtx, "filesWithRemainingAgentChanges: content fully committed",
+				slog.String("file", filePath),
+			)
+			continue
+		}
+
+		// Committed content differs from shadow. Check whether the working tree
+		// still has changes — if clean, the user intentionally replaced the content
+		// and there's nothing left to carry forward.
+		if worktreeRoot != "" && workingTreeMatchesCommit(worktreeRoot, filePath, commitFile.Hash) {
+			logging.Debug(logCtx, "filesWithRemainingAgentChanges: content differs from shadow but working tree is clean, skipping",
 				slog.String("file", filePath),
 				slog.String("commit_hash", commitFile.Hash.String()[:7]),
 				slog.String("shadow_hash", shadowFile.Hash.String()[:7]),
 			)
-		} else {
-			logging.Debug(logCtx, "filesWithRemainingAgentChanges: content fully committed",
-				slog.String("file", filePath),
-			)
+			continue
 		}
+
+		remaining = append(remaining, filePath)
+		logging.Debug(logCtx, "filesWithRemainingAgentChanges: content mismatch with dirty working tree, keeping for carry-forward",
+			slog.String("file", filePath),
+			slog.String("commit_hash", commitFile.Hash.String()[:7]),
+			slog.String("shadow_hash", shadowFile.Hash.String()[:7]),
+		)
 	}
 
 	logging.Debug(logCtx, "filesWithRemainingAgentChanges: result",
@@ -449,6 +474,21 @@ func filesWithRemainingAgentChanges(
 	)
 
 	return remaining
+}
+
+// workingTreeMatchesCommit checks if the file on disk matches the committed blob hash.
+// Returns true if the working tree is clean for this file (no remaining changes).
+func workingTreeMatchesCommit(worktreeRoot, filePath string, commitHash plumbing.Hash) bool {
+	absPath := filepath.Join(worktreeRoot, filePath)
+	diskContent, err := os.ReadFile(absPath) //nolint:gosec // filePath is from git status, not user input
+	if err != nil {
+		return false
+	}
+	h := plumbing.NewHasher(plumbing.BlobObject, int64(len(diskContent)))
+	if _, err := h.Write(diskContent); err != nil {
+		return false
+	}
+	return h.Sum() == commitHash
 }
 
 // subtractFilesByName returns files from filesTouched that are NOT in committedFiles.
