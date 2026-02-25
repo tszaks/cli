@@ -198,7 +198,6 @@ Shared across the team, typically committed to git:
 
 ```json
 {
-  "strategy": "manual-commit",
   "enabled": true
 }
 ```
@@ -220,7 +219,6 @@ Personal overrides, gitignored by default:
 | ------------------------------------ | -------------------------------- | ---------------------------------------------------- |
 | `enabled`                            | `true`, `false`                  | Enable/disable Entire                                |
 | `log_level`                          | `debug`, `info`, `warn`, `error` | Logging verbosity                                    |
-| `strategy`                           | `manual-commit`                  | Session capture strategy                             |
 | `strategy_options.push_sessions`     | `true`, `false`                  | Auto-push `entire/checkpoints/v1` branch on git push |
 | `strategy_options.summarize.enabled` | `true`, `false`                  | Auto-generate AI summaries at commit time            |
 | `telemetry`                          | `true`, `false`                  | Send anonymous usage statistics to Posthog           |

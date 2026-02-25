@@ -62,14 +62,6 @@ func NewManualCommitStrategy() Strategy {
 	return &ManualCommitStrategy{}
 }
 
-// NewShadowStrategy creates a new manual-commit strategy instance.
-// This legacy constructor delegates to NewManualCommitStrategy.
-//
-
-func NewShadowStrategy() Strategy {
-	return NewManualCommitStrategy()
-}
-
 // Name returns the strategy name.
 func (s *ManualCommitStrategy) Name() string {
 	return StrategyNameManualCommit
