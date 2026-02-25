@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -143,19 +142,23 @@ func AssertHasCheckpointTrailer(t *testing.T, dir string, ref string) string {
 	return trailer
 }
 
-// AssertCheckpointInLastN asserts the given checkpoint ID appears in the
-// last n commits on the checkpoint branch (e.g. initial + catchup).
+// AssertCheckpointInLastN asserts the given checkpoint ID appears in at
+// least n commits on the checkpoint branch (e.g. initial + catchup).
+// Uses --grep to find matching commits regardless of position, so extra
+// commits from multi-commit agent turns don't cause false failures.
 func AssertCheckpointInLastN(t *testing.T, dir string, checkpointID string, n int) {
 	t.Helper()
-	out := GitOutput(t, dir, "log", "-n", strconv.Itoa(n),
+	out := GitOutput(t, dir, "log", "--grep="+checkpointID,
 		"--format=%s", "entire/checkpoints/v1")
-	lines := strings.Split(strings.TrimSpace(out), "\n")
-	require.Len(t, lines, n,
-		"expected %d commits on checkpoint branch, got %d", n, len(lines))
-	for i, line := range lines {
-		assert.Contains(t, line, checkpointID,
-			"checkpoint commit %d/%d does not mention %s: %s", i+1, n, checkpointID, line)
+	var lines []string
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
 	}
+	assert.GreaterOrEqual(t, len(lines), n,
+		"expected at least %d commits mentioning %s on checkpoint branch, got %d: %v",
+		n, checkpointID, len(lines), lines)
 }
 
 // AssertCheckpointExists asserts that the checkpoint ID is mentioned on
