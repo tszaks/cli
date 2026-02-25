@@ -105,6 +105,12 @@ func (s *ManualCommitStrategy) getCheckpointLog(checkpointID id.CheckpointID) ([
 	return content.Transcript, nil
 }
 
+// condenseOpts provides pre-resolved git objects to avoid redundant reads.
+type condenseOpts struct {
+	shadowRef *plumbing.Reference // Pre-resolved shadow branch ref (nil = resolve from repo)
+	headTree  *object.Tree        // Pre-resolved HEAD tree (passed through to calculateSessionAttributions)
+}
+
 // CondenseSession condenses a session's shadow branch to permanent storage.
 // checkpointID is the 12-hex-char value from the Entire-Checkpoint trailer.
 // Metadata is stored at sharded path: <checkpoint_id[:2]>/<checkpoint_id[2:]>/
@@ -112,12 +118,24 @@ func (s *ManualCommitStrategy) getCheckpointLog(checkpointID id.CheckpointID) ([
 //
 // For mid-session commits (no Stop/SaveStep called yet), the shadow branch may not exist.
 // In this case, data is extracted from the live transcript instead.
-func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointID id.CheckpointID, state *SessionState, committedFiles map[string]struct{}) (*CondenseResult, error) {
-	// Get shadow branch (may not exist for mid-session commits)
+func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointID id.CheckpointID, state *SessionState, committedFiles map[string]struct{}, opts ...condenseOpts) (*CondenseResult, error) {
+	var o condenseOpts
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+
+	// Get shadow branch — use pre-resolved ref if available, otherwise resolve from repo.
 	shadowBranchName := getShadowBranchNameForCommit(state.BaseCommit, state.WorktreeID)
-	refName := plumbing.NewBranchReferenceName(shadowBranchName)
-	ref, err := repo.Reference(refName, true)
-	hasShadowBranch := err == nil
+	ref := o.shadowRef
+	var hasShadowBranch bool
+	if ref != nil {
+		hasShadowBranch = true
+	} else {
+		refName := plumbing.NewBranchReferenceName(shadowBranchName)
+		var err error
+		ref, err = repo.Reference(refName, true)
+		hasShadowBranch = err == nil
+	}
 
 	var sessionData *ExtractedSessionData
 	if hasShadowBranch {
@@ -128,9 +146,10 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		// potentially stale shadow branch copy (SaveStep may have been skipped if the
 		// last turn had no code changes).
 		// Pass CheckpointTranscriptStart for accurate token calculation (line offset for Claude, message index for Gemini).
-		sessionData, err = s.extractSessionData(repo, ref.Hash(), state.SessionID, state.FilesTouched, state.AgentType, state.TranscriptPath, state.CheckpointTranscriptStart, state.Phase.IsActive())
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract session data: %w", err)
+		var extractErr error
+		sessionData, extractErr = s.extractSessionData(repo, ref.Hash(), state.SessionID, state.FilesTouched, state.AgentType, state.TranscriptPath, state.CheckpointTranscriptStart, state.Phase.IsActive())
+		if extractErr != nil {
+			return nil, fmt.Errorf("failed to extract session data: %w", extractErr)
 		}
 	} else {
 		// No shadow branch: mid-session commit before Stop/SaveStep.
@@ -144,9 +163,10 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 		if state.Phase.IsActive() {
 			prepareTranscriptIfNeeded(state.AgentType, state.TranscriptPath)
 		}
-		sessionData, err = s.extractSessionDataFromLiveTranscript(state)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract session data from live transcript: %w", err)
+		var extractErr error
+		sessionData, extractErr = s.extractSessionDataFromLiveTranscript(state)
+		if extractErr != nil {
+			return nil, fmt.Errorf("failed to extract session data from live transcript: %w", extractErr)
 		}
 	}
 
@@ -194,7 +214,9 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 	// Calculate attribution. When no shadow branch exists (agent committed mid-turn
 	// before SaveStep), pass nil ref — the function uses HEAD as the shadow tree
 	// since the agent's commit IS HEAD (no user edits between agent work and commit).
-	attribution := calculateSessionAttributions(repo, ref, sessionData, state)
+	attribution := calculateSessionAttributions(repo, ref, sessionData, state, attributionOpts{
+		headTree: o.headTree,
+	})
 	// Get current branch name
 	branchName := GetCurrentBranchName(repo)
 
@@ -277,7 +299,13 @@ func (s *ManualCommitStrategy) CondenseSession(repo *git.Repository, checkpointI
 	}, nil
 }
 
-func calculateSessionAttributions(repo *git.Repository, shadowRef *plumbing.Reference, sessionData *ExtractedSessionData, state *SessionState) *cpkg.InitialAttribution {
+// attributionOpts provides pre-resolved git objects to avoid redundant reads.
+type attributionOpts struct {
+	headTree   *object.Tree // HEAD commit tree (already resolved by PostCommit)
+	shadowTree *object.Tree // Shadow branch tree (already resolved by PostCommit)
+}
+
+func calculateSessionAttributions(repo *git.Repository, shadowRef *plumbing.Reference, sessionData *ExtractedSessionData, state *SessionState, opts ...attributionOpts) *cpkg.InitialAttribution {
 	// Calculate initial attribution using accumulated prompt attribution data.
 	// This uses user edits captured at each prompt start (before agent works),
 	// plus any user edits after the final checkpoint (shadow → head).
@@ -287,48 +315,64 @@ func calculateSessionAttributions(repo *git.Repository, shadowRef *plumbing.Refe
 	// commit IS HEAD — there are no user edits between agent work and commit.
 	logCtx := logging.WithComponent(context.Background(), "attribution")
 
-	headRef, headErr := repo.Head()
-	if headErr != nil {
-		logging.Debug(logCtx, "attribution skipped: failed to get HEAD",
-			slog.String("error", headErr.Error()))
-		return nil
+	var o attributionOpts
+	if len(opts) > 0 {
+		o = opts[0]
 	}
 
-	headCommit, commitErr := repo.CommitObject(headRef.Hash())
-	if commitErr != nil {
-		logging.Debug(logCtx, "attribution skipped: failed to get HEAD commit",
-			slog.String("error", commitErr.Error()))
-		return nil
-	}
-
-	headTree, treeErr := headCommit.Tree()
-	if treeErr != nil {
-		logging.Debug(logCtx, "attribution skipped: failed to get HEAD tree",
-			slog.String("error", treeErr.Error()))
-		return nil
-	}
-
-	// Get shadow tree: from shadow branch if available, otherwise HEAD (agent committed directly).
-	var shadowTree *object.Tree
-	if shadowRef != nil {
-		shadowCommit, shadowErr := repo.CommitObject(shadowRef.Hash())
-		if shadowErr != nil {
-			logging.Debug(logCtx, "attribution skipped: failed to get shadow commit",
-				slog.String("error", shadowErr.Error()),
-				slog.String("shadow_ref", shadowRef.Hash().String()))
+	headTree := o.headTree
+	if headTree == nil {
+		headRef, headErr := repo.Head()
+		if headErr != nil {
+			logging.Debug(logCtx, "attribution skipped: failed to get HEAD",
+				slog.String("error", headErr.Error()))
 			return nil
 		}
-		var shadowTreeErr error
-		shadowTree, shadowTreeErr = shadowCommit.Tree()
-		if shadowTreeErr != nil {
-			logging.Debug(logCtx, "attribution skipped: failed to get shadow tree",
-				slog.String("error", shadowTreeErr.Error()))
+
+		headCommit, commitErr := repo.CommitObject(headRef.Hash())
+		if commitErr != nil {
+			logging.Debug(logCtx, "attribution skipped: failed to get HEAD commit",
+				slog.String("error", commitErr.Error()))
 			return nil
 		}
-	} else {
-		// No shadow branch: agent committed mid-turn. Use HEAD as shadow
-		// because the agent's work is the commit itself.
-		logging.Debug(logCtx, "attribution: using HEAD as shadow (no shadow branch)")
+
+		var treeErr error
+		headTree, treeErr = headCommit.Tree()
+		if treeErr != nil {
+			logging.Debug(logCtx, "attribution skipped: failed to get HEAD tree",
+				slog.String("error", treeErr.Error()))
+			return nil
+		}
+	}
+
+	// Get shadow tree: from pre-resolved cache, shadow branch, or HEAD (agent committed directly).
+	shadowTree := o.shadowTree
+	if shadowTree == nil {
+		if shadowRef != nil {
+			shadowCommit, shadowErr := repo.CommitObject(shadowRef.Hash())
+			if shadowErr != nil {
+				logging.Debug(logCtx, "attribution skipped: failed to get shadow commit",
+					slog.String("error", shadowErr.Error()),
+					slog.String("shadow_ref", shadowRef.Hash().String()))
+				return nil
+			}
+			var shadowTreeErr error
+			shadowTree, shadowTreeErr = shadowCommit.Tree()
+			if shadowTreeErr != nil {
+				logging.Debug(logCtx, "attribution skipped: failed to get shadow tree",
+					slog.String("error", shadowTreeErr.Error()))
+				return nil
+			}
+		} else {
+			// No shadow branch: agent committed mid-turn. Use HEAD as shadow
+			// because the agent's work is the commit itself.
+			logging.Debug(logCtx, "attribution: using HEAD as shadow (no shadow branch)")
+			shadowTree = headTree
+		}
+	} else if shadowRef == nil {
+		// Cache provided a shadow tree but shadowRef is nil — this shouldn't happen
+		// in practice, but handle gracefully: use HEAD as shadow.
+		logging.Debug(logCtx, "attribution: using HEAD as shadow (no shadow ref, ignoring cached tree)")
 		shadowTree = headTree
 	}
 
