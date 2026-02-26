@@ -219,24 +219,24 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 		fmt.Fprintln(w, "  Use --project to update the project settings file.")
 	}
 
-	// Helper to save settings to the appropriate file
-	saveSettings := func() error {
-		if shouldUseLocal {
-			return SaveEntireSettingsLocal(ctx, settings)
-		}
-		return SaveEntireSettings(ctx, settings)
-	}
-
-	// Save settings before telemetry prompt so config is persisted even if the user cancels
-	if err := saveSettings(); err != nil {
-		return fmt.Errorf("failed to save settings: %w", err)
-	}
-
-	// When saving to local, also update the project settings file to
-	// clear the deprecated strategy field and write commit_linking.
+	// Save settings to the appropriate file.
+	// commit_linking and strategy cleanup always go to settings.json (the project file)
+	// so there's a single source of truth that users edit.
 	if shouldUseLocal {
+		// Save user-specific overrides to local (without commit_linking — that belongs in project settings)
+		localSettings := *settings
+		localSettings.CommitLinking = ""
+		localSettings.Strategy = "" //nolint:staticcheck // Clear deprecated field from local too
+		if err := SaveEntireSettingsLocal(ctx, &localSettings); err != nil {
+			return fmt.Errorf("failed to save local settings: %w", err)
+		}
+		// Migrate project settings.json: clear deprecated strategy, write commit_linking
 		if err := migrateProjectSettings(ctx); err != nil {
 			return fmt.Errorf("failed to migrate project settings: %w", err)
+		}
+	} else {
+		if err := SaveEntireSettings(ctx, settings); err != nil {
+			return fmt.Errorf("failed to save settings: %w", err)
 		}
 	}
 
@@ -258,8 +258,17 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 		return fmt.Errorf("telemetry consent: %w", err)
 	}
 	// Save again to persist telemetry choice
-	if err := saveSettings(); err != nil {
-		return fmt.Errorf("failed to save settings: %w", err)
+	if shouldUseLocal {
+		localSettings := *settings
+		localSettings.CommitLinking = ""
+		localSettings.Strategy = "" //nolint:staticcheck // Keep deprecated field out of local
+		if err := SaveEntireSettingsLocal(ctx, &localSettings); err != nil {
+			return fmt.Errorf("failed to save local settings: %w", err)
+		}
+	} else {
+		if err := SaveEntireSettings(ctx, settings); err != nil {
+			return fmt.Errorf("failed to save settings: %w", err)
+		}
 	}
 
 	if err := strategy.EnsureSetup(ctx); err != nil {
