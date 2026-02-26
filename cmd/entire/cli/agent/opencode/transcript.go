@@ -31,11 +31,11 @@ func ParseExportSession(data []byte) (*ExportSession, error) {
 	return &session, nil
 }
 
-// parseExportSessionFromFile reads and parses an export JSON transcript file.
+// parseExportSessionFromFile reads a file and parses its contents as an ExportSession.
 func parseExportSessionFromFile(path string) (*ExportSession, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // Path from agent hook
+	data, err := os.ReadFile(path) //nolint:gosec // path from agent hook/session state
 	if err != nil {
-		return nil, err //nolint:wrapcheck // Callers check os.IsNotExist on this error
+		return nil, err //nolint:wrapcheck // caller adds context or checks os.IsNotExist
 	}
 	return ParseExportSession(data)
 }
@@ -267,42 +267,14 @@ func ExtractAllUserPrompts(data []byte) ([]string, error) {
 	return prompts, nil
 }
 
-// CalculateTokenUsageFromBytes computes token usage from raw export JSON transcript bytes
-// starting at the given message offset.
-// This is a package-level function used by the condensation path (which has bytes, not a file path).
-func CalculateTokenUsageFromBytes(data []byte, startMessageIndex int) *agent.TokenUsage {
-	session, err := ParseExportSession(data)
-	if err != nil || session == nil {
-		return &agent.TokenUsage{}
-	}
-
-	usage := &agent.TokenUsage{}
-	for i := startMessageIndex; i < len(session.Messages); i++ {
-		msg := session.Messages[i]
-		if msg.Info.Role != roleAssistant || msg.Info.Tokens == nil {
-			continue
-		}
-		usage.InputTokens += msg.Info.Tokens.Input
-		usage.OutputTokens += msg.Info.Tokens.Output
-		usage.CacheReadTokens += msg.Info.Tokens.Cache.Read
-		usage.CacheCreationTokens += msg.Info.Tokens.Cache.Write
-		usage.APICallCount++
-	}
-
-	return usage
-}
-
 // CalculateTokenUsage computes token usage from assistant messages starting at the given offset.
-func (a *OpenCodeAgent) CalculateTokenUsage(sessionRef string, fromOffset int) (*agent.TokenUsage, error) {
-	session, err := parseExportSessionFromFile(sessionRef)
+func (a *OpenCodeAgent) CalculateTokenUsage(transcriptData []byte, fromOffset int) (*agent.TokenUsage, error) {
+	session, err := ParseExportSession(transcriptData)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil //nolint:nilnil // nil usage for nonexistent file is expected
-		}
 		return nil, fmt.Errorf("failed to parse transcript for token usage: %w", err)
 	}
 	if session == nil {
-		return nil, nil //nolint:nilnil // nil usage for empty file is expected
+		return nil, nil //nolint:nilnil // nil usage for empty data is expected
 	}
 
 	usage := &agent.TokenUsage{}
