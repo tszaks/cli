@@ -129,7 +129,7 @@ func TestCursorAgent_ResolveSessionFile_NeitherExists(t *testing.T) {
 func TestCursorAgent_ResolveSessionFile_NestedLayout(t *testing.T) {
 	t.Parallel()
 	ag := &CursorAgent{}
-	// When nested dir exists, returns nested path (IDE pattern)
+	// When nested dir and file exist, returns nested path (IDE pattern)
 	tmpDir := t.TempDir()
 	nestedDir := filepath.Join(tmpDir, "abc123")
 	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
@@ -143,6 +143,24 @@ func TestCursorAgent_ResolveSessionFile_NestedLayout(t *testing.T) {
 	result := ag.ResolveSessionFile(tmpDir, "abc123")
 	if result != nestedFile {
 		t.Errorf("ResolveSessionFile() nested = %q, want %q", result, nestedFile)
+	}
+}
+
+func TestCursorAgent_ResolveSessionFile_NestedDirOnly(t *testing.T) {
+	t.Parallel()
+	ag := &CursorAgent{}
+	// When nested dir exists but file not yet flushed, predict nested path
+	// (IDE creates the directory before the transcript file)
+	tmpDir := t.TempDir()
+	nestedDir := filepath.Join(tmpDir, "abc123")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatalf("failed to create nested dir: %v", err)
+	}
+
+	result := ag.ResolveSessionFile(tmpDir, "abc123")
+	expected := filepath.Join(nestedDir, "abc123.jsonl")
+	if result != expected {
+		t.Errorf("ResolveSessionFile() nested dir only = %q, want %q", result, expected)
 	}
 }
 
