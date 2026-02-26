@@ -285,24 +285,41 @@ func resolveAgentType(ctxAgentType agent.AgentType, state *SessionState) agent.A
 	return DefaultAgentType
 }
 
-// ensureMetadataBranch creates the orphan entire/checkpoints/v1 branch if it doesn't exist.
-// If the remote-tracking branch (origin/entire/checkpoints/v1) exists, creates the local
-// branch from it to preserve existing checkpoint data. Otherwise creates an empty orphan.
+// EnsureMetadataBranch creates or updates the local entire/checkpoints/v1 branch.
+//
+// Three scenarios:
+//  1. Local branch doesn't exist, remote does → create local from remote
+//  2. Local branch exists but is empty, remote has data → update local from remote
+//  3. No local or remote branch → create empty orphan
 func EnsureMetadataBranch(repo *git.Repository) error {
 	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
 
+	// Check if remote-tracking branch exists (e.g., after clone/fetch)
+	remoteRefName := plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName)
+	remoteRef, remoteErr := repo.Reference(remoteRefName, true)
+
 	// Check if local branch already exists
-	_, err := repo.Reference(refName, true)
+	localRef, err := repo.Reference(refName, true)
 	if err == nil {
-		// Branch already exists
+		// Local branch exists — check if it's an empty orphan that should be
+		// updated from remote. This handles the case where enable was run before
+		// the remote had checkpoint data (creating an empty orphan), and now the
+		// remote has been fetched with real data.
+		if remoteErr == nil && localRef.Hash() != remoteRef.Hash() {
+			localIsEmpty, checkErr := isEmptyMetadataBranch(repo, localRef)
+			if checkErr == nil && localIsEmpty {
+				ref := plumbing.NewHashReference(refName, remoteRef.Hash())
+				if err := repo.Storer.SetReference(ref); err != nil {
+					return fmt.Errorf("failed to update metadata branch from remote: %w", err)
+				}
+				fmt.Fprintf(os.Stderr, "✓ Updated local branch '%s' from origin\n", paths.MetadataBranchName)
+			}
+		}
 		return nil
 	}
 
-	// Check if remote-tracking branch exists (e.g., after clone)
-	remoteRefName := plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName)
-	remoteRef, remoteErr := repo.Reference(remoteRefName, true)
+	// Local branch doesn't exist — create from remote if available
 	if remoteErr == nil {
-		// Remote branch exists — create local branch pointing to the same commit
 		ref := plumbing.NewHashReference(refName, remoteRef.Hash())
 		if err := repo.Storer.SetReference(ref); err != nil {
 			return fmt.Errorf("failed to create metadata branch from remote: %w", err)
@@ -356,6 +373,19 @@ func EnsureMetadataBranch(repo *git.Repository) error {
 
 	fmt.Fprintf(os.Stderr, "✓ Created orphan branch '%s' for session metadata\n", paths.MetadataBranchName)
 	return nil
+}
+
+// isEmptyMetadataBranch returns true if the branch ref points to a commit with an empty tree.
+func isEmptyMetadataBranch(repo *git.Repository, ref *plumbing.Reference) (bool, error) {
+	commit, err := repo.CommitObject(ref.Hash())
+	if err != nil {
+		return false, fmt.Errorf("failed to get commit: %w", err)
+	}
+	tree, err := commit.Tree()
+	if err != nil {
+		return false, fmt.Errorf("failed to get tree: %w", err)
+	}
+	return len(tree.Entries) == 0, nil
 }
 
 // readCheckpointMetadata reads metadata.json from a checkpoint path on entire/checkpoints/v1.
