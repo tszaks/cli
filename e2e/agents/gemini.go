@@ -17,7 +17,7 @@ func init() {
 		return
 	}
 	Register(&Gemini{})
-	RegisterGate("gemini-cli", 3)
+	RegisterGate("gemini-cli", 2)
 }
 
 type Gemini struct{}

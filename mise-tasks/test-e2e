@@ -5,8 +5,8 @@
 # Shared E2E runner. Called by the test:e2e:* tasks in mise.toml.
 #
 # Environment variables:
-#   E2E_AGENT    - agent to test (claude-code, gemini-cli, opencode); empty = all
-#   E2E_PARALLEL - set to 0 to run tests sequentially (default: parallel)
+#   E2E_AGENT                  - agent to test (claude-code, gemini-cli, opencode); empty = all
+#   E2E_CONCURRENT_TEST_LIMIT  - override per-agent concurrency gate size
 
 set -eu
 
@@ -15,17 +15,10 @@ export E2E_ARTIFACT_DIR
 mkdir -p "$E2E_ARTIFACT_DIR"
 echo "artifacts: $E2E_ARTIFACT_DIR"
 
-extra_flags=""
-if [ "${E2E_PARALLEL:-1}" = "0" ]; then
-  extra_flags="-parallel 1"
-fi
-
 filter="${usage_filter:-}"
 
-# shellcheck disable=SC2086
 gotestsum --format dots --jsonfile "$E2E_ARTIFACT_DIR/test-events.json" -- \
   -tags=e2e -count=1 -timeout=30m \
-  $extra_flags \
   ${filter:+-run "$filter"} \
   ./e2e/tests/... || rc=$?
 
