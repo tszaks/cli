@@ -63,14 +63,6 @@ func NewManualCommitStrategy() Strategy {
 	return &ManualCommitStrategy{}
 }
 
-// NewShadowStrategy creates a new manual-commit strategy instance.
-// This legacy constructor delegates to NewManualCommitStrategy.
-//
-
-func NewShadowStrategy() Strategy {
-	return NewManualCommitStrategy()
-}
-
 // Name returns the strategy name.
 func (s *ManualCommitStrategy) Name() string {
 	return StrategyNameManualCommit
@@ -93,30 +85,6 @@ func (s *ManualCommitStrategy) ValidateRepository() error {
 		return fmt.Errorf("failed to access worktree: %w", err)
 	}
 
-	return nil
-}
-
-// EnsureSetup ensures the strategy is properly set up.
-func (s *ManualCommitStrategy) EnsureSetup(ctx context.Context) error {
-	if err := EnsureEntireGitignore(ctx); err != nil {
-		return err
-	}
-
-	// Ensure the entire/checkpoints/v1 orphan branch exists for permanent session storage
-	repo, err := OpenRepository(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to open git repository: %w", err)
-	}
-	if err := EnsureMetadataBranch(repo); err != nil {
-		return fmt.Errorf("failed to ensure metadata branch: %w", err)
-	}
-
-	// Install generic hooks (they delegate to strategy at runtime)
-	if !IsGitHookInstalled(ctx) {
-		if _, err := InstallGitHook(ctx, true); err != nil {
-			return fmt.Errorf("failed to install git hooks: %w", err)
-		}
-	}
 	return nil
 }
 
@@ -146,8 +114,5 @@ func (s *ManualCommitStrategy) ListOrphanedItems(ctx context.Context) ([]Cleanup
 	return items, nil
 }
 
-//nolint:gochecknoinits // Standard pattern for strategy registration
-func init() {
-	// Register manual-commit as the primary strategy name
-	Register(StrategyNameManualCommit, NewManualCommitStrategy)
-}
+// Compile-time check that ManualCommitStrategy implements SessionSource
+var _ Strategy = (*ManualCommitStrategy)(nil)

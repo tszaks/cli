@@ -151,9 +151,9 @@ func (s *ManualCommitStrategy) ClearSessionState(ctx context.Context, sessionID 
 // about concurrent sessions that will be included in the next commit.
 // Returns 0, nil if no such sessions exist.
 func (s *ManualCommitStrategy) CountOtherActiveSessionsWithCheckpoints(ctx context.Context, currentSessionID string) (int, error) {
-	currentWorktree, err := GetWorktreePath(ctx)
+	currentWorktree, err := paths.WorktreeRoot(ctx)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to get worktree root: %w", err)
 	}
 
 	// Get current HEAD to compare with session base commits
@@ -198,7 +198,7 @@ func (s *ManualCommitStrategy) initializeSession(ctx context.Context, repo *git.
 		return nil, fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
-	worktreePath, err := GetWorktreePath(ctx)
+	worktreePath, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get worktree path: %w", err)
 	}

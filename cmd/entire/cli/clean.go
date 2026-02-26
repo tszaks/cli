@@ -25,7 +25,7 @@ func newCleanCmd() *cobra.Command {
 This command finds and removes orphaned data from any strategy:
 
   Shadow branches (entire/<commit-hash>)
-    Created by manual-commit strategy. Normally auto-cleaned when sessions
+    Normally auto-cleaned when sessions
     are condensed during commits.
 
   Session state files (.git/entire-sessions/)
@@ -33,9 +33,7 @@ This command finds and removes orphaned data from any strategy:
     reference them.
 
   Checkpoint metadata (entire/checkpoints/v1 branch)
-    For auto-commit checkpoints: orphaned when commits are rebased/squashed
-    and no commit references the checkpoint ID anymore.
-    Manual-commit checkpoints are permanent (condensed history) and are
+    Checkpoints are permanent (condensed session history) and are
     never considered orphaned.
 
   Temporary files (.entire/tmp/)

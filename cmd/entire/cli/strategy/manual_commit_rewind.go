@@ -322,7 +322,7 @@ func (s *ManualCommitStrategy) Rewind(ctx context.Context, point RewindPoint) er
 	})
 
 	// Get repository root to walk from there
-	repoRoot, err := GetWorktreePath(ctx)
+	repoRoot, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		repoRoot = "." // Fallback to current directory
 	}
@@ -585,10 +585,10 @@ func (s *ManualCommitStrategy) RestoreLogsOnly(ctx context.Context, point Rewind
 		return nil, fmt.Errorf("checkpoint not found: %s", point.CheckpointID)
 	}
 
-	// Get repo root for agent session directory lookup
-	repoRoot, err := paths.RepoRoot(ctx)
+	// Get worktree root for agent session directory lookup
+	repoRoot, err := paths.WorktreeRoot(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get repository root: %w", err)
+		return nil, fmt.Errorf("failed to get worktree root: %w", err)
 	}
 
 	// Check for newer local logs if not forcing

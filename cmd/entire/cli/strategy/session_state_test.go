@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/go-git/go-git/v5"
 )
@@ -300,9 +301,9 @@ func TestFindMostRecentSession_FiltersByWorktree(t *testing.T) {
 	t.Chdir(dir)
 
 	// Get the resolved worktree path (git resolves symlinks, e.g. /var → /private/var on macOS)
-	resolvedDir, err := GetWorktreePath(context.Background())
+	resolvedDir, err := paths.WorktreeRoot(context.Background())
 	if err != nil {
-		t.Fatalf("GetWorktreePath(context.Background()) error = %v", err)
+		t.Fatalf("paths.WorktreeRoot() error = %v", err)
 	}
 
 	older := time.Now().Add(-1 * time.Hour)

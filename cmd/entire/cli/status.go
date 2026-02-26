@@ -16,6 +16,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/settings"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 	"github.com/entireio/cli/cmd/entire/cli/stringutil"
 
 	"github.com/spf13/cobra"
@@ -40,7 +41,7 @@ func newStatusCmd() *cobra.Command {
 
 func runStatus(ctx context.Context, w io.Writer, detailed bool) error {
 	// Check if we're in a git repository
-	if _, repoErr := paths.RepoRoot(ctx); repoErr != nil {
+	if _, repoErr := paths.WorktreeRoot(ctx); repoErr != nil {
 		fmt.Fprintln(w, "✕ not a git repository")
 		return nil //nolint:nilerr // Not being in a git repo is a valid status, not an error
 	}
@@ -85,10 +86,11 @@ func runStatus(ctx context.Context, w io.Writer, detailed bool) error {
 	}
 
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, formatSettingsStatusShort(ctx, s, sty))
-
+	settings.WriteDeprecatedStrategyWarnings(ctx, w)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, formatSettingsStatusShort(s, sty))
 	if s.Enabled {
-		writeActiveSessions(ctx, w, sty)
+		writeActiveSessions(w, sty)
 	}
 
 	return nil
@@ -102,7 +104,9 @@ func runStatusDetailed(ctx context.Context, w io.Writer, sty statusStyles, setti
 		return fmt.Errorf("failed to load settings: %w", err)
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, formatSettingsStatusShort(ctx, effectiveSettings, sty))
+	settings.WriteDeprecatedStrategyWarnings(ctx, w)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, formatSettingsStatusShort(effectiveSettings, sty))
 	fmt.Fprintln(w) // blank line
 
 	// Show project settings if it exists
@@ -124,19 +128,16 @@ func runStatusDetailed(ctx context.Context, w io.Writer, sty statusStyles, setti
 	}
 
 	if effectiveSettings.Enabled {
-		writeActiveSessions(ctx, w, sty)
+		writeActiveSessions(w, sty)
 	}
 
 	return nil
 }
 
 // formatSettingsStatusShort formats a short settings status line.
-// Output format: "● Enabled · manual-commit · branch main" or "○ Disabled · auto-commit"
-func formatSettingsStatusShort(ctx context.Context, s *EntireSettings, sty statusStyles) string {
-	displayName := s.Strategy
-	if dn, ok := strategyInternalToDisplay[s.Strategy]; ok {
-		displayName = dn
-	}
+// Output format: "● Enabled · manual-commit · branch main" or "○ Disabled"
+func formatSettingsStatusShort(s *EntireSettings, sty statusStyles) string {
+	displayName := strategy.StrategyNameManualCommit
 
 	var b strings.Builder
 
@@ -154,8 +155,8 @@ func formatSettingsStatusShort(ctx context.Context, s *EntireSettings, sty statu
 	b.WriteString(displayName)
 
 	// Resolve branch from repo root
-	if repoRoot, err := paths.RepoRoot(ctx); err == nil {
-		if branch := resolveWorktreeBranch(ctx, repoRoot); branch != "" {
+	if repoRoot, err := paths.WorktreeRoot(context.Background()); err == nil {
+		if branch := resolveWorktreeBranch(repoRoot); branch != "" {
 			b.WriteString(sty.render(sty.dim, " · "))
 			b.WriteString("branch ")
 			b.WriteString(sty.render(sty.cyan, branch))
@@ -166,12 +167,9 @@ func formatSettingsStatusShort(ctx context.Context, s *EntireSettings, sty statu
 }
 
 // formatSettingsStatus formats a settings status line with source prefix.
-// Output format: "Project · enabled · manual-commit" or "Local · disabled · auto-commit"
+// Output format: "Project · enabled · manual-commit" or "Local · disabled"
 func formatSettingsStatus(prefix string, s *EntireSettings, sty statusStyles) string {
-	displayName := s.Strategy
-	if dn, ok := strategyInternalToDisplay[s.Strategy]; ok {
-		displayName = dn
-	}
+	displayName := strategy.StrategyNameManualCommit
 
 	var b strings.Builder
 	b.WriteString(sty.render(sty.bold, prefix))
@@ -220,13 +218,13 @@ const (
 )
 
 // writeActiveSessions writes active session information grouped by worktree.
-func writeActiveSessions(ctx context.Context, w io.Writer, sty statusStyles) {
-	store, err := session.NewStateStore(ctx)
+func writeActiveSessions(w io.Writer, sty statusStyles) {
+	store, err := session.NewStateStore(context.Background())
 	if err != nil {
 		return
 	}
 
-	states, err := store.List(ctx)
+	states, err := store.List(context.Background())
 	if err != nil || len(states) == 0 {
 		return
 	}
@@ -260,7 +258,7 @@ func writeActiveSessions(ctx context.Context, w io.Writer, sty statusStyles) {
 	// Resolve branch names for each worktree (skip for unknown paths)
 	for _, g := range groups {
 		if g.path != unknownPlaceholder {
-			g.branch = resolveWorktreeBranch(ctx, g.path)
+			g.branch = resolveWorktreeBranch(g.path)
 		}
 	}
 
@@ -347,7 +345,7 @@ func writeActiveSessions(ctx context.Context, w io.Writer, sty statusStyles) {
 
 // resolveWorktreeBranch resolves the current branch for a worktree path
 // by reading the HEAD ref directly from the filesystem
-func resolveWorktreeBranch(ctx context.Context, worktreePath string) string {
+func resolveWorktreeBranch(worktreePath string) string {
 	gitPath := filepath.Join(worktreePath, ".git")
 
 	fi, err := os.Stat(gitPath)
@@ -389,7 +387,7 @@ func resolveWorktreeBranch(ctx context.Context, worktreePath string) string {
 		// Reftable ref storage uses "ref: refs/heads/.invalid" as a dummy HEAD stub.
 		// Fall back to git to resolve the actual branch in that case.
 		if branch == ".invalid" {
-			return resolveWorktreeBranchGit(ctx, worktreePath)
+			return resolveWorktreeBranchGit(worktreePath)
 		}
 		return branch
 	}
@@ -400,8 +398,8 @@ func resolveWorktreeBranch(ctx context.Context, worktreePath string) string {
 
 // resolveWorktreeBranchGit resolves the branch name by shelling out to git.
 // Used as a fallback for reftable ref storage where .git/HEAD is a stub.
-func resolveWorktreeBranchGit(ctx context.Context, worktreePath string) string {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+func resolveWorktreeBranchGit(worktreePath string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "-C", worktreePath, "rev-parse", "--symbolic-full-name", "HEAD")
 	out, err := cmd.Output()

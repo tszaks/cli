@@ -28,7 +28,7 @@ func setupTestDir(t *testing.T) string {
 	t.Helper()
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
-	paths.ClearRepoRootCache()
+	paths.ClearWorktreeRootCache()
 	session.ClearGitCommonDirCache()
 	return tmpDir
 }
@@ -346,93 +346,6 @@ func TestDetermineSettingsTarget_SettingsNotExists_NoFlags(t *testing.T) {
 	}
 }
 
-func TestRunEnableWithStrategy_PreservesExistingSettings(t *testing.T) {
-	setupTestRepo(t)
-
-	// Create initial settings with strategy_options (like push enabled)
-	initialSettings := `{
-		"strategy": "manual-commit",
-		"enabled": true,
-		"strategy_options": {
-			"push": true,
-			"some_other_option": "value"
-		}
-	}`
-	writeSettings(t, initialSettings)
-
-	// Run enable with a different strategy — pass agents directly (no TTY needed)
-	defaultAgent := agent.Default()
-	var stdout bytes.Buffer
-	err := runEnableWithStrategy(context.Background(), &stdout, []agent.Agent{defaultAgent}, "auto-commit", false, false, true, false, false, false)
-	if err != nil {
-		t.Fatalf("runEnableWithStrategy() error = %v", err)
-	}
-
-	// Load the saved settings and verify strategy_options were preserved
-	settings, err := LoadEntireSettings(context.Background())
-	if err != nil {
-		t.Fatalf("LoadEntireSettings(context.Background()) error = %v", err)
-	}
-
-	// Strategy should be updated
-	if settings.Strategy != "auto-commit" {
-		t.Errorf("Strategy should be 'auto-commit', got %q", settings.Strategy)
-	}
-
-	// strategy_options should be preserved
-	if settings.StrategyOptions == nil {
-		t.Fatal("strategy_options should be preserved, but got nil")
-	}
-	if settings.StrategyOptions["push"] != true {
-		t.Errorf("strategy_options.push should be true, got %v", settings.StrategyOptions["push"])
-	}
-	if settings.StrategyOptions["some_other_option"] != "value" {
-		t.Errorf("strategy_options.some_other_option should be 'value', got %v", settings.StrategyOptions["some_other_option"])
-	}
-}
-
-func TestRunEnableWithStrategy_PreservesLocalSettings(t *testing.T) {
-	setupTestRepo(t)
-
-	// Create project settings
-	writeSettings(t, `{"strategy": "manual-commit", "enabled": true}`)
-
-	// Create local settings with strategy_options
-	localSettings := `{
-		"strategy_options": {
-			"push": true
-		}
-	}`
-	writeLocalSettings(t, localSettings)
-
-	// Run enable with --local flag — pass agents directly (no TTY needed)
-	defaultAgent := agent.Default()
-	var stdout bytes.Buffer
-	err := runEnableWithStrategy(context.Background(), &stdout, []agent.Agent{defaultAgent}, "auto-commit", false, true, false, false, false, false)
-	if err != nil {
-		t.Fatalf("runEnableWithStrategy() error = %v", err)
-	}
-
-	// Load the merged settings (project + local)
-	settings, err := LoadEntireSettings(context.Background())
-	if err != nil {
-		t.Fatalf("LoadEntireSettings(context.Background()) error = %v", err)
-	}
-
-	// Strategy should be updated (from local)
-	if settings.Strategy != "auto-commit" {
-		t.Errorf("Strategy should be 'auto-commit', got %q", settings.Strategy)
-	}
-
-	// strategy_options.push should be preserved
-	if settings.StrategyOptions == nil {
-		t.Fatal("strategy_options should be preserved, but got nil")
-	}
-	if settings.StrategyOptions["push"] != true {
-		t.Errorf("strategy_options.push should be true, got %v", settings.StrategyOptions["push"])
-	}
-}
-
 // Tests for runUninstall and helper functions
 
 func TestRunUninstall_Force_NothingInstalled(t *testing.T) {
@@ -486,7 +399,7 @@ func TestRunUninstall_Force_RemovesGitHooks(t *testing.T) {
 	writeSettings(t, testSettingsEnabled)
 
 	// Install git hooks
-	if _, err := strategy.InstallGitHook(context.Background(), true); err != nil {
+	if _, err := strategy.InstallGitHook(context.Background(), true, false); err != nil {
 		t.Fatalf("InstallGitHook() error = %v", err)
 	}
 
@@ -516,7 +429,7 @@ func TestRunUninstall_NotAGitRepo(t *testing.T) {
 	// Create a temp directory without git init
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
-	paths.ClearRepoRootCache()
+	paths.ClearWorktreeRootCache()
 
 	var stdout, stderr bytes.Buffer
 	err := runUninstall(context.Background(), &stdout, &stderr, true)
@@ -537,8 +450,8 @@ func TestCheckEntireDirExists(t *testing.T) {
 	setupTestDir(t)
 
 	// Should be false when directory doesn't exist
-	if checkEntireDirExists(context.Background()) {
-		t.Error("checkEntireDirExists(context.Background()) should return false when .entire doesn't exist")
+	if checkEntireDirExists() {
+		t.Error("checkEntireDirExists() should return false when .entire doesn't exist")
 	}
 
 	// Create the directory
@@ -547,8 +460,8 @@ func TestCheckEntireDirExists(t *testing.T) {
 	}
 
 	// Should be true now
-	if !checkEntireDirExists(context.Background()) {
-		t.Error("checkEntireDirExists(context.Background()) should return true when .entire exists")
+	if !checkEntireDirExists() {
+		t.Error("checkEntireDirExists() should return true when .entire exists")
 	}
 }
 
@@ -556,9 +469,9 @@ func TestCountSessionStates(t *testing.T) {
 	setupTestRepo(t)
 
 	// Should be 0 when no session states exist
-	count := countSessionStates(context.Background())
+	count := countSessionStates()
 	if count != 0 {
-		t.Errorf("countSessionStates(context.Background()) = %d, want 0", count)
+		t.Errorf("countSessionStates() = %d, want 0", count)
 	}
 }
 
@@ -566,9 +479,9 @@ func TestCountShadowBranches(t *testing.T) {
 	setupTestRepo(t)
 
 	// Should be 0 when no shadow branches exist
-	count := countShadowBranches(context.Background())
+	count := countShadowBranches()
 	if count != 0 {
-		t.Errorf("countShadowBranches(context.Background()) = %d, want 0", count)
+		t.Errorf("countShadowBranches() = %d, want 0", count)
 	}
 }
 
@@ -585,8 +498,8 @@ func TestRemoveEntireDirectory(t *testing.T) {
 	}
 
 	// Remove the directory
-	if err := removeEntireDirectory(context.Background()); err != nil {
-		t.Fatalf("removeEntireDirectory(context.Background()) error = %v", err)
+	if err := removeEntireDirectory(); err != nil {
+		t.Fatalf("removeEntireDirectory() error = %v", err)
 	}
 
 	// Verify it's removed
@@ -766,8 +679,8 @@ func TestRemoveEntireDirectory_NotExists(t *testing.T) {
 	setupTestDir(t)
 
 	// Should not error when directory doesn't exist
-	if err := removeEntireDirectory(context.Background()); err != nil {
-		t.Fatalf("removeEntireDirectory(context.Background()) should not error when directory doesn't exist: %v", err)
+	if err := removeEntireDirectory(); err != nil {
+		t.Fatalf("removeEntireDirectory() should not error when directory doesn't exist: %v", err)
 	}
 }
 

@@ -128,7 +128,7 @@ func (s *ManualCommitStrategy) CondenseSession(ctx context.Context, repo *git.Re
 		// potentially stale shadow branch copy (SaveStep may have been skipped if the
 		// last turn had no code changes).
 		// Pass CheckpointTranscriptStart for accurate token calculation (line offset for Claude, message index for Gemini).
-		sessionData, err = s.extractSessionData(ctx, repo, ref.Hash(), state.SessionID, state.FilesTouched, state.AgentType, state.TranscriptPath, state.CheckpointTranscriptStart)
+		sessionData, err = s.extractSessionData(ctx, repo, ref.Hash(), state.SessionID, state.FilesTouched, state.AgentType, state.TranscriptPath, state.CheckpointTranscriptStart, state.Phase.IsActive())
 		if err != nil {
 			return nil, fmt.Errorf("failed to extract session data: %w", err)
 		}
@@ -138,8 +138,12 @@ func (s *ManualCommitStrategy) CondenseSession(ctx context.Context, repo *git.Re
 		if state.TranscriptPath == "" {
 			return nil, errors.New("shadow branch not found and no live transcript available")
 		}
-		// Ensure transcript file exists (OpenCode creates it lazily via `opencode export`)
-		prepareTranscriptIfNeeded(ctx, state.AgentType, state.TranscriptPath)
+		// Ensure transcript file exists (OpenCode creates it lazily via `opencode export`).
+		// Only wait for flush when the session is active — for idle/ended sessions the
+		// transcript is already fully flushed (the Stop hook completed the flush).
+		if state.Phase.IsActive() {
+			prepareTranscriptIfNeeded(ctx, state.AgentType, state.TranscriptPath)
+		}
 		sessionData, err = s.extractSessionDataFromLiveTranscript(ctx, state)
 		if err != nil {
 			return nil, fmt.Errorf("failed to extract session data from live transcript: %w", err)
@@ -220,7 +224,7 @@ func (s *ManualCommitStrategy) CondenseSession(ctx context.Context, repo *git.Re
 					slog.String("error", sliceErr.Error()))
 			}
 			scopedTranscript = scoped
-		case agent.AgentTypeClaudeCode, agent.AgentTypeUnknown:
+		case agent.AgentTypeClaudeCode, agent.AgentTypeCursor, agent.AgentTypeUnknown:
 			scopedTranscript = transcript.SliceFromLine(sessionData.Transcript, state.CheckpointTranscriptStart)
 		}
 		if len(scopedTranscript) > 0 {
@@ -391,7 +395,7 @@ func calculateSessionAttributions(ctx context.Context, repo *git.Repository, sha
 // This handles the case where SaveStep was skipped (no code changes) but the transcript
 // continued growing — the shadow branch copy would be stale.
 // checkpointTranscriptStart is the line offset (Claude) or message index (Gemini) where the current checkpoint began.
-func (s *ManualCommitStrategy) extractSessionData(ctx context.Context, repo *git.Repository, shadowRef plumbing.Hash, sessionID string, filesTouched []string, agentType agent.AgentType, liveTranscriptPath string, checkpointTranscriptStart int) (*ExtractedSessionData, error) {
+func (s *ManualCommitStrategy) extractSessionData(ctx context.Context, repo *git.Repository, shadowRef plumbing.Hash, sessionID string, filesTouched []string, agentType agent.AgentType, liveTranscriptPath string, checkpointTranscriptStart int, isActive bool) (*ExtractedSessionData, error) {
 	commit, err := repo.CommitObject(shadowRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get commit object: %w", err)
@@ -411,8 +415,12 @@ func (s *ManualCommitStrategy) extractSessionData(ctx context.Context, repo *git
 	// (SaveStep is only called when there are file modifications).
 	var fullTranscript string
 	if liveTranscriptPath != "" {
-		// Ensure transcript file exists (OpenCode creates it lazily via `opencode export`)
-		prepareTranscriptIfNeeded(ctx, agentType, liveTranscriptPath)
+		// Ensure transcript file exists (OpenCode creates it lazily via `opencode export`).
+		// Only wait for flush when the session is active — for idle/ended sessions the
+		// transcript is already fully flushed (the Stop hook completed the flush).
+		if isActive {
+			prepareTranscriptIfNeeded(ctx, agentType, liveTranscriptPath)
+		}
 		if liveData, readErr := os.ReadFile(liveTranscriptPath); readErr == nil && len(liveData) > 0 { //nolint:gosec // path from session state
 			fullTranscript = string(liveData)
 		}
@@ -582,6 +590,11 @@ func extractUserPrompts(agentType agent.AgentType, content string) []string {
 // where the current checkpoint began, allowing calculation for only the portion
 // of the transcript since the last checkpoint.
 func calculateTokenUsage(agentType agent.AgentType, data []byte, startOffset int) *agent.TokenUsage {
+	// No token usage information from Cursor yet
+	if agentType == agent.AgentTypeCursor {
+		return nil
+	}
+
 	if len(data) == 0 {
 		return &agent.TokenUsage{}
 	}
@@ -632,9 +645,13 @@ func extractUserPromptsFromLines(lines []string) []string {
 			continue
 		}
 
-		// Check for user message (supports both "human" and "user" types)
-		msgType, ok := entry["type"].(string)
-		if !ok || (msgType != "human" && msgType != "user") {
+		// Check for user message:
+		// - Claude Code uses "type": "human" or "type": "user"
+		// - Cursor uses "role": "user"
+		msgType, _ := entry["type"].(string) //nolint:errcheck // type assertion on interface{} from JSON
+		msgRole, _ := entry["role"].(string) //nolint:errcheck // type assertion on interface{} from JSON
+		isUser := msgType == "human" || msgType == "user" || msgRole == "user"
+		if !isUser {
 			continue
 		}
 

@@ -454,7 +454,7 @@ func TestFormatSessionInfo_WithSourceRef(t *testing.T) {
 	session := &strategy.Session{
 		ID:          "2025-12-09-test-session-abc",
 		Description: "Test description",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{
 			{
@@ -492,14 +492,8 @@ func TestStrategySessionSourceInterface(t *testing.T) {
 	// This ensures manual-commit strategy implements SessionSource
 	var s = strategy.NewManualCommitStrategy()
 
-	// Cast to SessionSource - manual-commit strategy should implement it
-	source, ok := s.(strategy.SessionSource)
-	if !ok {
-		t.Fatal("ManualCommitStrategy should implement SessionSource interface")
-	}
-
 	// GetAdditionalSessions should exist and be callable
-	_, err := source.GetAdditionalSessions(context.Background())
+	_, err := s.GetAdditionalSessions(context.Background())
 	if err != nil {
 		t.Logf("GetAdditionalSessions returned error: %v", err)
 	}
@@ -509,7 +503,7 @@ func TestFormatSessionInfo_CheckpointNumberingReversed(t *testing.T) {
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-09-test-session",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now.Add(-2 * time.Hour),
 		Checkpoints: []strategy.Checkpoint{}, // Not used for format test
 	}
@@ -595,7 +589,7 @@ func TestFormatSessionInfo_CheckpointWithTaskMarker(t *testing.T) {
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-09-task-session",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -626,7 +620,7 @@ func TestFormatSessionInfo_CheckpointWithDate(t *testing.T) {
 	timestamp := time.Date(2025, 12, 10, 14, 35, 0, 0, time.UTC)
 	session := &strategy.Session{
 		ID:          "2025-12-10-dated-session",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   timestamp,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -653,7 +647,7 @@ func TestFormatSessionInfo_ShowsMessageWhenNoInteractions(t *testing.T) {
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-12-incremental-session",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -691,7 +685,7 @@ func TestFormatSessionInfo_ShowsMessageAndFilesWhenNoInteractions(t *testing.T) 
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-12-incremental-with-files",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -730,7 +724,7 @@ func TestFormatSessionInfo_DoesNotShowMessageWhenHasInteractions(t *testing.T) {
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-12-full-checkpoint",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -1523,7 +1517,7 @@ func TestGetBranchCheckpoints_ReadsPromptFromShadowBranch(t *testing.T) {
 	}
 
 	// Now call getBranchCheckpoints and verify the prompt is read
-	points, err := getBranchCheckpoints(context.Background(), repo, 10)
+	points, err := getBranchCheckpoints(repo, 10)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints() error = %v", err)
 	}
@@ -1556,10 +1550,10 @@ func TestGetCurrentWorktreeHash_MainWorktree(t *testing.T) {
 		t.Fatalf("failed to init git repo: %v", err)
 	}
 
-	hash := getCurrentWorktreeHash(context.Background())
+	hash := getCurrentWorktreeHash()
 	expected := checkpoint.HashWorktreeID("") // Main worktree has empty ID
 	if hash != expected {
-		t.Errorf("getCurrentWorktreeHash(context.Background()) = %q, want %q (hash of empty worktree ID)", hash, expected)
+		t.Errorf("getCurrentWorktreeHash() = %q, want %q (hash of empty worktree ID)", hash, expected)
 	}
 }
 
@@ -1643,7 +1637,7 @@ func TestGetReachableTemporaryCheckpoints_FiltersByWorktree(t *testing.T) {
 	writeCheckpoints(sessionIDOther, "other-worktree") // Different worktree
 
 	// getBranchCheckpoints should only include local worktree's checkpoints
-	points, err := getBranchCheckpoints(context.Background(), repo, 20)
+	points, err := getBranchCheckpoints(repo, 20)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints error: %v", err)
 	}
@@ -1826,7 +1820,7 @@ func TestGetBranchCheckpoints_OnFeatureBranch(t *testing.T) {
 	}
 
 	// Get checkpoints (should be empty, but shouldn't error)
-	points, err := getBranchCheckpoints(context.Background(), repo, 20)
+	points, err := getBranchCheckpoints(repo, 20)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints() error = %v", err)
 	}
@@ -2117,7 +2111,7 @@ func TestGetBranchCheckpoints_FiltersMainCommits(t *testing.T) {
 	// Get checkpoints - should only include feature branch commits, not main
 	// Note: Without actual checkpoint data in entire/checkpoints/v1, this returns empty
 	// but the important thing is it doesn't error and the filtering logic runs
-	points, err := getBranchCheckpoints(context.Background(), repo, 20)
+	points, err := getBranchCheckpoints(repo, 20)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints() error = %v", err)
 	}
@@ -3542,7 +3536,7 @@ func TestGetBranchCheckpoints_DefaultBranchFindsMergedCheckpoints(t *testing.T) 
 	if err := store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
 		CheckpointID: cpID,
 		SessionID:    "test-session",
-		Strategy:     "auto-commit",
+		Strategy:     "manual-commit",
 		FilesTouched: []string{"test.txt"},
 		Prompts:      []string{"add feature"},
 	}); err != nil {
@@ -3550,7 +3544,7 @@ func TestGetBranchCheckpoints_DefaultBranchFindsMergedCheckpoints(t *testing.T) 
 	}
 
 	// getBranchCheckpoints on master should find the checkpoint from the merged feature branch
-	points, err := getBranchCheckpoints(context.Background(), repo, 100)
+	points, err := getBranchCheckpoints(repo, 100)
 	if err != nil {
 		t.Fatalf("getBranchCheckpoints error: %v", err)
 	}

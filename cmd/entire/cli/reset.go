@@ -23,8 +23,6 @@ func newResetCmd() *cobra.Command {
 
 This allows starting fresh without existing checkpoints on your current commit.
 
-Only works with the manual-commit strategy. For auto-commit strategy,
-use Git directly: git reset --hard <commit>
 
 The command will:
   - Find all sessions where base_commit matches the current HEAD
@@ -42,22 +40,16 @@ Without --force, prompts for confirmation before deleting.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			// Check if in git repository
-			if _, err := paths.RepoRoot(ctx); err != nil {
+			if _, err := paths.WorktreeRoot(ctx); err != nil {
 				return errors.New("not a git repository")
 			}
 
 			// Get current strategy
 			strat := GetStrategy(ctx)
 
-			// Check if strategy supports reset
-			resetter, ok := strat.(strategy.SessionResetter)
-			if !ok {
-				return fmt.Errorf("strategy %s does not support reset", strat.Name())
-			}
-
 			// Handle --session flag: reset a single session
 			if sessionFlag != "" {
-				return runResetSession(cmd, resetter, sessionFlag, forceFlag)
+				return runResetSession(ctx, cmd, strat, sessionFlag, forceFlag)
 			}
 
 			// Check for active sessions before bulk reset
@@ -102,7 +94,7 @@ Without --force, prompts for confirmation before deleting.`,
 			}
 
 			// Call strategy's Reset method
-			if err := resetter.Reset(ctx); err != nil {
+			if err := strat.Reset(ctx); err != nil {
 				return fmt.Errorf("reset failed: %w", err)
 			}
 
@@ -117,8 +109,7 @@ Without --force, prompts for confirmation before deleting.`,
 }
 
 // runResetSession handles the --session flag: reset a single session.
-func runResetSession(cmd *cobra.Command, resetter strategy.SessionResetter, sessionID string, force bool) error {
-	ctx := cmd.Context()
+func runResetSession(ctx context.Context, cmd *cobra.Command, strat strategy.Strategy, sessionID string, force bool) error {
 	// Verify the session exists
 	state, err := strategy.LoadSessionState(ctx, sessionID)
 	if err != nil {
@@ -155,7 +146,7 @@ func runResetSession(cmd *cobra.Command, resetter strategy.SessionResetter, sess
 		}
 	}
 
-	if err := resetter.ResetSession(ctx, sessionID); err != nil {
+	if err := strat.ResetSession(ctx, sessionID); err != nil {
 		return fmt.Errorf("reset session failed: %w", err)
 	}
 

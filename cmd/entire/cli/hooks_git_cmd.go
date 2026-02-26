@@ -141,10 +141,8 @@ func newHooksGitPrepareCommitMsgCmd() *cobra.Command {
 			g := newGitHookContext(cmd.Context(), "prepare-commit-msg")
 			g.logInvoked(slog.String("source", source))
 
-			if handler, ok := g.strategy.(strategy.PrepareCommitMsgHandler); ok {
-				hookErr := handler.PrepareCommitMsg(g.ctx, commitMsgFile, source)
-				g.logCompleted(hookErr, slog.String("source", source))
-			}
+			hookErr := g.strategy.PrepareCommitMsg(g.ctx, commitMsgFile, source)
+			g.logCompleted(hookErr, slog.String("source", source))
 
 			return nil
 		},
@@ -166,13 +164,9 @@ func newHooksGitCommitMsgCmd() *cobra.Command {
 			g := newGitHookContext(cmd.Context(), "commit-msg")
 			g.logInvoked()
 
-			if handler, ok := g.strategy.(strategy.CommitMsgHandler); ok {
-				hookErr := handler.CommitMsg(g.ctx, commitMsgFile)
-				g.logCompleted(hookErr)
-				return hookErr //nolint:wrapcheck // Thin delegation layer - wrapping adds no value
-			}
-
-			return nil
+			hookErr := g.strategy.CommitMsg(g.ctx, commitMsgFile)
+			g.logCompleted(hookErr)
+			return hookErr //nolint:wrapcheck // Thin delegation layer - wrapping adds no value
 		},
 	}
 }
@@ -190,10 +184,8 @@ func newHooksGitPostCommitCmd() *cobra.Command {
 			g := newGitHookContext(cmd.Context(), "post-commit")
 			g.logInvoked()
 
-			if handler, ok := g.strategy.(strategy.PostCommitHandler); ok {
-				hookErr := handler.PostCommit(g.ctx)
-				g.logCompleted(hookErr)
-			}
+			hookErr := g.strategy.PostCommit(g.ctx)
+			g.logCompleted(hookErr)
 
 			return nil
 		},
@@ -215,10 +207,8 @@ func newHooksGitPrePushCmd() *cobra.Command {
 			g := newGitHookContext(cmd.Context(), "pre-push")
 			g.logInvoked(slog.String("remote", remote))
 
-			if handler, ok := g.strategy.(strategy.PrePushHandler); ok {
-				hookErr := handler.PrePush(g.ctx, remote)
-				g.logCompleted(hookErr, slog.String("remote", remote))
-			}
+			hookErr := g.strategy.PrePush(g.ctx, remote)
+			g.logCompleted(hookErr, slog.String("remote", remote))
 
 			return nil
 		},

@@ -6,14 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/entireio/cli/cmd/entire/cli/strategy"
 )
 
 const (
-	testSettingsStrategy = `{"strategy": "manual-commit"}`
-	testSettingsEnabled  = `{"strategy": "manual-commit", "enabled": true}`
-	testSettingsDisabled = `{"strategy": "manual-commit", "enabled": false}`
+	testSettingsEnabled  = `{"enabled": true}`
+	testSettingsDisabled = `{"enabled": false}`
 )
 
 func TestLoadEntireSettings_EnabledDefaultsToTrue(t *testing.T) {
@@ -35,7 +32,7 @@ func TestLoadEntireSettings_EnabledDefaultsToTrue(t *testing.T) {
 	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
 		t.Fatalf("Failed to create settings dir: %v", err)
 	}
-	settingsContent := testSettingsStrategy
+	settingsContent := `{}`
 	if err := os.WriteFile(EntireSettingsFile, []byte(settingsContent), 0o644); err != nil {
 		t.Fatalf("Failed to write settings file: %v", err)
 	}
@@ -83,8 +80,7 @@ func TestSaveEntireSettings_PreservesEnabled(t *testing.T) {
 
 	// Save settings with Enabled = false
 	settings := &EntireSettings{
-		Strategy: "manual-commit",
-		Enabled:  false,
+		Enabled: false,
 	}
 	if err := SaveEntireSettings(context.Background(), settings); err != nil {
 		t.Fatalf("SaveEntireSettings() error = %v", err)
@@ -132,7 +128,7 @@ func TestIsEnabled(t *testing.T) {
 	}
 
 	// Test 3: Settings with enabled: true - should return true
-	settingsContent = `{"enabled": true}`
+	settingsContent = testSettingsEnabled
 	if err := os.WriteFile(EntireSettingsFile, []byte(settingsContent), 0o644); err != nil {
 		t.Fatalf("Failed to write settings file: %v", err)
 	}
@@ -166,7 +162,7 @@ func TestLoadEntireSettings_LocalOverridesStrategy(t *testing.T) {
 		t.Fatalf("Failed to write settings file: %v", err)
 	}
 
-	localSettings := `{"strategy": "` + strategy.StrategyNameAutoCommit + `"}`
+	localSettings := testSettingsEnabled
 	if err := os.WriteFile(EntireSettingsLocalFile, []byte(localSettings), 0o644); err != nil {
 		t.Fatalf("Failed to write local settings file: %v", err)
 	}
@@ -174,9 +170,6 @@ func TestLoadEntireSettings_LocalOverridesStrategy(t *testing.T) {
 	settings, err := LoadEntireSettings(context.Background())
 	if err != nil {
 		t.Fatalf("LoadEntireSettings(context.Background()) error = %v", err)
-	}
-	if settings.Strategy != strategy.StrategyNameAutoCommit {
-		t.Errorf("Strategy should be 'auto-commit' from local override, got %q", settings.Strategy)
 	}
 	if !settings.Enabled {
 		t.Error("Enabled should remain true from base settings")
@@ -203,15 +196,12 @@ func TestLoadEntireSettings_LocalOverridesEnabled(t *testing.T) {
 	if settings.Enabled {
 		t.Error("Enabled should be false from local override")
 	}
-	if settings.Strategy != strategy.StrategyNameManualCommit {
-		t.Errorf("Strategy should remain 'manual-commit' from base settings, got %q", settings.Strategy)
-	}
 }
 
 func TestLoadEntireSettings_LocalOverridesLocalDev(t *testing.T) {
 	setupLocalOverrideTestDir(t)
 
-	baseSettings := testSettingsStrategy
+	baseSettings := testSettingsEnabled
 	if err := os.WriteFile(EntireSettingsFile, []byte(baseSettings), 0o644); err != nil {
 		t.Fatalf("Failed to write settings file: %v", err)
 	}
@@ -233,7 +223,7 @@ func TestLoadEntireSettings_LocalOverridesLocalDev(t *testing.T) {
 func TestLoadEntireSettings_LocalMergesStrategyOptions(t *testing.T) {
 	setupLocalOverrideTestDir(t)
 
-	baseSettings := `{"strategy": "manual-commit", "strategy_options": {"key1": "value1", "key2": "value2"}}`
+	baseSettings := `{"enabled": true, "strategy_options": {"key1": "value1", "key2": "value2"}}`
 	if err := os.WriteFile(EntireSettingsFile, []byte(baseSettings), 0o644); err != nil {
 		t.Fatalf("Failed to write settings file: %v", err)
 	}
@@ -263,7 +253,7 @@ func TestLoadEntireSettings_OnlyLocalFileExists(t *testing.T) {
 	setupLocalOverrideTestDir(t)
 
 	// No base settings file
-	localSettings := `{"strategy": "auto-commit"}`
+	localSettings := testSettingsEnabled
 	if err := os.WriteFile(EntireSettingsLocalFile, []byte(localSettings), 0o644); err != nil {
 		t.Fatalf("Failed to write local settings file: %v", err)
 	}
@@ -271,64 +261,6 @@ func TestLoadEntireSettings_OnlyLocalFileExists(t *testing.T) {
 	settings, err := LoadEntireSettings(context.Background())
 	if err != nil {
 		t.Fatalf("LoadEntireSettings(context.Background()) error = %v", err)
-	}
-	if settings.Strategy != strategyDisplayAutoCommit {
-		t.Errorf("Strategy should be 'auto-commit' from local file, got %q", settings.Strategy)
-	}
-	if !settings.Enabled {
-		t.Error("Enabled should default to true")
-	}
-}
-
-func TestLoadEntireSettings_NoLocalFileUsesBase(t *testing.T) {
-	setupLocalOverrideTestDir(t)
-
-	baseSettings := `{"strategy": "manual-commit", "enabled": true}`
-	if err := os.WriteFile(EntireSettingsFile, []byte(baseSettings), 0o644); err != nil {
-		t.Fatalf("Failed to write settings file: %v", err)
-	}
-
-	settings, err := LoadEntireSettings(context.Background())
-	if err != nil {
-		t.Fatalf("LoadEntireSettings(context.Background()) error = %v", err)
-	}
-	if settings.Strategy != "manual-commit" {
-		t.Errorf("Strategy should be 'shadow' from base settings, got %q", settings.Strategy)
-	}
-}
-
-func TestLoadEntireSettings_EmptyStrategyInLocalDoesNotOverride(t *testing.T) {
-	setupLocalOverrideTestDir(t)
-
-	baseSettings := testSettingsStrategy
-	if err := os.WriteFile(EntireSettingsFile, []byte(baseSettings), 0o644); err != nil {
-		t.Fatalf("Failed to write settings file: %v", err)
-	}
-
-	localSettings := `{"strategy": ""}`
-	if err := os.WriteFile(EntireSettingsLocalFile, []byte(localSettings), 0o644); err != nil {
-		t.Fatalf("Failed to write local settings file: %v", err)
-	}
-
-	settings, err := LoadEntireSettings(context.Background())
-	if err != nil {
-		t.Fatalf("LoadEntireSettings(context.Background()) error = %v", err)
-	}
-	if settings.Strategy != "manual-commit" {
-		t.Errorf("Strategy should remain 'shadow', got %q", settings.Strategy)
-	}
-}
-
-func TestLoadEntireSettings_NeitherFileExistsReturnsDefaults(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	settings, err := LoadEntireSettings(context.Background())
-	if err != nil {
-		t.Fatalf("LoadEntireSettings(context.Background()) error = %v", err)
-	}
-	if settings.Strategy != strategy.DefaultStrategyName {
-		t.Errorf("Strategy should be default %q, got %q", strategy.DefaultStrategyName, settings.Strategy)
 	}
 	if !settings.Enabled {
 		t.Error("Enabled should default to true")
@@ -338,7 +270,7 @@ func TestLoadEntireSettings_NeitherFileExistsReturnsDefaults(t *testing.T) {
 func TestLoadEntireSettings_RejectsUnknownKeysInBase(t *testing.T) {
 	setupLocalOverrideTestDir(t)
 
-	baseSettings := `{"strategy": "manual-commit", "bogus_key": true}`
+	baseSettings := `{"bogus_key": true}`
 	if err := os.WriteFile(EntireSettingsFile, []byte(baseSettings), 0o644); err != nil {
 		t.Fatalf("Failed to write settings file: %v", err)
 	}
@@ -355,7 +287,7 @@ func TestLoadEntireSettings_RejectsUnknownKeysInBase(t *testing.T) {
 func TestLoadEntireSettings_RejectsUnknownKeysInLocal(t *testing.T) {
 	setupLocalOverrideTestDir(t)
 
-	baseSettings := `{"strategy": "manual-commit"}`
+	baseSettings := `{}`
 	if err := os.WriteFile(EntireSettingsFile, []byte(baseSettings), 0o644); err != nil {
 		t.Fatalf("Failed to write settings file: %v", err)
 	}

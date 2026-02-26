@@ -350,14 +350,14 @@ func (br *BenchRepo) WriteTranscriptFile(b *testing.B, sessionID string, data []
 // prior checkpoints saved.
 //
 // Temporarily changes cwd to br.Dir because WriteTemporary uses
-// paths.RepoRoot() which depends on os.Getwd().
+// paths.WorktreeRoot() which depends on os.Getwd().
 func (br *BenchRepo) SeedShadowBranch(b *testing.B, sessionID string, checkpointCount int, filesPerCheckpoint int) {
 	b.Helper()
 
-	// WriteTemporary internally calls paths.RepoRoot() which uses os.Getwd().
+	// WriteTemporary internally calls paths.WorktreeRoot() which uses os.Getwd().
 	// Switch cwd so it resolves to the bench repo.
 	b.Chdir(br.Dir)
-	paths.ClearRepoRootCache()
+	paths.ClearWorktreeRootCache()
 
 	for i := range checkpointCount {
 		var modified []string
@@ -547,6 +547,56 @@ func generateTranscriptMessage(index int, opts TranscriptOpts) map[string]any {
 	}
 
 	return msg
+}
+
+// SeedBranches creates N branches pointing at the current HEAD.
+// The branches are named with the given prefix (e.g., "feature/bench-" → "feature/bench-000").
+// This simulates a repo with many refs, which affects go-git ref scanning performance.
+func (br *BenchRepo) SeedBranches(b *testing.B, prefix string, count int) {
+	b.Helper()
+	headHash := plumbing.NewHash(br.HeadHash)
+	for i := range count {
+		name := fmt.Sprintf("%s%03d", prefix, i)
+		ref := plumbing.NewHashReference(plumbing.NewBranchReferenceName(name), headHash)
+		if err := br.Repo.Storer.SetReference(ref); err != nil {
+			b.Fatalf("create branch %s: %v", name, err)
+		}
+	}
+}
+
+// PackRefs runs `git pack-refs --all` to simulate a real repo where most refs
+// are in the packed-refs file. Large repos almost always have packed refs.
+func (br *BenchRepo) PackRefs(b *testing.B) {
+	b.Helper()
+	cmd := exec.CommandContext(context.Background(), "git", "pack-refs", "--all")
+	cmd.Dir = br.Dir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		b.Fatalf("git pack-refs: %v\n%s", err, output)
+	}
+}
+
+// SeedGitObjects creates loose git objects to bloat .git/objects/.
+// Each call creates N blob objects via `git hash-object -w`.
+// After seeding, runs `git gc` to pack them into a packfile (realistic).
+func (br *BenchRepo) SeedGitObjects(b *testing.B, count int) {
+	b.Helper()
+
+	for i := range count {
+		content := GenerateFileContent(i, 4096)
+		cmd := exec.CommandContext(context.Background(), "git", "hash-object", "-w", "--stdin")
+		cmd.Dir = br.Dir
+		cmd.Stdin = strings.NewReader(content)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			b.Fatalf("git hash-object %d: %v\n%s", i, err, output)
+		}
+	}
+
+	// Pack into a packfile like a real repo
+	gc := exec.CommandContext(context.Background(), "git", "gc", "--quiet")
+	gc.Dir = br.Dir
+	if output, err := gc.CombinedOutput(); err != nil {
+		b.Fatalf("git gc: %v\n%s", err, output)
+	}
 }
 
 func generatePadding(prefix string, targetBytes int) string {

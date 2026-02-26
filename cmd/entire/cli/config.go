@@ -3,11 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
-	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/settings"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
 
@@ -66,25 +64,8 @@ func IsEnabled(ctx context.Context) (bool, error) {
 // Falls back to default if the configured strategy is not found.
 //
 
-func GetStrategy(ctx context.Context) strategy.Strategy {
-	s, err := settings.Load(ctx)
-	if err != nil {
-		// Fall back to default on error
-		logging.Info(ctx, "falling back to default strategy - failed to load settings",
-			slog.String("error", err.Error()))
-		return strategy.Default()
-	}
-
-	strat, err := strategy.Get(s.Strategy)
-	if err != nil {
-		// Fall back to default if strategy not found
-		logging.Info(ctx, "falling back to default strategy - configured strategy not found",
-			slog.String("configured", s.Strategy),
-			slog.String("error", err.Error()))
-		return strategy.Default()
-	}
-
-	return strat
+func GetStrategy(_ context.Context) strategy.Strategy {
+	return strategy.NewManualCommitStrategy()
 }
 
 // GetLogLevel returns the configured log level from settings.

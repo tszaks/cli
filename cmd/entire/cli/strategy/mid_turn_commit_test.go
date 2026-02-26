@@ -48,7 +48,7 @@ func TestSessionHasNewContentFromLiveTranscript_NormalizesAbsolutePaths(t *testi
 	// Get the resolved worktree path first — on macOS, t.TempDir() returns /var/...
 	// but git resolves symlinks to /private/var/... . Claude Code uses the resolved
 	// path in its transcript, so we must too.
-	worktreePath, err := GetWorktreePath(context.Background())
+	worktreePath, err := paths.WorktreeRoot(context.Background())
 	require.NoError(t, err)
 	worktreeID, err := paths.GetWorktreeID(worktreePath)
 	require.NoError(t, err)
@@ -123,7 +123,7 @@ func TestSessionHasNewContentFromLiveTranscript_IncludesSubagentFiles(t *testing
 	// Get the resolved worktree path first — on macOS, t.TempDir() returns /var/...
 	// but git resolves symlinks to /private/var/... . Claude Code uses the resolved
 	// path in its transcript, so we must too.
-	worktreePath, err := GetWorktreePath(context.Background())
+	worktreePath, err := paths.WorktreeRoot(context.Background())
 	require.NoError(t, err)
 	worktreeID, err := paths.GetWorktreeID(worktreePath)
 	require.NoError(t, err)

@@ -54,7 +54,7 @@ func (a *OpenCodeAgent) ParseHookEvent(ctx context.Context, hookName string, std
 			return nil, err
 		}
 		// Get the temp file path for this session (may not exist yet, but needed for pre-prompt state).
-		repoRoot, err := paths.RepoRoot(ctx)
+		repoRoot, err := paths.WorktreeRoot(ctx)
 		if err != nil {
 			repoRoot = "."
 		}
@@ -149,8 +149,8 @@ func (a *OpenCodeAgent) PrepareTranscript(ctx context.Context, sessionRef string
 // pre-write the transcript file to .entire/tmp/<sessionID>.json before
 // triggering the hook. See integration_test/hooks.go:SimulateOpenCodeTurnEnd.
 func (a *OpenCodeAgent) fetchAndCacheExport(ctx context.Context, sessionID string) (string, error) {
-	// Get repo root for the temp directory
-	repoRoot, err := paths.RepoRoot(ctx)
+	// Get worktree root for the temp directory
+	repoRoot, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		repoRoot = "."
 	}

@@ -31,7 +31,7 @@ func (s *ManualCommitStrategy) Reset(ctx context.Context) error {
 	}
 
 	// Get current worktree ID for shadow branch naming
-	worktreePath, err := GetWorktreePath(ctx)
+	worktreePath, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get worktree path: %w", err)
 	}

@@ -12,17 +12,12 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/session"
+	"github.com/entireio/cli/cmd/entire/cli/settings"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-)
-
-// Strategy display names for user-friendly selection
-const (
-	strategyDisplayManualCommit = "manual-commit"
-	strategyDisplayAutoCommit   = "auto-commit"
 )
 
 // Config path display strings
@@ -31,25 +26,12 @@ const (
 	configDisplayLocal   = ".entire/settings.local.json"
 )
 
-// strategyDisplayToInternal maps user-friendly names to internal strategy names
-var strategyDisplayToInternal = map[string]string{
-	strategyDisplayManualCommit: strategy.StrategyNameManualCommit,
-	strategyDisplayAutoCommit:   strategy.StrategyNameAutoCommit,
-}
-
-// strategyInternalToDisplay maps internal strategy names to user-friendly names
-var strategyInternalToDisplay = map[string]string{
-	strategy.StrategyNameManualCommit: strategyDisplayManualCommit,
-	strategy.StrategyNameAutoCommit:   strategyDisplayAutoCommit,
-}
-
 func newEnableCmd() *cobra.Command {
 	var localDev bool
 	var ignoreUntracked bool
 	var useLocalSettings bool
 	var useProjectSettings bool
 	var agentName string
-	var strategyFlag string
 	var forceHooks bool
 	var skipPushSessions bool
 	var telemetry bool
@@ -59,17 +41,14 @@ func newEnableCmd() *cobra.Command {
 		Short: "Enable Entire in current project",
 		Long: `Enable Entire with session tracking for your AI agent workflows.
 
-Uses the manual-commit strategy by default. To use a different strategy:
-
-  entire enable --strategy auto-commit
-
-Strategies: manual-commit (default), auto-commit`,
+Uses the manual-commit strategy, which creates session checkpoints without
+modifying your active branch.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			// Check if we're in a git repository first - this is a prerequisite error,
 			// not a usage error, so we silence Cobra's output and use SilentError
 			// to prevent duplicate error output in main.go
-			if _, err := paths.RepoRoot(ctx); err != nil {
+			if _, err := paths.WorktreeRoot(ctx); err != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), "Not a git repository. Please run 'entire enable' from within a git repository.")
 				return NewSilentError(errors.New("not a git repository"))
 			}
@@ -100,7 +79,7 @@ Strategies: manual-commit (default), auto-commit`,
 				// --agent is a targeted operation: set up this specific agent without
 				// affecting other agents. Unlike the interactive path, it does not
 				// uninstall hooks for other previously-enabled agents.
-				return setupAgentHooksNonInteractive(ctx, cmd.OutOrStdout(), ag, strategyFlag, localDev, forceHooks, skipPushSessions, telemetry)
+				return setupAgentHooksNonInteractive(ctx, cmd.OutOrStdout(), ag, localDev, forceHooks, skipPushSessions, telemetry)
 			}
 			// Detect or prompt for agents
 			agents, err := detectOrSelectAgent(ctx, cmd.OutOrStdout(), nil)
@@ -108,9 +87,6 @@ Strategies: manual-commit (default), auto-commit`,
 				return fmt.Errorf("agent selection failed: %w", err)
 			}
 
-			if strategyFlag != "" {
-				return runEnableWithStrategy(ctx, cmd.OutOrStdout(), agents, strategyFlag, localDev, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry)
-			}
 			return runEnableInteractive(ctx, cmd.OutOrStdout(), agents, localDev, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry)
 		},
 	}
@@ -121,15 +97,10 @@ Strategies: manual-commit (default), auto-commit`,
 	cmd.Flags().MarkHidden("ignore-untracked") //nolint:errcheck,gosec // flag is defined above
 	cmd.Flags().BoolVar(&useLocalSettings, "local", false, "Write settings to .entire/settings.local.json instead of .entire/settings.json")
 	cmd.Flags().BoolVar(&useProjectSettings, "project", false, "Write settings to .entire/settings.json even if it already exists")
-	cmd.Flags().StringVar(&agentName, "agent", "", "Agent to setup hooks for (e.g., claude-code). Enables non-interactive mode.")
-	cmd.Flags().StringVar(&strategyFlag, "strategy", "", "Strategy to use (manual-commit or auto-commit)")
+	cmd.Flags().StringVar(&agentName, "agent", "", "Agent to set up hooks for (e.g., claude-code, gemini, opencode). Enables non-interactive mode.")
 	cmd.Flags().BoolVarP(&forceHooks, "force", "f", false, "Force reinstall hooks (removes existing Entire hooks first)")
 	cmd.Flags().BoolVar(&skipPushSessions, "skip-push-sessions", false, "Disable automatic pushing of session logs on git push")
 	cmd.Flags().BoolVar(&telemetry, "telemetry", true, "Enable anonymous usage analytics")
-	//nolint:errcheck,gosec // completion is optional, flag is defined above
-	cmd.RegisterFlagCompletionFunc("strategy", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
-		return []string{strategyDisplayManualCommit, strategyDisplayAutoCommit}, cobra.ShellCompDirectiveNoFileComp
-	})
 
 	// Provide a helpful error when --agent is used without a value
 	defaultFlagErr := cmd.FlagErrorFunc()
@@ -168,10 +139,11 @@ To completely remove Entire integrations from this repository, use --uninstall:
   - Shadow branches (entire/<hash>)
   - Agent hooks`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
 			if uninstall {
-				return runUninstall(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), force)
+				return runUninstall(ctx, cmd.OutOrStdout(), cmd.ErrOrStderr(), force)
 			}
-			return runDisable(cmd.Context(), cmd.OutOrStdout(), useProjectSettings)
+			return runDisable(ctx, cmd.OutOrStdout(), useProjectSettings)
 		},
 	}
 
@@ -180,108 +152,6 @@ To completely remove Entire integrations from this repository, use --uninstall:
 	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt (use with --uninstall)")
 
 	return cmd
-}
-
-// runEnableWithStrategy enables Entire with a specified strategy (non-interactive).
-// The selectedStrategy can be either a display name (manual-commit, auto-commit)
-// or an internal name (manual-commit, auto-commit).
-// agents must be provided by the caller (via detectOrSelectAgent).
-func runEnableWithStrategy(ctx context.Context, w io.Writer, agents []agent.Agent, selectedStrategy string, localDev, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry bool) error {
-	// Map the strategy to internal name if it's a display name
-	internalStrategy := selectedStrategy
-	if mapped, ok := strategyDisplayToInternal[selectedStrategy]; ok {
-		internalStrategy = mapped
-	}
-
-	// Validate the strategy exists
-	strat, err := strategy.Get(internalStrategy)
-	if err != nil {
-		return fmt.Errorf("unknown strategy: %s (use manual-commit or auto-commit)", selectedStrategy)
-	}
-
-	// Uninstall hooks for agents that were previously active but are no longer selected
-	if err := uninstallDeselectedAgentHooks(ctx, w, agents); err != nil {
-		return fmt.Errorf("failed to clean up deselected agents: %w", err)
-	}
-
-	// Setup agent hooks for all selected agents
-	for _, ag := range agents {
-		if _, err := setupAgentHooks(ctx, ag, localDev, forceHooks); err != nil {
-			return fmt.Errorf("failed to setup %s hooks: %w", ag.Type(), err)
-		}
-	}
-
-	// Setup .entire directory
-	if _, err := setupEntireDirectory(ctx); err != nil {
-		return fmt.Errorf("failed to setup .entire directory: %w", err)
-	}
-
-	// Load existing settings to preserve other options (like strategy_options.push)
-	settings, err := LoadEntireSettings(ctx)
-	if err != nil {
-		// If we can't load, start with defaults
-		settings = &EntireSettings{}
-	}
-	// Update the specific fields
-	settings.Strategy = internalStrategy
-	settings.LocalDev = localDev
-	settings.Enabled = true
-
-	// Set push_sessions option if --skip-push-sessions flag was provided
-	if skipPushSessions {
-		if settings.StrategyOptions == nil {
-			settings.StrategyOptions = make(map[string]interface{})
-		}
-		settings.StrategyOptions["push_sessions"] = false
-	}
-
-	// Handle telemetry for non-interactive mode
-	// Note: if telemetry is nil (not configured), it defaults to disabled
-	if !telemetry || os.Getenv("ENTIRE_TELEMETRY_OPTOUT") != "" {
-		f := false
-		settings.Telemetry = &f
-	}
-
-	// Determine which settings file to write to
-	entireDirAbs, err := paths.AbsPath(ctx, paths.EntireDir)
-	if err != nil {
-		entireDirAbs = paths.EntireDir // Fallback to relative
-	}
-	shouldUseLocal, showNotification := determineSettingsTarget(entireDirAbs, useLocalSettings, useProjectSettings)
-
-	if showNotification {
-		fmt.Fprintln(w, "Info: Project settings exist. Saving to settings.local.json instead.")
-		fmt.Fprintln(w, "  Use --project to update the project settings file.")
-	}
-
-	configDisplay := configDisplayProject
-	if shouldUseLocal {
-		if err := SaveEntireSettingsLocal(ctx, settings); err != nil {
-			return fmt.Errorf("failed to save local settings: %w", err)
-		}
-		configDisplay = configDisplayLocal
-	} else {
-		if err := SaveEntireSettings(ctx, settings); err != nil {
-			return fmt.Errorf("failed to save settings: %w", err)
-		}
-	}
-
-	// Install git hooks AFTER saving settings (InstallGitHook reads local_dev from settings)
-	if _, err := strategy.InstallGitHook(ctx, true); err != nil {
-		return fmt.Errorf("failed to install git hooks: %w", err)
-	}
-	strategy.CheckAndWarnHookManagers(ctx, w)
-	fmt.Fprintln(w, "✓ Hooks installed")
-	fmt.Fprintf(w, "✓ Project configured (%s)\n", configDisplay)
-
-	// Let the strategy handle its own setup requirements
-	if err := strat.EnsureSetup(ctx); err != nil {
-		return fmt.Errorf("failed to setup strategy: %w", err)
-	}
-
-	fmt.Fprintln(w, "\nReady.")
-
-	return nil
 }
 
 // runEnableInteractive runs the interactive enable flow.
@@ -304,9 +174,6 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 		return fmt.Errorf("failed to setup .entire directory: %w", err)
 	}
 
-	// Use the default strategy (manual-commit)
-	internalStrategy := strategy.DefaultStrategyName
-
 	// Load existing settings to preserve other options (like strategy_options.push)
 	settings, err := LoadEntireSettings(ctx)
 	if err != nil {
@@ -314,7 +181,6 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 		settings = &EntireSettings{}
 	}
 	// Update the specific fields
-	settings.Strategy = internalStrategy
 	settings.LocalDev = localDev
 	settings.Enabled = true
 
@@ -352,11 +218,10 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 		return fmt.Errorf("failed to save settings: %w", err)
 	}
 
-	// Install git hooks AFTER saving settings (InstallGitHook reads local_dev from settings)
-	if _, err := strategy.InstallGitHook(ctx, true); err != nil {
+	if _, err := strategy.InstallGitHook(ctx, true, localDev); err != nil {
 		return fmt.Errorf("failed to install git hooks: %w", err)
 	}
-	strategy.CheckAndWarnHookManagers(ctx, w)
+	strategy.CheckAndWarnHookManagers(ctx, w, localDev)
 	fmt.Fprintln(w, "✓ Hooks installed")
 
 	configDisplay := configDisplayProject
@@ -375,12 +240,7 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 		return fmt.Errorf("failed to save settings: %w", err)
 	}
 
-	// Let the strategy handle its own setup requirements
-	strat, err := strategy.Get(internalStrategy)
-	if err != nil {
-		return fmt.Errorf("failed to get strategy: %w", err)
-	}
-	if err := strat.EnsureSetup(ctx); err != nil {
+	if err := strategy.EnsureSetup(ctx); err != nil {
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 
@@ -436,7 +296,7 @@ const DisabledMessage = "Entire is disabled. Run `entire enable` to re-enable."
 // Returns true if the caller should exit (i.e., Entire is disabled).
 // On error reading settings, defaults to enabled (returns false).
 func checkDisabledGuard(w io.Writer) bool {
-	enabled, err := IsEnabled(context.TODO()) //nolint:contextcheck // checkDisabledGuard has no ctx param; callers are Cobra RunE closures
+	enabled, err := IsEnabled(context.Background())
 	if err != nil {
 		// Default to enabled on error
 		return false
@@ -486,7 +346,7 @@ func uninstallDeselectedAgentHooks(ctx context.Context, w io.Writer, selectedAge
 
 // setupAgentHooks sets up hooks for a given agent.
 // Returns the number of hooks installed (0 if already installed).
-func setupAgentHooks(ctx context.Context, ag agent.Agent, localDev, forceHooks bool) (int, error) { //nolint:unparam // return value used by setupAgentHooksNonInteractive
+func setupAgentHooks(ctx context.Context, ag agent.Agent, localDev, forceHooks bool) (int, error) {
 	hookAgent, ok := ag.(agent.HookSupport)
 	if !ok {
 		return 0, fmt.Errorf("agent %s does not support hooks", ag.Name())
@@ -564,7 +424,7 @@ func detectOrSelectAgent(ctx context.Context, w io.Writer, selectFn func(availab
 	}
 
 	if !hasInstalledHooks && len(detected) == 0 {
-		fmt.Fprintln(w, "No agent configuration detected (e.g., .claude or .gemini directory).")
+		fmt.Fprintln(w, "No agent configuration detected (e.g., .claude, .gemini, or .opencode directory).")
 		fmt.Fprintln(w, "This is normal - some agents don't require a config directory.")
 		fmt.Fprintln(w)
 	}
@@ -705,7 +565,7 @@ func printWrongAgentError(w io.Writer, name string) {
 
 // setupAgentHooksNonInteractive sets up hooks for a specific agent non-interactively.
 // If strategyName is provided, it sets the strategy; otherwise uses default.
-func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Agent, strategyName string, localDev, forceHooks, skipPushSessions, telemetry bool) error {
+func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Agent, localDev, forceHooks, skipPushSessions, telemetry bool) error {
 	agentName := ag.Name()
 	// Check if agent supports hooks
 	hookAgent, ok := ag.(agent.HookSupport)
@@ -730,7 +590,7 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 	settings, err := LoadEntireSettings(ctx)
 	if err != nil {
 		// If we can't load, start with defaults
-		settings = &EntireSettings{Strategy: strategy.DefaultStrategyName}
+		settings = &EntireSettings{}
 	}
 	settings.Enabled = true
 	if localDev {
@@ -745,20 +605,6 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 		settings.StrategyOptions["push_sessions"] = false
 	}
 
-	// Set strategy if provided
-	if strategyName != "" {
-		// Map display name to internal name if needed
-		internalStrategy := strategyName
-		if mapped, ok := strategyDisplayToInternal[strategyName]; ok {
-			internalStrategy = mapped
-		}
-		// Validate the strategy exists
-		if _, err := strategy.Get(internalStrategy); err != nil {
-			return fmt.Errorf("unknown strategy: %s (use manual-commit or auto-commit)", strategyName)
-		}
-		settings.Strategy = internalStrategy
-	}
-
 	// Handle telemetry for non-interactive mode
 	// Note: if telemetry is nil (not configured), it defaults to disabled
 	if !telemetry || os.Getenv("ENTIRE_TELEMETRY_OPTOUT") != "" {
@@ -770,11 +616,10 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 		return fmt.Errorf("failed to save settings: %w", err)
 	}
 
-	// Install git hooks AFTER saving settings (InstallGitHook reads local_dev from settings)
-	if _, err := strategy.InstallGitHook(ctx, true); err != nil {
+	if _, err := strategy.InstallGitHook(ctx, true, localDev); err != nil {
 		return fmt.Errorf("failed to install git hooks: %w", err)
 	}
-	strategy.CheckAndWarnHookManagers(ctx, w)
+	strategy.CheckAndWarnHookManagers(ctx, w, localDev)
 
 	if installedHooks == 0 {
 		msg := fmt.Sprintf("Hooks for %s already installed", ag.Description())
@@ -792,12 +637,7 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 
 	fmt.Fprintf(w, "✓ Project configured (%s)\n", configDisplayProject)
 
-	// Let the strategy handle its own setup requirements (creates entire/checkpoints/v1 branch, etc.)
-	strat, err := strategy.Get(settings.Strategy)
-	if err != nil {
-		return fmt.Errorf("failed to get strategy: %w", err)
-	}
-	if err := strat.EnsureSetup(ctx); err != nil {
+	if err := strategy.EnsureSetup(ctx); err != nil {
 		return fmt.Errorf("failed to setup strategy: %w", err)
 	}
 
@@ -871,13 +711,12 @@ func setupEntireDirectory(ctx context.Context) (bool, error) { //nolint:unparam 
 
 // setupGitHook installs the prepare-commit-msg hook for context trailers.
 func setupGitHook(ctx context.Context) error {
-	// Use shared implementation from strategy package
-	// The localDev setting is read from settings.json
-	_, err := strategy.InstallGitHook(ctx, false) // not silent - show output during setup
-	if err != nil {
+	s, err := settings.Load(ctx)
+	localDev := err == nil && s.LocalDev
+	if _, err := strategy.InstallGitHook(ctx, false, localDev); err != nil {
 		return fmt.Errorf("failed to install git hook: %w", err)
 	}
-	strategy.CheckAndWarnHookManagers(ctx, os.Stderr)
+	strategy.CheckAndWarnHookManagers(ctx, os.Stderr, localDev)
 	return nil
 }
 
@@ -1074,17 +913,17 @@ func promptTelemetryConsent(settings *EntireSettings, telemetryFlag bool) error 
 // runUninstall completely removes Entire from the repository.
 func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 	// Check if we're in a git repository
-	if _, err := paths.RepoRoot(ctx); err != nil {
+	if _, err := paths.WorktreeRoot(ctx); err != nil {
 		fmt.Fprintln(errW, "Not a git repository. Nothing to uninstall.")
 		return NewSilentError(errors.New("not a git repository"))
 	}
 
 	// Gather counts for display
-	sessionStateCount := countSessionStates(ctx)
-	shadowBranchCount := countShadowBranches(ctx)
+	sessionStateCount := countSessionStates()
+	shadowBranchCount := countShadowBranches()
 	gitHooksInstalled := strategy.IsGitHookInstalled(ctx)
 	agentsWithInstalledHooks := GetAgentsWithHooksInstalled(ctx)
-	entireDirExists := checkEntireDirExists(ctx)
+	entireDirExists := checkEntireDirExists()
 
 	// Check if there's anything to uninstall
 	if !entireDirExists && !gitHooksInstalled && sessionStateCount == 0 &&
@@ -1156,7 +995,7 @@ func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 	}
 
 	// 3. Remove session state files
-	statesRemoved, err := removeAllSessionStates(ctx)
+	statesRemoved, err := removeAllSessionStates()
 	if err != nil {
 		fmt.Fprintf(errW, "Warning: failed to remove session states: %v\n", err)
 	} else if statesRemoved > 0 {
@@ -1164,14 +1003,14 @@ func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 	}
 
 	// 4. Remove .entire/ directory
-	if err := removeEntireDirectory(ctx); err != nil {
+	if err := removeEntireDirectory(); err != nil {
 		fmt.Fprintf(errW, "Warning: failed to remove .entire directory: %v\n", err)
 	} else if entireDirExists {
 		fmt.Fprintln(w, "  Removed .entire directory")
 	}
 
 	// 5. Remove shadow branches
-	branchesRemoved, err := removeAllShadowBranches(ctx)
+	branchesRemoved, err := removeAllShadowBranches()
 	if err != nil {
 		fmt.Fprintf(errW, "Warning: failed to remove shadow branches: %v\n", err)
 	} else if branchesRemoved > 0 {
@@ -1183,12 +1022,12 @@ func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 }
 
 // countSessionStates returns the number of active session state files.
-func countSessionStates(ctx context.Context) int {
-	store, err := session.NewStateStore(ctx)
+func countSessionStates() int {
+	store, err := session.NewStateStore(context.Background())
 	if err != nil {
 		return 0
 	}
-	states, err := store.List(ctx)
+	states, err := store.List(context.Background())
 	if err != nil {
 		return 0
 	}
@@ -1196,8 +1035,8 @@ func countSessionStates(ctx context.Context) int {
 }
 
 // countShadowBranches returns the number of shadow branches.
-func countShadowBranches(ctx context.Context) int {
-	branches, err := strategy.ListShadowBranches(ctx)
+func countShadowBranches() int {
+	branches, err := strategy.ListShadowBranches(context.Background())
 	if err != nil {
 		return 0
 	}
@@ -1205,8 +1044,8 @@ func countShadowBranches(ctx context.Context) int {
 }
 
 // checkEntireDirExists checks if the .entire directory exists.
-func checkEntireDirExists(ctx context.Context) bool {
-	entireDirAbs, err := paths.AbsPath(ctx, paths.EntireDir)
+func checkEntireDirExists() bool {
+	entireDirAbs, err := paths.AbsPath(context.Background(), paths.EntireDir)
 	if err != nil {
 		entireDirAbs = paths.EntireDir
 	}
@@ -1237,14 +1076,14 @@ func removeAgentHooks(ctx context.Context, w io.Writer) error {
 }
 
 // removeAllSessionStates removes all session state files and the directory.
-func removeAllSessionStates(ctx context.Context) (int, error) {
-	store, err := session.NewStateStore(ctx)
+func removeAllSessionStates() (int, error) {
+	store, err := session.NewStateStore(context.Background())
 	if err != nil {
 		return 0, fmt.Errorf("failed to create state store: %w", err)
 	}
 
 	// Count states before removing
-	states, err := store.List(ctx)
+	states, err := store.List(context.Background())
 	if err != nil {
 		return 0, fmt.Errorf("failed to list session states: %w", err)
 	}
@@ -1259,8 +1098,8 @@ func removeAllSessionStates(ctx context.Context) (int, error) {
 }
 
 // removeEntireDirectory removes the .entire directory.
-func removeEntireDirectory(ctx context.Context) error {
-	entireDirAbs, err := paths.AbsPath(ctx, paths.EntireDir)
+func removeEntireDirectory() error {
+	entireDirAbs, err := paths.AbsPath(context.Background(), paths.EntireDir)
 	if err != nil {
 		entireDirAbs = paths.EntireDir
 	}
@@ -1271,14 +1110,14 @@ func removeEntireDirectory(ctx context.Context) error {
 }
 
 // removeAllShadowBranches removes all shadow branches.
-func removeAllShadowBranches(ctx context.Context) (int, error) {
-	branches, err := strategy.ListShadowBranches(ctx)
+func removeAllShadowBranches() (int, error) {
+	branches, err := strategy.ListShadowBranches(context.Background())
 	if err != nil {
 		return 0, fmt.Errorf("failed to list shadow branches: %w", err)
 	}
 	if len(branches) == 0 {
 		return 0, nil
 	}
-	deleted, _, err := strategy.DeleteShadowBranches(ctx, branches)
+	deleted, _, err := strategy.DeleteShadowBranches(context.Background(), branches)
 	return len(deleted), err
 }

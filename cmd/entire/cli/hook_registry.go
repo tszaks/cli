@@ -94,7 +94,7 @@ func newAgentHookVerbCmdWithLogging(agentName agent.AgentName, hookName string) 
 		Short:  "Called on " + hookName,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Skip silently if not in a git repository - hooks shouldn't prevent the agent from working
-			if _, err := paths.RepoRoot(cmd.Context()); err != nil {
+			if _, err := paths.WorktreeRoot(cmd.Context()); err != nil {
 				return nil
 			}
 

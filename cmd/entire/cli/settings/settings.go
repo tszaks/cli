@@ -8,16 +8,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 )
-
-// DefaultStrategyName is the default strategy when none is configured.
-// This is duplicated here to avoid importing the strategy package (which would create a cycle).
-const DefaultStrategyName = "manual-commit"
 
 const (
 	// EntireSettingsFile is the path to the Entire settings file
@@ -28,8 +25,6 @@ const (
 
 // EntireSettings represents the .entire/settings.json configuration
 type EntireSettings struct {
-	// Strategy is the name of the git strategy to use
-	Strategy string `json:"strategy"`
 
 	// Enabled indicates whether Entire is active. When false, CLI commands
 	// show a disabled message and hooks exit silently. Defaults to true.
@@ -50,6 +45,10 @@ type EntireSettings struct {
 	// Telemetry controls anonymous usage analytics.
 	// nil = not asked yet (show prompt), true = opted in, false = opted out
 	Telemetry *bool `json:"telemetry,omitempty"`
+
+	// Deprecated: no longer used. Exists to tolerate old settings files
+	// that still contain "strategy": "auto-commit" or similar.
+	Strategy string `json:"strategy,omitempty"`
 }
 
 // Load loads the Entire settings from .entire/settings.json,
@@ -86,8 +85,6 @@ func Load(ctx context.Context) (*EntireSettings, error) {
 		}
 	}
 
-	applyDefaults(settings)
-
 	return settings, nil
 }
 
@@ -102,8 +99,7 @@ func LoadFromFile(filePath string) (*EntireSettings, error) {
 // Returns default settings if the file doesn't exist.
 func loadFromFile(filePath string) (*EntireSettings, error) {
 	settings := &EntireSettings{
-		Strategy: DefaultStrategyName,
-		Enabled:  true, // Default to enabled
+		Enabled: true, // Default to enabled
 	}
 
 	data, err := os.ReadFile(filePath) //nolint:gosec // path is from caller
@@ -119,7 +115,6 @@ func loadFromFile(filePath string) (*EntireSettings, error) {
 	if err := dec.Decode(settings); err != nil {
 		return nil, fmt.Errorf("parsing settings file: %w", err)
 	}
-	applyDefaults(settings)
 
 	return settings, nil
 }
@@ -139,17 +134,6 @@ func mergeJSON(settings *EntireSettings, data []byte) error {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return fmt.Errorf("parsing JSON: %w", err)
-	}
-
-	// Override strategy if present and non-empty
-	if strategyRaw, ok := raw["strategy"]; ok {
-		var s string
-		if err := json.Unmarshal(strategyRaw, &s); err != nil {
-			return fmt.Errorf("parsing strategy field: %w", err)
-		}
-		if s != "" {
-			settings.Strategy = s
-		}
 	}
 
 	// Override enabled if present
@@ -206,12 +190,6 @@ func mergeJSON(settings *EntireSettings, data []byte) error {
 	}
 
 	return nil
-}
-
-func applyDefaults(settings *EntireSettings) {
-	if settings.Strategy == "" {
-		settings.Strategy = DefaultStrategyName
-	}
 }
 
 // IsSetUp returns true if Entire has been set up in the current repository.
@@ -280,6 +258,35 @@ func (s *EntireSettings) IsPushSessionsDisabled() bool {
 		return !boolVal // disabled = !push_sessions
 	}
 	return false
+}
+
+// FilesWithDeprecatedStrategy returns the relative paths of settings files
+// that still contain the deprecated "strategy" field.
+func FilesWithDeprecatedStrategy(ctx context.Context) []string {
+	var files []string
+	for _, rel := range []string{EntireSettingsFile, EntireSettingsLocalFile} {
+		abs, err := paths.AbsPath(ctx, rel)
+		if err != nil {
+			abs = rel // Fallback to relative
+		}
+		s, err := LoadFromFile(abs)
+		if err != nil || s.Strategy == "" {
+			continue
+		}
+		files = append(files, rel)
+	}
+	return files
+}
+
+// WriteDeprecatedStrategyWarnings writes user-friendly deprecation warnings
+// for each settings file that still contains the "strategy" field.
+// Returns true if any warnings were written.
+func WriteDeprecatedStrategyWarnings(ctx context.Context, w io.Writer) bool {
+	files := FilesWithDeprecatedStrategy(ctx)
+	for _, f := range files {
+		fmt.Fprintf(w, "Note: \"%s\" in %s is no longer needed and can be removed. 'manual-commit' is now the only supported strategy.\n", "strategy", f)
+	}
+	return len(files) > 0
 }
 
 // Save saves the settings to .entire/settings.json.

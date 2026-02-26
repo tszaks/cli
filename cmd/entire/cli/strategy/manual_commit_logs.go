@@ -254,6 +254,3 @@ func (s *ManualCommitStrategy) getDescriptionFromShadowBranch(ctx context.Contex
 	metadataDir := paths.SessionMetadataDirFromSessionID(sessionID)
 	return getSessionDescriptionFromTree(tree, metadataDir)
 }
-
-// Compile-time check that ManualCommitStrategy implements SessionSource
-var _ SessionSource = (*ManualCommitStrategy)(nil)

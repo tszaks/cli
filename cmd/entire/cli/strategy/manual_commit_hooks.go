@@ -121,7 +121,7 @@ func askConfirmTTY(prompt string, context string, defaultYes bool) bool {
 // If the message contains only our trailer (no actual user content), strip it
 // so git will abort the commit due to empty message.
 //
-//nolint:unparam // error return required by interface but hooks must return nil
+
 func (s *ManualCommitStrategy) CommitMsg(_ context.Context, commitMsgFile string) error {
 	content, err := os.ReadFile(commitMsgFile) //nolint:gosec // Path comes from git hook
 	if err != nil {
@@ -265,7 +265,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 		return nil //nolint:nilerr // Hook must be silent on failure
 	}
 
-	worktreePath, err := GetWorktreePath(ctx)
+	worktreePath, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		return nil //nolint:nilerr // Hook must be silent on failure
 	}
@@ -410,7 +410,7 @@ func (s *ManualCommitStrategy) handleAmendCommitMsg(ctx context.Context, commitM
 	}
 
 	// No trailer in message — check if any session has LastCheckpointID to restore
-	worktreePath, err := GetWorktreePath(ctx)
+	worktreePath, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		return nil //nolint:nilerr // Hook must be silent on failure
 	}
@@ -601,7 +601,7 @@ func (h *postCommitActionHandler) HandleWarnStaleSession(_ *session.State) error
 
 // During rebase/cherry-pick/revert operations, phase transitions are skipped entirely.
 //
-//nolint:unparam // error return required by interface but hooks must return nil
+
 func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error {
 	logCtx := logging.WithComponent(ctx, "checkpoint")
 
@@ -630,7 +630,7 @@ func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error {
 		return nil
 	}
 
-	worktreePath, err := GetWorktreePath(ctx)
+	worktreePath, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		return nil //nolint:nilerr // Hook must be silent on failure
 	}
@@ -891,7 +891,7 @@ func (s *ManualCommitStrategy) updateBaseCommitIfChanged(ctx context.Context, st
 // condensation — it only keeps BaseCommit in sync with HEAD.
 func (s *ManualCommitStrategy) postCommitUpdateBaseCommitOnly(ctx context.Context, head *plumbing.Reference) {
 	logCtx := logging.WithComponent(ctx, "checkpoint")
-	worktreePath, err := GetWorktreePath(ctx)
+	worktreePath, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		return // Silent failure — hooks must be resilient
 	}
@@ -1151,15 +1151,19 @@ func (s *ManualCommitStrategy) extractNewModifiedFilesFromLiveTranscript(ctx con
 	}
 
 	// Ensure transcript file is up-to-date (OpenCode creates/refreshes it via `opencode export`).
-	// Use the already-resolved agent to avoid a redundant lookup.
-	if preparer, ok := ag.(agent.TranscriptPreparer); ok {
-		if prepErr := preparer.PrepareTranscript(ctx, state.TranscriptPath); prepErr != nil {
-			logging.Debug(logCtx, "prepare transcript failed",
-				slog.String("session_id", state.SessionID),
-				slog.String("agent_type", string(state.AgentType)),
-				slog.String("transcript_path", state.TranscriptPath),
-				slog.Any("error", prepErr),
-			)
+	// Only wait for flush when the session is active — for idle/ended sessions the
+	// transcript is already fully flushed (the Stop hook completed the flush).
+	// Skipping the wait avoids a 3s timeout per session in prepare-commit-msg/post-commit hooks.
+	if state.Phase.IsActive() {
+		if preparer, ok := ag.(agent.TranscriptPreparer); ok {
+			if prepErr := preparer.PrepareTranscript(ctx, state.TranscriptPath); prepErr != nil {
+				logging.Debug(logCtx, "prepare transcript failed",
+					slog.String("session_id", state.SessionID),
+					slog.String("agent_type", string(state.AgentType)),
+					slog.String("transcript_path", state.TranscriptPath),
+					slog.Any("error", prepErr),
+				)
+			}
 		}
 	}
 
@@ -1201,15 +1205,18 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(ctx contex
 	}
 
 	// Ensure transcript file is up-to-date (OpenCode creates/refreshes it via `opencode export`).
-	// Use the already-resolved agent to avoid a redundant lookup.
-	if preparer, ok := ag.(agent.TranscriptPreparer); ok {
-		if prepErr := preparer.PrepareTranscript(ctx, state.TranscriptPath); prepErr != nil {
-			logging.Debug(logCtx, "prepare transcript failed",
-				slog.String("session_id", state.SessionID),
-				slog.String("agent_type", string(state.AgentType)),
-				slog.String("transcript_path", state.TranscriptPath),
-				slog.Any("error", prepErr),
-			)
+	// Only wait for flush when the session is active — for idle/ended sessions the
+	// transcript is already fully flushed (the Stop hook completed the flush).
+	if state.Phase.IsActive() {
+		if preparer, ok := ag.(agent.TranscriptPreparer); ok {
+			if prepErr := preparer.PrepareTranscript(ctx, state.TranscriptPath); prepErr != nil {
+				logging.Debug(logCtx, "prepare transcript failed",
+					slog.String("session_id", state.SessionID),
+					slog.String("agent_type", string(state.AgentType)),
+					slog.String("transcript_path", state.TranscriptPath),
+					slog.Any("error", prepErr),
+				)
+			}
 		}
 	}
 
@@ -1254,7 +1261,7 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(ctx contex
 	// but getStagedFiles/committedFiles use repo-relative paths (e.g., src/main.go).
 	basePath := state.WorktreePath
 	if basePath == "" {
-		if wp, wpErr := GetWorktreePath(ctx); wpErr == nil {
+		if wp, wpErr := paths.WorktreeRoot(ctx); wpErr == nil {
 			basePath = wp
 		}
 	}
@@ -1665,7 +1672,7 @@ func (s *ManualCommitStrategy) getLastPrompt(ctx context.Context, repo *git.Repo
 	// Extract session data to get prompts for commit message generation
 	// Pass agent type to handle different transcript formats (JSONL for Claude, JSON for Gemini)
 	// Pass 0 for checkpointTranscriptStart since we're extracting all prompts, not calculating token usage
-	sessionData, err := s.extractSessionData(ctx, repo, ref.Hash(), state.SessionID, nil, state.AgentType, "", 0)
+	sessionData, err := s.extractSessionData(ctx, repo, ref.Hash(), state.SessionID, nil, state.AgentType, "", 0, state.Phase.IsActive())
 	if err != nil || len(sessionData.Prompts) == 0 {
 		return ""
 	}
@@ -1681,7 +1688,7 @@ func (s *ManualCommitStrategy) getLastPrompt(ctx context.Context, repo *git.Repo
 // at commit time). HandleTurnEnd replaces that with the complete session transcript
 // (from prompt to stop event), ensuring every checkpoint has the full context.
 //
-//nolint:unparam // error return required by interface but hooks must return nil
+
 func (s *ManualCommitStrategy) HandleTurnEnd(ctx context.Context, state *SessionState) error {
 	// Finalize all checkpoints from this turn with the full transcript.
 	//

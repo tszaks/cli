@@ -381,7 +381,7 @@ func TestCheckAndWarnHookManagers_NoManagers(t *testing.T) {
 	initHooksTestRepo(t)
 
 	var buf bytes.Buffer
-	CheckAndWarnHookManagers(context.Background(), &buf)
+	CheckAndWarnHookManagers(context.Background(), &buf, false)
 
 	if buf.Len() != 0 {
 		t.Errorf("expected no output, got %q", buf.String())
@@ -398,7 +398,7 @@ func TestCheckAndWarnHookManagers_WithHusky(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	CheckAndWarnHookManagers(context.Background(), &buf)
+	CheckAndWarnHookManagers(context.Background(), &buf, false)
 
 	output := buf.String()
 	if !strings.Contains(output, "Warning: Husky detected") {
