@@ -138,6 +138,11 @@ func loadFromFile(filePath string) (*EntireSettings, error) {
 		return nil, fmt.Errorf("parsing settings file: %w", err)
 	}
 
+	// Validate commit_linking if set
+	if settings.CommitLinking != "" && settings.CommitLinking != CommitLinkingAlways && settings.CommitLinking != CommitLinkingPrompt {
+		return nil, fmt.Errorf("invalid commit_linking value %q: must be %q or %q", settings.CommitLinking, CommitLinkingAlways, CommitLinkingPrompt)
+	}
+
 	return settings, nil
 }
 
@@ -218,7 +223,12 @@ func mergeJSON(settings *EntireSettings, data []byte) error {
 			return fmt.Errorf("parsing commit_linking field: %w", err)
 		}
 		if cl != "" {
-			settings.CommitLinking = cl
+			switch cl {
+			case CommitLinkingAlways, CommitLinkingPrompt:
+				settings.CommitLinking = cl
+			default:
+				return fmt.Errorf("invalid commit_linking value %q: must be %q or %q", cl, CommitLinkingAlways, CommitLinkingPrompt)
+			}
 		}
 	}
 

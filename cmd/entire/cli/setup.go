@@ -168,6 +168,10 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 		}
 	}
 
+	// Check if this is a first-time setup before creating directories/loading settings.
+	// settings.IsSetUp checks if .entire/settings.json exists on disk.
+	isFirstSetup := !settings.IsSetUp(ctx)
+
 	// Setup .entire directory
 	if _, err := setupEntireDirectory(ctx); err != nil {
 		return fmt.Errorf("failed to setup .entire directory: %w", err)
@@ -182,8 +186,9 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 	// Update the specific fields
 	settings.LocalDev = localDev
 	settings.Enabled = true
-	// Default new users to auto-linking (existing users without the field get "prompt" via GetCommitLinking())
-	if settings.CommitLinking == "" {
+	// Only set commit_linking for brand-new installations.
+	// Existing users who re-run "entire enable" keep the default of "prompt" via GetCommitLinking().
+	if isFirstSetup && settings.CommitLinking == "" {
 		settings.CommitLinking = "always"
 	}
 
@@ -584,6 +589,9 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 		return fmt.Errorf("failed to install hooks for %s: %w", agentName, err)
 	}
 
+	// Check if this is a first-time setup BEFORE creating .entire directory
+	isFirstSetup := !settings.IsSetUp(ctx)
+
 	// Setup .entire directory
 	if _, err := setupEntireDirectory(ctx); err != nil {
 		return fmt.Errorf("failed to setup .entire directory: %w", err)
@@ -600,7 +608,7 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 		settings.LocalDev = localDev
 	}
 	// Default new users to auto-linking (existing users without the field get "prompt" via GetCommitLinking())
-	if settings.CommitLinking == "" {
+	if isFirstSetup && settings.CommitLinking == "" {
 		settings.CommitLinking = "always"
 	}
 
