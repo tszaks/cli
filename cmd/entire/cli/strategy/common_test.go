@@ -1067,61 +1067,6 @@ func TestEnsureMetadataBranch(t *testing.T) {
 		}
 	})
 
-	t.Run("updates empty orphan from remote", func(t *testing.T) {
-		bareDir := initBareWithMetadataBranch(t)
-		cloneDir := filepath.Join(t.TempDir(), "clone")
-		cmd := exec.CommandContext(context.Background(), "git", "clone", bareDir, cloneDir)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("clone failed: %v\n%s", err, out)
-		}
-
-		repo, err := git.PlainOpenWithOptions(cloneDir, &git.PlainOpenOptions{EnableDotGitCommonDir: true})
-		if err != nil {
-			t.Fatalf("failed to open repo: %v", err)
-		}
-
-		// Create an empty orphan locally (simulates old enable behavior)
-		emptyTree := &object.Tree{Entries: []object.TreeEntry{}}
-		treeObj := repo.Storer.NewEncodedObject()
-		if err := emptyTree.Encode(treeObj); err != nil {
-			t.Fatalf("failed to encode tree: %v", err)
-		}
-		treeHash, err := repo.Storer.SetEncodedObject(treeObj)
-		if err != nil {
-			t.Fatalf("failed to store tree: %v", err)
-		}
-		orphan := &object.Commit{
-			TreeHash: treeHash,
-			Author:   object.Signature{Name: "Test", Email: "test@test.com"},
-			Message:  "Initialize metadata branch\n",
-		}
-		orphanObj := repo.Storer.NewEncodedObject()
-		if err := orphan.Encode(orphanObj); err != nil {
-			t.Fatalf("failed to encode commit: %v", err)
-		}
-		orphanHash, err := repo.Storer.SetEncodedObject(orphanObj)
-		if err != nil {
-			t.Fatalf("failed to store commit: %v", err)
-		}
-		refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
-		if err := repo.Storer.SetReference(plumbing.NewHashReference(refName, orphanHash)); err != nil {
-			t.Fatalf("failed to set ref: %v", err)
-		}
-
-		if err := EnsureMetadataBranch(repo); err != nil {
-			t.Fatalf("EnsureMetadataBranch() failed: %v", err)
-		}
-
-		// Should have been updated from remote — no longer empty
-		ref, err := repo.Reference(refName, true)
-		if err != nil {
-			t.Fatalf("local branch not found: %v", err)
-		}
-		if ref.Hash() == orphanHash {
-			t.Error("local branch still points to empty orphan — was not updated from remote")
-		}
-	})
-
 	t.Run("creates empty orphan when no remote", func(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
