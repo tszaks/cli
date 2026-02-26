@@ -186,11 +186,17 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 	// Update the specific fields
 	settings.LocalDev = localDev
 	settings.Enabled = true
-	// Only set commit_linking for brand-new installations.
-	// Existing users who re-run "entire enable" keep the default of "prompt" via GetCommitLinking().
-	if isFirstSetup && settings.CommitLinking == "" {
-		settings.CommitLinking = CommitLinkingAlways
+	// Set commit_linking and clean up deprecated strategy field.
+	// New installations get "always" (auto-link); existing repos get "prompt" written
+	// explicitly so the settings file reflects the current spec.
+	if settings.CommitLinking == "" {
+		if isFirstSetup {
+			settings.CommitLinking = CommitLinkingAlways
+		} else {
+			settings.CommitLinking = CommitLinkingPrompt
+		}
 	}
+	settings.Strategy = "" //nolint:staticcheck // Intentionally clearing deprecated field during setup
 
 	// Set push_sessions option if --skip-push-sessions flag was provided
 	if skipPushSessions {
@@ -607,10 +613,15 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 	if localDev {
 		settings.LocalDev = localDev
 	}
-	// Default new users to auto-linking (existing users without the field get "prompt" via GetCommitLinking())
-	if isFirstSetup && settings.CommitLinking == "" {
-		settings.CommitLinking = CommitLinkingAlways
+	// Set commit_linking and clean up deprecated strategy field.
+	if settings.CommitLinking == "" {
+		if isFirstSetup {
+			settings.CommitLinking = CommitLinkingAlways
+		} else {
+			settings.CommitLinking = CommitLinkingPrompt
+		}
 	}
+	settings.Strategy = "" //nolint:staticcheck // Intentionally clearing deprecated field during setup
 
 	// Set push_sessions option if --skip-push-sessions flag was provided
 	if skipPushSessions {
