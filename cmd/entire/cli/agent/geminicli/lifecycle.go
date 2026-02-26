@@ -1,8 +1,8 @@
 package geminicli
 
 import (
-	"encoding/json"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
