@@ -328,7 +328,7 @@ func extractAgentIDFromText(text string) string {
 // CalculateTotalTokenUsage calculates token usage for a turn, including subagents.
 // It parses the main transcript bytes from startLine, extracts spawned agent IDs,
 // and calculates their token usage from transcript files in subagentsDir.
-func CalculateTotalTokenUsage(transcriptData []byte, startLine int, subagentsDir string) (*agent.TokenUsage, error) {
+func (c *ClaudeCodeAgent) CalculateTotalTokenUsage(transcriptData []byte, startLine int, subagentsDir string) (*agent.TokenUsage, error) {
 	if len(transcriptData) == 0 {
 		return &agent.TokenUsage{}, nil
 	}
@@ -375,7 +375,7 @@ func CalculateTotalTokenUsage(transcriptData []byte, startLine int, subagentsDir
 // startLine, collects modified files from the main agent, then reads each
 // subagent's transcript from subagentsDir to collect their modified files too.
 // The result is a deduplicated list of all modified file paths.
-func ExtractAllModifiedFiles(transcriptData []byte, startLine int, subagentsDir string) ([]string, error) {
+func (c *ClaudeCodeAgent) ExtractAllModifiedFiles(transcriptData []byte, startLine int, subagentsDir string) ([]string, error) {
 	if len(transcriptData) == 0 {
 		return nil, nil
 	}

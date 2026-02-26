@@ -130,7 +130,7 @@ func (c *ClaudeCodeAgent) PrepareTranscript(sessionRef string) error {
 
 // CalculateTokenUsage computes token usage from the transcript starting at the given line offset.
 func (c *ClaudeCodeAgent) CalculateTokenUsage(transcriptData []byte, fromOffset int) (*agent.TokenUsage, error) {
-	return CalculateTotalTokenUsage(transcriptData, fromOffset, "")
+	return c.CalculateTotalTokenUsage(transcriptData, fromOffset, "")
 }
 
 // --- Internal hook parsing functions ---

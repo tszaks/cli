@@ -574,8 +574,10 @@ func TestCalculateTotalTokenUsage_PerCheckpoint(t *testing.T) {
 			`{"type":"assistant","uuid":"a3","message":{"id":"m3","usage":{"input_tokens":300,"output_tokens":150}}}` + "\n",
 	)
 
+	c := &ClaudeCodeAgent{}
+
 	// Test 1: From line 0 - all 3 turns = 600 input, 300 output
-	usage1, err := CalculateTotalTokenUsage(transcriptData, 0, "")
+	usage1, err := c.CalculateTotalTokenUsage(transcriptData, 0, "")
 	if err != nil {
 		t.Fatalf("CalculateTotalTokenUsage(0) error: %v", err)
 	}
@@ -588,7 +590,7 @@ func TestCalculateTotalTokenUsage_PerCheckpoint(t *testing.T) {
 	}
 
 	// Test 2: From line 2 (after turn 1) - turns 2+3 only = 500 input, 250 output
-	usage2, err := CalculateTotalTokenUsage(transcriptData, 2, "")
+	usage2, err := c.CalculateTotalTokenUsage(transcriptData, 2, "")
 	if err != nil {
 		t.Fatalf("CalculateTotalTokenUsage(2) error: %v", err)
 	}
@@ -601,7 +603,7 @@ func TestCalculateTotalTokenUsage_PerCheckpoint(t *testing.T) {
 	}
 
 	// Test 3: From line 4 (after turns 1+2) - turn 3 only = 300 input, 150 output
-	usage3, err := CalculateTotalTokenUsage(transcriptData, 4, "")
+	usage3, err := c.CalculateTotalTokenUsage(transcriptData, 4, "")
 	if err != nil {
 		t.Fatalf("CalculateTotalTokenUsage(4) error: %v", err)
 	}
@@ -725,6 +727,7 @@ func TestExtractAllModifiedFiles_IncludesSubagentFiles(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	subagentsDir := tmpDir + "/tasks/toolu_task1"
+	c := &ClaudeCodeAgent{}
 
 	if err := os.MkdirAll(subagentsDir, 0o755); err != nil {
 		t.Fatalf("failed to create subagents dir: %v", err)
@@ -743,7 +746,7 @@ func TestExtractAllModifiedFiles_IncludesSubagentFiles(t *testing.T) {
 		makeEditToolLine(t, "sa2", "/repo/utils.go"),
 	)
 
-	files, err := ExtractAllModifiedFiles(transcriptData, 0, subagentsDir)
+	files, err := c.ExtractAllModifiedFiles(transcriptData, 0, subagentsDir)
 	if err != nil {
 		t.Fatalf("ExtractAllModifiedFiles() error: %v", err)
 	}
@@ -773,6 +776,7 @@ func TestExtractAllModifiedFiles_DeduplicatesAcrossAgents(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	subagentsDir := tmpDir + "/tasks/toolu_task1"
+	c := &ClaudeCodeAgent{}
 
 	if err := os.MkdirAll(subagentsDir, 0o755); err != nil {
 		t.Fatalf("failed to create subagents dir: %v", err)
@@ -790,7 +794,7 @@ func TestExtractAllModifiedFiles_DeduplicatesAcrossAgents(t *testing.T) {
 		makeEditToolLine(t, "sa1", "/repo/shared.go"),
 	)
 
-	files, err := ExtractAllModifiedFiles(transcriptData, 0, subagentsDir)
+	files, err := c.ExtractAllModifiedFiles(transcriptData, 0, subagentsDir)
 	if err != nil {
 		t.Fatalf("ExtractAllModifiedFiles() error: %v", err)
 	}
@@ -807,13 +811,14 @@ func TestExtractAllModifiedFiles_NoSubagents(t *testing.T) {
 	t.Parallel()
 
 	tmpDir := t.TempDir()
+	c := &ClaudeCodeAgent{}
 
 	// Main transcript as bytes: Write to a file, no Task calls
 	transcriptData := buildJSONL(
 		makeWriteToolLine(t, "a1", "/repo/solo.go"),
 	)
 
-	files, err := ExtractAllModifiedFiles(transcriptData, 0, tmpDir+"/nonexistent")
+	files, err := c.ExtractAllModifiedFiles(transcriptData, 0, tmpDir+"/nonexistent")
 	if err != nil {
 		t.Fatalf("ExtractAllModifiedFiles() error: %v", err)
 	}
@@ -831,6 +836,7 @@ func TestExtractAllModifiedFiles_SubagentOnlyChanges(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	subagentsDir := tmpDir + "/tasks/toolu_task1"
+	c := &ClaudeCodeAgent{}
 
 	if err := os.MkdirAll(subagentsDir, 0o755); err != nil {
 		t.Fatalf("failed to create subagents dir: %v", err)
@@ -850,7 +856,7 @@ func TestExtractAllModifiedFiles_SubagentOnlyChanges(t *testing.T) {
 		makeWriteToolLine(t, "sa2", "/repo/subagent_file2.go"),
 	)
 
-	files, err := ExtractAllModifiedFiles(transcriptData, 0, subagentsDir)
+	files, err := c.ExtractAllModifiedFiles(transcriptData, 0, subagentsDir)
 	if err != nil {
 		t.Fatalf("ExtractAllModifiedFiles() error: %v", err)
 	}

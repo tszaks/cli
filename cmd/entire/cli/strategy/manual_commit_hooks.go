@@ -1318,7 +1318,10 @@ func (s *ManualCommitStrategy) extractModifiedFilesFromLiveTranscript(state *Ses
 				slog.String("error", readErr.Error()),
 			)
 		} else {
-			allFiles, extractErr := claudecode.ExtractAllModifiedFiles(transcriptData, offset, subagentsDir)
+			// TODO: fix when we refactor this area.
+			// rather than instantiating claude specifically, we should iterate agents.
+			c := &claudecode.ClaudeCodeAgent{}
+			allFiles, extractErr := c.ExtractAllModifiedFiles(transcriptData, offset, subagentsDir)
 			if extractErr != nil {
 				logging.Debug(logCtx, "extractModifiedFilesFromLiveTranscript: extraction failed",
 					slog.String("session_id", state.SessionID),
