@@ -2,6 +2,7 @@ package geminicli
 
 import (
 	"encoding/json"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -36,7 +37,7 @@ func (g *GeminiCLIAgent) HookNames() []string {
 
 // ParseHookEvent translates a Gemini CLI hook into a normalized lifecycle Event.
 // Returns nil if the hook has no lifecycle significance (e.g., pass-through hooks).
-func (g *GeminiCLIAgent) ParseHookEvent(hookName string, stdin io.Reader) (*agent.Event, error) {
+func (g *GeminiCLIAgent) ParseHookEvent(_ context.Context, hookName string, stdin io.Reader) (*agent.Event, error) {
 	switch hookName {
 	case HookNameSessionStart:
 		return g.parseSessionStart(stdin)
