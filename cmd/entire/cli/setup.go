@@ -89,14 +89,13 @@ modifying your active branch.`,
 			return runEnableInteractive(cmd.OutOrStdout(), agents, localDev, useLocalSettings, useProjectSettings, forceHooks, skipPushSessions, telemetry)
 		},
 	}
-
+	cmd.Flags().StringVar(&agentName, "agent", "", "Agent to set up hooks for (e.g., "+strings.Join(agent.StringList(), ", ")+"). Enables non-interactive mode.")
 	cmd.Flags().BoolVar(&localDev, "local-dev", false, "Use go run instead of entire binary for hooks")
 	cmd.Flags().MarkHidden("local-dev") //nolint:errcheck,gosec // flag is defined above
 	cmd.Flags().BoolVar(&ignoreUntracked, "ignore-untracked", false, "Commit all new files without tracking pre-existing untracked files")
 	cmd.Flags().MarkHidden("ignore-untracked") //nolint:errcheck,gosec // flag is defined above
 	cmd.Flags().BoolVar(&useLocalSettings, "local", false, "Write settings to .entire/settings.local.json instead of .entire/settings.json")
 	cmd.Flags().BoolVar(&useProjectSettings, "project", false, "Write settings to .entire/settings.json even if it already exists")
-	cmd.Flags().StringVar(&agentName, "agent", "", "Agent to set up hooks for (e.g., claude-code, gemini, opencode). Enables non-interactive mode.")
 	cmd.Flags().BoolVarP(&forceHooks, "force", "f", false, "Force reinstall hooks (removes existing Entire hooks first)")
 	cmd.Flags().BoolVar(&skipPushSessions, "skip-push-sessions", false, "Disable automatic pushing of session logs on git push")
 	cmd.Flags().BoolVar(&telemetry, "telemetry", true, "Enable anonymous usage analytics")
@@ -422,7 +421,7 @@ func detectOrSelectAgent(w io.Writer, selectFn func(available []string) ([]strin
 	}
 
 	if !hasInstalledHooks && len(detected) == 0 {
-		fmt.Fprintln(w, "No agent configuration detected (e.g., .claude, .gemini, or .opencode directory).")
+		fmt.Fprintln(w, "No agent configuration detected (e.g., "+strings.Join(agent.StringList(), ", ")+").")
 		fmt.Fprintln(w, "This is normal - some agents don't require a config directory.")
 		fmt.Fprintln(w)
 	}
