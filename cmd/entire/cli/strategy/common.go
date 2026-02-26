@@ -33,6 +33,10 @@ const (
 	StrategyNameManualCommit = "manual-commit"
 )
 
+// MaxCommitTraversalDepth is the safety limit for walking git commit history.
+// Prevents unbounded traversal in repositories with very long histories.
+const MaxCommitTraversalDepth = 1000
+
 // errStop is a sentinel error used to break out of git log iteration.
 // Shared across strategies that iterate through git commits.
 // NOTE: A similar sentinel exists in checkpoint/temporary.go - this is intentional.
@@ -74,7 +78,7 @@ func EnsureSetup(ctx context.Context) error {
 
 // IsAncestorOf checks if commit is an ancestor of (or equal to) target.
 // Returns true if target can reach commit by following parent links.
-// Limits search to 1000 commits to avoid excessive traversal.
+// Limits search to MaxCommitTraversalDepth commits to avoid excessive traversal.
 func IsAncestorOf(repo *git.Repository, commit, target plumbing.Hash) bool {
 	if commit == target {
 		return true
@@ -90,7 +94,7 @@ func IsAncestorOf(repo *git.Repository, commit, target plumbing.Hash) bool {
 	count := 0
 	_ = iter.ForEach(func(c *object.Commit) error { //nolint:errcheck // Best-effort search, errors are non-fatal
 		count++
-		if count > 1000 {
+		if count > MaxCommitTraversalDepth {
 			return errStop
 		}
 		if c.Hash == commit {
@@ -866,15 +870,15 @@ func checkCanRewindWithWarning(ctx context.Context) (bool, string, error) {
 			stats = fmt.Sprintf("-%d", c.removed)
 		}
 
-		msg.WriteString(fmt.Sprintf("  %-10s %s", c.status+":", c.filename))
+		fmt.Fprintf(&msg, "  %-10s %s", c.status+":", c.filename)
 		if stats != "" {
-			msg.WriteString(fmt.Sprintf(" (%s)", stats))
+			fmt.Fprintf(&msg, " (%s)", stats)
 		}
 		msg.WriteString("\n")
 	}
 
 	if totalAdded > 0 || totalRemoved > 0 {
-		msg.WriteString(fmt.Sprintf("\nTotal: +%d/-%d lines\n", totalAdded, totalRemoved))
+		fmt.Fprintf(&msg, "\nTotal: +%d/-%d lines\n", totalAdded, totalRemoved)
 	}
 
 	return true, msg.String(), nil
@@ -1122,7 +1126,7 @@ func DeleteBranchCLI(ctx context.Context, branchName string) error {
 	// git show-ref exits 1 for "not found" and 128+ for fatal errors (corrupt
 	// repo, permissions, not a git directory). Only map exit code 1 to
 	// ErrBranchNotFound; propagate other failures as-is.
-	check := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName) //nolint:gosec // branchName comes from internal shadow branch naming
+	check := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName)
 	if err := check.Run(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
@@ -1141,7 +1145,7 @@ func DeleteBranchCLI(ctx context.Context, branchName string) error {
 // branchExistsCLI checks if a branch exists using git CLI.
 // Returns nil if the branch exists, or an error if it does not.
 func branchExistsCLI(ctx context.Context, branchName string) error {
-	cmd := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName) //nolint:gosec // branchName comes from internal shadow branch naming
+	cmd := exec.CommandContext(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branchName)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("branch %s not found: %w", branchName, err)
 	}
@@ -1154,7 +1158,7 @@ func branchExistsCLI(ctx context.Context, branchName string) error {
 // Returns the short commit ID (7 chars) on success for display purposes.
 func HardResetWithProtection(ctx context.Context, commitHash plumbing.Hash) (shortID string, err error) {
 	hashStr := commitHash.String()
-	cmd := exec.CommandContext(ctx, "git", "reset", "--hard", hashStr) //nolint:gosec // hashStr is a plumbing.Hash, not user input
+	cmd := exec.CommandContext(ctx, "git", "reset", "--hard", hashStr)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("reset failed: %s: %w", strings.TrimSpace(string(output)), err)
 	}

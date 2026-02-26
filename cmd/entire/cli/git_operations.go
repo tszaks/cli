@@ -323,7 +323,7 @@ func FetchAndCheckoutRemoteBranch(ctx context.Context, branchName string) error 
 	defer cancel()
 
 	refSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branchName, branchName)
-	//nolint:gosec // G204: branchName validated above via git check-ref-format
+
 	fetchCmd := exec.CommandContext(ctx, "git", "fetch", "origin", refSpec)
 	if output, err := fetchCmd.CombinedOutput(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
@@ -366,7 +366,7 @@ func FetchMetadataBranch(ctx context.Context) error {
 	defer cancel()
 
 	refSpec := fmt.Sprintf("+refs/heads/%s:refs/remotes/origin/%s", branchName, branchName)
-	//nolint:gosec // G204: branchName is a constant from paths package
+
 	fetchCmd := exec.CommandContext(ctx, "git", "fetch", "origin", refSpec)
 	if output, err := fetchCmd.CombinedOutput(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {

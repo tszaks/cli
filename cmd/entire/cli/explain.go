@@ -836,7 +836,7 @@ func computeReachableFromMain(repo *git.Repository) map[plumbing.Hash]bool {
 	}
 
 	// Walk main's first-parent chain to build the set
-	_ = walkFirstParentCommits(repo, mainBranchHash, 1000, func(c *object.Commit) error { //nolint:errcheck // Best-effort
+	_ = walkFirstParentCommits(repo, mainBranchHash, strategy.MaxCommitTraversalDepth, func(c *object.Commit) error { //nolint:errcheck // Best-effort
 		reachableFromMain[c.Hash] = true
 		return nil
 	})
@@ -1278,9 +1278,10 @@ func formatSessionInfo(session *strategy.Session, sourceRef string, checkpoints 
 // outputWithPager outputs content through a pager if stdout is a terminal and content is long.
 func outputWithPager(w io.Writer, content string) {
 	// Check if we're writing to stdout and it's a terminal
+	//nolint:gosec // G115: uintptr->int is safe for fd on 64-bit platforms
 	if f, ok := w.(*os.File); ok && f == os.Stdout && term.IsTerminal(int(f.Fd())) {
 		// Get terminal height
-		_, height, err := term.GetSize(int(f.Fd()))
+		_, height, err := term.GetSize(int(f.Fd())) //nolint:gosec // G115: same as above
 		if err != nil {
 			height = 24 // Default fallback
 		}
@@ -1295,7 +1296,7 @@ func outputWithPager(w io.Writer, content string) {
 				pager = "less"
 			}
 
-			cmd := exec.CommandContext(context.Background(), pager) //nolint:gosec // pager from env is expected
+			cmd := exec.CommandContext(context.Background(), pager)
 			cmd.Stdin = strings.NewReader(content)
 			cmd.Stdout = f
 			cmd.Stderr = os.Stderr
