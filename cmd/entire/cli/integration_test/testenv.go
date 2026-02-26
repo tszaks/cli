@@ -109,12 +109,16 @@ func (env *TestEnv) Cleanup() {
 
 // cliEnv returns the environment variables for CLI execution.
 // Includes Claude, Gemini, and OpenCode project dirs so tests work for any agent.
+// Isolates git from user/system config to prevent global gitignore, aliases, etc.
+// from affecting test behavior.
 func (env *TestEnv) cliEnv() []string {
 	return append(os.Environ(),
 		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 		"ENTIRE_TEST_GEMINI_PROJECT_DIR="+env.GeminiProjectDir,
 		"ENTIRE_TEST_OPENCODE_PROJECT_DIR="+env.OpenCodeProjectDir,
-		"ENTIRE_TEST_TTY=0", // Prevent interactive prompts from blocking in tests
+		"ENTIRE_TEST_TTY=0",           // Prevent interactive prompts from blocking in tests
+		"GIT_CONFIG_GLOBAL=/dev/null", // Isolate from user's global git config (e.g. global gitignore)
+		"GIT_CONFIG_SYSTEM=/dev/null", // Isolate from system git config
 	)
 }
 
