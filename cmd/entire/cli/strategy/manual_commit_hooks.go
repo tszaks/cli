@@ -120,7 +120,6 @@ func askConfirmTTY(prompt string, context string, defaultYes bool) bool {
 // CommitMsg is called by the git commit-msg hook after the user edits the message.
 // If the message contains only our trailer (no actual user content), strip it
 // so git will abort the commit due to empty message.
-//
 
 func (s *ManualCommitStrategy) CommitMsg(commitMsgFile string) error {
 	content, err := os.ReadFile(commitMsgFile) //nolint:gosec // Path comes from git hook
