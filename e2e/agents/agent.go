@@ -18,6 +18,7 @@ type Option func(*runConfig)
 type runConfig struct {
 	Model          string
 	PermissionMode string
+	PromptTimeout  time.Duration
 }
 
 func WithModel(model string) Option {
@@ -26,6 +27,10 @@ func WithModel(model string) Option {
 
 func WithPermissionMode(mode string) Option {
 	return func(c *runConfig) { c.PermissionMode = mode }
+}
+
+func WithPromptTimeout(d time.Duration) Option {
+	return func(c *runConfig) { c.PromptTimeout = d }
 }
 
 type Agent interface {

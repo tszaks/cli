@@ -141,22 +141,33 @@ func ForEachAgent(t *testing.T, timeout time.Duration, fn func(t *testing.T, s *
 	}
 }
 
+const (
+	transientRetryAttempts    = 3
+	transientRetryInitBackoff = 1 * time.Second
+)
+
 // RunPrompt runs an agent prompt, logs the command and output to ConsoleLog,
 // and returns the result. If the agent reports a transient API error, the
-// prompt is retried once after a short delay. The caller should still check err.
+// prompt is retried up to transientRetryAttempts times with exponential
+// backoff. The caller should still check err.
 func (s *RepoState) RunPrompt(t *testing.T, ctx context.Context, prompt string, opts ...agents.Option) (agents.Output, error) {
 	t.Helper()
 	out, err := s.Agent.RunPrompt(ctx, s.Dir, prompt, opts...)
 	s.logPromptResult(out)
 
-	if s.Agent.IsTransientError(out, err) {
-		t.Logf("transient API error detected, retrying in 5s: %v", err)
-		s.ConsoleLog.WriteString("> [retry] transient error, waiting 5s...\n")
+	backoff := transientRetryInitBackoff
+	for attempt := range transientRetryAttempts {
+		if !s.Agent.IsTransientError(out, err) {
+			break
+		}
+		t.Logf("transient API error (attempt %d/%d), retrying in %s: %v", attempt+1, transientRetryAttempts, backoff, err)
+		s.ConsoleLog.WriteString(fmt.Sprintf("> [retry %d/%d] transient error, waiting %s...\n", attempt+1, transientRetryAttempts, backoff))
 		select {
-		case <-time.After(5 * time.Second):
+		case <-time.After(backoff):
 		case <-ctx.Done():
 			return out, err
 		}
+		backoff *= 2
 		out, err = s.Agent.RunPrompt(ctx, s.Dir, prompt, opts...)
 		s.logPromptResult(out)
 	}

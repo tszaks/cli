@@ -36,7 +36,6 @@ func (a *openCodeAgent) PromptPattern() string      { return `(Ask anything|▣)
 func (a *openCodeAgent) TimeoutMultiplier() float64 { return 2.0 }
 
 func (a *openCodeAgent) IsTransientError(out Output, _ error) bool {
-	combined := out.Stdout + out.Stderr
 	transientPatterns := []string{
 		"overloaded",
 		"rate limit",
@@ -47,7 +46,7 @@ func (a *openCodeAgent) IsTransientError(out Output, _ error) bool {
 		"Token refresh failed",
 	}
 	for _, p := range transientPatterns {
-		if strings.Contains(combined, p) {
+		if strings.Contains(out.Stderr, p) {
 			return true
 		}
 	}

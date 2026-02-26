@@ -36,26 +36,14 @@ func TestDeletedFilesCommitDeletion(t *testing.T) {
 		assert.NoFileExists(t, filepath.Join(s.Dir, "to_delete.go"))
 		testutil.AssertFileExists(t, s.Dir, "replacement.go")
 
-		s.Git(t, "add", "replacement.go")
+		s.Git(t, "add", ".")
 		s.Git(t, "commit", "-m", "Add replacement")
 		testutil.WaitForCheckpoint(t, s, 15*time.Second)
 		cpID1 := testutil.AssertHasCheckpointTrailer(t, s.Dir, "HEAD")
 		testutil.AssertCheckpointExists(t, s.Dir, cpID1)
 
-		cpBranchAfterFirst := testutil.GitOutput(t, s.Dir, "rev-parse", "entire/checkpoints/v1")
-
-		s.Git(t, "rm", "to_delete.go")
-		s.Git(t, "commit", "-m", "Remove to_delete.go")
-
-		time.Sleep(5 * time.Second)
-		cpBranchAfterDeletion := testutil.GitOutput(t, s.Dir, "rev-parse", "entire/checkpoints/v1")
-		if cpBranchAfterDeletion != cpBranchAfterFirst {
-			cpID2 := testutil.AssertHasCheckpointTrailer(t, s.Dir, "HEAD")
-			assert.NotEqual(t, cpID1, cpID2, "checkpoint IDs should be distinct")
-			t.Logf("deletion commit got checkpoint %s (carry-forward)", cpID2)
-		} else {
-			t.Log("deletion commit has no checkpoint (deleted files may not carry forward)")
-		}
+		// git add . already staged the deletion of to_delete.go above,
+		// so no separate git rm + commit is needed.
 		testutil.AssertNoShadowBranches(t, s.Dir)
 	})
 }

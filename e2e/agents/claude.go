@@ -68,7 +68,6 @@ func (c *Claude) PromptPattern() string      { return `❯` }
 func (c *Claude) TimeoutMultiplier() float64 { return 1.0 }
 
 func (c *Claude) IsTransientError(out Output, _ error) bool {
-	combined := out.Stdout + out.Stderr
 	transientPatterns := []string{
 		"overloaded",
 		"rate limit",
@@ -78,7 +77,7 @@ func (c *Claude) IsTransientError(out Output, _ error) bool {
 		"ETIMEDOUT",
 	}
 	for _, p := range transientPatterns {
-		if strings.Contains(combined, p) {
+		if strings.Contains(out.Stderr, p) {
 			return true
 		}
 	}
