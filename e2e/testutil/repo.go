@@ -149,7 +149,7 @@ func (s *RepoState) RunPrompt(t *testing.T, ctx context.Context, prompt string, 
 	out, err := s.Agent.RunPrompt(ctx, s.Dir, prompt, opts...)
 	s.logPromptResult(out)
 
-	if err != nil && s.Agent.IsTransientError(out, err) {
+	if s.Agent.IsTransientError(out, err) {
 		t.Logf("transient API error detected, retrying in 5s: %v", err)
 		s.ConsoleLog.WriteString("> [retry] transient error, waiting 5s...\n")
 		select {

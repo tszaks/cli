@@ -67,10 +67,7 @@ func (c *Claude) EntireAgent() string        { return "claude-code" }
 func (c *Claude) PromptPattern() string      { return `❯` }
 func (c *Claude) TimeoutMultiplier() float64 { return 1.0 }
 
-func (c *Claude) IsTransientError(out Output, err error) bool {
-	if err == nil {
-		return false
-	}
+func (c *Claude) IsTransientError(out Output, _ error) bool {
 	combined := out.Stdout + out.Stderr
 	transientPatterns := []string{
 		"overloaded",

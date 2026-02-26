@@ -28,10 +28,7 @@ func (g *Gemini) EntireAgent() string        { return "gemini" }
 func (g *Gemini) PromptPattern() string      { return `Type your message` }
 func (g *Gemini) TimeoutMultiplier() float64 { return 2.5 }
 
-func (g *Gemini) IsTransientError(out Output, err error) bool {
-	if err == nil {
-		return false
-	}
+func (g *Gemini) IsTransientError(out Output, _ error) bool {
 	combined := out.Stdout + out.Stderr
 	transientPatterns := []string{
 		"INTERNAL",
