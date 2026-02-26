@@ -334,7 +334,7 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(commitMsgFile string, source str
 	}
 
 	// Determine agent type and last prompt from session
-	agentType := DefaultAgentType // default for backward compatibility
+	var agentType agent.AgentType
 	var lastPrompt string
 	if len(sessionsWithContent) > 0 {
 		firstSession := sessionsWithContent[0]
@@ -1537,8 +1537,8 @@ func (s *ManualCommitStrategy) InitializeSession(sessionID string, agentType age
 		}
 		state.TurnID = turnID.String()
 
-		// Backfill AgentType if empty or set to the generic default "Agent"
-		if !isSpecificAgentType(state.AgentType) && agentType != "" {
+		// Set AgentType from hook context if not yet set
+		if state.AgentType == "" && agentType != "" {
 			state.AgentType = agentType
 		}
 
