@@ -227,7 +227,7 @@ func runExplainCheckpoint(ctx context.Context, w, errW io.Writer, checkpointIDPr
 		}
 		output, found := explainTemporaryCheckpoint(ctx, w, repo, store, checkpointIDPrefix, verbose, full, rawTranscript)
 		if found {
-			outputExplainContent(w, output, noPager)
+			outputExplainContent(ctx, w, output, noPager)
 			return nil
 		}
 		// If output is non-empty, it contains an error message (e.g., ambiguous prefix)
@@ -293,7 +293,7 @@ func runExplainCheckpoint(ctx context.Context, w, errW io.Writer, checkpointIDPr
 
 	// Format and output
 	output := formatCheckpointOutput(summary, content, fullCheckpointID, associatedCommits, author, verbose, full)
-	outputExplainContent(w, output, noPager)
+	outputExplainContent(ctx, w, output, noPager)
 	return nil
 }
 
@@ -1140,7 +1140,7 @@ func runExplainBranchWithFilter(ctx context.Context, w io.Writer, noPager bool, 
 	// Format output
 	output := formatBranchCheckpoints(branchName, points, sessionFilter)
 
-	outputExplainContent(w, output, noPager)
+	outputExplainContent(ctx, w, output, noPager)
 	return nil
 }
 
@@ -1151,11 +1151,11 @@ func runExplainBranchDefault(ctx context.Context, w io.Writer, noPager bool) err
 }
 
 // outputExplainContent outputs content with optional pager support.
-func outputExplainContent(w io.Writer, content string, noPager bool) {
+func outputExplainContent(ctx context.Context, w io.Writer, content string, noPager bool) {
 	if noPager {
 		fmt.Fprint(w, content)
 	} else {
-		outputWithPager(w, content)
+		outputWithPager(ctx, w, content)
 	}
 }
 
@@ -1276,7 +1276,7 @@ func formatSessionInfo(session *strategy.Session, sourceRef string, checkpoints 
 }
 
 // outputWithPager outputs content through a pager if stdout is a terminal and content is long.
-func outputWithPager(w io.Writer, content string) {
+func outputWithPager(ctx context.Context, w io.Writer, content string) {
 	// Check if we're writing to stdout and it's a terminal
 	//nolint:gosec // G115: uintptr->int is safe for fd on 64-bit platforms
 	if f, ok := w.(*os.File); ok && f == os.Stdout && term.IsTerminal(int(f.Fd())) {
@@ -1296,7 +1296,7 @@ func outputWithPager(w io.Writer, content string) {
 				pager = "less"
 			}
 
-			cmd := exec.CommandContext(context.Background(), pager)
+			cmd := exec.CommandContext(ctx, pager)
 			cmd.Stdin = strings.NewReader(content)
 			cmd.Stdout = f
 			cmd.Stderr = os.Stderr
