@@ -10,6 +10,12 @@
 
 set -eu
 
+# Build from source with version info unless a pre-built binary is provided.
+if [ -z "${E2E_ENTIRE_BIN:-}" ]; then
+  mise run build
+  export E2E_ENTIRE_BIN="$PWD/entire"
+fi
+
 E2E_ARTIFACT_DIR="$PWD/e2e/artifacts/$(date +%Y-%m-%dT%H-%M-%S)"
 export E2E_ARTIFACT_DIR
 mkdir -p "$E2E_ARTIFACT_DIR"

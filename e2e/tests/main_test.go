@@ -25,7 +25,7 @@ func TestMain(m *testing.M) {
 	_ = os.MkdirAll(runDir, 0o755)
 	testutil.SetRunDir(runDir)
 
-	// Resolve the entire binary (builds from source if E2E_ENTIRE_BIN is unset).
+	// Resolve the entire binary (set by mise run build via E2E_ENTIRE_BIN).
 	entireBin := entire.BinPath()
 
 	// Prepend the binary's directory to PATH so that git hooks and agent

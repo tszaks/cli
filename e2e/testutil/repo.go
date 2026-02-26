@@ -161,7 +161,7 @@ func (s *RepoState) RunPrompt(t *testing.T, ctx context.Context, prompt string, 
 			break
 		}
 		t.Logf("transient API error (attempt %d/%d), retrying in %s: %v", attempt+1, transientRetryAttempts, backoff, err)
-		s.ConsoleLog.WriteString(fmt.Sprintf("> [retry %d/%d] transient error, waiting %s...\n", attempt+1, transientRetryAttempts, backoff))
+		fmt.Fprintf(s.ConsoleLog, "> [retry %d/%d] transient error, waiting %s...\n", attempt+1, transientRetryAttempts, backoff)
 		select {
 		case <-time.After(backoff):
 		case <-ctx.Done():

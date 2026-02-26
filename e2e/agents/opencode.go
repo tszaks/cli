@@ -53,7 +53,6 @@ func (a *openCodeAgent) IsTransientError(out Output, _ error) bool {
 	return false
 }
 
-
 func (a *openCodeAgent) Bootstrap() error {
 	// opencode has first-run DB migration + node_modules resolution that
 	// races with parallel test execution (upstream issue #6935).
