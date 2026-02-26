@@ -49,7 +49,7 @@ func (c *CursorAgent) ReadTranscript(sessionRef string) ([]byte, error) {
 // --- Internal hook parsing functions ---
 
 func (c *CursorAgent) parseSessionStart(stdin io.Reader) (*agent.Event, error) {
-	raw, err := agent.ReadAndParseHookInput[sessionInfoRaw](stdin)
+	raw, err := agent.ReadAndParseHookInput[sessionStartRaw](stdin)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (c *CursorAgent) parseTurnStart(stdin io.Reader) (*agent.Event, error) {
 }
 
 func (c *CursorAgent) parseTurnEnd(stdin io.Reader) (*agent.Event, error) {
-	raw, err := agent.ReadAndParseHookInput[sessionInfoRaw](stdin)
+	raw, err := agent.ReadAndParseHookInput[stopHookInputRaw](stdin)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (c *CursorAgent) parseTurnEnd(stdin io.Reader) (*agent.Event, error) {
 }
 
 func (c *CursorAgent) parseSessionEnd(stdin io.Reader) (*agent.Event, error) {
-	raw, err := agent.ReadAndParseHookInput[sessionInfoRaw](stdin)
+	raw, err := agent.ReadAndParseHookInput[sessionEndRaw](stdin)
 	if err != nil {
 		return nil, err
 	}
