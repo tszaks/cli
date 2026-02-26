@@ -1,6 +1,29 @@
-# Probe Command
+---
+description: "Assess a new agent's hook/lifecycle compatibility with the Entire CLI"
+---
+
+# Research Command
 
 Assess whether a target AI coding agent's hook/lifecycle model is compatible with the Entire CLI before writing any Go code.
+
+## Parameters
+
+Collect these before proceeding (ask the user if not provided):
+
+| Parameter | Example | Description |
+|-----------|---------|-------------|
+| `AGENT_NAME` | "Windsurf" | Human-readable agent name |
+| `AGENT_SLUG` | "windsurf" | Lowercase slug for file/directory paths |
+| `AGENT_BIN` | "windsurf" | CLI binary name |
+| `LIVE_COMMAND` | "windsurf --project ." | Full command to launch agent |
+| `EVENTS_OR_UNKNOWN` | "unknown" | Known hook event names, or "unknown" |
+
+## Architecture References
+
+Read these to understand the Entire lifecycle model:
+
+- **Implementation guide**: `docs/architecture/agent-guide.md`
+- **Integration checklist**: `docs/architecture/agent-integration-checklist.md`
 
 ## Procedure
 
@@ -72,7 +95,7 @@ Run the script and analyze:
 
 1. **Execute**: `chmod +x scripts/test-$AGENT_SLUG-agent-integration.sh && scripts/test-$AGENT_SLUG-agent-integration.sh --manual-live`
 2. **For each captured payload**: show command, artifact path, decoded JSON
-3. **Lifecycle mapping**: native hook name → Entire EventType
+3. **Lifecycle mapping**: native hook name -> Entire EventType
 4. **Field coverage**: which `Event` struct fields can be populated per event
 
 ### Phase 5: Compatibility Report

@@ -1,38 +1,20 @@
 ---
 name: agent-integration
 description: >
-  Multi-phase toolkit for integrating a new AI coding agent with the Entire CLI.
-  Three commands: "probe" (assess hook/lifecycle compatibility), "e2e-tests"
-  (generate E2E test suite), and "implement" (build agent package via TDD).
-  Use when the user says "probe agent", "check agent compatibility",
-  "write e2e tests for <agent>", "implement <agent> integration",
-  or any variation of evaluating/building a new agent integration.
+  Run all three agent integration phases sequentially: research, write-tests,
+  and implement. For individual phases, use /agent-integration:research,
+  /agent-integration:write-tests, or /agent-integration:implement.
+  Use when the user says "integrate agent", "add agent support", or wants
+  to run the full agent integration pipeline end-to-end.
 ---
 
-# Agent Integration Skill
+# Agent Integration — Full Pipeline
 
-A three-command toolkit that takes a new AI coding agent from unknown to fully integrated with the Entire CLI. Each command builds on the previous command's output.
+Run all three phases of agent integration in a single session. Parameters are collected once and reused across all phases.
 
-## Commands
+## Parameters
 
-### `/agent-integration probe`
-**Assess compatibility.** Inspect the target agent's CLI, probe for hook/lifecycle support, create a test script, capture payloads, and produce a structured compatibility report.
-
-Detailed instructions: [probe-prompt.md](./probe-prompt.md)
-
-### `/agent-integration e2e-tests`
-**Write the E2E test suite.** Using the probe report's findings, generate E2E test files that validate the agent works end-to-end with Entire's checkpoint/rewind system.
-
-Detailed instructions: [e2e-test-prompt.md](./e2e-test-prompt.md)
-
-### `/agent-integration implement`
-**Build the agent package via TDD.** Using the probe report and E2E tests as the spec, implement the Go agent package with a red-green-refactor cycle.
-
-Detailed instructions: [implement-prompt.md](./implement-prompt.md)
-
-## Shared Parameters
-
-These parameters are shared across all commands. Collect them on first invocation and reuse across subsequent commands.
+Collect these before starting (ask the user if not provided):
 
 | Parameter | Example | Description |
 |-----------|---------|-------------|
@@ -44,26 +26,53 @@ These parameters are shared across all commands. Collect them on first invocatio
 
 ## Architecture References
 
-These documents define the agent integration contract. All commands reference them:
+These documents define the agent integration contract:
 
 - **Implementation guide**: `docs/architecture/agent-guide.md` — Step-by-step code templates, event mapping, testing patterns
 - **Integration checklist**: `docs/architecture/agent-integration-checklist.md` — Design principles and validation criteria
 
-## Command Routing
+## Pipeline
 
-When the user invokes this skill:
+Run these three phases in order. Each phase builds on the previous phase's output.
 
-1. **Parse the argument** after `/agent-integration` to determine which command to run
-2. **If no argument**, ask which command they want: `probe`, `e2e-tests`, or `implement`
-3. **If parameters aren't set yet**, collect them before proceeding
-4. **Load the corresponding prompt file** and follow its instructions
+### Phase 1: Research
 
-### Typical workflow order
+Assess whether the agent's hook/lifecycle model is compatible with the Entire CLI.
 
+Read and follow the research procedure from `.claude/plugins/agent-integration/commands/research.md`.
+
+**Expected output:** Compatibility report with lifecycle event mapping, interface feasibility assessment, and a test script at `scripts/test-$AGENT_SLUG-agent-integration.sh`.
+
+**Gate:** If the verdict is INCOMPATIBLE, stop and discuss with the user before proceeding.
+
+### Phase 2: Write Tests
+
+Generate the E2E test suite based on the research findings.
+
+Read and follow the write-tests procedure from `.claude/plugins/agent-integration/commands/write-tests.md`.
+
+**Expected output:** E2E agent runner at `e2e/agents/$AGENT_SLUG.go` and any agent-specific test scenarios.
+
+### Phase 3: Implement
+
+Build the Go agent package using test-driven development.
+
+Read and follow the implement procedure from `.claude/plugins/agent-integration/commands/implement.md`.
+
+**Expected output:** Complete agent package at `cmd/entire/cli/agent/$AGENT_SLUG/` with all tests passing.
+
+## Final Validation
+
+After all three phases, run the complete validation:
+
+```bash
+mise run fmt      # Format
+mise run lint     # Lint
+mise run test:ci  # All tests (unit + integration)
 ```
-/agent-integration probe        # Phase 1: Assess compatibility
-/agent-integration e2e-tests    # Phase 2: Write test suite
-/agent-integration implement    # Phase 3: Build via TDD
-```
 
-Each phase can be run independently, but later phases work best with earlier phase outputs available.
+Summarize:
+- Compatibility verdict from Phase 1
+- Files created in Phases 2 and 3
+- Test coverage
+- Any remaining TODOs or gaps
