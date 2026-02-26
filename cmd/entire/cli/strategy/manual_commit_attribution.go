@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"time"
@@ -13,7 +14,7 @@ import (
 // getAllChangedFilesBetweenTrees returns a list of all files that differ between two trees.
 // This includes files that were added, modified, or deleted in either tree.
 // Uses git blob hashes for efficient comparison without reading file contents.
-func getAllChangedFilesBetweenTrees(tree1, tree2 *object.Tree) []string {
+func getAllChangedFilesBetweenTrees(ctx context.Context, tree1, tree2 *object.Tree) []string {
 	if tree1 == nil && tree2 == nil {
 		return nil
 	}
@@ -25,6 +26,9 @@ func getAllChangedFilesBetweenTrees(tree1, tree2 *object.Tree) []string {
 	if tree1 != nil {
 		//nolint:errcheck // Errors ignored - just collecting file hashes for diff comparison
 		_ = tree1.Files().ForEach(func(f *object.File) error {
+			if err := ctx.Err(); err != nil {
+				return err //nolint:wrapcheck // Propagating context cancellation
+			}
 			tree1Hashes[f.Name] = f.Hash.String()
 			return nil
 		})
@@ -33,6 +37,9 @@ func getAllChangedFilesBetweenTrees(tree1, tree2 *object.Tree) []string {
 	if tree2 != nil {
 		//nolint:errcheck // Errors ignored - just collecting file hashes for diff comparison
 		_ = tree2.Files().ForEach(func(f *object.File) error {
+			if err := ctx.Err(); err != nil {
+				return err //nolint:wrapcheck // Propagating context cancellation
+			}
 			tree2Hashes[f.Name] = f.Hash.String()
 			return nil
 		})
@@ -163,6 +170,7 @@ func countLinesStr(content string) int {
 //
 // See docs/architecture/attribution.md for details on the per-file tracking approach.
 func CalculateAttributionWithAccumulated(
+	ctx context.Context,
 	baseTree *object.Tree,
 	shadowTree *object.Tree,
 	headTree *object.Tree,
@@ -216,7 +224,7 @@ func CalculateAttributionWithAccumulated(
 
 	// Calculate total user edits to non-agent files (files not in filesTouched)
 	// These files are not in the shadow tree, so base→head captures ALL their user edits
-	nonAgentFiles := getAllChangedFilesBetweenTrees(baseTree, headTree)
+	nonAgentFiles := getAllChangedFilesBetweenTrees(ctx, baseTree, headTree)
 	var allUserEditsToNonAgentFiles int
 	for _, filePath := range nonAgentFiles {
 		if slices.Contains(filesTouched, filePath) {

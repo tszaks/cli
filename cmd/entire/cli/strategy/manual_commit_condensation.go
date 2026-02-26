@@ -404,6 +404,7 @@ func calculateSessionAttributions(ctx context.Context, repo *git.Repository, sha
 	}
 
 	attribution := CalculateAttributionWithAccumulated(
+		ctx,
 		baseTree,
 		shadowTree,
 		headTree,

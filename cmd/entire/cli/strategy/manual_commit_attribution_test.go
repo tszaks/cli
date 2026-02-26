@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"context"
 	"sort"
 	"testing"
 
@@ -278,6 +279,7 @@ func TestCalculateAttributionWithAccumulated_BasicCase(t *testing.T) {
 	promptAttributions := []PromptAttribution{} // No intermediate checkpoints
 
 	result := CalculateAttributionWithAccumulated(
+		context.Background(),
 		baseTree, shadowTree, headTree, filesTouched, promptAttributions,
 	)
 
@@ -336,6 +338,7 @@ func TestCalculateAttributionWithAccumulated_BugScenario(t *testing.T) {
 	promptAttributions := []PromptAttribution{} // No intermediate checkpoints
 
 	result := CalculateAttributionWithAccumulated(
+		context.Background(),
 		baseTree, shadowTree, headTree, filesTouched, promptAttributions,
 	)
 
@@ -394,6 +397,7 @@ func TestCalculateAttributionWithAccumulated_DeletionOnly(t *testing.T) {
 	promptAttributions := []PromptAttribution{} // No intermediate checkpoints
 
 	result := CalculateAttributionWithAccumulated(
+		context.Background(),
 		baseTree, shadowTree, headTree, filesTouched, promptAttributions,
 	)
 
@@ -444,6 +448,7 @@ func TestCalculateAttributionWithAccumulated_NoUserEdits(t *testing.T) {
 	promptAttributions := []PromptAttribution{} // No intermediate checkpoints
 
 	result := CalculateAttributionWithAccumulated(
+		context.Background(),
 		baseTree, shadowTree, headTree, filesTouched, promptAttributions,
 	)
 
@@ -497,6 +502,7 @@ func TestCalculateAttributionWithAccumulated_NoAgentWork(t *testing.T) {
 	promptAttributions := []PromptAttribution{} // No intermediate checkpoints
 
 	result := CalculateAttributionWithAccumulated(
+		context.Background(),
 		baseTree, shadowTree, headTree, filesTouched, promptAttributions,
 	)
 
@@ -552,6 +558,7 @@ func TestCalculateAttributionWithAccumulated_UserRemovesAllAgentLines(t *testing
 	promptAttributions := []PromptAttribution{} // No intermediate checkpoints
 
 	result := CalculateAttributionWithAccumulated(
+		context.Background(),
 		baseTree, shadowTree, headTree, filesTouched, promptAttributions,
 	)
 
@@ -622,6 +629,7 @@ func TestCalculateAttributionWithAccumulated_WithPromptAttributions(t *testing.T
 	}
 
 	result := CalculateAttributionWithAccumulated(
+		context.Background(),
 		baseTree, shadowTree, headTree, filesTouched, promptAttributions,
 	)
 
@@ -666,6 +674,7 @@ func TestCalculateAttributionWithAccumulated_EmptyFilesTouched(t *testing.T) {
 	headTree := buildTestTree(t, map[string]string{})
 
 	result := CalculateAttributionWithAccumulated(
+		context.Background(),
 		baseTree, shadowTree, headTree, []string{}, []PromptAttribution{},
 	)
 
@@ -719,6 +728,7 @@ func TestCalculateAttributionWithAccumulated_UserEditsNonAgentFile(t *testing.T)
 	}
 
 	result := CalculateAttributionWithAccumulated(
+		context.Background(),
 		baseTree, shadowTree, headTree, filesTouched, promptAttributions,
 	)
 
@@ -806,7 +816,7 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 	}
 
 	t.Run("both trees nil", func(t *testing.T) {
-		result := getAllChangedFilesBetweenTrees(nil, nil)
+		result := getAllChangedFilesBetweenTrees(context.Background(), nil, nil)
 		if result != nil {
 			t.Errorf("expected nil, got %v", result)
 		}
@@ -818,7 +828,7 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 			"file2.go": "content2",
 		})
 
-		result := getAllChangedFilesBetweenTrees(nil, tree2)
+		result := getAllChangedFilesBetweenTrees(context.Background(), nil, tree2)
 		sort.Strings(result)
 
 		if len(result) != 2 {
@@ -834,7 +844,7 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 			testFile1: "content1",
 		})
 
-		result := getAllChangedFilesBetweenTrees(tree1, nil)
+		result := getAllChangedFilesBetweenTrees(context.Background(), tree1, nil)
 
 		if len(result) != 1 || result[0] != testFile1 {
 			t.Errorf("expected [file1.go], got %v", result)
@@ -851,7 +861,7 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 			"file2.go": "also same",
 		})
 
-		result := getAllChangedFilesBetweenTrees(tree1, tree2)
+		result := getAllChangedFilesBetweenTrees(context.Background(), tree1, tree2)
 
 		if len(result) != 0 {
 			t.Errorf("expected no changes, got %v", result)
@@ -868,7 +878,7 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 			"unchanged.go": "stays same",
 		})
 
-		result := getAllChangedFilesBetweenTrees(tree1, tree2)
+		result := getAllChangedFilesBetweenTrees(context.Background(), tree1, tree2)
 
 		if len(result) != 1 || result[0] != testFile1 {
 			t.Errorf("expected [file1.go], got %v", result)
@@ -885,7 +895,7 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 			"stays.go": "unchanged",
 		})
 
-		result := getAllChangedFilesBetweenTrees(tree1, tree2)
+		result := getAllChangedFilesBetweenTrees(context.Background(), tree1, tree2)
 		sort.Strings(result)
 
 		if len(result) != 2 {
@@ -1000,6 +1010,7 @@ func TestCalculateAttributionWithAccumulated_UserSelfModification(t *testing.T) 
 	}
 
 	result := CalculateAttributionWithAccumulated(
+		context.Background(),
 		baseTree, shadowTree, headTree, filesTouched, promptAttributions,
 	)
 
@@ -1072,6 +1083,7 @@ func TestCalculateAttributionWithAccumulated_MixedModifications(t *testing.T) {
 	}
 
 	result := CalculateAttributionWithAccumulated(
+		context.Background(),
 		baseTree, shadowTree, headTree, filesTouched, promptAttributions,
 	)
 
@@ -1154,6 +1166,7 @@ func TestCalculateAttributionWithAccumulated_UncommittedWorktreeFiles(t *testing
 	}
 
 	result := CalculateAttributionWithAccumulated(
+		context.Background(),
 		baseTree, shadowTree, headTree, filesTouched, promptAttributions,
 	)
 
