@@ -346,8 +346,8 @@ func CalculateTotalTokenUsage(transcriptData []byte, startLine int, subagentsDir
 	// Extract spawned agent IDs from the same parsed transcript
 	agentIDs := ExtractSpawnedAgentIDs(parsed)
 
-	// Calculate subagent token usage
-	if len(agentIDs) > 0 {
+	// Calculate subagent token usage (skip when subagentsDir is empty to avoid reading from cwd)
+	if len(agentIDs) > 0 && subagentsDir != "" {
 		subagentUsage := &agent.TokenUsage{}
 		for agentID := range agentIDs {
 			agentPath := filepath.Join(subagentsDir, fmt.Sprintf("agent-%s.jsonl", agentID))
@@ -397,8 +397,11 @@ func ExtractAllModifiedFiles(transcriptData []byte, startLine int, subagentsDir 
 		}
 	}
 
-	// Find spawned subagents and collect their modified files
+	// Find spawned subagents and collect their modified files (skip when subagentsDir is empty to avoid reading from cwd)
 	agentIDs := ExtractSpawnedAgentIDs(parsed)
+	if subagentsDir == "" {
+		return files, nil
+	}
 	for agentID := range agentIDs {
 		agentPath := filepath.Join(subagentsDir, fmt.Sprintf("agent-%s.jsonl", agentID))
 		agentLines, agentErr := transcript.ParseFromFileAtLine(agentPath, 0)
