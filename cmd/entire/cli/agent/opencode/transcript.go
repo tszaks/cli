@@ -167,7 +167,7 @@ func ExtractModifiedFiles(data []byte) ([]string, error) {
 }
 
 // extractFilePaths extracts file paths from an OpenCode tool's state.
-// For standard tools (edit, write, patch), the path is in input.filePath or input.path.
+// For standard tools (edit, write), the path is in input.filePath or input.path.
 // For apply_patch (codex models), the paths are in state.metadata.files[].filePath.
 func extractFilePaths(state *ToolState) []string {
 	if state == nil {
@@ -187,7 +187,7 @@ func extractFilePaths(state *ToolState) []string {
 		}
 	}
 
-	// Fall back to input keys (used by edit, write, patch).
+	// Fall back to input keys (used by edit, write).
 	for _, key := range []string{"filePath", "path"} {
 		if v, ok := state.Input[key]; ok {
 			if s, ok := v.(string); ok && s != "" {
