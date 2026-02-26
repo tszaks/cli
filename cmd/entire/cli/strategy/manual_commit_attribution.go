@@ -24,29 +24,25 @@ func getAllChangedFilesBetweenTrees(ctx context.Context, tree1, tree2 *object.Tr
 	tree2Hashes := make(map[string]string)
 
 	if tree1 != nil {
-		//nolint:errcheck // Errors ignored - just collecting file hashes for diff comparison
-		_ = tree1.Files().ForEach(func(f *object.File) error {
+		if err := tree1.Files().ForEach(func(f *object.File) error {
 			if err := ctx.Err(); err != nil {
 				return err //nolint:wrapcheck // Propagating context cancellation
 			}
 			tree1Hashes[f.Name] = f.Hash.String()
 			return nil
-		})
-		if ctx.Err() != nil {
+		}); err != nil {
 			return nil
 		}
 	}
 
 	if tree2 != nil {
-		//nolint:errcheck // Errors ignored - just collecting file hashes for diff comparison
-		_ = tree2.Files().ForEach(func(f *object.File) error {
+		if err := tree2.Files().ForEach(func(f *object.File) error {
 			if err := ctx.Err(); err != nil {
 				return err //nolint:wrapcheck // Propagating context cancellation
 			}
 			tree2Hashes[f.Name] = f.Hash.String()
 			return nil
-		})
-		if ctx.Err() != nil {
+		}); err != nil {
 			return nil
 		}
 	}
