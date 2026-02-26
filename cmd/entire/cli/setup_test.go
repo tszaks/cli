@@ -131,7 +131,7 @@ func TestCheckDisabledGuard(t *testing.T) {
 
 	// No settings file - should not be disabled (defaults to enabled)
 	var stdout bytes.Buffer
-	if checkDisabledGuard(&stdout) {
+	if checkDisabledGuard(context.Background(), &stdout) {
 		t.Error("checkDisabledGuard() should return false when no settings file exists")
 	}
 	if stdout.String() != "" {
@@ -141,14 +141,14 @@ func TestCheckDisabledGuard(t *testing.T) {
 	// Settings with enabled: true
 	writeSettings(t, testSettingsEnabled)
 	stdout.Reset()
-	if checkDisabledGuard(&stdout) {
+	if checkDisabledGuard(context.Background(), &stdout) {
 		t.Error("checkDisabledGuard() should return false when enabled")
 	}
 
 	// Settings with enabled: false
 	writeSettings(t, testSettingsDisabled)
 	stdout.Reset()
-	if !checkDisabledGuard(&stdout) {
+	if !checkDisabledGuard(context.Background(), &stdout) {
 		t.Error("checkDisabledGuard() should return true when disabled")
 	}
 	output := stdout.String()
@@ -450,8 +450,8 @@ func TestCheckEntireDirExists(t *testing.T) {
 	setupTestDir(t)
 
 	// Should be false when directory doesn't exist
-	if checkEntireDirExists() {
-		t.Error("checkEntireDirExists() should return false when .entire doesn't exist")
+	if checkEntireDirExists(context.Background()) {
+		t.Error("checkEntireDirExists(context.Background()) should return false when .entire doesn't exist")
 	}
 
 	// Create the directory
@@ -460,8 +460,8 @@ func TestCheckEntireDirExists(t *testing.T) {
 	}
 
 	// Should be true now
-	if !checkEntireDirExists() {
-		t.Error("checkEntireDirExists() should return true when .entire exists")
+	if !checkEntireDirExists(context.Background()) {
+		t.Error("checkEntireDirExists(context.Background()) should return true when .entire exists")
 	}
 }
 
@@ -469,9 +469,9 @@ func TestCountSessionStates(t *testing.T) {
 	setupTestRepo(t)
 
 	// Should be 0 when no session states exist
-	count := countSessionStates()
+	count := countSessionStates(context.Background())
 	if count != 0 {
-		t.Errorf("countSessionStates() = %d, want 0", count)
+		t.Errorf("countSessionStates(context.Background()) = %d, want 0", count)
 	}
 }
 
@@ -479,9 +479,9 @@ func TestCountShadowBranches(t *testing.T) {
 	setupTestRepo(t)
 
 	// Should be 0 when no shadow branches exist
-	count := countShadowBranches()
+	count := countShadowBranches(context.Background())
 	if count != 0 {
-		t.Errorf("countShadowBranches() = %d, want 0", count)
+		t.Errorf("countShadowBranches(context.Background()) = %d, want 0", count)
 	}
 }
 
@@ -498,8 +498,8 @@ func TestRemoveEntireDirectory(t *testing.T) {
 	}
 
 	// Remove the directory
-	if err := removeEntireDirectory(); err != nil {
-		t.Fatalf("removeEntireDirectory() error = %v", err)
+	if err := removeEntireDirectory(context.Background()); err != nil {
+		t.Fatalf("removeEntireDirectory(context.Background()) error = %v", err)
 	}
 
 	// Verify it's removed
@@ -679,8 +679,8 @@ func TestRemoveEntireDirectory_NotExists(t *testing.T) {
 	setupTestDir(t)
 
 	// Should not error when directory doesn't exist
-	if err := removeEntireDirectory(); err != nil {
-		t.Fatalf("removeEntireDirectory() should not error when directory doesn't exist: %v", err)
+	if err := removeEntireDirectory(context.Background()); err != nil {
+		t.Fatalf("removeEntireDirectory(context.Background()) should not error when directory doesn't exist: %v", err)
 	}
 }
 

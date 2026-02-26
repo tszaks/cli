@@ -187,7 +187,7 @@ func TestPerformGitResetHard_RejectsArgumentInjection(t *testing.T) {
 
 	// "git reset --hard -q" would silently reset to HEAD in quiet mode instead
 	// of failing, because git interprets "-q" as the --quiet flag.
-	err := performGitResetHard("-q")
+	err := performGitResetHard(context.Background(), "-q")
 	if err == nil {
 		t.Fatal("performGitResetHard() should reject hashes starting with '-', got nil")
 	}

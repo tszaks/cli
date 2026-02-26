@@ -35,7 +35,7 @@ func TestResolveWorktreeBranch_RegularRepo(t *testing.T) {
 	}
 	wantBranch := strings.TrimPrefix(strings.TrimSpace(string(headData)), "ref: refs/heads/")
 
-	branch := resolveWorktreeBranch(dir)
+	branch := resolveWorktreeBranch(context.Background(), dir)
 	if branch != wantBranch {
 		t.Errorf("resolveWorktreeBranch() = %q, want %q", branch, wantBranch)
 	}
@@ -81,7 +81,7 @@ func TestResolveWorktreeBranch_DetachedHEAD(t *testing.T) {
 		t.Fatalf("write HEAD: %v", err)
 	}
 
-	branch := resolveWorktreeBranch(dir)
+	branch := resolveWorktreeBranch(context.Background(), dir)
 	if branch != "HEAD" {
 		t.Errorf("resolveWorktreeBranch() = %q, want %q for detached HEAD", branch, "HEAD")
 	}
@@ -114,7 +114,7 @@ func TestResolveWorktreeBranch_WorktreeGitFile(t *testing.T) {
 		t.Fatalf("write .git file: %v", err)
 	}
 
-	branch := resolveWorktreeBranch(worktreeDir)
+	branch := resolveWorktreeBranch(context.Background(), worktreeDir)
 	if branch != "feature-branch" {
 		t.Errorf("resolveWorktreeBranch() = %q, want %q", branch, "feature-branch")
 	}
@@ -149,7 +149,7 @@ func TestResolveWorktreeBranch_WorktreeRelativePath(t *testing.T) {
 		t.Fatalf("write .git file: %v", err)
 	}
 
-	branch := resolveWorktreeBranch(worktreeDir)
+	branch := resolveWorktreeBranch(context.Background(), worktreeDir)
 	if branch != "develop" {
 		t.Errorf("resolveWorktreeBranch() = %q, want %q", branch, "develop")
 	}
@@ -157,7 +157,7 @@ func TestResolveWorktreeBranch_WorktreeRelativePath(t *testing.T) {
 
 func TestResolveWorktreeBranch_NonExistentPath(t *testing.T) {
 	t.Parallel()
-	branch := resolveWorktreeBranch("/nonexistent/path/that/does/not/exist")
+	branch := resolveWorktreeBranch(context.Background(), "/nonexistent/path/that/does/not/exist")
 	if branch != "" {
 		t.Errorf("resolveWorktreeBranch() = %q, want empty string for non-existent path", branch)
 	}
@@ -166,7 +166,7 @@ func TestResolveWorktreeBranch_NonExistentPath(t *testing.T) {
 func TestResolveWorktreeBranch_NotARepo(t *testing.T) {
 	dir := t.TempDir()
 	// No .git directory or file
-	branch := resolveWorktreeBranch(dir)
+	branch := resolveWorktreeBranch(context.Background(), dir)
 	if branch != "" {
 		t.Errorf("resolveWorktreeBranch() = %q, want empty string for non-repo directory", branch)
 	}
@@ -185,7 +185,7 @@ func TestResolveWorktreeBranch_ReftableStub(t *testing.T) {
 		t.Fatalf("write HEAD: %v", err)
 	}
 
-	branch := resolveWorktreeBranch(dir)
+	branch := resolveWorktreeBranch(context.Background(), dir)
 	// Should fall back to git, which will fail on this fake repo and return "HEAD"
 	if branch != "HEAD" {
 		t.Errorf("resolveWorktreeBranch() = %q, want %q for reftable stub", branch, "HEAD")
@@ -468,7 +468,7 @@ func TestWriteActiveSessions(t *testing.T) {
 
 	var buf bytes.Buffer
 	sty := newStatusStyles(&buf)
-	writeActiveSessions(&buf, sty)
+	writeActiveSessions(context.Background(), &buf, sty)
 
 	output := buf.String()
 
@@ -572,7 +572,7 @@ func TestWriteActiveSessions_ActiveTimeOmittedWhenClose(t *testing.T) {
 
 	var buf bytes.Buffer
 	sty := newStatusStyles(&buf)
-	writeActiveSessions(&buf, sty)
+	writeActiveSessions(context.Background(), &buf, sty)
 
 	output := buf.String()
 	// Should not show "active Xm ago" when LastInteractionTime is close to StartedAt
@@ -587,7 +587,7 @@ func TestWriteActiveSessions_NoSessions(t *testing.T) {
 
 	var buf bytes.Buffer
 	sty := newStatusStyles(&buf)
-	writeActiveSessions(&buf, sty)
+	writeActiveSessions(context.Background(), &buf, sty)
 
 	// Should produce no output when there are no sessions
 	if buf.Len() != 0 {
@@ -617,7 +617,7 @@ func TestWriteActiveSessions_EndedSessionsExcluded(t *testing.T) {
 
 	var buf bytes.Buffer
 	sty := newStatusStyles(&buf)
-	writeActiveSessions(&buf, sty)
+	writeActiveSessions(context.Background(), &buf, sty)
 
 	// Should produce no output when all sessions are ended
 	if buf.Len() != 0 {
@@ -1014,7 +1014,7 @@ func TestFormatSettingsStatusShort_Enabled(t *testing.T) {
 		Strategy: "manual-commit",
 	}
 
-	result := formatSettingsStatusShort(s, sty)
+	result := formatSettingsStatusShort(context.Background(), s, sty)
 
 	if !strings.Contains(result, "●") {
 		t.Errorf("Enabled status should have green dot, got: %q", result)
@@ -1036,7 +1036,7 @@ func TestFormatSettingsStatusShort_Disabled(t *testing.T) {
 		Strategy: "manual-commit",
 	}
 
-	result := formatSettingsStatusShort(s, sty)
+	result := formatSettingsStatusShort(context.Background(), s, sty)
 
 	if !strings.Contains(result, "○") {
 		t.Errorf("Disabled status should have open dot, got: %q", result)

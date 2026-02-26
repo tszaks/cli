@@ -261,8 +261,8 @@ func extractModifiedFiles(transcript []transcriptLine) []string {
 
 // resolveTranscriptPath determines the correct file path for an agent's session transcript.
 // Computes the path dynamically from the current repo location for cross-machine portability.
-func resolveTranscriptPath(sessionID string, agent agentpkg.Agent) (string, error) {
-	repoRoot, err := paths.WorktreeRoot(context.Background())
+func resolveTranscriptPath(ctx context.Context, sessionID string, agent agentpkg.Agent) (string, error) {
+	repoRoot, err := paths.WorktreeRoot(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get worktree root: %w", err)
 	}

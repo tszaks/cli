@@ -55,7 +55,7 @@ able to select one for Entire to rewind your branch state, including your code a
 your agent's context.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Check if Entire is disabled
-			if checkDisabledGuard(cmd.OutOrStdout()) {
+			if checkDisabledGuard(cmd.Context(), cmd.OutOrStdout()) {
 				return nil
 			}
 
@@ -319,7 +319,7 @@ func runRewindInteractive(ctx context.Context) error { //nolint:maintidx // alre
 
 	if !restored {
 		// Fall back to local file
-		if err := restoreSessionTranscript(transcriptFile, sessionID, agent); err != nil {
+		if err := restoreSessionTranscript(ctx, transcriptFile, sessionID, agent); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to restore session transcript: %v\n", err)
 			fmt.Fprintf(os.Stderr, "  Source: %s\n", transcriptFile)
 			fmt.Fprintf(os.Stderr, "  Session ID: %s\n", sessionID)
@@ -520,7 +520,7 @@ func runRewindToInternal(ctx context.Context, commitID string, logsOnly bool, re
 
 	if !restored {
 		// Fall back to local file
-		if err := restoreSessionTranscript(transcriptFile, sessionID, agent); err != nil {
+		if err := restoreSessionTranscript(ctx, transcriptFile, sessionID, agent); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to restore session transcript: %v\n", err)
 		}
 	}
@@ -586,7 +586,7 @@ func handleLogsOnlyResetNonInteractive(ctx context.Context, start strategy.Strat
 	)
 
 	// Get current HEAD before reset (for recovery message)
-	currentHead, headErr := getCurrentHeadHash()
+	currentHead, headErr := getCurrentHeadHash(ctx)
 	if headErr != nil {
 		currentHead = ""
 	}
@@ -602,7 +602,7 @@ func handleLogsOnlyResetNonInteractive(ctx context.Context, start strategy.Strat
 	}
 
 	// Perform git reset --hard
-	if err := performGitResetHard(point.ID); err != nil {
+	if err := performGitResetHard(ctx, point.ID); err != nil {
 		logging.Error(logCtx, "logs-only reset failed during git reset",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
@@ -636,8 +636,8 @@ func handleLogsOnlyResetNonInteractive(ctx context.Context, start strategy.Strat
 	return nil
 }
 
-func restoreSessionTranscript(transcriptFile, sessionID string, agent agentpkg.Agent) error {
-	sessionFile, err := resolveTranscriptPath(sessionID, agent)
+func restoreSessionTranscript(ctx context.Context, transcriptFile, sessionID string, agent agentpkg.Agent) error {
+	sessionFile, err := resolveTranscriptPath(ctx, sessionID, agent)
 	if err != nil {
 		return err
 	}
@@ -671,7 +671,7 @@ func restoreSessionTranscriptFromStrategy(ctx context.Context, cpID id.Checkpoin
 		sessionID = returnedSessionID
 	}
 
-	sessionFile, err := resolveTranscriptPath(sessionID, agent)
+	sessionFile, err := resolveTranscriptPath(ctx, sessionID, agent)
 	if err != nil {
 		return "", err
 	}
@@ -712,7 +712,7 @@ func restoreSessionTranscriptFromShadow(ctx context.Context, commitHash, metadat
 		return "", fmt.Errorf("failed to get transcript from shadow branch: %w", err)
 	}
 
-	sessionFile, err := resolveTranscriptPath(sessionID, agent)
+	sessionFile, err := resolveTranscriptPath(ctx, sessionID, agent)
 	if err != nil {
 		return "", err
 	}
@@ -755,7 +755,7 @@ func restoreTaskCheckpointTranscript(ctx context.Context, strat strategy.Strateg
 	// Truncate at checkpoint UUID
 	truncated := TruncateTranscriptAtUUID(parsed, checkpointUUID)
 
-	sessionFile, err := resolveTranscriptPath(sessionID, agent)
+	sessionFile, err := resolveTranscriptPath(ctx, sessionID, agent)
 	if err != nil {
 		return err
 	}
@@ -941,7 +941,7 @@ func handleLogsOnlyReset(ctx context.Context, start strategy.Strategy, point str
 	}
 
 	// Get current HEAD before reset (for recovery message)
-	currentHead, err := getCurrentHeadHash()
+	currentHead, err := getCurrentHeadHash(ctx)
 	if err != nil {
 		// Non-fatal - just won't show recovery message
 		currentHead = ""
@@ -954,7 +954,7 @@ func handleLogsOnlyReset(ctx context.Context, start strategy.Strategy, point str
 	}
 
 	// Check for safety issues
-	warnings, err := checkResetSafety(point.ID, uncommittedWarning)
+	warnings, err := checkResetSafety(ctx, point.ID, uncommittedWarning)
 	if err != nil {
 		return fmt.Errorf("failed to check reset safety: %w", err)
 	}
@@ -992,7 +992,7 @@ func handleLogsOnlyReset(ctx context.Context, start strategy.Strategy, point str
 	}
 
 	// Perform git reset --hard
-	if err := performGitResetHard(point.ID); err != nil {
+	if err := performGitResetHard(ctx, point.ID); err != nil {
 		logging.Error(logCtx, "logs-only reset failed during git reset",
 			slog.String("checkpoint_id", point.ID),
 			slog.String("error", err.Error()),
@@ -1020,8 +1020,8 @@ func handleLogsOnlyReset(ctx context.Context, start strategy.Strategy, point str
 }
 
 // getCurrentHeadHash returns the current HEAD commit hash.
-func getCurrentHeadHash() (string, error) {
-	repo, err := openRepository(context.Background())
+func getCurrentHeadHash(ctx context.Context) (string, error) {
+	repo, err := openRepository(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -1037,10 +1037,10 @@ func getCurrentHeadHash() (string, error) {
 // checkResetSafety checks for potential issues before a git reset --hard.
 // Returns a list of warning messages (empty if safe to proceed without warnings).
 // If uncommittedChangesWarning is provided, it will be used instead of a generic warning.
-func checkResetSafety(targetCommitHash string, uncommittedChangesWarning string) ([]string, error) {
+func checkResetSafety(ctx context.Context, targetCommitHash string, uncommittedChangesWarning string) ([]string, error) {
 	var warnings []string
 
-	repo, err := openRepository(context.Background())
+	repo, err := openRepository(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1124,11 +1124,10 @@ func countCommitsBetween(repo *git.Repository, ancestor, descendant plumbing.Has
 // performGitResetHard performs a git reset --hard to the specified commit.
 // Uses the git CLI instead of go-git because go-git's HardReset incorrectly
 // deletes untracked directories (like .entire/) even when they're in .gitignore.
-func performGitResetHard(commitHash string) error {
+func performGitResetHard(ctx context.Context, commitHash string) error {
 	if strings.HasPrefix(commitHash, "-") {
 		return fmt.Errorf("reset failed: invalid commit hash %q", commitHash)
 	}
-	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, "git", "reset", "--hard", commitHash)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("reset failed: %s: %w", strings.TrimSpace(string(output)), err)

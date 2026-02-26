@@ -88,9 +88,9 @@ func runStatus(ctx context.Context, w io.Writer, detailed bool) error {
 	fmt.Fprintln(w)
 	settings.WriteDeprecatedStrategyWarnings(ctx, w)
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, formatSettingsStatusShort(s, sty))
+	fmt.Fprintln(w, formatSettingsStatusShort(ctx, s, sty))
 	if s.Enabled {
-		writeActiveSessions(w, sty)
+		writeActiveSessions(ctx, w, sty)
 	}
 
 	return nil
@@ -106,7 +106,7 @@ func runStatusDetailed(ctx context.Context, w io.Writer, sty statusStyles, setti
 	fmt.Fprintln(w)
 	settings.WriteDeprecatedStrategyWarnings(ctx, w)
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, formatSettingsStatusShort(effectiveSettings, sty))
+	fmt.Fprintln(w, formatSettingsStatusShort(ctx, effectiveSettings, sty))
 	fmt.Fprintln(w) // blank line
 
 	// Show project settings if it exists
@@ -128,7 +128,7 @@ func runStatusDetailed(ctx context.Context, w io.Writer, sty statusStyles, setti
 	}
 
 	if effectiveSettings.Enabled {
-		writeActiveSessions(w, sty)
+		writeActiveSessions(ctx, w, sty)
 	}
 
 	return nil
@@ -136,7 +136,7 @@ func runStatusDetailed(ctx context.Context, w io.Writer, sty statusStyles, setti
 
 // formatSettingsStatusShort formats a short settings status line.
 // Output format: "● Enabled · manual-commit · branch main" or "○ Disabled"
-func formatSettingsStatusShort(s *EntireSettings, sty statusStyles) string {
+func formatSettingsStatusShort(ctx context.Context, s *EntireSettings, sty statusStyles) string {
 	displayName := strategy.StrategyNameManualCommit
 
 	var b strings.Builder
@@ -155,8 +155,8 @@ func formatSettingsStatusShort(s *EntireSettings, sty statusStyles) string {
 	b.WriteString(displayName)
 
 	// Resolve branch from repo root
-	if repoRoot, err := paths.WorktreeRoot(context.Background()); err == nil {
-		if branch := resolveWorktreeBranch(repoRoot); branch != "" {
+	if repoRoot, err := paths.WorktreeRoot(ctx); err == nil {
+		if branch := resolveWorktreeBranch(ctx, repoRoot); branch != "" {
 			b.WriteString(sty.render(sty.dim, " · "))
 			b.WriteString("branch ")
 			b.WriteString(sty.render(sty.cyan, branch))
@@ -218,13 +218,13 @@ const (
 )
 
 // writeActiveSessions writes active session information grouped by worktree.
-func writeActiveSessions(w io.Writer, sty statusStyles) {
-	store, err := session.NewStateStore(context.Background())
+func writeActiveSessions(ctx context.Context, w io.Writer, sty statusStyles) {
+	store, err := session.NewStateStore(ctx)
 	if err != nil {
 		return
 	}
 
-	states, err := store.List(context.Background())
+	states, err := store.List(ctx)
 	if err != nil || len(states) == 0 {
 		return
 	}
@@ -258,7 +258,7 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 	// Resolve branch names for each worktree (skip for unknown paths)
 	for _, g := range groups {
 		if g.path != unknownPlaceholder {
-			g.branch = resolveWorktreeBranch(g.path)
+			g.branch = resolveWorktreeBranch(ctx, g.path)
 		}
 	}
 
@@ -345,7 +345,7 @@ func writeActiveSessions(w io.Writer, sty statusStyles) {
 
 // resolveWorktreeBranch resolves the current branch for a worktree path
 // by reading the HEAD ref directly from the filesystem
-func resolveWorktreeBranch(worktreePath string) string {
+func resolveWorktreeBranch(ctx context.Context, worktreePath string) string {
 	gitPath := filepath.Join(worktreePath, ".git")
 
 	fi, err := os.Stat(gitPath)
@@ -387,7 +387,7 @@ func resolveWorktreeBranch(worktreePath string) string {
 		// Reftable ref storage uses "ref: refs/heads/.invalid" as a dummy HEAD stub.
 		// Fall back to git to resolve the actual branch in that case.
 		if branch == ".invalid" {
-			return resolveWorktreeBranchGit(worktreePath)
+			return resolveWorktreeBranchGit(ctx, worktreePath)
 		}
 		return branch
 	}
@@ -398,8 +398,8 @@ func resolveWorktreeBranch(worktreePath string) string {
 
 // resolveWorktreeBranchGit resolves the branch name by shelling out to git.
 // Used as a fallback for reftable ref storage where .git/HEAD is a stub.
-func resolveWorktreeBranchGit(worktreePath string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func resolveWorktreeBranchGit(ctx context.Context, worktreePath string) string {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", "-C", worktreePath, "rev-parse", "--symbolic-full-name", "HEAD")
 	out, err := cmd.Output()

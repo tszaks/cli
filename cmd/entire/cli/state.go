@@ -124,7 +124,7 @@ func CapturePrePromptState(ctx context.Context, ag agent.Agent, sessionID, sessi
 	}
 
 	// Create state file
-	stateFile := prePromptStateFile(sessionID)
+	stateFile := prePromptStateFile(ctx, sessionID)
 	state := PrePromptState{
 		SessionID:        sessionID,
 		Timestamp:        time.Now().UTC().Format(time.RFC3339),
@@ -148,8 +148,8 @@ func CapturePrePromptState(ctx context.Context, ag agent.Agent, sessionID, sessi
 
 // LoadPrePromptState loads previously captured state.
 // Returns nil if no state file exists.
-func LoadPrePromptState(sessionID string) (*PrePromptState, error) {
-	stateFile := prePromptStateFile(sessionID)
+func LoadPrePromptState(ctx context.Context, sessionID string) (*PrePromptState, error) {
+	stateFile := prePromptStateFile(ctx, sessionID)
 
 	if !fileExists(stateFile) {
 		return nil, nil //nolint:nilnil // already present in codebase
@@ -171,8 +171,8 @@ func LoadPrePromptState(sessionID string) (*PrePromptState, error) {
 }
 
 // CleanupPrePromptState removes the state file after use
-func CleanupPrePromptState(sessionID string) error {
-	stateFile := prePromptStateFile(sessionID)
+func CleanupPrePromptState(ctx context.Context, sessionID string) error {
+	stateFile := prePromptStateFile(ctx, sessionID)
 	if fileExists(stateFile) {
 		return os.Remove(stateFile) //nolint:wrapcheck // already present in codebase
 	}
@@ -329,8 +329,8 @@ func FilterAndNormalizePaths(files []string, cwd string) []string {
 
 // prePromptStateFile returns the absolute path to the pre-prompt state file for a session.
 // Works correctly from any subdirectory within the repository.
-func prePromptStateFile(sessionID string) string {
-	tmpDirAbs, err := paths.AbsPath(context.TODO(), paths.EntireTmpDir)
+func prePromptStateFile(ctx context.Context, sessionID string) string {
+	tmpDirAbs, err := paths.AbsPath(ctx, paths.EntireTmpDir)
 	if err != nil {
 		tmpDirAbs = paths.EntireTmpDir // Fallback to relative
 	}
@@ -413,7 +413,7 @@ func CapturePreTaskState(ctx context.Context, toolUseID string) error {
 	}
 
 	// Create state file
-	stateFile := preTaskStateFile(toolUseID)
+	stateFile := preTaskStateFile(ctx, toolUseID)
 	state := PreTaskState{
 		ToolUseID:      toolUseID,
 		Timestamp:      time.Now().UTC().Format(time.RFC3339),
@@ -435,8 +435,8 @@ func CapturePreTaskState(ctx context.Context, toolUseID string) error {
 
 // LoadPreTaskState loads previously captured task state.
 // Returns nil if no state file exists.
-func LoadPreTaskState(toolUseID string) (*PreTaskState, error) {
-	stateFile := preTaskStateFile(toolUseID)
+func LoadPreTaskState(ctx context.Context, toolUseID string) (*PreTaskState, error) {
+	stateFile := preTaskStateFile(ctx, toolUseID)
 
 	if !fileExists(stateFile) {
 		return nil, nil //nolint:nilnil // already present in codebase
@@ -456,8 +456,8 @@ func LoadPreTaskState(toolUseID string) (*PreTaskState, error) {
 }
 
 // CleanupPreTaskState removes the task state file after use
-func CleanupPreTaskState(toolUseID string) error {
-	stateFile := preTaskStateFile(toolUseID)
+func CleanupPreTaskState(ctx context.Context, toolUseID string) error {
+	stateFile := preTaskStateFile(ctx, toolUseID)
 	if fileExists(stateFile) {
 		return os.Remove(stateFile) //nolint:wrapcheck // already present in codebase
 	}
@@ -466,8 +466,8 @@ func CleanupPreTaskState(toolUseID string) error {
 
 // preTaskStateFile returns the absolute path to the pre-task state file for a tool use.
 // Works correctly from any subdirectory within the repository.
-func preTaskStateFile(toolUseID string) string {
-	tmpDirAbs, err := paths.AbsPath(context.TODO(), paths.EntireTmpDir)
+func preTaskStateFile(ctx context.Context, toolUseID string) string {
+	tmpDirAbs, err := paths.AbsPath(ctx, paths.EntireTmpDir)
 	if err != nil {
 		tmpDirAbs = paths.EntireTmpDir // Fallback to relative
 	}
@@ -482,8 +482,8 @@ const preTaskFilePrefix = "pre-task-"
 // When multiple pre-task files exist (nested subagents), returns the most recently
 // modified one.
 // Works correctly from any subdirectory within the repository.
-func FindActivePreTaskFile() (taskToolUseID string, found bool) {
-	tmpDirAbs, err := paths.AbsPath(context.TODO(), paths.EntireTmpDir)
+func FindActivePreTaskFile(ctx context.Context) (taskToolUseID string, found bool) {
+	tmpDirAbs, err := paths.AbsPath(ctx, paths.EntireTmpDir)
 	if err != nil {
 		tmpDirAbs = paths.EntireTmpDir // Fallback to relative
 	}

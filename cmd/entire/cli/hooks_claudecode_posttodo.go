@@ -49,7 +49,7 @@ func handleClaudeCodePostTodoFromReader(ctx context.Context, reader io.Reader) e
 	)
 
 	// Check if we're in a subagent context by looking for an active pre-task file
-	taskToolUseID, found := FindActivePreTaskFile()
+	taskToolUseID, found := FindActivePreTaskFile(ctx)
 	if !found {
 		// Not in subagent context - this is a main agent TodoWrite, skip
 		return nil

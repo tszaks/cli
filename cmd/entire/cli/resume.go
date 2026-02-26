@@ -46,7 +46,7 @@ or cherry-picking from elsewhere), this operation will reset your Git status to 
 most recent commit with a checkpoint.  You'll be prompted to confirm resuming in this case.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if checkDisabledGuard(cmd.OutOrStdout()) {
+			if checkDisabledGuard(cmd.Context(), cmd.OutOrStdout()) {
 				return nil
 			}
 			return runResume(cmd.Context(), args[0], force)
@@ -475,7 +475,7 @@ func resumeSession(ctx context.Context, sessionID string, checkpointID id.Checkp
 // Always overwrites existing session logs to ensure consistency with checkpoint state.
 // If force is false, prompts for confirmation when local log has newer timestamps.
 func resumeSingleSession(ctx context.Context, ag agent.Agent, sessionID string, checkpointID id.CheckpointID, repoRoot string, force bool) error {
-	sessionLogPath, err := resolveTranscriptPath(sessionID, ag)
+	sessionLogPath, err := resolveTranscriptPath(ctx, sessionID, ag)
 	if err != nil {
 		return fmt.Errorf("failed to resolve transcript path: %w", err)
 	}

@@ -295,8 +295,8 @@ const DisabledMessage = "Entire is disabled. Run `entire enable` to re-enable."
 // checkDisabledGuard checks if Entire is disabled and prints a message if so.
 // Returns true if the caller should exit (i.e., Entire is disabled).
 // On error reading settings, defaults to enabled (returns false).
-func checkDisabledGuard(w io.Writer) bool {
-	enabled, err := IsEnabled(context.Background())
+func checkDisabledGuard(ctx context.Context, w io.Writer) bool {
+	enabled, err := IsEnabled(ctx)
 	if err != nil {
 		// Default to enabled on error
 		return false
@@ -919,11 +919,11 @@ func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 	}
 
 	// Gather counts for display
-	sessionStateCount := countSessionStates()
-	shadowBranchCount := countShadowBranches()
+	sessionStateCount := countSessionStates(ctx)
+	shadowBranchCount := countShadowBranches(ctx)
 	gitHooksInstalled := strategy.IsGitHookInstalled(ctx)
 	agentsWithInstalledHooks := GetAgentsWithHooksInstalled(ctx)
-	entireDirExists := checkEntireDirExists()
+	entireDirExists := checkEntireDirExists(ctx)
 
 	// Check if there's anything to uninstall
 	if !entireDirExists && !gitHooksInstalled && sessionStateCount == 0 &&
@@ -995,7 +995,7 @@ func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 	}
 
 	// 3. Remove session state files
-	statesRemoved, err := removeAllSessionStates()
+	statesRemoved, err := removeAllSessionStates(ctx)
 	if err != nil {
 		fmt.Fprintf(errW, "Warning: failed to remove session states: %v\n", err)
 	} else if statesRemoved > 0 {
@@ -1003,14 +1003,14 @@ func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 	}
 
 	// 4. Remove .entire/ directory
-	if err := removeEntireDirectory(); err != nil {
+	if err := removeEntireDirectory(ctx); err != nil {
 		fmt.Fprintf(errW, "Warning: failed to remove .entire directory: %v\n", err)
 	} else if entireDirExists {
 		fmt.Fprintln(w, "  Removed .entire directory")
 	}
 
 	// 5. Remove shadow branches
-	branchesRemoved, err := removeAllShadowBranches()
+	branchesRemoved, err := removeAllShadowBranches(ctx)
 	if err != nil {
 		fmt.Fprintf(errW, "Warning: failed to remove shadow branches: %v\n", err)
 	} else if branchesRemoved > 0 {
@@ -1022,12 +1022,12 @@ func runUninstall(ctx context.Context, w, errW io.Writer, force bool) error {
 }
 
 // countSessionStates returns the number of active session state files.
-func countSessionStates() int {
-	store, err := session.NewStateStore(context.Background())
+func countSessionStates(ctx context.Context) int {
+	store, err := session.NewStateStore(ctx)
 	if err != nil {
 		return 0
 	}
-	states, err := store.List(context.Background())
+	states, err := store.List(ctx)
 	if err != nil {
 		return 0
 	}
@@ -1035,8 +1035,8 @@ func countSessionStates() int {
 }
 
 // countShadowBranches returns the number of shadow branches.
-func countShadowBranches() int {
-	branches, err := strategy.ListShadowBranches(context.Background())
+func countShadowBranches(ctx context.Context) int {
+	branches, err := strategy.ListShadowBranches(ctx)
 	if err != nil {
 		return 0
 	}
@@ -1044,8 +1044,8 @@ func countShadowBranches() int {
 }
 
 // checkEntireDirExists checks if the .entire directory exists.
-func checkEntireDirExists() bool {
-	entireDirAbs, err := paths.AbsPath(context.Background(), paths.EntireDir)
+func checkEntireDirExists(ctx context.Context) bool {
+	entireDirAbs, err := paths.AbsPath(ctx, paths.EntireDir)
 	if err != nil {
 		entireDirAbs = paths.EntireDir
 	}
@@ -1076,14 +1076,14 @@ func removeAgentHooks(ctx context.Context, w io.Writer) error {
 }
 
 // removeAllSessionStates removes all session state files and the directory.
-func removeAllSessionStates() (int, error) {
-	store, err := session.NewStateStore(context.Background())
+func removeAllSessionStates(ctx context.Context) (int, error) {
+	store, err := session.NewStateStore(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to create state store: %w", err)
 	}
 
 	// Count states before removing
-	states, err := store.List(context.Background())
+	states, err := store.List(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list session states: %w", err)
 	}
@@ -1098,8 +1098,8 @@ func removeAllSessionStates() (int, error) {
 }
 
 // removeEntireDirectory removes the .entire directory.
-func removeEntireDirectory() error {
-	entireDirAbs, err := paths.AbsPath(context.Background(), paths.EntireDir)
+func removeEntireDirectory(ctx context.Context) error {
+	entireDirAbs, err := paths.AbsPath(ctx, paths.EntireDir)
 	if err != nil {
 		entireDirAbs = paths.EntireDir
 	}
@@ -1110,14 +1110,14 @@ func removeEntireDirectory() error {
 }
 
 // removeAllShadowBranches removes all shadow branches.
-func removeAllShadowBranches() (int, error) {
-	branches, err := strategy.ListShadowBranches(context.Background())
+func removeAllShadowBranches(ctx context.Context) (int, error) {
+	branches, err := strategy.ListShadowBranches(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list shadow branches: %w", err)
 	}
 	if len(branches) == 0 {
 		return 0, nil
 	}
-	deleted, _, err := strategy.DeleteShadowBranches(context.Background(), branches)
+	deleted, _, err := strategy.DeleteShadowBranches(ctx, branches)
 	return len(deleted), err
 }

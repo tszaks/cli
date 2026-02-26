@@ -201,7 +201,7 @@ func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Ev
 	fmt.Fprintf(os.Stderr, "Copied transcript to: %s\n", sessionDir+"/"+paths.TranscriptFileName)
 
 	// Load pre-prompt state (captured on TurnStart)
-	preState, err := LoadPrePromptState(sessionID)
+	preState, err := LoadPrePromptState(ctx, sessionID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load pre-prompt state: %v\n", err)
 	}
@@ -311,7 +311,7 @@ func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Ev
 		fmt.Fprintf(os.Stderr, "No files were modified during this session\n")
 		fmt.Fprintf(os.Stderr, "Skipping commit\n")
 		transitionSessionTurnEnd(ctx, sessionID)
-		if cleanupErr := CleanupPrePromptState(sessionID); cleanupErr != nil {
+		if cleanupErr := CleanupPrePromptState(ctx, sessionID); cleanupErr != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to cleanup pre-prompt state: %v\n", cleanupErr)
 		}
 		return nil
@@ -388,7 +388,7 @@ func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Ev
 
 	// Transition session phase and cleanup
 	transitionSessionTurnEnd(ctx, sessionID)
-	if cleanupErr := CleanupPrePromptState(sessionID); cleanupErr != nil {
+	if cleanupErr := CleanupPrePromptState(ctx, sessionID); cleanupErr != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup pre-prompt state: %v\n", cleanupErr)
 	}
 
@@ -525,7 +525,7 @@ func handleLifecycleSubagentEnd(ctx context.Context, ag agent.Agent, event *agen
 	}
 
 	// Load pre-task state and detect file changes
-	preState, err := LoadPreTaskState(event.ToolUseID)
+	preState, err := LoadPreTaskState(ctx, event.ToolUseID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load pre-task state: %v\n", err)
 	}
@@ -554,7 +554,7 @@ func handleLifecycleSubagentEnd(ctx context.Context, ag agent.Agent, event *agen
 	// If no changes, skip
 	if len(relModifiedFiles) == 0 && len(relNewFiles) == 0 && len(relDeletedFiles) == 0 {
 		fmt.Fprintf(os.Stderr, "[entire] No file changes detected, skipping task checkpoint\n")
-		_ = CleanupPreTaskState(event.ToolUseID) //nolint:errcheck // best-effort cleanup
+		_ = CleanupPreTaskState(ctx, event.ToolUseID) //nolint:errcheck // best-effort cleanup
 		return nil
 	}
 
@@ -597,7 +597,7 @@ func handleLifecycleSubagentEnd(ctx context.Context, ag agent.Agent, event *agen
 		return fmt.Errorf("failed to save task step: %w", err)
 	}
 
-	_ = CleanupPreTaskState(event.ToolUseID) //nolint:errcheck // best-effort cleanup
+	_ = CleanupPreTaskState(ctx, event.ToolUseID) //nolint:errcheck // best-effort cleanup
 	return nil
 }
 

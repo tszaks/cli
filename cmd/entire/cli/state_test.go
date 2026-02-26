@@ -17,7 +17,7 @@ func TestPreTaskStateFile(t *testing.T) {
 	// preTaskStateFile returns an absolute path within the repo
 	// Verify it ends with the expected relative path suffix
 	expectedSuffix := filepath.Join(paths.EntireTmpDir, "pre-task-toolu_abc123.json")
-	got := preTaskStateFile(toolUseID)
+	got := preTaskStateFile(context.Background(), toolUseID)
 	if !filepath.IsAbs(got) {
 		// If we're not in a git repo, it falls back to relative paths
 		if got != expectedSuffix {
@@ -55,7 +55,7 @@ func TestPrePromptState_BackwardCompat_LastTranscriptLineCount(t *testing.T) {
 	}
 
 	sessionID := "test-backward-compat"
-	stateFile := prePromptStateFile(sessionID)
+	stateFile := prePromptStateFile(context.Background(), sessionID)
 
 	// Test 1: Oldest format (last_transcript_line_count) migrates to TranscriptOffset
 	oldFormatJSON := `{
@@ -69,7 +69,7 @@ func TestPrePromptState_BackwardCompat_LastTranscriptLineCount(t *testing.T) {
 		t.Fatalf("Failed to write old-format state file: %v", err)
 	}
 
-	state, err := LoadPrePromptState(sessionID)
+	state, err := LoadPrePromptState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("LoadPrePromptState() error = %v", err)
 	}
@@ -102,7 +102,7 @@ func TestPrePromptState_BackwardCompat_LastTranscriptLineCount(t *testing.T) {
 		t.Fatalf("Failed to write step-format state file: %v", err)
 	}
 
-	state, err = LoadPrePromptState(sessionID)
+	state, err = LoadPrePromptState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("LoadPrePromptState() error = %v", err)
 	}
@@ -122,7 +122,7 @@ func TestPrePromptState_BackwardCompat_LastTranscriptLineCount(t *testing.T) {
 		t.Fatalf("Failed to write gemini-format state file: %v", err)
 	}
 
-	state, err = LoadPrePromptState(sessionID)
+	state, err = LoadPrePromptState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("LoadPrePromptState() error = %v", err)
 	}
@@ -147,7 +147,7 @@ func TestPrePromptState_BackwardCompat_LastTranscriptLineCount(t *testing.T) {
 		t.Fatalf("Failed to write new-format state file: %v", err)
 	}
 
-	state, err = LoadPrePromptState(sessionID)
+	state, err = LoadPrePromptState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("LoadPrePromptState() error = %v", err)
 	}
@@ -156,7 +156,7 @@ func TestPrePromptState_BackwardCompat_LastTranscriptLineCount(t *testing.T) {
 	}
 
 	// Cleanup
-	if err := CleanupPrePromptState(sessionID); err != nil {
+	if err := CleanupPrePromptState(context.Background(), sessionID); err != nil {
 		t.Errorf("CleanupPrePromptState() error = %v", err)
 	}
 }
@@ -266,12 +266,12 @@ func TestFindActivePreTaskFile(t *testing.T) {
 	}
 
 	// Test with no pre-task files
-	taskID, found := FindActivePreTaskFile()
+	taskID, found := FindActivePreTaskFile(context.Background())
 	if found {
-		t.Error("FindActivePreTaskFile() should return false when no pre-task files exist")
+		t.Error("FindActivePreTaskFile(context.Background()) should return false when no pre-task files exist")
 	}
 	if taskID != "" {
-		t.Errorf("FindActivePreTaskFile() taskID = %v, want empty", taskID)
+		t.Errorf("FindActivePreTaskFile(context.Background()) taskID = %v, want empty", taskID)
 	}
 
 	// Create a pre-task file
@@ -281,12 +281,12 @@ func TestFindActivePreTaskFile(t *testing.T) {
 	}
 
 	// Test with one pre-task file
-	taskID, found = FindActivePreTaskFile()
+	taskID, found = FindActivePreTaskFile(context.Background())
 	if !found {
-		t.Error("FindActivePreTaskFile() should return true when pre-task file exists")
+		t.Error("FindActivePreTaskFile(context.Background()) should return true when pre-task file exists")
 	}
 	if taskID != "toolu_abc123" {
-		t.Errorf("FindActivePreTaskFile() taskID = %v, want toolu_abc123", taskID)
+		t.Errorf("FindActivePreTaskFile(context.Background()) taskID = %v, want toolu_abc123", taskID)
 	}
 }
 
@@ -341,7 +341,7 @@ func TestPrePromptState_WithTranscriptPosition(t *testing.T) {
 	}
 
 	// Load and verify
-	state, err := LoadPrePromptState(sessionID)
+	state, err := LoadPrePromptState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("LoadPrePromptState() error = %v", err)
 	}
@@ -356,7 +356,7 @@ func TestPrePromptState_WithTranscriptPosition(t *testing.T) {
 	}
 
 	// Cleanup
-	if err := CleanupPrePromptState(sessionID); err != nil {
+	if err := CleanupPrePromptState(context.Background(), sessionID); err != nil {
 		t.Errorf("CleanupPrePromptState() error = %v", err)
 	}
 }
@@ -373,7 +373,7 @@ func TestPrePromptState_WithEmptyTranscriptPath(t *testing.T) {
 	}
 
 	// Load and verify
-	state, err := LoadPrePromptState(sessionID)
+	state, err := LoadPrePromptState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("LoadPrePromptState() error = %v", err)
 	}
@@ -388,7 +388,7 @@ func TestPrePromptState_WithEmptyTranscriptPath(t *testing.T) {
 	}
 
 	// Cleanup
-	if err := CleanupPrePromptState(sessionID); err != nil {
+	if err := CleanupPrePromptState(context.Background(), sessionID); err != nil {
 		t.Errorf("CleanupPrePromptState() error = %v", err)
 	}
 }
@@ -409,7 +409,7 @@ func TestPrePromptState_WithSummaryOnlyTranscript(t *testing.T) {
 	}
 
 	// Load and verify
-	state, err := LoadPrePromptState(sessionID)
+	state, err := LoadPrePromptState(context.Background(), sessionID)
 	if err != nil {
 		t.Fatalf("LoadPrePromptState() error = %v", err)
 	}
@@ -423,7 +423,7 @@ func TestPrePromptState_WithSummaryOnlyTranscript(t *testing.T) {
 	}
 
 	// Cleanup
-	if err := CleanupPrePromptState(sessionID); err != nil {
+	if err := CleanupPrePromptState(context.Background(), sessionID); err != nil {
 		t.Errorf("CleanupPrePromptState() error = %v", err)
 	}
 }
