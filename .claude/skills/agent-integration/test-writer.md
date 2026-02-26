@@ -215,7 +215,8 @@ After writing the code:
    ```bash
    mise run test:e2e:${agent_slug} TestSingleSessionManualCommit
    ```
-4. **Add mise task**: Remind the user to add a `test:e2e:${agent_slug}` task in `mise.toml` and update CI workflows
+4. **Debug failures**: If tests fail, use `/debug-e2e {artifact-dir}` to diagnose — artifacts are auto-captured to `e2e/artifacts/{timestamp}/`
+5. **Add mise task**: Remind the user to add a `test:e2e:${agent_slug}` task in `mise.toml` and update CI workflows
 
 ## Key Conventions
 
@@ -232,6 +233,7 @@ After writing the code:
 - **Interactive tests**: Use `s.StartSession`, `s.Send`, `s.WaitFor` — tmux pane is auto-captured in artifacts
 - **Run commands**: `mise run test:e2e:${slug} TestName` — see `e2e/README.md` for all options
 - **Do NOT run E2E tests**: They make real API calls. Only write the code and print commands.
+- **Debugging failures**: If the user runs tests and they fail, use `/debug-e2e` with the artifact directory to diagnose CLI-level issues (hooks, checkpoints, session phases, attribution)
 
 ## Output
 
@@ -240,4 +242,5 @@ Summarize what was created/modified:
 - New agent implementation details (how it invokes the agent, auth setup, concurrency gate)
 - Any agent-specific test scenarios added
 - Commands to run the tests (for user to execute manually)
+- If tests fail, suggest using `/debug-e2e {artifact-dir}` for root cause analysis
 - Reminder to update `mise.toml` and CI workflows
