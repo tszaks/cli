@@ -166,7 +166,7 @@ type TokenCalculator interface {
 	Agent
 
 	// CalculateTokenUsage computes token usage from the transcript starting at the given offset.
-	CalculateTokenUsage(sessionRef string, fromOffset int) (*TokenUsage, error)
+	CalculateTokenUsage(transcriptData []byte, fromOffset int) (*TokenUsage, error)
 }
 
 // SubagentAwareExtractor provides methods for extracting files and tokens including subagents.
@@ -178,9 +178,9 @@ type SubagentAwareExtractor interface {
 	// ExtractAllModifiedFiles extracts files modified by both the main agent and any spawned subagents.
 	// The subagentsDir parameter specifies where subagent transcripts are stored.
 	// Returns a deduplicated list of all modified file paths.
-	ExtractAllModifiedFiles(sessionRef string, fromOffset int, subagentsDir string) ([]string, error)
+	ExtractAllModifiedFiles(transcriptData []byte, fromOffset int, subagentsDir string) ([]string, error)
 
 	// CalculateTotalTokenUsage computes token usage including all spawned subagents.
 	// The subagentsDir parameter specifies where subagent transcripts are stored.
-	CalculateTotalTokenUsage(sessionRef string, fromOffset int, subagentsDir string) (*TokenUsage, error)
+	CalculateTotalTokenUsage(transcriptData []byte, fromOffset int, subagentsDir string) (*TokenUsage, error)
 }

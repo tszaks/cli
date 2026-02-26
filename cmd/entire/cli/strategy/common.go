@@ -1450,12 +1450,8 @@ func IsOnDefaultBranch(repo *git.Repository) (bool, string) {
 // the TranscriptPreparer interface. This ensures transcript files exist before
 // they are read (e.g., OpenCode creates its transcript lazily via `opencode export`).
 // Errors are silently ignored — this is best-effort for hook paths.
-func prepareTranscriptIfNeeded(agentType agent.AgentType, transcriptPath string) {
-	if transcriptPath == "" {
-		return
-	}
-	ag, err := agent.GetByAgentType(agentType)
-	if err != nil {
+func prepareTranscriptIfNeeded(ag agent.Agent, transcriptPath string) {
+	if ag == nil || transcriptPath == "" {
 		return
 	}
 	if preparer, ok := ag.(agent.TranscriptPreparer); ok {
