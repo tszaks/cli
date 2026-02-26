@@ -39,7 +39,7 @@ Run these three phases in order. Each phase builds on the previous phase's outpu
 
 Assess whether the agent's hook/lifecycle model is compatible with the Entire CLI.
 
-Read and follow the research procedure from `.claude/plugins/agent-integration/commands/research.md`.
+Read and follow the research procedure from `.claude/skills/agent-integration/researcher.md`.
 
 **Expected output:** Compatibility report with lifecycle event mapping, interface feasibility assessment, and a test script at `scripts/test-$AGENT_SLUG-agent-integration.sh`.
 
@@ -49,7 +49,7 @@ Read and follow the research procedure from `.claude/plugins/agent-integration/c
 
 Generate the E2E test suite based on the research findings.
 
-Read and follow the write-tests procedure from `.claude/plugins/agent-integration/commands/write-tests.md`.
+Read and follow the write-tests procedure from `.claude/skills/agent-integration/test-writer.md`.
 
 **Expected output:** E2E agent runner at `e2e/agents/$AGENT_SLUG.go` and any agent-specific test scenarios.
 
@@ -57,7 +57,7 @@ Read and follow the write-tests procedure from `.claude/plugins/agent-integratio
 
 Build the Go agent package using test-driven development.
 
-Read and follow the implement procedure from `.claude/plugins/agent-integration/commands/implement.md`.
+Read and follow the implement procedure from `.claude/skills/agent-integration/implementer.md`.
 
 **Expected output:** Complete agent package at `cmd/entire/cli/agent/$AGENT_SLUG/` with all tests passing.
 
