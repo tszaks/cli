@@ -32,6 +32,9 @@ func getAllChangedFilesBetweenTrees(ctx context.Context, tree1, tree2 *object.Tr
 			tree1Hashes[f.Name] = f.Hash.String()
 			return nil
 		})
+		if ctx.Err() != nil {
+			return nil
+		}
 	}
 
 	if tree2 != nil {
@@ -43,6 +46,9 @@ func getAllChangedFilesBetweenTrees(ctx context.Context, tree1, tree2 *object.Tr
 			tree2Hashes[f.Name] = f.Hash.String()
 			return nil
 		})
+		if ctx.Err() != nil {
+			return nil
+		}
 	}
 
 	// Find changed files by comparing hashes (much faster than content comparison)
