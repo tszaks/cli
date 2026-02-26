@@ -227,9 +227,6 @@ const (
 	entireDir          = ".entire"
 	gitDir             = ".git"
 	shadowBranchPrefix = "entire/"
-
-	// DefaultAgentType is the generic fallback agent type name
-	DefaultAgentType = agent.AgentTypeUnknown
 )
 
 // isProtectedPath returns true if relPath is inside a directory that should
@@ -267,22 +264,13 @@ var (
 	protectedDirsCache []string
 )
 
-// isSpecificAgentType returns true if the agent type is a known, specific value
-// (not empty and not the generic "Agent" fallback).
-func isSpecificAgentType(t agent.AgentType) bool {
-	return t != "" && t != DefaultAgentType
-}
-
 // resolveAgentType picks the best agent type from the context and existing state.
-// Priority: existing state (if specific) > context value > default fallback.
+// Priority: existing state > context value.
 func resolveAgentType(ctxAgentType agent.AgentType, state *SessionState) agent.AgentType {
-	if state != nil && isSpecificAgentType(state.AgentType) {
+	if state != nil && state.AgentType != "" {
 		return state.AgentType
 	}
-	if ctxAgentType != "" {
-		return ctxAgentType
-	}
-	return DefaultAgentType
+	return ctxAgentType
 }
 
 // ensureMetadataBranch creates the orphan entire/checkpoints/v1 branch if it doesn't exist.
