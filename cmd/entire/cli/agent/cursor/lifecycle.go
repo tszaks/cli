@@ -19,7 +19,7 @@ func (c *CursorAgent) ParseHookEvent(ctx context.Context, hookName string, stdin
 	case HookNameSessionStart:
 		return c.parseSessionStart(stdin)
 	case HookNameBeforeSubmitPrompt:
-		return c.parseTurnStart(stdin)
+		return c.parseTurnStart(ctx, stdin)
 	case HookNameStop:
 		return c.parseTurnEnd(ctx, stdin)
 	case HookNameSessionEnd:
@@ -54,7 +54,6 @@ func (c *CursorAgent) ReadTranscript(sessionRef string) ([]byte, error) {
 // it dynamically when the hook doesn't provide one (Cursor CLI pattern).
 func (c *CursorAgent) resolveTranscriptRef(ctx context.Context, conversationID, rawPath string) string {
 	if rawPath != "" {
-		logging.Info(ctx, "cursor: using rawPath", "rawPath", rawPath)
 		return rawPath
 	}
 
@@ -70,9 +69,7 @@ func (c *CursorAgent) resolveTranscriptRef(ctx context.Context, conversationID, 
 		return ""
 	}
 
-	resolvedPath := c.ResolveSessionFile(sessionDir, conversationID)
-	logging.Info(ctx, "cursor: using resolvedPath", "resolvedPath", resolvedPath)
-	return resolvedPath
+	return c.ResolveSessionFile(sessionDir, conversationID)
 }
 
 func (c *CursorAgent) parseSessionStart(stdin io.Reader) (*agent.Event, error) {
@@ -88,7 +85,7 @@ func (c *CursorAgent) parseSessionStart(stdin io.Reader) (*agent.Event, error) {
 	}, nil
 }
 
-func (c *CursorAgent) parseTurnStart(stdin io.Reader) (*agent.Event, error) {
+func (c *CursorAgent) parseTurnStart(ctx context.Context, stdin io.Reader) (*agent.Event, error) {
 	raw, err := agent.ReadAndParseHookInput[beforeSubmitPromptInputRaw](stdin)
 	if err != nil {
 		return nil, err
@@ -96,7 +93,7 @@ func (c *CursorAgent) parseTurnStart(stdin io.Reader) (*agent.Event, error) {
 	return &agent.Event{
 		Type:       agent.TurnStart,
 		SessionID:  raw.ConversationID,
-		SessionRef: raw.TranscriptPath,
+		SessionRef: c.resolveTranscriptRef(ctx, raw.ConversationID, raw.TranscriptPath),
 		Prompt:     raw.Prompt,
 		Timestamp:  time.Now(),
 	}, nil

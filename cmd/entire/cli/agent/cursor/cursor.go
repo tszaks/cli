@@ -75,11 +75,7 @@ func (c *CursorAgent) ResolveSessionFile(sessionDir, agentSessionID string) stri
 	if _, err := os.Stat(nested); err == nil {
 		return nested
 	}
-	flat := filepath.Join(sessionDir, agentSessionID+".jsonl")
-	if _, err := os.Stat(flat); err == nil {
-		return flat
-	}
-	return ""
+	return filepath.Join(sessionDir, agentSessionID+".jsonl")
 }
 
 // ProtectedDirs returns directories that Cursor uses for config/state.
@@ -157,8 +153,8 @@ func (c *CursorAgent) FormatResumeCommand(_ string) string {
 var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9]`)
 
 func sanitizePathForCursor(path string) string {
-	result := nonAlphanumericRegex.ReplaceAllString(path, "-")
-	return strings.TrimLeft(result, "-")
+	path = strings.TrimLeft(path, "/")
+	return nonAlphanumericRegex.ReplaceAllString(path, "-")
 }
 
 // ChunkTranscript splits a JSONL transcript at line boundaries.

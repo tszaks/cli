@@ -65,6 +65,39 @@ func TestParseHookEvent_TurnStart(t *testing.T) {
 	}
 }
 
+func TestParseHookEvent_TurnStart_CLINoTranscriptPath(t *testing.T) {
+	// Cannot use t.Parallel() because of t.Setenv
+	ag := &CursorAgent{}
+	// Set up a temp dir with a flat transcript file
+	tmpDir := t.TempDir()
+	transcriptFile := filepath.Join(tmpDir, "cli-turn-start.jsonl")
+	if err := os.WriteFile(transcriptFile, []byte(`{"role":"user"}`+"\n"), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+	t.Setenv("ENTIRE_TEST_CURSOR_PROJECT_DIR", tmpDir)
+
+	// Cursor CLI sends null for transcript_path in BeforeSubmitPrompt
+	input := `{"conversation_id": "cli-turn-start", "prompt": "Hello"}`
+
+	event, err := ag.ParseHookEvent(context.Background(), HookNameBeforeSubmitPrompt, strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event == nil {
+		t.Fatal("expected event, got nil")
+	}
+	if event.Type != agent.TurnStart {
+		t.Errorf("expected event type %v, got %v", agent.TurnStart, event.Type)
+	}
+	// SessionRef must be resolved dynamically so InitializeSession sets TranscriptPath
+	if event.SessionRef != transcriptFile {
+		t.Errorf("expected resolved SessionRef %q, got %q", transcriptFile, event.SessionRef)
+	}
+	if event.Prompt != "Hello" {
+		t.Errorf("expected prompt 'Hello', got %q", event.Prompt)
+	}
+}
+
 func TestParseHookEvent_TurnEnd(t *testing.T) {
 	t.Parallel()
 

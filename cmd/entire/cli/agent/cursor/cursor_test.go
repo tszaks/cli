@@ -116,11 +116,13 @@ func TestCursorAgent_ResolveSessionFile_FlatLayout(t *testing.T) {
 func TestCursorAgent_ResolveSessionFile_NeitherExists(t *testing.T) {
 	t.Parallel()
 	ag := &CursorAgent{}
-	// When neither nested nor flat file exists, returns empty string
+	// When neither nested nor flat file exists, returns flat path as best guess
+	// (transcript may not exist yet at TurnStart time)
 	tmpDir := t.TempDir()
 	result := ag.ResolveSessionFile(tmpDir, "abc123")
-	if result != "" {
-		t.Errorf("ResolveSessionFile() neither = %q, want empty string", result)
+	expected := filepath.Join(tmpDir, "abc123.jsonl")
+	if result != expected {
+		t.Errorf("ResolveSessionFile() neither = %q, want %q", result, expected)
 	}
 }
 
