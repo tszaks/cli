@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"sync"
@@ -64,7 +65,7 @@ func StringList() []string {
 // DetectAll returns all agents whose DetectPresence reports true.
 // Agents are checked in sorted name order (via List()) for deterministic results.
 // Returns an empty slice when no agent is detected.
-func DetectAll() []Agent {
+func DetectAll(ctx context.Context) []Agent {
 	names := List() // sorted, lock-safe
 
 	var detected []Agent
@@ -73,7 +74,7 @@ func DetectAll() []Agent {
 		if err != nil {
 			continue
 		}
-		if present, err := ag.DetectPresence(); err == nil && present {
+		if present, err := ag.DetectPresence(ctx); err == nil && present {
 			detected = append(detected, ag)
 		}
 	}
@@ -83,8 +84,8 @@ func DetectAll() []Agent {
 // Detect attempts to auto-detect which agent is being used.
 // Iterates registered agents in sorted name order for deterministic results.
 // Returns the first agent whose DetectPresence reports true.
-func Detect() (Agent, error) {
-	detected := DetectAll()
+func Detect(ctx context.Context) (Agent, error) {
+	detected := DetectAll(ctx)
 	if len(detected) == 0 {
 		return nil, fmt.Errorf("no agent detected (available: %v)", List())
 	}
