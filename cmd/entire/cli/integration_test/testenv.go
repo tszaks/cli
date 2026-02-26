@@ -107,14 +107,25 @@ func (env *TestEnv) Cleanup() {
 	// No-op - temp dirs are cleaned up by t.TempDir()
 }
 
-// gitIsolatedEnv returns os.Environ() with git isolation variables appended.
+// gitIsolatedEnv returns os.Environ() with git isolation variables set.
 // This prevents user/system git config (global gitignore, aliases, etc.) from
 // affecting test behavior. Use this for any exec.Command that runs git or the
 // CLI binary in integration tests.
 //
 // See https://git-scm.com/docs/git#Documentation/git.txt-GITCONFIGGLOBAL
+//
+// Existing GIT_CONFIG_GLOBAL/GIT_CONFIG_SYSTEM entries are filtered out before
+// appending overrides to ensure they take effect regardless of parent env.
 func gitIsolatedEnv() []string {
-	return append(os.Environ(),
+	env := os.Environ()
+	filtered := make([]string, 0, len(env)+2)
+	for _, e := range env {
+		if strings.HasPrefix(e, "GIT_CONFIG_GLOBAL=") || strings.HasPrefix(e, "GIT_CONFIG_SYSTEM=") {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	return append(filtered,
 		"GIT_CONFIG_GLOBAL=/dev/null", // Isolate from user's global git config (e.g. global gitignore)
 		"GIT_CONFIG_SYSTEM=/dev/null", // Isolate from system git config
 	)
