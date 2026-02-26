@@ -53,12 +53,14 @@ func TestMain(m *testing.M) {
 	version := "unknown"
 	if out, err := exec.Command(entireBin, "version").Output(); err == nil {
 		version = string(out)
-		_ = os.WriteFile(filepath.Join(runDir, "entire-version.txt"), out, 0o644)
 	}
 
-	fmt.Fprintf(os.Stderr, "entire binary:  %s\n", entireBin)
-	fmt.Fprintf(os.Stderr, "entire version: %s", version)
-	fmt.Fprintf(os.Stderr, "artifact dir:   %s\n", runDir)
+	hookEntire, _ := exec.LookPath("entire")
+
+	preflight := fmt.Sprintf("entire binary:  %s\nentire (PATH):  %s\nentire version: %s\nartifact dir:   %s\n",
+		entireBin, hookEntire, version, runDir)
+	fmt.Fprint(os.Stderr, preflight)
+	_ = os.WriteFile(filepath.Join(runDir, "entire-version.txt"), []byte(preflight), 0o644)
 
 	// Don't look at user's Git config, ignore everything except the project-local Git settings.
 	// This avoids oddball configs in ~/.gitconfig messing with our E2E tests.

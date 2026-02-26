@@ -120,58 +120,29 @@ if [ -n "$bench_lines" ]; then
 fi
 '''
 
+# E2E test tasks — all delegate to mise-tasks/test-e2e.
+# To add a new agent: add a task that sets E2E_AGENT and depends on test-e2e.
+
 [tasks."test:e2e"]
 description = "Run all E2E tests, optionally filtered: mise run test:e2e TestFoo"
 usage = 'arg "[filter]" help="Test name filter (regex)" default=""'
 quiet = true
-run = """
-E2E_ARTIFACT_DIR="$PWD/e2e/artifacts/$(date +%Y-%m-%dT%H-%M-%S)"
-export E2E_ARTIFACT_DIR
-mkdir -p "$E2E_ARTIFACT_DIR"
-echo "artifacts: $E2E_ARTIFACT_DIR"
-gotestsum --format dots --jsonfile "$E2E_ARTIFACT_DIR/test-events.json" -- -tags=e2e -count=1 -timeout=30m ${usage_filter:+-run "$usage_filter"} ./e2e/tests/... || rc=$?
-go run ./e2e/cmd/testreport -color -o "$E2E_ARTIFACT_DIR/report.txt" "$E2E_ARTIFACT_DIR/test-events.json"
-exit ${rc:-0}
-"""
+run = "mise run test-e2e ${usage_filter:+\"$usage_filter\"}"
 
 [tasks."test:e2e:claude"]
-description = "Run E2E tests with Claude Code, optionally filtered"
+description = "Run E2E tests with Claude Code only"
 usage = 'arg "[filter]" help="Test name filter (regex)" default=""'
 quiet = true
-run = """
-E2E_ARTIFACT_DIR="$PWD/e2e/artifacts/$(date +%Y-%m-%dT%H-%M-%S)"
-export E2E_ARTIFACT_DIR
-mkdir -p "$E2E_ARTIFACT_DIR"
-echo "artifacts: $E2E_ARTIFACT_DIR"
-E2E_AGENT=claude-code gotestsum --format dots --jsonfile "$E2E_ARTIFACT_DIR/test-events.json" -- -tags=e2e -count=1 -timeout=30m ${usage_filter:+-run "$usage_filter"} ./e2e/tests/... || rc=$?
-go run ./e2e/cmd/testreport -color -o "$E2E_ARTIFACT_DIR/report.txt" "$E2E_ARTIFACT_DIR/test-events.json"
-exit ${rc:-0}
-"""
+run = "E2E_AGENT=claude-code mise run test-e2e ${usage_filter:+\"$usage_filter\"}"
 
 [tasks."test:e2e:gemini"]
-description = "Run E2E tests with Gemini CLI (sequential to avoid rate limits)"
+description = "Run E2E tests with Gemini CLI (sequential)"
 usage = 'arg "[filter]" help="Test name filter (regex)" default=""'
 quiet = true
-run = """
-E2E_ARTIFACT_DIR="$PWD/e2e/artifacts/$(date +%Y-%m-%dT%H-%M-%S)"
-export E2E_ARTIFACT_DIR
-mkdir -p "$E2E_ARTIFACT_DIR"
-echo "artifacts: $E2E_ARTIFACT_DIR"
-E2E_AGENT=gemini-cli gotestsum --format dots --jsonfile "$E2E_ARTIFACT_DIR/test-events.json" -- -tags=e2e -count=1 -parallel 1 -timeout=30m ${usage_filter:+-run "$usage_filter"} ./e2e/tests/... || rc=$?
-go run ./e2e/cmd/testreport -color -o "$E2E_ARTIFACT_DIR/report.txt" "$E2E_ARTIFACT_DIR/test-events.json"
-exit ${rc:-0}
-"""
+run = "E2E_AGENT=gemini-cli E2E_PARALLEL=0 mise run test-e2e ${usage_filter:+\"$usage_filter\"}"
 
 [tasks."test:e2e:opencode"]
-description = "Run E2E tests with OpenCode"
+description = "Run E2E tests with OpenCode only"
 usage = 'arg "[filter]" help="Test name filter (regex)" default=""'
 quiet = true
-run = """
-E2E_ARTIFACT_DIR="$PWD/e2e/artifacts/$(date +%Y-%m-%dT%H-%M-%S)"
-export E2E_ARTIFACT_DIR
-mkdir -p "$E2E_ARTIFACT_DIR"
-echo "artifacts: $E2E_ARTIFACT_DIR"
-E2E_AGENT=opencode gotestsum --format dots --jsonfile "$E2E_ARTIFACT_DIR/test-events.json" -- -tags=e2e -count=1 -timeout=30m ${usage_filter:+-run "$usage_filter"} ./e2e/tests/... || rc=$?
-go run ./e2e/cmd/testreport -color -o "$E2E_ARTIFACT_DIR/report.txt" "$E2E_ARTIFACT_DIR/test-events.json"
-exit ${rc:-0}
-"""
+run = "E2E_AGENT=opencode mise run test-e2e ${usage_filter:+\"$usage_filter\"}"
