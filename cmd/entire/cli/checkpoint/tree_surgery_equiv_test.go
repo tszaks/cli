@@ -1,6 +1,7 @@
 package checkpoint
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,7 +57,7 @@ func TestBuildTreeWithChanges_EquivalenceWithFlattenRebuild(t *testing.T) { //no
 	t.Chdir(dir)
 
 	// --- New approach: ApplyTreeChanges (what buildTreeWithChanges now does) ---
-	newHash, err := store.buildTreeWithChanges(baseTreeHash, modifiedFiles, deletedFiles, metadataDir, metadataDirAbs)
+	newHash, err := store.buildTreeWithChanges(context.Background(), baseTreeHash, modifiedFiles, deletedFiles, metadataDir, metadataDirAbs)
 	if err != nil {
 		t.Fatalf("buildTreeWithChanges (new): %v", err)
 	}
@@ -97,7 +98,7 @@ func TestAddTaskMetadataToTree_EquivalenceWithFlattenRebuild(t *testing.T) {
 	}
 
 	// New approach (ApplyTreeChanges)
-	newHash, err := store.addTaskMetadataToTree(baseTreeHash, opts)
+	newHash, err := store.addTaskMetadataToTree(context.Background(), baseTreeHash, opts)
 	if err != nil {
 		t.Fatalf("addTaskMetadataToTree (new): %v", err)
 	}
@@ -138,7 +139,7 @@ func TestAddTaskMetadataToTree_IncrementalPath(t *testing.T) {
 		IncrementalData:     []byte(`{"items":["task1","task2"]}`),
 	}
 
-	newTreeHash, err := store.addTaskMetadataToTree(commit.TreeHash, opts)
+	newTreeHash, err := store.addTaskMetadataToTree(context.Background(), commit.TreeHash, opts)
 	if err != nil {
 		t.Fatalf("addTaskMetadataToTree (incremental): %v", err)
 	}
