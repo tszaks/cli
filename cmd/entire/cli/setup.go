@@ -232,6 +232,14 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 		return fmt.Errorf("failed to save settings: %w", err)
 	}
 
+	// When saving to local, also update the project settings file to
+	// clear the deprecated strategy field and write commit_linking.
+	if shouldUseLocal {
+		if err := migrateProjectSettings(ctx); err != nil {
+			return fmt.Errorf("failed to migrate project settings: %w", err)
+		}
+	}
+
 	if _, err := strategy.InstallGitHook(ctx, true, localDev); err != nil {
 		return fmt.Errorf("failed to install git hooks: %w", err)
 	}
@@ -704,6 +712,29 @@ func determineSettingsTarget(entireDir string, useLocal, useProject bool) (bool,
 
 	// Settings file doesn't exist - create it
 	return false, false
+}
+
+// migrateProjectSettings loads the project settings.json directly,
+// clears the deprecated strategy field, sets commit_linking if missing,
+// and saves it back. This is needed when the main save goes to
+// settings.local.json — the project file still needs cleanup.
+func migrateProjectSettings(ctx context.Context) error {
+	settingsFileAbs, err := paths.AbsPath(ctx, settings.EntireSettingsFile)
+	if err != nil {
+		return fmt.Errorf("resolving settings path: %w", err)
+	}
+	projectSettings, err := settings.LoadFromFile(settingsFileAbs)
+	if err != nil {
+		return fmt.Errorf("loading project settings: %w", err)
+	}
+	projectSettings.Strategy = "" //nolint:staticcheck // Intentionally clearing deprecated field
+	if projectSettings.CommitLinking == "" {
+		projectSettings.CommitLinking = settings.CommitLinkingPrompt
+	}
+	if err := settings.Save(ctx, projectSettings); err != nil {
+		return fmt.Errorf("saving project settings: %w", err)
+	}
+	return nil
 }
 
 // setupEntireDirectory creates the .entire directory and gitignore.
