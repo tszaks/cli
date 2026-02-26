@@ -1,0 +1,15 @@
+#!/bin/bash
+#MISE description="Run E2E tests with Claude Code, optionally filtered"
+#MISE arg "[filter]" help="Test name filter (regex)" default=""
+#MISE quiet=true
+
+set -euo pipefail
+
+E2E_ARTIFACT_DIR="$PWD/e2e/artifacts/$(date +%Y-%m-%dT%H-%M-%S)"
+export E2E_ARTIFACT_DIR
+export E2E_AGENT=claude-code
+mkdir -p "$E2E_ARTIFACT_DIR"
+echo "artifacts: $E2E_ARTIFACT_DIR"
+gotestsum --format dots --jsonfile "$E2E_ARTIFACT_DIR/test-events.json" -- -tags=e2e -count=1 -timeout=30m ${usage_filter:+-run "$usage_filter"} ./e2e/tests/... || rc=$?
+go run ./e2e/cmd/testreport -color -o "$E2E_ARTIFACT_DIR/report.txt" "$E2E_ARTIFACT_DIR/test-events.json"
+exit "${rc:-0}"
