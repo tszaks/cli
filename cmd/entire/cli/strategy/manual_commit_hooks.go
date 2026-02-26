@@ -18,6 +18,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/session"
+	"github.com/entireio/cli/cmd/entire/cli/settings"
 	"github.com/entireio/cli/cmd/entire/cli/stringutil"
 	"github.com/entireio/cli/cmd/entire/cli/trailers"
 	"github.com/entireio/cli/redact"
@@ -121,7 +122,7 @@ func askConfirmTTY(prompt string, context string, defaultYes bool) bool {
 // If the message contains only our trailer (no actual user content), strip it
 // so git will abort the commit due to empty message.
 
-func (s *ManualCommitStrategy) CommitMsg(_ context.Context, commitMsgFile string) error {
+func (s *ManualCommitStrategy) CommitMsg(_ context.Context, commitMsgFile string) error { //nolint:unparam // error return is part of the hook contract; callers check it
 	content, err := os.ReadFile(commitMsgFile) //nolint:gosec // Path comes from git hook
 	if err != nil {
 		return nil //nolint:nilerr // Hook must be silent on failure
@@ -347,27 +348,37 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 	// Prepare prompt for display: collapse newlines/whitespace, then truncate (rune-safe)
 	displayPrompt := stringutil.TruncateRunes(stringutil.CollapseWhitespace(lastPrompt), 80, "...")
 
+	// Load commit_linking setting to decide whether to prompt
+	commitLinking := settings.CommitLinkingPrompt // safe default
+	if stngs, loadErr := settings.Load(ctx); loadErr == nil {
+		commitLinking = stngs.GetCommitLinking()
+	}
+
 	// Add trailer differently based on commit source
 	switch source {
 	case "message":
-		// Using -m or -F: ask user interactively whether to add trailer
-		// (comments won't be stripped by git in this mode)
+		// Using -m or -F: behavior depends on commit_linking setting
+		if commitLinking == settings.CommitLinkingAlways {
+			// Auto-link: add trailer without prompting
+			message = addCheckpointTrailer(message, checkpointID)
+		} else {
+			// Prompt mode: ask user interactively whether to add trailer
+			// (comments won't be stripped by git in this mode)
+			var promptContext string
+			if displayPrompt != "" {
+				promptContext = "You have an active " + string(agentType) + " session.\nLast Prompt: " + displayPrompt
+			}
 
-		// Build context string for interactive prompt
-		var promptContext string
-		if displayPrompt != "" {
-			promptContext = "You have an active " + string(agentType) + " session.\nLast Prompt: " + displayPrompt
+			if !askConfirmTTY("Link this commit to "+string(agentType)+" session context?", promptContext, true) {
+				// User declined - don't add trailer
+				logging.Debug(logCtx, "prepare-commit-msg: user declined trailer",
+					slog.String("strategy", "manual-commit"),
+					slog.String("source", source),
+				)
+				return nil
+			}
+			message = addCheckpointTrailer(message, checkpointID)
 		}
-
-		if !askConfirmTTY("Link this commit to "+string(agentType)+" session context?", promptContext, true) {
-			// User declined - don't add trailer
-			logging.Debug(logCtx, "prepare-commit-msg: user declined trailer",
-				slog.String("strategy", "manual-commit"),
-				slog.String("source", source),
-			)
-			return nil
-		}
-		message = addCheckpointTrailer(message, checkpointID)
 	default:
 		// Normal editor flow: add trailer with explanatory comment (will be stripped by git)
 		message = addCheckpointTrailerWithComment(message, checkpointID, string(agentType), displayPrompt)
@@ -620,7 +631,7 @@ func (h *postCommitActionHandler) HandleWarnStaleSession(_ *session.State) error
 // During rebase/cherry-pick/revert operations, phase transitions are skipped entirely.
 //
 
-func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error {
+func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error { //nolint:unparam // error return is part of the hook contract; callers check it
 	logCtx := logging.WithComponent(ctx, "checkpoint")
 
 	repo, err := OpenRepository(ctx)
@@ -1786,7 +1797,7 @@ func (s *ManualCommitStrategy) getLastPrompt(ctx context.Context, repo *git.Repo
 // (from prompt to stop event), ensuring every checkpoint has the full context.
 //
 
-func (s *ManualCommitStrategy) HandleTurnEnd(ctx context.Context, state *SessionState) error {
+func (s *ManualCommitStrategy) HandleTurnEnd(ctx context.Context, state *SessionState) error { //nolint:unparam // error return is part of the hook contract; callers check it
 	// Finalize all checkpoints from this turn with the full transcript.
 	//
 	// IMPORTANT: This is best-effort - errors are logged but don't fail the hook.

@@ -14,6 +14,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/agent/geminicli"
 	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/strategy"
 
 	"github.com/spf13/cobra"
 )
@@ -109,8 +110,8 @@ func newAgentHookVerbCmdWithLogging(agentName agent.AgentName, hookName string) 
 			// Initialize logging context with agent name
 			ctx := logging.WithAgent(logging.WithComponent(cmd.Context(), "hooks"), agentName)
 
-			// Get strategy name for logging
-			strategyName := GetStrategy(ctx).Name()
+			// Strategy name for logging
+			strategyName := strategy.StrategyNameManualCommit
 
 			hookType := getHookType(hookName)
 

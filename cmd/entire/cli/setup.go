@@ -182,6 +182,10 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 	// Update the specific fields
 	settings.LocalDev = localDev
 	settings.Enabled = true
+	// Default new users to auto-linking (existing users without the field get "prompt" via GetCommitLinking())
+	if settings.CommitLinking == "" {
+		settings.CommitLinking = "always"
+	}
 
 	// Set push_sessions option if --skip-push-sessions flag was provided
 	if skipPushSessions {
@@ -594,6 +598,10 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 	settings.Enabled = true
 	if localDev {
 		settings.LocalDev = localDev
+	}
+	// Default new users to auto-linking (existing users without the field get "prompt" via GetCommitLinking())
+	if settings.CommitLinking == "" {
+		settings.CommitLinking = "always"
 	}
 
 	// Set push_sessions option if --skip-push-sessions flag was provided

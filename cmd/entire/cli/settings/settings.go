@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 
@@ -21,6 +20,14 @@ const (
 	EntireSettingsFile = ".entire/settings.json"
 	// EntireSettingsLocalFile is the path to the local settings override file (not committed)
 	EntireSettingsLocalFile = ".entire/settings.local.json"
+)
+
+// Commit linking mode constants.
+const (
+	// CommitLinkingAlways auto-links commits to sessions without prompting.
+	CommitLinkingAlways = "always"
+	// CommitLinkingPrompt prompts the user on each commit (default for existing users).
+	CommitLinkingPrompt = "prompt"
 )
 
 // EntireSettings represents the .entire/settings.json configuration
@@ -46,9 +53,24 @@ type EntireSettings struct {
 	// nil = not asked yet (show prompt), true = opted in, false = opted out
 	Telemetry *bool `json:"telemetry,omitempty"`
 
+	// CommitLinking controls how commits are linked to agent sessions.
+	// "always" = auto-link without prompting, "prompt" = ask on each commit.
+	// Defaults to "prompt" (preserves existing user behavior).
+	CommitLinking string `json:"commit_linking,omitempty"`
+
 	// Deprecated: no longer used. Exists to tolerate old settings files
 	// that still contain "strategy": "auto-commit" or similar.
 	Strategy string `json:"strategy,omitempty"`
+}
+
+// GetCommitLinking returns the effective commit linking mode.
+// Returns the explicit value if set, otherwise defaults to "prompt"
+// to preserve existing user behavior.
+func (s *EntireSettings) GetCommitLinking() string {
+	if s.CommitLinking != "" {
+		return s.CommitLinking
+	}
+	return CommitLinkingPrompt
 }
 
 // Load loads the Entire settings from .entire/settings.json,
@@ -189,6 +211,17 @@ func mergeJSON(settings *EntireSettings, data []byte) error {
 		settings.Telemetry = &t
 	}
 
+	// Override commit_linking if present and non-empty
+	if commitLinkingRaw, ok := raw["commit_linking"]; ok {
+		var cl string
+		if err := json.Unmarshal(commitLinkingRaw, &cl); err != nil {
+			return fmt.Errorf("parsing commit_linking field: %w", err)
+		}
+		if cl != "" {
+			settings.CommitLinking = cl
+		}
+	}
+
 	return nil
 }
 
@@ -258,35 +291,6 @@ func (s *EntireSettings) IsPushSessionsDisabled() bool {
 		return !boolVal // disabled = !push_sessions
 	}
 	return false
-}
-
-// FilesWithDeprecatedStrategy returns the relative paths of settings files
-// that still contain the deprecated "strategy" field.
-func FilesWithDeprecatedStrategy(ctx context.Context) []string {
-	var files []string
-	for _, rel := range []string{EntireSettingsFile, EntireSettingsLocalFile} {
-		abs, err := paths.AbsPath(ctx, rel)
-		if err != nil {
-			abs = rel // Fallback to relative
-		}
-		s, err := LoadFromFile(abs)
-		if err != nil || s.Strategy == "" {
-			continue
-		}
-		files = append(files, rel)
-	}
-	return files
-}
-
-// WriteDeprecatedStrategyWarnings writes user-friendly deprecation warnings
-// for each settings file that still contains the "strategy" field.
-// Returns true if any warnings were written.
-func WriteDeprecatedStrategyWarnings(ctx context.Context, w io.Writer) bool {
-	files := FilesWithDeprecatedStrategy(ctx)
-	for _, f := range files {
-		fmt.Fprintf(w, "Note: \"%s\" in %s is no longer needed and can be removed. 'manual-commit' is now the only supported strategy.\n", "strategy", f)
-	}
-	return len(files) > 0
 }
 
 // Save saves the settings to .entire/settings.json.

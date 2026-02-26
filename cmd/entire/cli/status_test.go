@@ -340,54 +340,6 @@ func TestRunStatus_ShowsManualCommitStrategy(t *testing.T) {
 	}
 }
 
-func TestRunStatus_DeprecatedStrategyWarning(t *testing.T) {
-	setupTestRepo(t)
-	writeSettings(t, `{"enabled": true, "strategy": "auto-commit"}`)
-
-	var stdout bytes.Buffer
-	if err := runStatus(context.Background(), &stdout, false); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
-	}
-
-	output := stdout.String()
-	if !strings.Contains(output, "no longer needed") {
-		t.Errorf("Expected deprecation warning, got: %s", output)
-	}
-	if !strings.Contains(output, "strategy") {
-		t.Errorf("Expected warning to mention 'strategy', got: %s", output)
-	}
-}
-
-func TestRunStatus_DeprecatedStrategyWarning_Detailed(t *testing.T) {
-	setupTestRepo(t)
-	writeSettings(t, `{"enabled": true, "strategy": "auto-commit"}`)
-
-	var stdout bytes.Buffer
-	if err := runStatus(context.Background(), &stdout, true); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
-	}
-
-	output := stdout.String()
-	if !strings.Contains(output, "no longer needed") {
-		t.Errorf("Expected deprecation warning in detailed mode, got: %s", output)
-	}
-}
-
-func TestRunStatus_NoWarningWithoutStrategy(t *testing.T) {
-	setupTestRepo(t)
-	writeSettings(t, testSettingsEnabled)
-
-	var stdout bytes.Buffer
-	if err := runStatus(context.Background(), &stdout, false); err != nil {
-		t.Fatalf("runStatus() error = %v", err)
-	}
-
-	output := stdout.String()
-	if strings.Contains(output, "no longer needed") {
-		t.Errorf("Expected no deprecation warning, got: %s", output)
-	}
-}
-
 func TestTimeAgo(t *testing.T) {
 	tests := []struct {
 		name     string
