@@ -1141,6 +1141,10 @@ func runExplainBranchWithFilter(ctx context.Context, w io.Writer, noPager bool, 
 	// Get checkpoints for this branch (strategy-agnostic)
 	points, err := getBranchCheckpoints(ctx, repo, branchCheckpointsLimit)
 	if err != nil {
+		// If context was cancelled (e.g. user hit Ctrl+C), exit silently
+		if ctx.Err() != nil {
+			return NewSilentError(ctx.Err())
+		}
 		// Log the error but continue with empty list so user sees helpful message
 		logging.Warn(ctx, "failed to get branch checkpoints", "error", err)
 		points = nil
