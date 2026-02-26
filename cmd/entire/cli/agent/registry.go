@@ -49,6 +49,18 @@ func List() []AgentName {
 	return names
 }
 
+func StringList() []string {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
+	names := make([]string, 0, len(registry))
+	for name := range registry {
+		names = append(names, string(name))
+	}
+	slices.Sort(names)
+	return names
+}
+
 // DetectAll returns all agents whose DetectPresence reports true.
 // Agents are checked in sorted name order (via List()) for deterministic results.
 // Returns an empty slice when no agent is detected.
