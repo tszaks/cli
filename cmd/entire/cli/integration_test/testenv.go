@@ -111,6 +111,8 @@ func (env *TestEnv) Cleanup() {
 // This prevents user/system git config (global gitignore, aliases, etc.) from
 // affecting test behavior. Use this for any exec.Command that runs git or the
 // CLI binary in integration tests.
+//
+// See https://git-scm.com/docs/git#Documentation/git.txt-GITCONFIGGLOBAL
 func gitIsolatedEnv() []string {
 	return append(os.Environ(),
 		"GIT_CONFIG_GLOBAL=/dev/null", // Isolate from user's global git config (e.g. global gitignore)
