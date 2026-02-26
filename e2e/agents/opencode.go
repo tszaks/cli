@@ -61,9 +61,8 @@ func (a *openCodeAgent) IsTransientError(out Output, err error) bool {
 // failed despite exiting 0. Returns the first matching line, or "".
 func detectStderrError(stderr string) string {
 	for _, line := range strings.Split(stderr, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "Error:") || strings.HasPrefix(trimmed, "error:") {
-			return trimmed
+		if strings.Contains(line, "Error:") || strings.Contains(line, "error:") {
+			return strings.TrimSpace(line)
 		}
 	}
 	return ""
