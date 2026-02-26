@@ -816,7 +816,10 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 	}
 
 	t.Run("both trees nil", func(t *testing.T) {
-		result := getAllChangedFilesBetweenTrees(context.Background(), nil, nil)
+		result, err := getAllChangedFilesBetweenTrees(context.Background(), nil, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if result != nil {
 			t.Errorf("expected nil, got %v", result)
 		}
@@ -828,7 +831,10 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 			"file2.go": "content2",
 		})
 
-		result := getAllChangedFilesBetweenTrees(context.Background(), nil, tree2)
+		result, err := getAllChangedFilesBetweenTrees(context.Background(), nil, tree2)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		sort.Strings(result)
 
 		if len(result) != 2 {
@@ -844,7 +850,10 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 			testFile1: "content1",
 		})
 
-		result := getAllChangedFilesBetweenTrees(context.Background(), tree1, nil)
+		result, err := getAllChangedFilesBetweenTrees(context.Background(), tree1, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		if len(result) != 1 || result[0] != testFile1 {
 			t.Errorf("expected [file1.go], got %v", result)
@@ -861,7 +870,10 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 			"file2.go": "also same",
 		})
 
-		result := getAllChangedFilesBetweenTrees(context.Background(), tree1, tree2)
+		result, err := getAllChangedFilesBetweenTrees(context.Background(), tree1, tree2)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		if len(result) != 0 {
 			t.Errorf("expected no changes, got %v", result)
@@ -878,7 +890,10 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 			"unchanged.go": "stays same",
 		})
 
-		result := getAllChangedFilesBetweenTrees(context.Background(), tree1, tree2)
+		result, err := getAllChangedFilesBetweenTrees(context.Background(), tree1, tree2)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
 		if len(result) != 1 || result[0] != testFile1 {
 			t.Errorf("expected [file1.go], got %v", result)
@@ -895,7 +910,10 @@ func TestGetAllChangedFilesBetweenTrees(t *testing.T) {
 			"stays.go": "unchanged",
 		})
 
-		result := getAllChangedFilesBetweenTrees(context.Background(), tree1, tree2)
+		result, err := getAllChangedFilesBetweenTrees(context.Background(), tree1, tree2)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		sort.Strings(result)
 
 		if len(result) != 2 {

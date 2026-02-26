@@ -14,9 +14,9 @@ import (
 // getAllChangedFilesBetweenTrees returns a list of all files that differ between two trees.
 // This includes files that were added, modified, or deleted in either tree.
 // Uses git blob hashes for efficient comparison without reading file contents.
-func getAllChangedFilesBetweenTrees(ctx context.Context, tree1, tree2 *object.Tree) []string {
+func getAllChangedFilesBetweenTrees(ctx context.Context, tree1, tree2 *object.Tree) ([]string, error) {
 	if tree1 == nil && tree2 == nil {
-		return nil
+		return nil, nil
 	}
 
 	// Build hash maps for each tree - O(n) iteration, no content reading
@@ -31,7 +31,7 @@ func getAllChangedFilesBetweenTrees(ctx context.Context, tree1, tree2 *object.Tr
 			tree1Hashes[f.Name] = f.Hash.String()
 			return nil
 		}); err != nil {
-			return nil
+			return nil, err //nolint:wrapcheck // Propagating context/iteration error
 		}
 	}
 
@@ -43,7 +43,7 @@ func getAllChangedFilesBetweenTrees(ctx context.Context, tree1, tree2 *object.Tr
 			tree2Hashes[f.Name] = f.Hash.String()
 			return nil
 		}); err != nil {
-			return nil
+			return nil, err //nolint:wrapcheck // Propagating context/iteration error
 		}
 	}
 
@@ -64,7 +64,7 @@ func getAllChangedFilesBetweenTrees(ctx context.Context, tree1, tree2 *object.Tr
 		}
 	}
 
-	return changed
+	return changed, nil
 }
 
 // getFileContent retrieves the content of a file from a tree.
@@ -226,7 +226,10 @@ func CalculateAttributionWithAccumulated(
 
 	// Calculate total user edits to non-agent files (files not in filesTouched)
 	// These files are not in the shadow tree, so base→head captures ALL their user edits
-	nonAgentFiles := getAllChangedFilesBetweenTrees(ctx, baseTree, headTree)
+	nonAgentFiles, err := getAllChangedFilesBetweenTrees(ctx, baseTree, headTree)
+	if err != nil {
+		return nil
+	}
 	var allUserEditsToNonAgentFiles int
 	for _, filePath := range nonAgentFiles {
 		if slices.Contains(filesTouched, filePath) {
