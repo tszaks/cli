@@ -296,10 +296,16 @@ func EnsureMetadataBranch(repo *git.Repository) error {
 	if err == nil {
 		return nil
 	}
+	if !errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return fmt.Errorf("failed to check metadata branch: %w", err)
+	}
 
 	// Local branch doesn't exist — create from remote if available
 	remoteRefName := plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName)
 	remoteRef, remoteErr := repo.Reference(remoteRefName, true)
+	if remoteErr != nil && !errors.Is(remoteErr, plumbing.ErrReferenceNotFound) {
+		return fmt.Errorf("failed to check remote metadata branch: %w", remoteErr)
+	}
 	if remoteErr == nil {
 		ref := plumbing.NewHashReference(refName, remoteRef.Hash())
 		if err := repo.Storer.SetReference(ref); err != nil {
