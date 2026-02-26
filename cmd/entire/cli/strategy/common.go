@@ -286,18 +286,32 @@ func resolveAgentType(ctxAgentType agent.AgentType, state *SessionState) agent.A
 }
 
 // ensureMetadataBranch creates the orphan entire/checkpoints/v1 branch if it doesn't exist.
-// This branch has no parent and starts with an empty tree.
+// If the remote-tracking branch (origin/entire/checkpoints/v1) exists, creates the local
+// branch from it to preserve existing checkpoint data. Otherwise creates an empty orphan.
 func EnsureMetadataBranch(repo *git.Repository) error {
 	refName := plumbing.NewBranchReferenceName(paths.MetadataBranchName)
 
-	// Check if branch already exists
+	// Check if local branch already exists
 	_, err := repo.Reference(refName, true)
 	if err == nil {
 		// Branch already exists
 		return nil
 	}
 
-	// Create empty tree (no files)
+	// Check if remote-tracking branch exists (e.g., after clone)
+	remoteRefName := plumbing.NewRemoteReferenceName("origin", paths.MetadataBranchName)
+	remoteRef, remoteErr := repo.Reference(remoteRefName, true)
+	if remoteErr == nil {
+		// Remote branch exists — create local branch pointing to the same commit
+		ref := plumbing.NewHashReference(refName, remoteRef.Hash())
+		if err := repo.Storer.SetReference(ref); err != nil {
+			return fmt.Errorf("failed to create metadata branch from remote: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "✓ Created local branch '%s' from origin\n", paths.MetadataBranchName)
+		return nil
+	}
+
+	// No local or remote branch — create empty orphan
 	emptyTree := &object.Tree{Entries: []object.TreeEntry{}}
 	obj := repo.Storer.NewEncodedObject()
 	if err := emptyTree.Encode(obj); err != nil {
