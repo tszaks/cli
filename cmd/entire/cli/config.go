@@ -17,6 +17,7 @@ import (
 const (
 	EntireSettingsFile      = settings.EntireSettingsFile
 	EntireSettingsLocalFile = settings.EntireSettingsLocalFile
+	CommitLinkingAlways     = settings.CommitLinkingAlways
 )
 
 // EntireSettings is an alias for settings.EntireSettings.

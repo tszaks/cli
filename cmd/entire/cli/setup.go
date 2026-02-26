@@ -189,7 +189,7 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 	// Only set commit_linking for brand-new installations.
 	// Existing users who re-run "entire enable" keep the default of "prompt" via GetCommitLinking().
 	if isFirstSetup && settings.CommitLinking == "" {
-		settings.CommitLinking = "always"
+		settings.CommitLinking = CommitLinkingAlways
 	}
 
 	// Set push_sessions option if --skip-push-sessions flag was provided
@@ -609,7 +609,7 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 	}
 	// Default new users to auto-linking (existing users without the field get "prompt" via GetCommitLinking())
 	if isFirstSetup && settings.CommitLinking == "" {
-		settings.CommitLinking = "always"
+		settings.CommitLinking = CommitLinkingAlways
 	}
 
 	// Set push_sessions option if --skip-push-sessions flag was provided
