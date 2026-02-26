@@ -103,8 +103,8 @@ func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Show build information",
-		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Print(versionString())
+		Run: func(cmd *cobra.Command, _ []string) {
+			cmd.Print(versionString())
 		},
 	}
 }
