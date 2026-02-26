@@ -1009,6 +1009,8 @@ func initBareWithMetadataBranch(t *testing.T) string {
 	}
 	run(bareDir, "init", "--bare", "-b", "main")
 	run(workDir, "clone", bareDir, ".")
+	run(workDir, "config", "user.email", "test@test.com")
+	run(workDir, "config", "user.name", "Test User")
 	if err := os.WriteFile(filepath.Join(workDir, "README.md"), []byte("# Test"), 0o644); err != nil {
 		t.Fatalf("failed to write file: %v", err)
 	}
