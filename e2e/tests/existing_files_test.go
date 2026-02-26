@@ -107,7 +107,7 @@ func TestInteractiveContentOverlapRevertNewFile(t *testing.T) {
 
 		s.WaitFor(t, session, prompt, 30*time.Second)
 
-		s.Send(t, session, "create a markdown file at docs/red.md with a paragraph about the colour red. Do not commit. Do not run git. Just write the file.")
+		s.Send(t, session, "create a markdown file at docs/red.md with a paragraph about the colour red. Don't commit, I want to make more changes.")
 		s.WaitFor(t, session, prompt, 60*time.Second)
 		testutil.WaitForFileExists(t, s.Dir, "docs/red.md", 30*time.Second)
 
