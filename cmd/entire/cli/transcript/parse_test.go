@@ -2,6 +2,9 @@ package transcript
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -19,7 +22,7 @@ func TestParseFromBytes_ValidJSONL(t *testing.T) {
 		t.Fatalf("expected 2 lines, got %d", len(lines))
 	}
 
-	if lines[0].Type != "user" || lines[0].UUID != "u1" {
+	if lines[0].Type != TypeUser || lines[0].UUID != "u1" {
 		t.Errorf("unexpected first line: %+v", lines[0])
 	}
 
@@ -223,5 +226,344 @@ func TestSliceFromLine_NoTrailingNewline(t *testing.T) {
 
 	if lines[0].UUID != "u2" {
 		t.Errorf("expected line to be u2, got %s", lines[0].UUID)
+	}
+}
+
+// --- ParseFromFileAtLine tests ---
+
+func createTempTranscript(t *testing.T, content string) string {
+	t.Helper()
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "transcript.jsonl")
+	if err := os.WriteFile(tmpFile, []byte(content), 0o644); err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	return tmpFile
+}
+
+func TestParseFromFileAtLine_ValidMixedMessages(t *testing.T) {
+	t.Parallel()
+
+	content := `{"type":"user","uuid":"user-1","message":{"content":"Hello"}}
+{"type":"assistant","uuid":"asst-1","message":{"content":[{"type":"text","text":"Hi there"}]}}
+{"type":"user","uuid":"user-2","message":{"content":"Thanks"}}`
+
+	tmpFile := createTempTranscript(t, content)
+
+	lines, totalLines, err := ParseFromFileAtLine(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if totalLines != 3 {
+		t.Errorf("totalLines = %d, want 3", totalLines)
+	}
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d", len(lines))
+	}
+
+	if lines[0].Type != TypeUser || lines[0].UUID != "user-1" {
+		t.Errorf("first line mismatch: got type=%s uuid=%s", lines[0].Type, lines[0].UUID)
+	}
+	if lines[1].Type != TypeAssistant || lines[1].UUID != "asst-1" {
+		t.Errorf("second line mismatch: got type=%s uuid=%s", lines[1].Type, lines[1].UUID)
+	}
+	if lines[2].Type != TypeUser || lines[2].UUID != "user-2" {
+		t.Errorf("third line mismatch: got type=%s uuid=%s", lines[2].Type, lines[2].UUID)
+	}
+}
+
+func TestParseFromFileAtLine_SkipsMalformedLines(t *testing.T) {
+	t.Parallel()
+
+	content := `{"type":"user","uuid":"user-1","message":{"content":"Hello"}}
+this is not valid json
+{"type":"assistant","uuid":"asst-1","message":{"content":[{"type":"text","text":"Hi"}]}}
+{"broken json
+{"type":"user","uuid":"user-2","message":{"content":"Bye"}}`
+
+	tmpFile := createTempTranscript(t, content)
+
+	lines, _, err := ParseFromFileAtLine(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 valid lines, got %d", len(lines))
+	}
+}
+
+func TestParseFromFileAtLine_LargeLines(t *testing.T) {
+	t.Parallel()
+
+	// Create a line with content larger than default scanner buffer (64KB)
+	largeContent := strings.Repeat("x", 100*1024) // 100KB
+	content := `{"type":"user","uuid":"user-1","message":{"content":"` + largeContent + `"}}`
+
+	tmpFile := createTempTranscript(t, content)
+
+	lines, _, err := ParseFromFileAtLine(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("unexpected error parsing large line: %v", err)
+	}
+
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
+	}
+}
+
+func TestParseFromFileAtLine_LineExceedsScannerBuffer(t *testing.T) {
+	t.Parallel()
+
+	// Create a line larger than 10MB. bufio.Reader handles this without any size limit.
+	largeContent := strings.Repeat("x", 11*1024*1024) // 11MB
+	content := `{"type":"user","uuid":"user-1","message":{"content":"` + largeContent + `"}}`
+
+	tmpFile := createTempTranscript(t, content)
+
+	lines, _, err := ParseFromFileAtLine(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("unexpected error parsing line exceeding buffer: %v", err)
+	}
+
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
+	}
+}
+
+func TestParseFromFileAtLine_LineExceedsScannerBufferWithOffset(t *testing.T) {
+	t.Parallel()
+
+	// Same test with offset - should handle lines > 10MB
+	largeContent := strings.Repeat("x", 11*1024*1024) // 11MB
+	content := `{"type":"user","uuid":"user-1","message":{"content":"` + largeContent + `"}}`
+
+	tmpFile := createTempTranscript(t, content)
+
+	lines, totalLines, err := ParseFromFileAtLine(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("unexpected error parsing line exceeding buffer: %v", err)
+	}
+
+	if totalLines != 1 {
+		t.Errorf("expected totalLines=1, got %d", totalLines)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 parsed line, got %d", len(lines))
+	}
+}
+
+func TestParseFromFileAtLine_EntireFile(t *testing.T) {
+	t.Parallel()
+
+	content := `{"type":"user","uuid":"user-1","message":{"content":"Hello"}}
+{"type":"assistant","uuid":"asst-1","message":{"content":[{"type":"text","text":"Hi"}]}}
+{"type":"user","uuid":"user-2","message":{"content":"Bye"}}`
+
+	tmpFile := createTempTranscript(t, content)
+
+	lines, totalLines, err := ParseFromFileAtLine(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if totalLines != 3 {
+		t.Errorf("totalLines = %d, want 3", totalLines)
+	}
+	if len(lines) != 3 {
+		t.Errorf("len(lines) = %d, want 3", len(lines))
+	}
+}
+
+func TestParseFromFileAtLine_Offset(t *testing.T) {
+	t.Parallel()
+
+	content := `{"type":"user","uuid":"user-1","message":{"content":"Line1"}}
+{"type":"assistant","uuid":"asst-1","message":{"content":[{"type":"text","text":"Line2"}]}}
+{"type":"user","uuid":"user-2","message":{"content":"Line3"}}
+{"type":"assistant","uuid":"asst-2","message":{"content":[{"type":"text","text":"Line4"}]}}`
+
+	tmpFile := createTempTranscript(t, content)
+
+	// Parse from line 2 (0-indexed, so skip first 2 lines)
+	lines, totalLines, err := ParseFromFileAtLine(tmpFile, 2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if totalLines != 4 {
+		t.Errorf("totalLines = %d, want 4", totalLines)
+	}
+	if len(lines) != 2 {
+		t.Errorf("len(lines) = %d, want 2 (lines after offset)", len(lines))
+	}
+
+	// Verify we got the correct lines (user-2 and asst-2)
+	if len(lines) >= 1 && lines[0].UUID != "user-2" {
+		t.Errorf("first line UUID = %q, want 'user-2'", lines[0].UUID)
+	}
+	if len(lines) >= 2 && lines[1].UUID != "asst-2" {
+		t.Errorf("second line UUID = %q, want 'asst-2'", lines[1].UUID)
+	}
+}
+
+func TestParseFromFileAtLine_OffsetBeyondEnd(t *testing.T) {
+	t.Parallel()
+
+	content := `{"type":"user","uuid":"user-1","message":{"content":"Hello"}}
+{"type":"assistant","uuid":"asst-1","message":{"content":[{"type":"text","text":"Hi"}]}}`
+
+	tmpFile := createTempTranscript(t, content)
+
+	// Parse from line 10 (beyond end of file)
+	lines, totalLines, err := ParseFromFileAtLine(tmpFile, 10)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if totalLines != 2 {
+		t.Errorf("totalLines = %d, want 2", totalLines)
+	}
+	if len(lines) != 0 {
+		t.Errorf("len(lines) = %d, want 0 (no lines after offset)", len(lines))
+	}
+}
+
+func TestParseFromFileAtLine_SkipsMalformedLinesWithOffset(t *testing.T) {
+	t.Parallel()
+
+	content := `{"type":"user","uuid":"user-1","message":{"content":"Hello"}}
+invalid json line
+{"type":"assistant","uuid":"asst-1","message":{"content":[{"type":"text","text":"Hi"}]}}
+{"type":"user","uuid":"user-2","message":{"content":"Bye"}}`
+
+	tmpFile := createTempTranscript(t, content)
+
+	// Parse from line 1 (skip first valid line)
+	lines, totalLines, err := ParseFromFileAtLine(tmpFile, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Total lines counts ALL lines including malformed
+	if totalLines != 4 {
+		t.Errorf("totalLines = %d, want 4", totalLines)
+	}
+	// But parsed lines excludes malformed
+	if len(lines) != 2 {
+		t.Errorf("len(lines) = %d, want 2 (valid lines after offset)", len(lines))
+	}
+}
+
+// --- Role→Type normalization tests (Cursor format) ---
+
+func TestParseFromBytes_NormalizesRoleToType(t *testing.T) {
+	t.Parallel()
+
+	// Cursor transcript uses "role" instead of "type"
+	content := []byte(`{"role":"user","message":{"content":[{"type":"text","text":"hello"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Hi there!"}]}}
+`)
+
+	lines, err := ParseFromBytes(content)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(lines))
+	}
+
+	// Type should be populated from Role
+	if lines[0].Type != TypeUser {
+		t.Errorf("line 0: Type = %q, want %q (normalized from role)", lines[0].Type, TypeUser)
+	}
+	if lines[0].Role != "user" {
+		t.Errorf("line 0: Role = %q, want 'user' (preserved)", lines[0].Role)
+	}
+
+	if lines[1].Type != TypeAssistant {
+		t.Errorf("line 1: Type = %q, want %q (normalized from role)", lines[1].Type, TypeAssistant)
+	}
+	if lines[1].Role != "assistant" {
+		t.Errorf("line 1: Role = %q, want 'assistant' (preserved)", lines[1].Role)
+	}
+}
+
+func TestParseFromBytes_TypeTakesPrecedenceOverRole(t *testing.T) {
+	t.Parallel()
+
+	// When both type and role are set, type should win (Claude Code format)
+	content := []byte(`{"type":"user","role":"something-else","uuid":"u1","message":{"content":"hello"}}
+`)
+
+	lines, err := ParseFromBytes(content)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(lines))
+	}
+
+	if lines[0].Type != TypeUser {
+		t.Errorf("Type = %q, want %q (type should take precedence over role)", lines[0].Type, TypeUser)
+	}
+}
+
+func TestParseFromFileAtLine_NormalizesRoleToType(t *testing.T) {
+	t.Parallel()
+
+	// Cursor transcript format
+	content := `{"role":"user","message":{"content":[{"type":"text","text":"hello"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Hi!"}]}}`
+
+	tmpFile := createTempTranscript(t, content)
+
+	lines, totalLines, err := ParseFromFileAtLine(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if totalLines != 2 {
+		t.Errorf("totalLines = %d, want 2", totalLines)
+	}
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(lines))
+	}
+
+	if lines[0].Type != TypeUser {
+		t.Errorf("line 0: Type = %q, want %q (normalized from role)", lines[0].Type, TypeUser)
+	}
+	if lines[1].Type != TypeAssistant {
+		t.Errorf("line 1: Type = %q, want %q (normalized from role)", lines[1].Type, TypeAssistant)
+	}
+}
+
+func TestParseFromFileAtLine_NormalizesRoleWithOffset(t *testing.T) {
+	t.Parallel()
+
+	content := `{"role":"user","message":{"content":[{"type":"text","text":"first"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"response"}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"second"}]}}`
+
+	tmpFile := createTempTranscript(t, content)
+
+	// Skip first line
+	lines, _, err := ParseFromFileAtLine(tmpFile, 1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(lines))
+	}
+
+	if lines[0].Type != TypeAssistant {
+		t.Errorf("line 0: Type = %q, want %q", lines[0].Type, TypeAssistant)
+	}
+	if lines[1].Type != TypeUser {
+		t.Errorf("line 1: Type = %q, want %q", lines[1].Type, TypeUser)
 	}
 }

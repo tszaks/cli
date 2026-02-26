@@ -19,6 +19,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
+	"github.com/entireio/cli/cmd/entire/cli/transcript"
 
 	"github.com/charmbracelet/huh"
 	"github.com/go-git/go-git/v5"
@@ -545,12 +546,7 @@ func handleLogsOnlyRewindNonInteractive(start strategy.Strategy, point strategy.
 		slog.String("session_id", point.SessionID),
 	)
 
-	restorer, ok := start.(strategy.LogsOnlyRestorer)
-	if !ok {
-		return errors.New("strategy does not support logs-only restoration")
-	}
-
-	sessions, err := restorer.RestoreLogsOnly(point, true) // force=true for explicit rewind
+	sessions, err := start.RestoreLogsOnly(point, true) // force=true for explicit rewind
 	if err != nil {
 		logging.Error(ctx, "logs-only rewind failed",
 			slog.String("checkpoint_id", point.ID),
@@ -588,11 +584,6 @@ func handleLogsOnlyResetNonInteractive(start strategy.Strategy, point strategy.R
 		slog.String("session_id", point.SessionID),
 	)
 
-	restorer, ok := start.(strategy.LogsOnlyRestorer)
-	if !ok {
-		return errors.New("strategy does not support logs-only restoration")
-	}
-
 	// Get current HEAD before reset (for recovery message)
 	currentHead, headErr := getCurrentHeadHash()
 	if headErr != nil {
@@ -600,7 +591,7 @@ func handleLogsOnlyResetNonInteractive(start strategy.Strategy, point strategy.R
 	}
 
 	// Restore logs first
-	sessions, err := restorer.RestoreLogsOnly(point, true) // force=true for explicit rewind
+	sessions, err := start.RestoreLogsOnly(point, true) // force=true for explicit rewind
 	if err != nil {
 		logging.Error(ctx, "logs-only reset failed during log restoration",
 			slog.String("checkpoint_id", point.ID),
@@ -679,7 +670,23 @@ func restoreSessionTranscriptFromStrategy(cpID id.CheckpointID, sessionID string
 		sessionID = returnedSessionID
 	}
 
-	return writeTranscriptToAgentSession(content, sessionID, agent)
+	sessionFile, err := resolveTranscriptPath(sessionID, agent)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(sessionFile), 0o750); err != nil {
+		return "", fmt.Errorf("failed to create agent session directory: %w", err)
+	}
+	agentSession := &agentpkg.AgentSession{
+		SessionID:  sessionID,
+		AgentName:  agent.Name(),
+		SessionRef: sessionFile,
+		NativeData: content,
+	}
+	if err := agent.WriteSession(agentSession); err != nil {
+		return "", fmt.Errorf("failed to write session: %w", err)
+	}
+	return sessionID, nil
 }
 
 // restoreSessionTranscriptFromShadow restores a session transcript from a shadow branch commit.
@@ -704,49 +711,29 @@ func restoreSessionTranscriptFromShadow(commitHash, metadataDir, sessionID strin
 		return "", fmt.Errorf("failed to get transcript from shadow branch: %w", err)
 	}
 
-	return writeTranscriptToAgentSession(content, sessionID, agent)
-}
-
-// writeTranscriptToAgentSession writes transcript content to the agent's session storage.
-func writeTranscriptToAgentSession(content []byte, sessionID string, agent agentpkg.Agent) (string, error) {
 	sessionFile, err := resolveTranscriptPath(sessionID, agent)
 	if err != nil {
 		return "", err
 	}
-
-	// Ensure parent directory exists
 	if err := os.MkdirAll(filepath.Dir(sessionFile), 0o750); err != nil {
 		return "", fmt.Errorf("failed to create agent session directory: %w", err)
 	}
-
-	fmt.Fprintf(os.Stderr, "Writing transcript to: %s\n", sessionFile)
-	if err := os.WriteFile(sessionFile, content, 0o600); err != nil {
-		return "", fmt.Errorf("failed to write transcript: %w", err)
+	agentSession := &agentpkg.AgentSession{
+		SessionID:  sessionID,
+		AgentName:  agent.Name(),
+		SessionRef: sessionFile,
+		NativeData: content,
 	}
-
+	if err := agent.WriteSession(agentSession); err != nil {
+		return "", fmt.Errorf("failed to write session: %w", err)
+	}
 	return sessionID, nil
-}
-
-// resolveTranscriptPath determines the correct file path for an agent's session transcript.
-// Delegates to strategy.ResolveSessionFilePath after computing the fallback session directory.
-func resolveTranscriptPath(sessionID string, agent agentpkg.Agent) (string, error) {
-	repoRoot, err := paths.RepoRoot()
-	if err != nil {
-		return "", fmt.Errorf("failed to get repository root: %w", err)
-	}
-
-	agentSessionDir, err := agent.GetSessionDir(repoRoot)
-	if err != nil {
-		return "", fmt.Errorf("failed to get agent session directory: %w", err)
-	}
-
-	return strategy.ResolveSessionFilePath(sessionID, agent, agentSessionDir), nil
 }
 
 // restoreTaskCheckpointTranscript restores a truncated transcript for a task checkpoint.
 // Uses GetTaskCheckpointTranscript to fetch the transcript from the strategy.
 //
-// NOTE: The transcript parsing/truncation/writing pipeline (parseTranscriptFromBytes,
+// NOTE: The transcript parsing/truncation/writing pipeline (transcript.ParseFromBytes,
 // TruncateTranscriptAtUUID, writeTranscript) assumes Claude's JSONL format.
 // This is acceptable because task checkpoints are currently only created by Claude Code's
 // PostToolUse hook. If other agents gain sub-agent support, this will need a
@@ -759,13 +746,13 @@ func restoreTaskCheckpointTranscript(strat strategy.Strategy, point strategy.Rew
 	}
 
 	// Parse the transcript
-	transcript, err := parseTranscriptFromBytes(content)
+	parsed, err := transcript.ParseFromBytes(content)
 	if err != nil {
 		return fmt.Errorf("failed to parse transcript: %w", err)
 	}
 
 	// Truncate at checkpoint UUID
-	truncated := TruncateTranscriptAtUUID(transcript, checkpointUUID)
+	truncated := TruncateTranscriptAtUUID(parsed, checkpointUUID)
 
 	sessionFile, err := resolveTranscriptPath(sessionID, agent)
 	if err != nil {
@@ -783,32 +770,6 @@ func restoreTaskCheckpointTranscript(strat strategy.Strategy, point strategy.Rew
 		return fmt.Errorf("failed to write truncated transcript: %w", err)
 	}
 
-	return nil
-}
-
-// createContextFileMinimal creates a context file without staged files info
-// (since the strategy will handle staging)
-func createContextFileMinimal(contextFile, commitMessage, sessionID, promptFile, summaryFile string, transcript []transcriptLine) error {
-	prompt, _ := os.ReadFile(promptFile)   //nolint:errcheck,gosec // Best-effort loading of optional context files
-	summary, _ := os.ReadFile(summaryFile) //nolint:errcheck,gosec // Best-effort loading of optional context files
-	keyActions := extractKeyActions(transcript, 10)
-
-	var content strings.Builder
-	content.WriteString("# Session Context\n\n")
-	content.WriteString(fmt.Sprintf("**Session ID:** %s\n\n", sessionID))
-	content.WriteString(fmt.Sprintf("**Commit Message:** %s\n\n", commitMessage))
-	content.WriteString("## Prompt\n\n")
-	content.Write(prompt)
-	content.WriteString("\n\n## Summary\n\n")
-	content.Write(summary)
-	content.WriteString("\n\n## Key Actions\n\n")
-	for _, action := range keyActions {
-		content.WriteString(fmt.Sprintf("- %s\n", action))
-	}
-
-	if err := os.WriteFile(contextFile, []byte(content.String()), 0o600); err != nil {
-		return fmt.Errorf("failed to write context file: %w", err)
-	}
 	return nil
 }
 
@@ -867,14 +828,8 @@ func handleLogsOnlyRestore(start strategy.Strategy, point strategy.RewindPoint) 
 		slog.String("session_id", point.SessionID),
 	)
 
-	// Check if strategy supports logs-only restoration
-	restorer, ok := start.(strategy.LogsOnlyRestorer)
-	if !ok {
-		return errors.New("strategy does not support logs-only restoration")
-	}
-
 	// Restore logs
-	sessions, err := restorer.RestoreLogsOnly(point, true) // force=true for explicit rewind
+	sessions, err := start.RestoreLogsOnly(point, true) // force=true for explicit rewind
 	if err != nil {
 		logging.Error(ctx, "logs-only restore failed",
 			slog.String("checkpoint_id", point.ID),
@@ -910,13 +865,7 @@ func handleLogsOnlyCheckout(start strategy.Strategy, point strategy.RewindPoint,
 		slog.String("session_id", point.SessionID),
 	)
 
-	// First, restore the logs
-	restorer, ok := start.(strategy.LogsOnlyRestorer)
-	if !ok {
-		return errors.New("strategy does not support logs-only restoration")
-	}
-
-	sessions, err := restorer.RestoreLogsOnly(point, true) // force=true for explicit rewind
+	sessions, err := start.RestoreLogsOnly(point, true) // force=true for explicit rewind
 	if err != nil {
 		logging.Error(ctx, "logs-only checkout failed during log restoration",
 			slog.String("checkpoint_id", point.ID),
@@ -981,13 +930,7 @@ func handleLogsOnlyReset(start strategy.Strategy, point strategy.RewindPoint, sh
 		slog.String("session_id", point.SessionID),
 	)
 
-	// First, restore the logs
-	restorer, ok := start.(strategy.LogsOnlyRestorer)
-	if !ok {
-		return errors.New("strategy does not support logs-only restoration")
-	}
-
-	sessions, restoreErr := restorer.RestoreLogsOnly(point, true) // force=true for explicit rewind
+	sessions, restoreErr := start.RestoreLogsOnly(point, true) // force=true for explicit rewind
 	if restoreErr != nil {
 		logging.Error(ctx, "logs-only reset failed during log restoration",
 			slog.String("checkpoint_id", point.ID),
@@ -1181,6 +1124,9 @@ func countCommitsBetween(repo *git.Repository, ancestor, descendant plumbing.Has
 // Uses the git CLI instead of go-git because go-git's HardReset incorrectly
 // deletes untracked directories (like .entire/) even when they're in .gitignore.
 func performGitResetHard(commitHash string) error {
+	if strings.HasPrefix(commitHash, "-") {
+		return fmt.Errorf("reset failed: invalid commit hash %q", commitHash)
+	}
 	ctx := context.Background()
 	cmd := exec.CommandContext(ctx, "git", "reset", "--hard", commitHash)
 	if output, err := cmd.CombinedOutput(); err != nil {

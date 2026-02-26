@@ -3,6 +3,8 @@
 package integration
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -18,7 +20,6 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
-	"github.com/entireio/cli/cmd/entire/cli/strategy"
 	"github.com/entireio/cli/cmd/entire/cli/trailers"
 
 	"github.com/go-git/go-git/v5"
@@ -42,11 +43,12 @@ func getTestBinary() string {
 
 // TestEnv manages an isolated test environment for integration tests.
 type TestEnv struct {
-	T                *testing.T
-	RepoDir          string
-	ClaudeProjectDir string
-	GeminiProjectDir string
-	SessionCounter   int
+	T                  *testing.T
+	RepoDir            string
+	ClaudeProjectDir   string
+	GeminiProjectDir   string
+	OpenCodeProjectDir string
+	SessionCounter     int
 }
 
 // NewTestEnv creates a new isolated test environment.
@@ -71,16 +73,21 @@ func NewTestEnv(t *testing.T) *TestEnv {
 	if resolved, err := filepath.EvalSymlinks(geminiProjectDir); err == nil {
 		geminiProjectDir = resolved
 	}
+	openCodeProjectDir := t.TempDir()
+	if resolved, err := filepath.EvalSymlinks(openCodeProjectDir); err == nil {
+		openCodeProjectDir = resolved
+	}
 
 	env := &TestEnv{
-		T:                t,
-		RepoDir:          repoDir,
-		ClaudeProjectDir: claudeProjectDir,
-		GeminiProjectDir: geminiProjectDir,
+		T:                  t,
+		RepoDir:            repoDir,
+		ClaudeProjectDir:   claudeProjectDir,
+		GeminiProjectDir:   geminiProjectDir,
+		OpenCodeProjectDir: openCodeProjectDir,
 	}
 
 	// Note: Don't use t.Setenv here - it's incompatible with t.Parallel()
-	// CLI commands receive ENTIRE_TEST_CLAUDE_PROJECT_DIR or ENTIRE_TEST_GEMINI_PROJECT_DIR via cmd.Env instead
+	// CLI commands receive ENTIRE_TEST_*_PROJECT_DIR via cmd.Env instead
 
 	return env
 }
@@ -101,11 +108,13 @@ func (env *TestEnv) Cleanup() {
 }
 
 // cliEnv returns the environment variables for CLI execution.
-// Includes both Claude and Gemini project dirs so tests work for any agent.
+// Includes Claude, Gemini, and OpenCode project dirs so tests work for any agent.
 func (env *TestEnv) cliEnv() []string {
 	return append(os.Environ(),
 		"ENTIRE_TEST_CLAUDE_PROJECT_DIR="+env.ClaudeProjectDir,
 		"ENTIRE_TEST_GEMINI_PROJECT_DIR="+env.GeminiProjectDir,
+		"ENTIRE_TEST_OPENCODE_PROJECT_DIR="+env.OpenCodeProjectDir,
+		"ENTIRE_TEST_TTY=0", // Prevent interactive prompts from blocking in tests
 	)
 }
 
@@ -151,20 +160,22 @@ func (env *TestEnv) RunCLIWithStdin(stdin string, args ...string) string {
 
 // NewRepoEnv creates a TestEnv with an initialized git repo and Entire.
 // This is a convenience factory for tests that need a basic repo setup.
-func NewRepoEnv(t *testing.T, strategy string) *TestEnv {
+func NewRepoEnv(t *testing.T) *TestEnv {
 	t.Helper()
 	env := NewTestEnv(t)
 	env.InitRepo()
-	env.InitEntire(strategy)
+	env.InitEntire()
 	return env
 }
 
 // NewRepoWithCommit creates a TestEnv with a git repo, Entire, and an initial commit.
-// The initial commit contains a README.md file.
-func NewRepoWithCommit(t *testing.T, strategy string) *TestEnv {
+// The initial commit contains a README.md and .gitignore (excluding .entire/).
+func NewRepoWithCommit(t *testing.T) *TestEnv {
 	t.Helper()
-	env := NewRepoEnv(t, strategy)
+	env := NewRepoEnv(t)
+	env.WriteFile(".gitignore", ".entire/\n")
 	env.WriteFile("README.md", "# Test Repository")
+	env.GitAdd(".gitignore")
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	return env
@@ -174,76 +185,11 @@ func NewRepoWithCommit(t *testing.T, strategy string) *TestEnv {
 // It initializes the repo, creates an initial commit on main,
 // and checks out a feature branch. This is the most common setup
 // for session and rewind tests since Entire tracking skips main/master.
-func NewFeatureBranchEnv(t *testing.T, strategyName string) *TestEnv {
+func NewFeatureBranchEnv(t *testing.T) *TestEnv {
 	t.Helper()
-	env := NewRepoWithCommit(t, strategyName)
+	env := NewRepoWithCommit(t)
 	env.GitCheckoutNewBranch("feature/test-branch")
 	return env
-}
-
-// AllStrategies returns all strategy names for parameterized tests.
-func AllStrategies() []string {
-	return []string{
-		strategy.StrategyNameAutoCommit,
-		strategy.StrategyNameManualCommit,
-	}
-}
-
-// RunForAllStrategies runs a test function for each strategy in parallel.
-// This reduces boilerplate for tests that need to verify behavior across all strategies.
-// Each subtest gets its own TestEnv with a feature branch ready for testing.
-func RunForAllStrategies(t *testing.T, testFn func(t *testing.T, env *TestEnv, strategyName string)) {
-	t.Helper()
-	for _, strat := range AllStrategies() {
-		strat := strat // capture for parallel
-		t.Run(strat, func(t *testing.T) {
-			t.Parallel()
-			env := NewFeatureBranchEnv(t, strat)
-			testFn(t, env, strat)
-		})
-	}
-}
-
-// RunForAllStrategiesWithRepoEnv runs a test function for each strategy in parallel,
-// using NewRepoWithCommit instead of NewFeatureBranchEnv. Use this for tests
-// that need to test behavior on the main branch.
-func RunForAllStrategiesWithRepoEnv(t *testing.T, testFn func(t *testing.T, env *TestEnv, strategyName string)) {
-	t.Helper()
-	for _, strat := range AllStrategies() {
-		strat := strat // capture for parallel
-		t.Run(strat, func(t *testing.T) {
-			t.Parallel()
-			env := NewRepoWithCommit(t, strat)
-			testFn(t, env, strat)
-		})
-	}
-}
-
-// RunForAllStrategiesWithBasicEnv runs a test function for each strategy in parallel,
-// using NewRepoEnv (git repo + entire init, no commits). Use this for tests
-// that need to verify basic initialization behavior.
-func RunForAllStrategiesWithBasicEnv(t *testing.T, testFn func(t *testing.T, env *TestEnv, strategyName string)) {
-	t.Helper()
-	for _, strat := range AllStrategies() {
-		strat := strat // capture for parallel
-		t.Run(strat, func(t *testing.T) {
-			t.Parallel()
-			env := NewRepoEnv(t, strat)
-			testFn(t, env, strat)
-		})
-	}
-}
-
-// RunForStrategiesSequential runs a test function for specific strategies sequentially.
-// Use this for tests that cannot be parallelized (e.g., tests using os.Chdir).
-// The strategies parameter allows testing a subset of strategies.
-func RunForStrategiesSequential(t *testing.T, strategies []string, testFn func(t *testing.T, strategyName string)) {
-	t.Helper()
-	for _, strat := range strategies {
-		t.Run(strat, func(t *testing.T) {
-			testFn(t, strat)
-		})
-	}
 }
 
 // InitRepo initializes a git repository in the test environment.
@@ -275,31 +221,32 @@ func (env *TestEnv) InitRepo() {
 }
 
 // InitEntire initializes the .entire directory with the specified strategy.
-func (env *TestEnv) InitEntire(strategyName string) {
-	env.InitEntireWithOptions(strategyName, nil)
+func (env *TestEnv) InitEntire() {
+	env.InitEntireWithOptions(nil)
 }
 
 // InitEntireWithOptions initializes the .entire directory with the specified strategy and options.
-func (env *TestEnv) InitEntireWithOptions(strategyName string, strategyOptions map[string]any) {
+func (env *TestEnv) InitEntireWithOptions(strategyOptions map[string]any) {
 	env.T.Helper()
-	env.initEntireInternal(strategyName, "", strategyOptions)
+	env.initEntireInternal(strategyOptions)
 }
 
 // InitEntireWithAgent initializes an Entire test environment with a specific agent.
-// If agentName is empty, defaults to claude-code.
-func (env *TestEnv) InitEntireWithAgent(strategyName string, agentName agent.AgentName) {
+// The agent name is for test documentation only — the CLI resolves the agent from
+// hook commands and checkpoint metadata, not from settings.json.
+func (env *TestEnv) InitEntireWithAgent(_ agent.AgentName) {
 	env.T.Helper()
-	env.initEntireInternal(strategyName, agentName, nil)
+	env.initEntireInternal(nil)
 }
 
 // InitEntireWithAgentAndOptions initializes Entire with the specified strategy, agent, and options.
-func (env *TestEnv) InitEntireWithAgentAndOptions(strategyName string, agentName agent.AgentName, strategyOptions map[string]any) {
+func (env *TestEnv) InitEntireWithAgentAndOptions(_ agent.AgentName, strategyOptions map[string]any) {
 	env.T.Helper()
-	env.initEntireInternal(strategyName, agentName, strategyOptions)
+	env.initEntireInternal(strategyOptions)
 }
 
 // initEntireInternal is the common implementation for InitEntire variants.
-func (env *TestEnv) initEntireInternal(strategyName string, agentName agent.AgentName, strategyOptions map[string]any) {
+func (env *TestEnv) initEntireInternal(strategyOptions map[string]any) {
 	env.T.Helper()
 
 	// Create .entire directory structure
@@ -315,13 +262,12 @@ func (env *TestEnv) initEntireInternal(strategyName string, agentName agent.Agen
 	}
 
 	// Write settings.json
+	// Note: The agent name is NOT stored in settings.json — the CLI determines
+	// the agent from installed hooks (detect presence) or checkpoint metadata.
+	// The settings parser uses DisallowUnknownFields(), so only recognized fields are allowed.
 	settings := map[string]any{
-		"strategy":  strategyName,
+		"enabled":   true,
 		"local_dev": true, // Note: git-triggered hooks won't work (path is relative); tests call hooks via getTestBinary() instead
-	}
-	// Only add agent if specified (otherwise defaults to claude-code)
-	if agentName != "" {
-		settings["agent"] = string(agentName)
 	}
 	if strategyOptions != nil {
 		settings["strategy_options"] = strategyOptions
@@ -464,7 +410,7 @@ func (env *TestEnv) GitCommitWithMetadata(message, metadataDir string) {
 }
 
 // GitCommitWithCheckpointID creates a commit with Entire-Checkpoint trailer.
-// This simulates commits created by the auto-commit strategy.
+// This simulates commits.
 func (env *TestEnv) GitCommitWithCheckpointID(message, checkpointID string) {
 	env.T.Helper()
 
@@ -1133,6 +1079,84 @@ func (env *TestEnv) GitCommitWithTrailerRemoved(message string, files ...string)
 	}
 }
 
+// GitRm stages file deletions using git rm.
+func (env *TestEnv) GitRm(paths ...string) {
+	env.T.Helper()
+
+	args := append([]string{"rm", "--"}, paths...)
+	cmd := exec.Command("git", args...)
+	cmd.Dir = env.RepoDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		env.T.Fatalf("git rm failed: %v\nOutput: %s", err, output)
+	}
+}
+
+// GitCommitStagedWithShadowHooks commits whatever is already staged (without adding files first),
+// running the prepare-commit-msg and post-commit hooks like a real workflow.
+// Use this after GitRm or when files are already staged.
+func (env *TestEnv) GitCommitStagedWithShadowHooks(message string) {
+	env.T.Helper()
+	env.gitCommitStagedWithShadowHooks(message, true)
+}
+
+// gitCommitStagedWithShadowHooks is the shared implementation for committing staged changes with hooks.
+func (env *TestEnv) gitCommitStagedWithShadowHooks(message string, simulateTTY bool) {
+	env.T.Helper()
+
+	// Create a temp file for the commit message (prepare-commit-msg hook modifies this)
+	msgFile := filepath.Join(env.RepoDir, ".git", "COMMIT_EDITMSG")
+	if err := os.WriteFile(msgFile, []byte(message), 0o644); err != nil {
+		env.T.Fatalf("failed to write commit message file: %v", err)
+	}
+
+	// Run prepare-commit-msg hook using the shared binary.
+	prepCmd := exec.Command(getTestBinary(), "hooks", "git", "prepare-commit-msg", msgFile, "message")
+	prepCmd.Dir = env.RepoDir
+	if simulateTTY {
+		prepCmd.Env = append(os.Environ(), "ENTIRE_TEST_TTY=1")
+	} else {
+		prepCmd.Env = append(os.Environ(), "ENTIRE_TEST_TTY=0")
+	}
+	if output, err := prepCmd.CombinedOutput(); err != nil {
+		env.T.Logf("prepare-commit-msg output: %s", output)
+	}
+
+	// Read the modified message
+	modifiedMsg, err := os.ReadFile(msgFile)
+	if err != nil {
+		env.T.Fatalf("failed to read modified commit message: %v", err)
+	}
+
+	// Create the commit using go-git with the modified message
+	repo, err := git.PlainOpen(env.RepoDir)
+	if err != nil {
+		env.T.Fatalf("failed to open git repo: %v", err)
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		env.T.Fatalf("failed to get worktree: %v", err)
+	}
+
+	_, err = worktree.Commit(string(modifiedMsg), &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test User",
+			Email: "test@example.com",
+			When:  time.Now(),
+		},
+	})
+	if err != nil {
+		env.T.Fatalf("failed to commit: %v", err)
+	}
+
+	// Run post-commit hook
+	postCmd := exec.Command(getTestBinary(), "hooks", "git", "post-commit")
+	postCmd.Dir = env.RepoDir
+	if output, err := postCmd.CombinedOutput(); err != nil {
+		env.T.Logf("post-commit output: %s", output)
+	}
+}
+
 // ListBranchesWithPrefix returns all branches that start with the given prefix.
 func (env *TestEnv) ListBranchesWithPrefix(prefix string) []string {
 	env.T.Helper()
@@ -1311,6 +1335,252 @@ func CheckpointSummaryPath(checkpointID string) string {
 // SessionMetadataPath returns the path to the session-level metadata.json for a checkpoint.
 func SessionMetadataPath(checkpointID string) string {
 	return SessionFilePath(checkpointID, paths.MetadataFileName)
+}
+
+// CheckpointValidation contains expected values for checkpoint validation.
+type CheckpointValidation struct {
+	// CheckpointID is the expected checkpoint ID
+	CheckpointID string
+
+	// SessionID is the expected session ID
+	SessionID string
+
+	// Strategy is the expected strategy name
+	Strategy string
+
+	// FilesTouched are the expected files in files_touched
+	FilesTouched []string
+
+	// ExpectedPrompts are strings that should appear in prompt.txt
+	ExpectedPrompts []string
+
+	// ExpectedTranscriptContent are strings that should appear in full.jsonl
+	ExpectedTranscriptContent []string
+
+	// CheckpointsCount is the expected checkpoint count (0 means don't validate)
+	CheckpointsCount int
+}
+
+// ValidateCheckpoint performs comprehensive validation of a checkpoint on the metadata branch.
+// It validates:
+// - Root metadata.json (CheckpointSummary) structure and expected fields
+// - Session metadata.json (CommittedMetadata) structure and expected fields
+// - Transcript file (full.jsonl) is valid JSONL and contains expected content
+// - Content hash file (content_hash.txt) matches SHA256 of transcript
+// - Prompt file (prompt.txt) contains expected prompts
+func (env *TestEnv) ValidateCheckpoint(v CheckpointValidation) {
+	env.T.Helper()
+
+	// Validate root metadata.json (CheckpointSummary)
+	env.validateCheckpointSummary(v)
+
+	// Validate session metadata.json (CommittedMetadata)
+	env.validateSessionMetadata(v)
+
+	// Validate transcript is valid JSONL
+	env.validateTranscriptJSONL(v.CheckpointID, v.ExpectedTranscriptContent)
+
+	// Validate content hash matches transcript
+	env.validateContentHash(v.CheckpointID)
+
+	// Validate prompt.txt contains expected prompts
+	if len(v.ExpectedPrompts) > 0 {
+		env.validatePromptContent(v.CheckpointID, v.ExpectedPrompts)
+	}
+}
+
+// validateCheckpointSummary validates the root metadata.json (CheckpointSummary).
+func (env *TestEnv) validateCheckpointSummary(v CheckpointValidation) {
+	env.T.Helper()
+
+	summaryPath := CheckpointSummaryPath(v.CheckpointID)
+	content, found := env.ReadFileFromBranch(paths.MetadataBranchName, summaryPath)
+	if !found {
+		env.T.Fatalf("CheckpointSummary not found at %s", summaryPath)
+	}
+
+	var summary checkpoint.CheckpointSummary
+	if err := json.Unmarshal([]byte(content), &summary); err != nil {
+		env.T.Fatalf("Failed to parse CheckpointSummary: %v\nContent: %s", err, content)
+	}
+
+	// Validate checkpoint_id
+	if summary.CheckpointID.String() != v.CheckpointID {
+		env.T.Errorf("CheckpointSummary.CheckpointID = %q, want %q", summary.CheckpointID, v.CheckpointID)
+	}
+
+	// Validate strategy
+	if v.Strategy != "" && summary.Strategy != v.Strategy {
+		env.T.Errorf("CheckpointSummary.Strategy = %q, want %q", summary.Strategy, v.Strategy)
+	}
+
+	// Validate sessions array is populated
+	if len(summary.Sessions) == 0 {
+		env.T.Error("CheckpointSummary.Sessions should have at least one entry")
+	}
+
+	// Validate files_touched
+	if len(v.FilesTouched) > 0 {
+		touchedSet := make(map[string]bool)
+		for _, f := range summary.FilesTouched {
+			touchedSet[f] = true
+		}
+		for _, expected := range v.FilesTouched {
+			if !touchedSet[expected] {
+				env.T.Errorf("CheckpointSummary.FilesTouched missing %q, got %v", expected, summary.FilesTouched)
+			}
+		}
+	}
+
+	// Validate checkpoints_count
+	if v.CheckpointsCount > 0 && summary.CheckpointsCount != v.CheckpointsCount {
+		env.T.Errorf("CheckpointSummary.CheckpointsCount = %d, want %d", summary.CheckpointsCount, v.CheckpointsCount)
+	}
+}
+
+// validateSessionMetadata validates the session-level metadata.json (CommittedMetadata).
+func (env *TestEnv) validateSessionMetadata(v CheckpointValidation) {
+	env.T.Helper()
+
+	metadataPath := SessionMetadataPath(v.CheckpointID)
+	content, found := env.ReadFileFromBranch(paths.MetadataBranchName, metadataPath)
+	if !found {
+		env.T.Fatalf("Session metadata not found at %s", metadataPath)
+	}
+
+	var metadata checkpoint.CommittedMetadata
+	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
+		env.T.Fatalf("Failed to parse CommittedMetadata: %v\nContent: %s", err, content)
+	}
+
+	// Validate checkpoint_id
+	if metadata.CheckpointID.String() != v.CheckpointID {
+		env.T.Errorf("CommittedMetadata.CheckpointID = %q, want %q", metadata.CheckpointID, v.CheckpointID)
+	}
+
+	// Validate session_id
+	if v.SessionID != "" && metadata.SessionID != v.SessionID {
+		env.T.Errorf("CommittedMetadata.SessionID = %q, want %q", metadata.SessionID, v.SessionID)
+	}
+
+	// Validate strategy
+	if v.Strategy != "" && metadata.Strategy != v.Strategy {
+		env.T.Errorf("CommittedMetadata.Strategy = %q, want %q", metadata.Strategy, v.Strategy)
+	}
+
+	// Validate created_at is not zero
+	if metadata.CreatedAt.IsZero() {
+		env.T.Error("CommittedMetadata.CreatedAt should not be zero")
+	}
+
+	// Validate files_touched
+	if len(v.FilesTouched) > 0 {
+		touchedSet := make(map[string]bool)
+		for _, f := range metadata.FilesTouched {
+			touchedSet[f] = true
+		}
+		for _, expected := range v.FilesTouched {
+			if !touchedSet[expected] {
+				env.T.Errorf("CommittedMetadata.FilesTouched missing %q, got %v", expected, metadata.FilesTouched)
+			}
+		}
+	}
+
+	// Validate checkpoints_count
+	if v.CheckpointsCount > 0 && metadata.CheckpointsCount != v.CheckpointsCount {
+		env.T.Errorf("CommittedMetadata.CheckpointsCount = %d, want %d", metadata.CheckpointsCount, v.CheckpointsCount)
+	}
+}
+
+// validateTranscriptJSONL validates that full.jsonl exists and is valid JSON or JSONL.
+// It supports both:
+// - JSON format (single document, used by OpenCode and Gemini CLI)
+// - JSONL format (one JSON object per line, used by Claude Code)
+func (env *TestEnv) validateTranscriptJSONL(checkpointID string, expectedContent []string) {
+	env.T.Helper()
+
+	transcriptPath := SessionFilePath(checkpointID, paths.TranscriptFileName)
+	content, found := env.ReadFileFromBranch(paths.MetadataBranchName, transcriptPath)
+	if !found {
+		env.T.Fatalf("Transcript not found at %s", transcriptPath)
+	}
+
+	// First try to parse as a single JSON document (OpenCode/Gemini format)
+	var jsonDoc any
+	if err := json.Unmarshal([]byte(content), &jsonDoc); err == nil {
+		// Valid JSON document - validation passed
+	} else {
+		// Fall back to JSONL validation (Claude Code format)
+		lines := strings.Split(content, "\n")
+		validLines := 0
+		for i, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			validLines++
+			var obj map[string]any
+			if err := json.Unmarshal([]byte(line), &obj); err != nil {
+				env.T.Errorf("Transcript line %d is not valid JSON: %v\nLine: %s", i+1, err, line)
+			}
+		}
+
+		if validLines == 0 {
+			env.T.Error("Transcript is empty (no valid JSON content)")
+		}
+	}
+
+	// Validate expected content appears in transcript
+	for _, expected := range expectedContent {
+		if !strings.Contains(content, expected) {
+			env.T.Errorf("Transcript should contain %q", expected)
+		}
+	}
+}
+
+// validateContentHash validates that content_hash.txt matches the SHA256 of the transcript.
+func (env *TestEnv) validateContentHash(checkpointID string) {
+	env.T.Helper()
+
+	// Read transcript
+	transcriptPath := SessionFilePath(checkpointID, paths.TranscriptFileName)
+	transcript, found := env.ReadFileFromBranch(paths.MetadataBranchName, transcriptPath)
+	if !found {
+		env.T.Fatalf("Transcript not found at %s", transcriptPath)
+	}
+
+	// Read content hash
+	hashPath := SessionFilePath(checkpointID, "content_hash.txt")
+	storedHash, found := env.ReadFileFromBranch(paths.MetadataBranchName, hashPath)
+	if !found {
+		env.T.Fatalf("Content hash not found at %s", hashPath)
+	}
+	storedHash = strings.TrimSpace(storedHash)
+
+	// Calculate expected hash with sha256: prefix (matches format in committed.go)
+	hash := sha256.Sum256([]byte(transcript))
+	expectedHash := "sha256:" + hex.EncodeToString(hash[:])
+
+	if storedHash != expectedHash {
+		env.T.Errorf("Content hash mismatch:\n  stored:   %s\n  expected: %s", storedHash, expectedHash)
+	}
+}
+
+// validatePromptContent validates that prompt.txt contains the expected prompts.
+func (env *TestEnv) validatePromptContent(checkpointID string, expectedPrompts []string) {
+	env.T.Helper()
+
+	promptPath := SessionFilePath(checkpointID, paths.PromptFileName)
+	content, found := env.ReadFileFromBranch(paths.MetadataBranchName, promptPath)
+	if !found {
+		env.T.Fatalf("Prompt file not found at %s", promptPath)
+	}
+
+	for _, expected := range expectedPrompts {
+		if !strings.Contains(content, expected) {
+			env.T.Errorf("Prompt file should contain %q\nContent: %s", expected, content)
+		}
+	}
 }
 
 func findModuleRoot() string {

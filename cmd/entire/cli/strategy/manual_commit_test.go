@@ -21,35 +21,6 @@ import (
 
 const testTrailerCheckpointID id.CheckpointID = "a1b2c3d4e5f6"
 
-func TestShadowStrategy_Registration(t *testing.T) {
-	s, err := Get(StrategyNameManualCommit)
-	if err != nil {
-		t.Fatalf("Get(%q) error = %v", StrategyNameManualCommit, err)
-	}
-	if s == nil {
-		t.Fatal("Get() returned nil strategy")
-	}
-	if s.Name() != StrategyNameManualCommit {
-		t.Errorf("Name() = %q, want %q", s.Name(), StrategyNameManualCommit)
-	}
-}
-
-func TestShadowStrategy_DirectInstantiation(t *testing.T) {
-	// NewShadowStrategy delegates to NewManualCommitStrategy, so returns manual-commit name.
-	s := NewManualCommitStrategy()
-	if s.Name() != StrategyNameManualCommit {
-		t.Errorf("Name() = %q, want %q", s.Name(), StrategyNameManualCommit)
-	}
-}
-
-func TestShadowStrategy_Description(t *testing.T) {
-	s := NewManualCommitStrategy()
-	desc := s.Description()
-	if desc == "" {
-		t.Error("Description() returned empty string")
-	}
-}
-
 func TestShadowStrategy_ValidateRepository(t *testing.T) {
 	dir := t.TempDir()
 	_, err := git.PlainInit(dir, false)
@@ -932,6 +903,69 @@ func TestAddCheckpointTrailerWithComment_NoPrompt(t *testing.T) {
 	}
 }
 
+func TestAddCheckpointTrailer_ConventionalCommitSubject(t *testing.T) {
+	t.Parallel()
+
+	// Regression: single-line conventional commit subjects like "docs: Add foo"
+	// contain ": " which falsely triggered the "already has trailers" detection,
+	// causing the trailer to be appended without a blank line separator.
+	tests := []struct {
+		name    string
+		message string
+	}{
+		{
+			name:    "conventional commit docs",
+			message: "docs: Add red.md with information about the color red\n",
+		},
+		{
+			name:    "conventional commit feat",
+			message: "feat: Add new login flow\n",
+		},
+		{
+			name:    "conventional commit fix with scope",
+			message: "fix(auth): Resolve token expiry issue\n",
+		},
+		{
+			name:    "single line no newline",
+			message: "docs: Add something",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := addCheckpointTrailer(tt.message, testTrailerCheckpointID)
+
+			// The trailer must be separated from the subject by a blank line
+			if !strings.Contains(result, "\n\n"+trailers.CheckpointTrailerKey+":") {
+				t.Errorf("addCheckpointTrailer() trailer not separated by blank line from subject.\ngot: %q", result)
+			}
+		})
+	}
+}
+
+func TestAddCheckpointTrailer_ExistingTrailers(t *testing.T) {
+	t.Parallel()
+
+	// When a message already has trailers (in a separate paragraph), the
+	// new trailer should be appended directly (no extra blank line).
+	message := "feat: Add login\n\nSigned-off-by: Test User <test@example.com>\n"
+	result := addCheckpointTrailer(message, testTrailerCheckpointID)
+
+	// Should NOT add a double blank line before our trailer
+	if strings.Contains(result, "\n\n"+trailers.CheckpointTrailerKey) {
+		t.Errorf("addCheckpointTrailer() added extra blank line before existing trailer block.\ngot: %q", result)
+	}
+
+	// Should contain both trailers
+	if !strings.Contains(result, "Signed-off-by:") {
+		t.Errorf("addCheckpointTrailer() lost existing trailer.\ngot: %q", result)
+	}
+	if !strings.Contains(result, trailers.CheckpointTrailerKey+":") {
+		t.Errorf("addCheckpointTrailer() missing our trailer.\ngot: %q", result)
+	}
+}
+
 func TestCheckpointInfo_JSONRoundTrip(t *testing.T) {
 	original := CheckpointInfo{
 		CheckpointID:     "a1b2c3d4e5f6",
@@ -1110,9 +1144,9 @@ func TestShadowStrategy_FilesTouched_OnlyModifiedFiles(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	// First checkpoint using SaveChanges - captures ALL working directory files
+	// First checkpoint using SaveStep - captures ALL working directory files
 	// (for rewind purposes), but tracks only modified files in FilesTouched
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{}, // No files modified yet
 		NewFiles:       []string{},
@@ -1124,7 +1158,7 @@ func TestShadowStrategy_FilesTouched_OnlyModifiedFiles(t *testing.T) {
 		AuthorEmail:    "test@test.com",
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() error = %v", err)
+		t.Fatalf("SaveStep() error = %v", err)
 	}
 
 	// Now simulate a second checkpoint where ONLY existing1.txt is modified
@@ -1134,8 +1168,8 @@ func TestShadowStrategy_FilesTouched_OnlyModifiedFiles(t *testing.T) {
 		t.Fatalf("failed to modify existing1.txt: %v", err)
 	}
 
-	// Second checkpoint using SaveChanges - only modified file should be tracked
-	err = s.SaveChanges(SaveContext{
+	// Second checkpoint using SaveStep - only modified file should be tracked
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"existing1.txt"}, // Only this file was modified
 		NewFiles:       []string{},
@@ -1147,7 +1181,7 @@ func TestShadowStrategy_FilesTouched_OnlyModifiedFiles(t *testing.T) {
 		AuthorEmail:    "test@test.com",
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() error = %v", err)
+		t.Fatalf("SaveStep() error = %v", err)
 	}
 
 	// Load session state to verify FilesTouched
@@ -1158,7 +1192,7 @@ func TestShadowStrategy_FilesTouched_OnlyModifiedFiles(t *testing.T) {
 
 	// Now condense the session
 	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
-	result, err := s.CondenseSession(repo, checkpointID, state)
+	result, err := s.CondenseSession(repo, checkpointID, state, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -1479,7 +1513,6 @@ func TestShadowStrategy_CondenseSession_EphemeralBranchTrailer(t *testing.T) {
 		t.Fatalf("failed to create metadata dir: %v", err)
 	}
 
-	//nolint:goconst // test data repeated across test functions
 	transcript := `{"type":"human","message":{"content":"test prompt"}}
 {"type":"assistant","message":{"content":"test response"}}
 `
@@ -1487,8 +1520,8 @@ func TestShadowStrategy_CondenseSession_EphemeralBranchTrailer(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	// Use SaveChanges to create a checkpoint (this creates the shadow branch)
-	err = s.SaveChanges(SaveContext{
+	// Use SaveStep to create a checkpoint (this creates the shadow branch)
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{},
@@ -1500,7 +1533,7 @@ func TestShadowStrategy_CondenseSession_EphemeralBranchTrailer(t *testing.T) {
 		AuthorEmail:    "test@test.com",
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() error = %v", err)
+		t.Fatalf("SaveStep() error = %v", err)
 	}
 
 	// Load session state
@@ -1511,7 +1544,7 @@ func TestShadowStrategy_CondenseSession_EphemeralBranchTrailer(t *testing.T) {
 
 	// Condense the session
 	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
-	_, err = s.CondenseSession(repo, checkpointID, state)
+	_, err = s.CondenseSession(repo, checkpointID, state, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -1535,9 +1568,9 @@ func TestShadowStrategy_CondenseSession_EphemeralBranchTrailer(t *testing.T) {
 	}
 }
 
-// TestSaveChanges_EmptyBaseCommit_Recovery verifies that SaveChanges recovers gracefully
+// TestSaveStep_EmptyBaseCommit_Recovery verifies that SaveStep recovers gracefully
 // when a session state exists with empty BaseCommit (can happen from concurrent warning state).
-func TestSaveChanges_EmptyBaseCommit_Recovery(t *testing.T) {
+func TestSaveStep_EmptyBaseCommit_Recovery(t *testing.T) {
 	dir := t.TempDir()
 	repo, err := git.PlainInit(dir, false)
 	if err != nil {
@@ -1591,8 +1624,8 @@ func TestSaveChanges_EmptyBaseCommit_Recovery(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	// SaveChanges should recover by re-initializing the session state
-	err = s.SaveChanges(SaveContext{
+	// SaveStep should recover by re-initializing the session state
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{},
@@ -1604,7 +1637,7 @@ func TestSaveChanges_EmptyBaseCommit_Recovery(t *testing.T) {
 		AuthorEmail:    "test@test.com",
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() should recover from empty BaseCommit, got error: %v", err)
+		t.Fatalf("SaveStep() should recover from empty BaseCommit, got error: %v", err)
 	}
 
 	// Verify session state now has a valid BaseCommit
@@ -1620,10 +1653,10 @@ func TestSaveChanges_EmptyBaseCommit_Recovery(t *testing.T) {
 	}
 }
 
-// TestSaveChanges_UsesCtxAgentType_WhenNoSessionState tests that SaveChanges uses
+// TestSaveStep_UsesCtxAgentType_WhenNoSessionState tests that SaveStep uses
 // ctx.AgentType instead of DefaultAgentType ("Agent") when no session state exists.
 // This is the primary bug scenario for ENT-207.
-func TestSaveChanges_UsesCtxAgentType_WhenNoSessionState(t *testing.T) {
+func TestSaveStep_UsesCtxAgentType_WhenNoSessionState(t *testing.T) {
 	dir := t.TempDir()
 	repo, err := git.PlainInit(dir, false)
 	if err != nil {
@@ -1652,7 +1685,7 @@ func TestSaveChanges_UsesCtxAgentType_WhenNoSessionState(t *testing.T) {
 	sessionID := "2026-02-06-agent-type-test"
 
 	// NO session state exists (simulates InitializeSession failure)
-	// SaveChanges should use ctx.AgentType, not DefaultAgentType
+	// SaveStep should use ctx.AgentType, not DefaultAgentType
 
 	metadataDir := ".entire/metadata/" + sessionID
 	metadataDirAbs := filepath.Join(dir, metadataDir)
@@ -1664,7 +1697,7 @@ func TestSaveChanges_UsesCtxAgentType_WhenNoSessionState(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{},
@@ -1677,7 +1710,7 @@ func TestSaveChanges_UsesCtxAgentType_WhenNoSessionState(t *testing.T) {
 		AgentType:      agent.AgentTypeClaudeCode,
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() error = %v", err)
+		t.Fatalf("SaveStep() error = %v", err)
 	}
 
 	loaded, err := s.loadSessionState(sessionID)
@@ -1689,9 +1722,9 @@ func TestSaveChanges_UsesCtxAgentType_WhenNoSessionState(t *testing.T) {
 	}
 }
 
-// TestSaveChanges_UsesCtxAgentType_WhenPartialState tests that SaveChanges uses
+// TestSaveStep_UsesCtxAgentType_WhenPartialState tests that SaveStep uses
 // ctx.AgentType when a partial session state exists (empty BaseCommit and AgentType).
-func TestSaveChanges_UsesCtxAgentType_WhenPartialState(t *testing.T) {
+func TestSaveStep_UsesCtxAgentType_WhenPartialState(t *testing.T) {
 	dir := t.TempDir()
 	repo, err := git.PlainInit(dir, false)
 	if err != nil {
@@ -1739,7 +1772,7 @@ func TestSaveChanges_UsesCtxAgentType_WhenPartialState(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{},
@@ -1752,7 +1785,7 @@ func TestSaveChanges_UsesCtxAgentType_WhenPartialState(t *testing.T) {
 		AgentType:      agent.AgentTypeClaudeCode,
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() error = %v", err)
+		t.Fatalf("SaveStep() error = %v", err)
 	}
 
 	loaded, err := s.loadSessionState(sessionID)
@@ -1851,6 +1884,43 @@ func TestCountTranscriptItems(t *testing.T) {
 			content:   "",
 			expected:  0,
 		},
+		{
+			name:      "Gemini JSON with array content (real format)",
+			agentType: agent.AgentTypeGemini,
+			content: `{
+				"messages": [
+					{"type": "user", "content": [{"text": "Hello"}]},
+					{"type": "gemini", "content": "Hi there!"},
+					{"type": "user", "content": [{"text": "Do something"}]},
+					{"type": "gemini", "content": "Done!"}
+				]
+			}`,
+			expected: 4,
+		},
+		{
+			name:      "OpenCode export JSON with messages",
+			agentType: agent.AgentTypeOpenCode,
+			content: `{
+				"info": {"id": "session-1"},
+				"messages": [
+					{"info": {"role": "user"}, "parts": [{"type": "text", "text": "Hello"}]},
+					{"info": {"role": "assistant"}, "parts": [{"type": "text", "text": "Hi there!"}]}
+				]
+			}`,
+			expected: 2,
+		},
+		{
+			name:      "OpenCode export JSON empty messages",
+			agentType: agent.AgentTypeOpenCode,
+			content:   `{"info": {"id": "session-1"}, "messages": []}`,
+			expected:  0,
+		},
+		{
+			name:      "OpenCode invalid JSON",
+			agentType: agent.AgentTypeOpenCode,
+			content:   `not valid json`,
+			expected:  0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1917,6 +1987,19 @@ func TestExtractUserPrompts(t *testing.T) {
 			agentType: agent.AgentTypeClaudeCode,
 			content:   "",
 			expected:  nil,
+		},
+		{
+			name:      "Gemini array content (real format)",
+			agentType: agent.AgentTypeGemini,
+			content: `{
+				"messages": [
+					{"type": "user", "content": [{"text": "Create a file"}]},
+					{"type": "gemini", "content": "Done!"},
+					{"type": "user", "content": [{"text": "Edit the file"}]},
+					{"type": "gemini", "content": "Updated!"}
+				]
+			}`,
+			expected: []string{"Create a file", "Edit the file"},
 		},
 	}
 
@@ -1995,7 +2078,7 @@ func TestCondenseSession_IncludesInitialAttribution(t *testing.T) {
 	}
 
 	// First checkpoint - captures agent's work on shadow branch
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"test.go"},
 		NewFiles:       []string{},
@@ -2007,7 +2090,7 @@ func TestCondenseSession_IncludesInitialAttribution(t *testing.T) {
 		AuthorEmail:    "test@test.com",
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() error = %v", err)
+		t.Fatalf("SaveStep() error = %v", err)
 	}
 
 	// Human edits the file (adds a comment)
@@ -2035,7 +2118,7 @@ func TestCondenseSession_IncludesInitialAttribution(t *testing.T) {
 
 	// Condense the session - this should calculate InitialAttribution
 	checkpointID := id.MustCheckpointID("a1b2c3d4e5f6")
-	result, err := s.CondenseSession(repo, checkpointID, state)
+	result, err := s.CondenseSession(repo, checkpointID, state, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -2122,6 +2205,322 @@ func TestCondenseSession_IncludesInitialAttribution(t *testing.T) {
 		metadata.InitialAttribution.HumanRemoved,
 		metadata.InitialAttribution.TotalCommitted,
 		metadata.InitialAttribution.AgentPercentage)
+}
+
+// TestCondenseSession_AttributionWithoutShadowBranch verifies that when an agent
+// commits mid-turn (before SaveStep), attribution is still calculated using HEAD
+// as the shadow tree. This reproduces the bug where agent_lines=0 for mid-turn commits.
+func TestCondenseSession_AttributionWithoutShadowBranch(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create initial empty commit
+	initialHash, err := worktree.Commit("Initial commit", &git.CommitOptions{
+		Author:            &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+		AllowEmptyCommits: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Agent creates files in nested directories and commits (mid-turn, no SaveStep)
+	srcDir := filepath.Join(dir, "src")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatalf("failed to create src dir: %v", err)
+	}
+	agentFile := filepath.Join(srcDir, "main.go")
+	agentContent := "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n"
+	if err := os.WriteFile(agentFile, []byte(agentContent), 0o644); err != nil {
+		t.Fatalf("failed to write agent file: %v", err)
+	}
+	agentFile2 := filepath.Join(dir, "README.md")
+	agentContent2 := "# My Project\n\nA test project.\n"
+	if err := os.WriteFile(agentFile2, []byte(agentContent2), 0o644); err != nil {
+		t.Fatalf("failed to write agent file 2: %v", err)
+	}
+	if _, err := worktree.Add("src/main.go"); err != nil {
+		t.Fatalf("failed to stage file: %v", err)
+	}
+	if _, err := worktree.Add("README.md"); err != nil {
+		t.Fatalf("failed to stage file 2: %v", err)
+	}
+	_, err = worktree.Commit("Add project files", &git.CommitOptions{
+		Author: &object.Signature{Name: "Agent", Email: "agent@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	// Create a live transcript file (required when no shadow branch)
+	transcriptDir := filepath.Join(dir, ".claude", "projects", "test")
+	if err := os.MkdirAll(transcriptDir, 0o755); err != nil {
+		t.Fatalf("failed to create transcript dir: %v", err)
+	}
+	transcriptFile := filepath.Join(transcriptDir, "session.jsonl")
+	transcriptContent := `{"type":"human","message":{"content":"create project files"}}
+{"type":"assistant","message":{"content":"I'll create src/main.go and README.md"}}
+`
+	if err := os.WriteFile(transcriptFile, []byte(transcriptContent), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// Construct session state manually (no SaveStep was called, so no shadow branch)
+	state := &SessionState{
+		SessionID:             "test-no-shadow",
+		BaseCommit:            initialHash.String(),
+		AttributionBaseCommit: initialHash.String(),
+		FilesTouched:          []string{"src/main.go", "README.md"},
+		TranscriptPath:        transcriptFile,
+		AgentType:             "Claude Code",
+	}
+
+	s := &ManualCommitStrategy{}
+	checkpointID := id.MustCheckpointID("c3d4e5f6a7b8")
+
+	// Condense — no shadow branch exists, but attribution should still work
+	committedFiles := map[string]struct{}{"src/main.go": {}, "README.md": {}}
+	result, err := s.CondenseSession(repo, checkpointID, state, committedFiles)
+	if err != nil {
+		t.Fatalf("CondenseSession() error = %v", err)
+	}
+	if result.CheckpointID != checkpointID {
+		t.Errorf("CheckpointID = %q, want %q", result.CheckpointID, checkpointID)
+	}
+
+	// Read metadata from entire/checkpoints/v1 branch
+	sessionsRef, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	if err != nil {
+		t.Fatalf("failed to get sessions branch: %v", err)
+	}
+	sessionsCommit, err := repo.CommitObject(sessionsRef.Hash())
+	if err != nil {
+		t.Fatalf("failed to get sessions commit: %v", err)
+	}
+	tree, err := sessionsCommit.Tree()
+	if err != nil {
+		t.Fatalf("failed to get tree: %v", err)
+	}
+
+	sessionMetadataPath := checkpointID.Path() + "/0/" + paths.MetadataFileName
+	metadataFile, err := tree.File(sessionMetadataPath)
+	if err != nil {
+		t.Fatalf("failed to find session metadata at %s: %v", sessionMetadataPath, err)
+	}
+	content, err := metadataFile.Contents()
+	if err != nil {
+		t.Fatalf("failed to read metadata: %v", err)
+	}
+
+	var metadata struct {
+		InitialAttribution *struct {
+			AgentLines      int     `json:"agent_lines"`
+			HumanAdded      int     `json:"human_added"`
+			TotalCommitted  int     `json:"total_committed"`
+			AgentPercentage float64 `json:"agent_percentage"`
+		} `json:"initial_attribution"`
+	}
+	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
+		t.Fatalf("failed to parse metadata: %v", err)
+	}
+
+	if metadata.InitialAttribution == nil {
+		t.Fatal("InitialAttribution should be present even without shadow branch")
+	}
+
+	// Agent created all content (10 lines across 2 files), no human edits
+	if metadata.InitialAttribution.AgentLines == 0 {
+		t.Error("AgentLines should be > 0 (agent created the file)")
+	}
+	if metadata.InitialAttribution.TotalCommitted == 0 {
+		t.Error("TotalCommitted should be > 0")
+	}
+	if metadata.InitialAttribution.AgentPercentage <= 50 {
+		t.Errorf("AgentPercentage should be > 50%% (agent wrote all content), got %.1f%%",
+			metadata.InitialAttribution.AgentPercentage)
+	}
+
+	t.Logf("Attribution (no shadow branch): agent=%d, human_added=%d, total=%d, percentage=%.1f%%",
+		metadata.InitialAttribution.AgentLines,
+		metadata.InitialAttribution.HumanAdded,
+		metadata.InitialAttribution.TotalCommitted,
+		metadata.InitialAttribution.AgentPercentage)
+}
+
+// TestCondenseSession_AttributionWithoutShadowBranch_MixedHumanAgent verifies attribution
+// when an agent commits mid-turn (no shadow branch) and the commit includes both human
+// pre-session changes and agent-created files. Human changes are captured in PromptAttributions
+// and should be subtracted from the total to isolate agent contribution.
+func TestCondenseSession_AttributionWithoutShadowBranch_MixedHumanAgent(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create initial commit with one file
+	existingFile := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(existingFile, []byte("key: value\n"), 0o644); err != nil {
+		t.Fatalf("failed to write initial file: %v", err)
+	}
+	if _, err := wt.Add("config.yaml"); err != nil {
+		t.Fatalf("failed to stage: %v", err)
+	}
+	initialHash, err := wt.Commit("Initial commit", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	// Human adds a new file (before the agent session starts).
+	// This is captured by calculatePromptAttributionAtStart.
+	humanFile := filepath.Join(dir, "docs", "notes.md")
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0o755); err != nil {
+		t.Fatalf("failed to mkdir: %v", err)
+	}
+	humanContent := "# Notes\n\nSome human notes.\nAnother line.\n"
+	if err := os.WriteFile(humanFile, []byte(humanContent), 0o644); err != nil {
+		t.Fatalf("failed to write human file: %v", err)
+	}
+
+	// Agent creates its own file in a nested directory
+	if err := os.MkdirAll(filepath.Join(dir, "src"), 0o755); err != nil {
+		t.Fatalf("failed to mkdir: %v", err)
+	}
+	agentFile := filepath.Join(dir, "src", "app.go")
+	agentContent := "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"app\")\n}\n"
+	if err := os.WriteFile(agentFile, []byte(agentContent), 0o644); err != nil {
+		t.Fatalf("failed to write agent file: %v", err)
+	}
+
+	// Agent stages everything and commits (mid-turn, no SaveStep)
+	if _, err := wt.Add("docs/notes.md"); err != nil {
+		t.Fatalf("failed to stage: %v", err)
+	}
+	if _, err := wt.Add("src/app.go"); err != nil {
+		t.Fatalf("failed to stage: %v", err)
+	}
+	_, err = wt.Commit("Add app and notes", &git.CommitOptions{
+		Author: &object.Signature{Name: "Agent", Email: "agent@test.com", When: time.Now()},
+	})
+	if err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	// Create live transcript
+	transcriptDir := filepath.Join(dir, ".claude", "projects", "test")
+	if err := os.MkdirAll(transcriptDir, 0o755); err != nil {
+		t.Fatalf("failed to create transcript dir: %v", err)
+	}
+	transcriptFile := filepath.Join(transcriptDir, "session.jsonl")
+	if err := os.WriteFile(transcriptFile, []byte(`{"type":"human","message":{"content":"create src/app.go"}}
+{"type":"assistant","message":{"content":"Done"}}
+`), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// Session state with PromptAttributions capturing human's pre-session file (4 lines)
+	state := &SessionState{
+		SessionID:             "test-mixed-no-shadow",
+		BaseCommit:            initialHash.String(),
+		AttributionBaseCommit: initialHash.String(),
+		FilesTouched:          []string{"src/app.go"},
+		TranscriptPath:        transcriptFile,
+		AgentType:             "Claude Code",
+		PromptAttributions: []PromptAttribution{{
+			CheckpointNumber: 1,
+			UserLinesAdded:   4,
+			UserAddedPerFile: map[string]int{"docs/notes.md": 4},
+		}},
+	}
+
+	s := &ManualCommitStrategy{}
+	checkpointID := id.MustCheckpointID("d4e5f6a7b8c9")
+
+	committedFiles := map[string]struct{}{"src/app.go": {}, "docs/notes.md": {}}
+	result, err := s.CondenseSession(repo, checkpointID, state, committedFiles)
+	if err != nil {
+		t.Fatalf("CondenseSession() error = %v", err)
+	}
+	if result.CheckpointID != checkpointID {
+		t.Errorf("CheckpointID = %q, want %q", result.CheckpointID, checkpointID)
+	}
+
+	// Read metadata
+	sessionsRef, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	if err != nil {
+		t.Fatalf("failed to get sessions branch: %v", err)
+	}
+	sessionsCommit, err := repo.CommitObject(sessionsRef.Hash())
+	if err != nil {
+		t.Fatalf("failed to get sessions commit: %v", err)
+	}
+	tree, err := sessionsCommit.Tree()
+	if err != nil {
+		t.Fatalf("failed to get tree: %v", err)
+	}
+
+	sessionMetadataPath := checkpointID.Path() + "/0/" + paths.MetadataFileName
+	metadataFile, err := tree.File(sessionMetadataPath)
+	if err != nil {
+		t.Fatalf("failed to find session metadata at %s: %v", sessionMetadataPath, err)
+	}
+	content, err := metadataFile.Contents()
+	if err != nil {
+		t.Fatalf("failed to read metadata: %v", err)
+	}
+
+	var metadata struct {
+		InitialAttribution *struct {
+			AgentLines      int     `json:"agent_lines"`
+			HumanAdded      int     `json:"human_added"`
+			TotalCommitted  int     `json:"total_committed"`
+			AgentPercentage float64 `json:"agent_percentage"`
+		} `json:"initial_attribution"`
+	}
+	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
+		t.Fatalf("failed to parse metadata: %v", err)
+	}
+
+	if metadata.InitialAttribution == nil {
+		t.Fatal("InitialAttribution should be present")
+	}
+
+	attr := metadata.InitialAttribution
+	t.Logf("Attribution (mixed, no shadow): agent=%d, human_added=%d, total=%d, percentage=%.1f%%",
+		attr.AgentLines, attr.HumanAdded, attr.TotalCommitted, attr.AgentPercentage)
+
+	// src/app.go has 7 lines (agent), docs/notes.md has 4 lines (human)
+	if attr.AgentLines != 7 {
+		t.Errorf("AgentLines = %d, want 7 (src/app.go has 7 lines)", attr.AgentLines)
+	}
+	if attr.HumanAdded != 4 {
+		t.Errorf("HumanAdded = %d, want 4 (docs/notes.md has 4 lines)", attr.HumanAdded)
+	}
+	if attr.TotalCommitted != 11 {
+		t.Errorf("TotalCommitted = %d, want 11 (7 agent + 4 human)", attr.TotalCommitted)
+	}
+	// Agent wrote 7/11 = 63.6%
+	if attr.AgentPercentage < 60 || attr.AgentPercentage > 70 {
+		t.Errorf("AgentPercentage = %.1f%%, want ~63.6%% (7/11)", attr.AgentPercentage)
+	}
 }
 
 // TestExtractUserPromptsFromLines tests extraction of user prompts from JSONL format.
@@ -2269,7 +2668,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 		t.Fatalf("failed to write agent changes 1: %v", err)
 	}
 
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"agent.go"},
 		NewFiles:       []string{},
@@ -2281,7 +2680,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 		AuthorEmail:    "test@test.com",
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() checkpoint 1 error = %v", err)
+		t.Fatalf("SaveStep() checkpoint 1 error = %v", err)
 	}
 
 	// Verify PromptAttribution was recorded for checkpoint 1
@@ -2315,7 +2714,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 		t.Fatalf("failed to write agent changes 2: %v", err)
 	}
 
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"agent.go"},
 		NewFiles:       []string{},
@@ -2327,7 +2726,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 		AuthorEmail:    "test@test.com",
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() checkpoint 2 error = %v", err)
+		t.Fatalf("SaveStep() checkpoint 2 error = %v", err)
 	}
 
 	// Verify PromptAttribution was recorded for checkpoint 2
@@ -2367,7 +2766,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 
 	// === CONDENSE AND VERIFY ATTRIBUTION ===
 	checkpointID := id.MustCheckpointID("b2c3d4e5f6a7")
-	result, err := s.CondenseSession(repo, checkpointID, state2)
+	result, err := s.CondenseSession(repo, checkpointID, state2, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -2455,7 +2854,7 @@ func TestMultiCheckpoint_UserEditsBetweenCheckpoints(t *testing.T) {
 
 // TestCondenseSession_PrefersLiveTranscript verifies that CondenseSession reads the
 // live transcript file when available, rather than the potentially stale shadow branch copy.
-// This reproduces the bug where SaveChanges was skipped (no code changes) but the
+// This reproduces the bug where SaveStep was skipped (no code changes) but the
 // transcript continued growing — deferred condensation would read stale data.
 func TestCondenseSession_PrefersLiveTranscript(t *testing.T) {
 	dir := t.TempDir()
@@ -2501,8 +2900,8 @@ func TestCondenseSession_PrefersLiveTranscript(t *testing.T) {
 		t.Fatalf("failed to write transcript: %v", err)
 	}
 
-	// SaveChanges to create shadow branch with the stale transcript
-	err = s.SaveChanges(SaveContext{
+	// SaveStep to create shadow branch with the stale transcript
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{},
 		NewFiles:       []string{},
@@ -2514,11 +2913,11 @@ func TestCondenseSession_PrefersLiveTranscript(t *testing.T) {
 		AuthorEmail:    "test@test.com",
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() error = %v", err)
+		t.Fatalf("SaveStep() error = %v", err)
 	}
 
 	// Now simulate the conversation continuing: write a LONGER live transcript file.
-	// In the real bug, SaveChanges would be skipped because totalChanges == 0,
+	// In the real bug, SaveStep would be skipped because totalChanges == 0,
 	// so the shadow branch still has the stale version.
 	liveTranscriptFile := filepath.Join(dir, "live-transcript.jsonl")
 	liveTranscript := `{"type":"human","message":{"content":"first prompt"}}
@@ -2542,7 +2941,7 @@ func TestCondenseSession_PrefersLiveTranscript(t *testing.T) {
 
 	// Condense — this should read the live transcript, not the shadow branch copy
 	checkpointID := id.MustCheckpointID("b2c3d4e5f6a1")
-	result, err := s.CondenseSession(repo, checkpointID, state)
+	result, err := s.CondenseSession(repo, checkpointID, state, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -2635,7 +3034,7 @@ func TestCondenseSession_GeminiTranscript(t *testing.T) {
 	}
 
 	// Save checkpoint (creates shadow branch)
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"test.txt"},
 		NewFiles:       []string{},
@@ -2648,7 +3047,7 @@ func TestCondenseSession_GeminiTranscript(t *testing.T) {
 		AgentType:      agent.AgentTypeGemini,
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() error = %v", err)
+		t.Fatalf("SaveStep() error = %v", err)
 	}
 
 	// Load session state
@@ -2662,7 +3061,7 @@ func TestCondenseSession_GeminiTranscript(t *testing.T) {
 
 	// Condense the session
 	checkpointID := id.MustCheckpointID("aabbcc112233")
-	result, err := s.CondenseSession(repo, checkpointID, state)
+	result, err := s.CondenseSession(repo, checkpointID, state, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -2789,7 +3188,7 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 	}
 
 	// Save checkpoint 1
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"code.go"},
 		NewFiles:       []string{},
@@ -2802,7 +3201,7 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 		AgentType:      agent.AgentTypeGemini,
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() checkpoint 1 error = %v", err)
+		t.Fatalf("SaveStep() checkpoint 1 error = %v", err)
 	}
 
 	// Load and verify state after checkpoint 1
@@ -2860,13 +3259,13 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 	// Before checkpoint 2, manually update CheckpointTranscriptStart to simulate
 	// what would happen after condensing checkpoint 1
 	state.CheckpointTranscriptStart = 2 // Start from message index 2 (the second user prompt)
-	state.StepCount = 1                 // Set to 1 (will be incremented to 2 by SaveChanges)
+	state.StepCount = 1                 // Set to 1 (will be incremented to 2 by SaveStep)
 	if err := s.saveSessionState(state); err != nil {
 		t.Fatalf("failed to update session state: %v", err)
 	}
 
 	// Save checkpoint 2
-	err = s.SaveChanges(SaveContext{
+	err = s.SaveStep(StepContext{
 		SessionID:      sessionID,
 		ModifiedFiles:  []string{"code.go"},
 		NewFiles:       []string{},
@@ -2879,7 +3278,7 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 		AgentType:      agent.AgentTypeGemini,
 	})
 	if err != nil {
-		t.Fatalf("SaveChanges() checkpoint 2 error = %v", err)
+		t.Fatalf("SaveStep() checkpoint 2 error = %v", err)
 	}
 
 	// Reload state to get updated values
@@ -2890,7 +3289,7 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 
 	// Condense the session - this should calculate token usage ONLY from message index 2 onwards
 	checkpointID := id.MustCheckpointID("ddeeff998877")
-	result, err := s.CondenseSession(repo, checkpointID, state)
+	result, err := s.CondenseSession(repo, checkpointID, state, nil)
 	if err != nil {
 		t.Fatalf("CondenseSession() error = %v", err)
 	}
@@ -2947,4 +3346,234 @@ func TestCondenseSession_GeminiMultiCheckpoint(t *testing.T) {
 	if !strings.Contains(content.Prompts, "Now add error handling") {
 		t.Error("Prompts should contain second prompt")
 	}
+}
+
+// TestCondenseSession_FilesTouchedFallback_EmptyState verifies that when state.FilesTouched
+// is empty (mid-session commit before SaveStep), the fallback to committedFiles works.
+// This is the legitimate use case for the fallback.
+func TestCondenseSession_FilesTouchedFallback_EmptyState(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create initial commit
+	initialHash, err := worktree.Commit("Initial commit", &git.CommitOptions{
+		Author:            &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+		AllowEmptyCommits: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create a file and commit it (simulating agent mid-turn commit)
+	agentFile := filepath.Join(dir, "agent.go")
+	if err := os.WriteFile(agentFile, []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	if _, err := worktree.Add("agent.go"); err != nil {
+		t.Fatalf("failed to stage file: %v", err)
+	}
+	if _, err = worktree.Commit("Add agent.go", &git.CommitOptions{
+		Author: &object.Signature{Name: "Agent", Email: "agent@test.com", When: time.Now()},
+	}); err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	// Create live transcript (required when no shadow branch)
+	transcriptDir := filepath.Join(dir, ".claude", "projects", "test")
+	if err := os.MkdirAll(transcriptDir, 0o755); err != nil {
+		t.Fatalf("failed to create transcript dir: %v", err)
+	}
+	transcriptFile := filepath.Join(transcriptDir, "session.jsonl")
+	if err := os.WriteFile(transcriptFile, []byte(`{"type":"human","message":{"content":"create agent.go"}}
+{"type":"assistant","message":{"content":"Done"}}
+`), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// Session state with EMPTY FilesTouched (mid-session commit scenario)
+	state := &SessionState{
+		SessionID:      "test-empty-files",
+		BaseCommit:     initialHash.String(),
+		FilesTouched:   []string{}, // Empty - no SaveStep called yet
+		TranscriptPath: transcriptFile,
+		AgentType:      "Claude Code",
+	}
+
+	s := &ManualCommitStrategy{}
+	checkpointID := id.MustCheckpointID("fa11bac00001")
+
+	// Condense with committedFiles - should fallback since FilesTouched is empty
+	committedFiles := map[string]struct{}{"agent.go": {}}
+	result, err := s.CondenseSession(repo, checkpointID, state, committedFiles)
+	if err != nil {
+		t.Fatalf("CondenseSession() error = %v", err)
+	}
+
+	// Read metadata and verify files_touched contains the committed file (fallback worked)
+	sessionsRef, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	if err != nil {
+		t.Fatalf("failed to get sessions branch: %v", err)
+	}
+	sessionsCommit, err := repo.CommitObject(sessionsRef.Hash())
+	if err != nil {
+		t.Fatalf("failed to get sessions commit: %v", err)
+	}
+	tree, err := sessionsCommit.Tree()
+	if err != nil {
+		t.Fatalf("failed to get tree: %v", err)
+	}
+
+	metadataPath := checkpointID.Path() + "/0/" + paths.MetadataFileName
+	metadataFile, err := tree.File(metadataPath)
+	if err != nil {
+		t.Fatalf("failed to find metadata: %v", err)
+	}
+	content, err := metadataFile.Contents()
+	if err != nil {
+		t.Fatalf("failed to read metadata: %v", err)
+	}
+
+	var metadata struct {
+		FilesTouched []string `json:"files_touched"`
+	}
+	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
+		t.Fatalf("failed to parse metadata: %v", err)
+	}
+
+	// Verify fallback worked - files_touched should contain agent.go
+	if len(metadata.FilesTouched) != 1 || metadata.FilesTouched[0] != "agent.go" {
+		t.Errorf("files_touched = %v, want [agent.go] (fallback should apply when FilesTouched is empty)",
+			metadata.FilesTouched)
+	}
+
+	t.Logf("Fallback worked: files_touched = %v, result = %+v", metadata.FilesTouched, result)
+}
+
+// TestCondenseSession_FilesTouchedNoFallback_NoOverlap verifies that when state.FilesTouched
+// has files but none overlap with committedFiles, we do NOT fallback to committedFiles.
+// This prevents the bug where unrelated sessions get incorrect files_touched.
+func TestCondenseSession_FilesTouchedNoFallback_NoOverlap(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init repo: %v", err)
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("failed to get worktree: %v", err)
+	}
+
+	// Create initial commit
+	initialHash, err := worktree.Commit("Initial commit", &git.CommitOptions{
+		Author:            &object.Signature{Name: "Test", Email: "test@test.com", When: time.Now()},
+		AllowEmptyCommits: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to create initial commit: %v", err)
+	}
+
+	// Create files for both the session's work and the committed file
+	sessionFile := filepath.Join(dir, "session_file.go")
+	if err := os.WriteFile(sessionFile, []byte("package session\n"), 0o644); err != nil {
+		t.Fatalf("failed to write session file: %v", err)
+	}
+	committedFile := filepath.Join(dir, "other_file.go")
+	if err := os.WriteFile(committedFile, []byte("package other\n"), 0o644); err != nil {
+		t.Fatalf("failed to write committed file: %v", err)
+	}
+
+	// Only commit the "other" file (not the session's file)
+	if _, err := worktree.Add("other_file.go"); err != nil {
+		t.Fatalf("failed to stage file: %v", err)
+	}
+	if _, err = worktree.Commit("Add other_file.go", &git.CommitOptions{
+		Author: &object.Signature{Name: "Human", Email: "human@test.com", When: time.Now()},
+	}); err != nil {
+		t.Fatalf("failed to commit: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	// Create live transcript
+	transcriptDir := filepath.Join(dir, ".claude", "projects", "test")
+	if err := os.MkdirAll(transcriptDir, 0o755); err != nil {
+		t.Fatalf("failed to create transcript dir: %v", err)
+	}
+	transcriptFile := filepath.Join(transcriptDir, "session.jsonl")
+	if err := os.WriteFile(transcriptFile, []byte(`{"type":"human","message":{"content":"work on session_file.go"}}
+{"type":"assistant","message":{"content":"Done"}}
+`), 0o644); err != nil {
+		t.Fatalf("failed to write transcript: %v", err)
+	}
+
+	// Session state with FilesTouched that does NOT overlap with committedFiles
+	state := &SessionState{
+		SessionID:      "test-no-overlap",
+		BaseCommit:     initialHash.String(),
+		FilesTouched:   []string{"session_file.go"}, // Does NOT overlap with other_file.go
+		TranscriptPath: transcriptFile,
+		AgentType:      "Claude Code",
+	}
+
+	s := &ManualCommitStrategy{}
+	checkpointID := id.MustCheckpointID("00001a000001")
+
+	// Condense with committedFiles that don't overlap
+	committedFiles := map[string]struct{}{"other_file.go": {}}
+	result, err := s.CondenseSession(repo, checkpointID, state, committedFiles)
+	if err != nil {
+		t.Fatalf("CondenseSession() error = %v", err)
+	}
+
+	// Read metadata and verify files_touched is EMPTY (no fallback applied)
+	sessionsRef, err := repo.Reference(plumbing.NewBranchReferenceName(paths.MetadataBranchName), true)
+	if err != nil {
+		t.Fatalf("failed to get sessions branch: %v", err)
+	}
+	sessionsCommit, err := repo.CommitObject(sessionsRef.Hash())
+	if err != nil {
+		t.Fatalf("failed to get sessions commit: %v", err)
+	}
+	tree, err := sessionsCommit.Tree()
+	if err != nil {
+		t.Fatalf("failed to get tree: %v", err)
+	}
+
+	metadataPath := checkpointID.Path() + "/0/" + paths.MetadataFileName
+	metadataFile, err := tree.File(metadataPath)
+	if err != nil {
+		t.Fatalf("failed to find metadata: %v", err)
+	}
+	content, err := metadataFile.Contents()
+	if err != nil {
+		t.Fatalf("failed to read metadata: %v", err)
+	}
+
+	var metadata struct {
+		FilesTouched []string `json:"files_touched"`
+	}
+	if err := json.Unmarshal([]byte(content), &metadata); err != nil {
+		t.Fatalf("failed to parse metadata: %v", err)
+	}
+
+	// Verify NO fallback - files_touched should be EMPTY, NOT contain other_file.go
+	// This is the key fix: session had files (session_file.go) but none overlapped,
+	// so we should NOT fallback to committedFiles (other_file.go)
+	if len(metadata.FilesTouched) != 0 {
+		t.Errorf("files_touched = %v, want [] (should NOT fallback when session had files but no overlap)",
+			metadata.FilesTouched)
+	}
+
+	t.Logf("No fallback applied: files_touched = %v (correctly empty), result = %+v", metadata.FilesTouched, result)
 }

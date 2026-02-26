@@ -46,7 +46,7 @@ func TestShadow_FullWorkflow(t *testing.T) {
 	env.GitCheckoutNewBranch("feature/auth")
 
 	// Initialize Entire AFTER branch switch to avoid go-git cleaning untracked files
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	initialHead := env.GetHeadHash()
 	t.Logf("Initial HEAD on feature/auth: %s", initialHead[:7])
@@ -381,7 +381,7 @@ func TestShadow_SessionStateLocation(t *testing.T) {
 	env.GitCheckoutNewBranch("feature/test")
 
 	// Initialize AFTER branch switch
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	session := env.NewSession()
 	if err := env.SimulateUserPromptSubmit(session.ID); err != nil {
@@ -418,7 +418,7 @@ func TestShadow_MultipleConcurrentSessions(t *testing.T) {
 	env.GitCheckoutNewBranch("feature/test")
 
 	// Initialize AFTER branch switch
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	// Start first session
 	session1 := env.NewSession()
@@ -493,7 +493,7 @@ func TestShadow_ShadowBranchMigrationOnPull(t *testing.T) {
 	env.GitCommit("Initial commit")
 
 	env.GitCheckoutNewBranch("feature/test")
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	originalHead := env.GetHeadHash()
 	originalShadowBranch := env.GetShadowBranchNameForCommit(originalHead)
@@ -587,7 +587,7 @@ func TestShadow_ShadowBranchNaming(t *testing.T) {
 	env.GitCheckoutNewBranch("feature/test")
 
 	// Initialize AFTER branch switch
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	baseHead := env.GetHeadHash()
 
@@ -638,7 +638,7 @@ func TestShadow_TranscriptCondensation(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/test")
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	// Start session and create checkpoint with transcript
 	session := env.NewSession()
@@ -673,44 +673,20 @@ func TestShadow_TranscriptCondensation(t *testing.T) {
 		t.Fatal("entire/checkpoints/v1 branch should exist after condensation")
 	}
 
-	// Verify root metadata.json (CheckpointSummary) exists
-	summaryPath := CheckpointSummaryPath(checkpointID)
-	if !env.FileExistsInBranch(paths.MetadataBranchName, summaryPath) {
-		t.Errorf("root metadata.json should exist at %s", summaryPath)
-	}
+	// Comprehensive checkpoint validation
+	env.ValidateCheckpoint(CheckpointValidation{
+		CheckpointID:    checkpointID,
+		SessionID:       session.ID,
+		Strategy:        strategy.StrategyNameManualCommit,
+		FilesTouched:    []string{"main.go"},
+		ExpectedPrompts: []string{"Create main.go with hello world"},
+		ExpectedTranscriptContent: []string{
+			"Create main.go with hello world",
+			"main.go",
+		},
+	})
 
-	// Verify transcript file exists in session subdirectory (new format: 0/full.jsonl)
-	transcriptPath := SessionFilePath(checkpointID, paths.TranscriptFileName)
-	if !env.FileExistsInBranch(paths.MetadataBranchName, transcriptPath) {
-		t.Errorf("Transcript (%s) should exist at %s", paths.TranscriptFileName, transcriptPath)
-	} else {
-		t.Log("✓ Transcript file exists in checkpoint")
-	}
-
-	// Verify content_hash.txt exists in session subdirectory
-	hashPath := SessionFilePath(checkpointID, "content_hash.txt")
-	if !env.FileExistsInBranch(paths.MetadataBranchName, hashPath) {
-		t.Errorf("content_hash.txt should exist at %s", hashPath)
-	}
-
-	// Verify root metadata.json can be read and parsed as CheckpointSummary
-	summaryContent, found := env.ReadFileFromBranch(paths.MetadataBranchName, summaryPath)
-	if !found {
-		t.Fatal("root metadata.json should be readable")
-	}
-	var summary checkpoint.CheckpointSummary
-	if err := json.Unmarshal([]byte(summaryContent), &summary); err != nil {
-		t.Fatalf("failed to parse root metadata.json as CheckpointSummary: %v", err)
-	}
-
-	// Verify Sessions array is populated
-	if len(summary.Sessions) == 0 {
-		t.Errorf("CheckpointSummary.Sessions should have at least one entry")
-	} else {
-		t.Logf("✓ CheckpointSummary has %d session(s)", len(summary.Sessions))
-	}
-
-	// Verify agent field is in session-level metadata (not root summary)
+	// Additionally verify agent field in session metadata
 	sessionMetadataPath := SessionFilePath(checkpointID, paths.MetadataFileName)
 	sessionMetadataContent, found := env.ReadFileFromBranch(paths.MetadataBranchName, sessionMetadataPath)
 	if !found {
@@ -745,7 +721,7 @@ func TestShadow_FullTranscriptContext(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/incremental")
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	t.Log("Phase 1: First session with two prompts")
 
@@ -781,7 +757,7 @@ func TestShadow_FullTranscriptContext(t *testing.T) {
 		t.Fatalf("Failed to write transcript: %v", err)
 	}
 
-	// Save checkpoint (triggers SaveChanges)
+	// Save checkpoint (triggers SaveStep)
 	if err := env.SimulateStop(session1.ID, session1.TranscriptPath); err != nil {
 		t.Fatalf("SimulateStop failed: %v", err)
 	}
@@ -923,7 +899,7 @@ func TestShadow_RewindAndCondensation(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/rewind-test")
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	t.Log("Phase 1: Create first checkpoint with prompt 1")
 
@@ -1073,7 +1049,7 @@ func TestShadow_RewindPreservesUntrackedFilesFromSessionStart(t *testing.T) {
 	env.WriteFile(".claude/settings.json", untrackedContent)
 
 	// Initialize Entire with manual-commit strategy
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	t.Log("Phase 1: Create first checkpoint")
 
@@ -1196,7 +1172,7 @@ func TestShadow_IntermediateCommitsWithoutPrompts(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/intermediate-commits")
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	t.Log("Phase 1: Start session and create checkpoint")
 
@@ -1324,7 +1300,7 @@ func TestShadow_FullTranscriptCondensationWithIntermediateCommits(t *testing.T) 
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/incremental-intermediate")
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	t.Log("Phase 1: Session with two prompts")
 
@@ -1446,7 +1422,7 @@ func TestShadow_RewindPreservesUntrackedFilesWithExistingShadowBranch(t *testing
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/existing-shadow-test")
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	t.Log("Phase 1: Create untracked file before session starts")
 
@@ -1586,7 +1562,7 @@ func TestShadow_TrailerRemovalSkipsCondensation(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/trailer-opt-out")
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	t.Log("Phase 1: Create session with content")
 
@@ -1705,7 +1681,7 @@ func TestShadow_SessionsBranchCommitTrailers(t *testing.T) {
 	env.GitAdd("README.md")
 	env.GitCommit("Initial commit")
 	env.GitCheckoutNewBranch("feature/trailer-test")
-	env.InitEntire(strategy.StrategyNameManualCommit)
+	env.InitEntire()
 
 	// Start session and create checkpoint
 	session := env.NewSession()

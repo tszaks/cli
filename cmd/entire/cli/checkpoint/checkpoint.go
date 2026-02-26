@@ -101,6 +101,12 @@ type Store interface {
 
 	// ListCommitted lists all committed checkpoints.
 	ListCommitted(ctx context.Context) ([]CommittedInfo, error)
+
+	// UpdateCommitted replaces the transcript, prompts, and context for an existing
+	// committed checkpoint. Used at stop time to finalize checkpoints with the full
+	// session transcript (prompt to stop event).
+	// Returns ErrCheckpointNotFound if the checkpoint doesn't exist.
+	UpdateCommitted(ctx context.Context, opts UpdateCommittedOptions) error
 }
 
 // WriteTemporaryResult contains the result of writing a temporary checkpoint.
@@ -233,7 +239,7 @@ type WriteCommittedOptions struct {
 	// This is useful for copying task metadata files, subagent transcripts, etc.
 	MetadataDir string
 
-	// Task checkpoint fields (for auto-commit strategy task checkpoints)
+	// Task checkpoint fields (for task/subagent checkpoints)
 	IsTask    bool   // Whether this is a task checkpoint
 	ToolUseID string // Tool use ID for task checkpoints
 
@@ -252,8 +258,11 @@ type WriteCommittedOptions struct {
 	// Commit message fields (used for task checkpoints)
 	CommitSubject string // Subject line for the metadata commit (overrides default)
 
-	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor")
+	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor IDE")
 	Agent agent.AgentType
+
+	// TurnID correlates checkpoints from the same agent turn.
+	TurnID string
 
 	// Transcript position at checkpoint start - tracks what was added during this checkpoint
 	TranscriptIdentifierAtStart string // Last identifier when checkpoint started (UUID for Claude, message ID for Gemini)
@@ -276,11 +285,30 @@ type WriteCommittedOptions struct {
 	//   - the transcript was empty or too short to summarize
 	//   - the checkpoint predates the summarization feature
 	Summary *Summary
+}
 
-	// SessionTranscriptPath is the home-relative path to the session transcript file.
-	// Persisted in CommittedMetadata so restore can write the transcript back to
-	// the correct location without reconstructing agent-specific paths.
-	SessionTranscriptPath string
+// UpdateCommittedOptions contains options for updating an existing committed checkpoint.
+// Uses replace semantics: the transcript, prompts, and context are fully replaced,
+// not appended. At stop time we have the complete session transcript and want every
+// checkpoint to contain it identically.
+type UpdateCommittedOptions struct {
+	// CheckpointID identifies the checkpoint to update
+	CheckpointID id.CheckpointID
+
+	// SessionID identifies which session slot to update within the checkpoint
+	SessionID string
+
+	// Transcript is the full session transcript (replaces existing)
+	Transcript []byte
+
+	// Prompts contains all user prompts (replaces existing)
+	Prompts []string
+
+	// Context is the updated context.md content (replaces existing)
+	Context []byte
+
+	// Agent identifies the agent type (needed for transcript chunking)
+	Agent agent.AgentType
 }
 
 // CommittedInfo contains summary information about a committed checkpoint.
@@ -342,8 +370,13 @@ type CommittedMetadata struct {
 	CheckpointsCount int             `json:"checkpoints_count"`
 	FilesTouched     []string        `json:"files_touched"`
 
-	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor")
+	// Agent identifies the agent that created this checkpoint (e.g., "Claude Code", "Cursor IDE")
 	Agent agent.AgentType `json:"agent,omitempty"`
+
+	// TurnID correlates checkpoints from the same agent turn.
+	// When a turn's work spans multiple commits, each gets its own checkpoint
+	// but they share the same TurnID for future aggregation/deduplication.
+	TurnID string `json:"turn_id,omitempty"`
 
 	// Task checkpoint fields (only populated for task checkpoints)
 	IsTask    bool   `json:"is_task,omitempty"`
@@ -364,11 +397,6 @@ type CommittedMetadata struct {
 
 	// InitialAttribution is line-level attribution calculated at commit time
 	InitialAttribution *InitialAttribution `json:"initial_attribution,omitempty"`
-
-	// TranscriptPath is the home-relative path to the session transcript file.
-	// Persisted so restore can write the transcript back to the correct location
-	// without needing to reconstruct agent-specific paths (e.g. SHA-256 hashed dirs for Gemini).
-	TranscriptPath string `json:"transcript_path,omitempty"`
 }
 
 // GetTranscriptStart returns the transcript line offset at which this checkpoint's data begins.

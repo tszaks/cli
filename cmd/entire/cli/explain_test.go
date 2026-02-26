@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/strategy"
 	"github.com/entireio/cli/cmd/entire/cli/trailers"
+	"github.com/entireio/cli/cmd/entire/cli/transcript"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -452,7 +454,7 @@ func TestFormatSessionInfo_WithSourceRef(t *testing.T) {
 	session := &strategy.Session{
 		ID:          "2025-12-09-test-session-abc",
 		Description: "Test description",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{
 			{
@@ -490,14 +492,8 @@ func TestStrategySessionSourceInterface(t *testing.T) {
 	// This ensures manual-commit strategy implements SessionSource
 	var s = strategy.NewManualCommitStrategy()
 
-	// Cast to SessionSource - manual-commit strategy should implement it
-	source, ok := s.(strategy.SessionSource)
-	if !ok {
-		t.Fatal("ManualCommitStrategy should implement SessionSource interface")
-	}
-
 	// GetAdditionalSessions should exist and be callable
-	_, err := source.GetAdditionalSessions()
+	_, err := s.GetAdditionalSessions()
 	if err != nil {
 		t.Logf("GetAdditionalSessions returned error: %v", err)
 	}
@@ -507,7 +503,7 @@ func TestFormatSessionInfo_CheckpointNumberingReversed(t *testing.T) {
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-09-test-session",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now.Add(-2 * time.Hour),
 		Checkpoints: []strategy.Checkpoint{}, // Not used for format test
 	}
@@ -593,7 +589,7 @@ func TestFormatSessionInfo_CheckpointWithTaskMarker(t *testing.T) {
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-09-task-session",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -624,7 +620,7 @@ func TestFormatSessionInfo_CheckpointWithDate(t *testing.T) {
 	timestamp := time.Date(2025, 12, 10, 14, 35, 0, 0, time.UTC)
 	session := &strategy.Session{
 		ID:          "2025-12-10-dated-session",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   timestamp,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -651,7 +647,7 @@ func TestFormatSessionInfo_ShowsMessageWhenNoInteractions(t *testing.T) {
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-12-incremental-session",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -689,7 +685,7 @@ func TestFormatSessionInfo_ShowsMessageAndFilesWhenNoInteractions(t *testing.T) 
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-12-incremental-with-files",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -728,7 +724,7 @@ func TestFormatSessionInfo_DoesNotShowMessageWhenHasInteractions(t *testing.T) {
 	now := time.Now()
 	session := &strategy.Session{
 		ID:          "2025-12-12-full-checkpoint",
-		Strategy:    "auto-commit",
+		Strategy:    "manual-commit",
 		StartTime:   now,
 		Checkpoints: []strategy.Checkpoint{},
 	}
@@ -2138,10 +2134,10 @@ func TestScopeTranscriptForCheckpoint_SlicesTranscript(t *testing.T) {
 
 	// Checkpoint starts at line 2 (after prompt 1 and response 1)
 	// Should only include lines 2-4 (prompt 2, response 2, prompt 3)
-	scoped := scopeTranscriptForCheckpoint(fullTranscript, 2)
+	scoped := scopeTranscriptForCheckpoint(fullTranscript, 2, agent.AgentTypeClaudeCode)
 
 	// Parse the scoped transcript to verify content
-	lines, err := parseTranscriptFromBytes(scoped)
+	lines, err := transcript.ParseFromBytes(scoped)
 	if err != nil {
 		t.Fatalf("failed to parse scoped transcript: %v", err)
 	}
@@ -2162,14 +2158,14 @@ func TestScopeTranscriptForCheckpoint_SlicesTranscript(t *testing.T) {
 }
 
 func TestScopeTranscriptForCheckpoint_ZeroLinesReturnsAll(t *testing.T) {
-	transcript := []byte(`{"type":"user","uuid":"u1","message":{"content":"prompt 1"}}
+	transcriptData := []byte(`{"type":"user","uuid":"u1","message":{"content":"prompt 1"}}
 {"type":"user","uuid":"u2","message":{"content":"prompt 2"}}
 `)
 
 	// With linesAtStart=0, should return full transcript
-	scoped := scopeTranscriptForCheckpoint(transcript, 0)
+	scoped := scopeTranscriptForCheckpoint(transcriptData, 0, agent.AgentTypeClaudeCode)
 
-	lines, err := parseTranscriptFromBytes(scoped)
+	lines, err := transcript.ParseFromBytes(scoped)
 	if err != nil {
 		t.Fatalf("failed to parse scoped transcript: %v", err)
 	}
@@ -2187,7 +2183,7 @@ func TestExtractPromptsFromScopedTranscript(t *testing.T) {
 {"type":"assistant","uuid":"a2","message":{"content":[{"type":"text","text":"Second response"}]}}
 `)
 
-	prompts := extractPromptsFromTranscript(transcript)
+	prompts := extractPromptsFromTranscript(transcript, "")
 
 	if len(prompts) != 2 {
 		t.Fatalf("expected 2 prompts, got %d", len(prompts))
@@ -2486,8 +2482,24 @@ func TestFormatBranchCheckpoints_SessionFilter(t *testing.T) {
 }
 
 func TestRunExplain_SessionFlagFiltersListView(t *testing.T) {
-	// Test that --session alone (without --checkpoint or --commit) filters the list view
-	// This is a unit test for the routing logic
+	// Test that --session alone (without --checkpoint or --commit) filters the list view.
+	// This is a unit test for the routing logic.
+	// Use a fresh git repo so we don't walk the real repo's shadow branches (which is slow).
+	tmp := t.TempDir()
+	for _, args := range [][]string{
+		{"init"},
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test User"},
+		{"commit", "--allow-empty", "-m", "init"},
+	} {
+		cmd := exec.CommandContext(context.Background(), "git", args...)
+		cmd.Dir = tmp
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	t.Chdir(tmp)
+
 	var buf, errBuf bytes.Buffer
 
 	// When session is specified alone, it should NOT error for mutual exclusivity
@@ -3524,7 +3536,7 @@ func TestGetBranchCheckpoints_DefaultBranchFindsMergedCheckpoints(t *testing.T) 
 	if err := store.WriteCommitted(context.Background(), checkpoint.WriteCommittedOptions{
 		CheckpointID: cpID,
 		SessionID:    "test-session",
-		Strategy:     "auto-commit",
+		Strategy:     "manual-commit",
 		FilesTouched: []string{"test.txt"},
 		Prompts:      []string{"add feature"},
 	}); err != nil {

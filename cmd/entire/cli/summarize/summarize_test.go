@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/transcript"
 )
 
@@ -426,6 +427,158 @@ func TestBuildCondensedTranscript_SkipsEmptyContent(t *testing.T) {
 	}
 }
 
+func TestBuildCondensedTranscriptFromBytes_GeminiUserAndAssistant(t *testing.T) {
+	geminiJSON := `{"messages":[
+		{"type":"user","content":"Help me write a Go function"},
+		{"type":"gemini","content":"Sure, here is a function that does what you need."}
+	]}`
+
+	entries, err := BuildCondensedTranscriptFromBytes([]byte(geminiJSON), agent.AgentTypeGemini)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	if entries[0].Type != EntryTypeUser {
+		t.Errorf("entry 0: expected type %s, got %s", EntryTypeUser, entries[0].Type)
+	}
+	if entries[0].Content != "Help me write a Go function" {
+		t.Errorf("entry 0: unexpected content: %s", entries[0].Content)
+	}
+
+	if entries[1].Type != EntryTypeAssistant {
+		t.Errorf("entry 1: expected type %s, got %s", EntryTypeAssistant, entries[1].Type)
+	}
+	if entries[1].Content != "Sure, here is a function that does what you need." {
+		t.Errorf("entry 1: unexpected content: %s", entries[1].Content)
+	}
+}
+
+func TestBuildCondensedTranscriptFromBytes_GeminiToolCalls(t *testing.T) {
+	geminiJSON := `{"messages":[
+		{"type":"user","content":"Read the main.go file"},
+		{"type":"gemini","content":"Let me read that file.","toolCalls":[
+			{"id":"tc-1","name":"read_file","args":{"file_path":"/src/main.go"}},
+			{"id":"tc-2","name":"run_command","args":{"command":"go build ./..."}}
+		]}
+	]}`
+
+	entries, err := BuildCondensedTranscriptFromBytes([]byte(geminiJSON), agent.AgentTypeGemini)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 entries (user + assistant + 2 tools), got %d", len(entries))
+	}
+
+	// Tool call with file_path arg
+	if entries[2].Type != EntryTypeTool {
+		t.Errorf("entry 2: expected type %s, got %s", EntryTypeTool, entries[2].Type)
+	}
+	if entries[2].ToolName != "read_file" {
+		t.Errorf("entry 2: expected tool name read_file, got %s", entries[2].ToolName)
+	}
+	if entries[2].ToolDetail != "/src/main.go" {
+		t.Errorf("entry 2: expected tool detail /src/main.go, got %s", entries[2].ToolDetail)
+	}
+
+	// Tool call with command arg
+	if entries[3].ToolName != "run_command" {
+		t.Errorf("entry 3: expected tool name run_command, got %s", entries[3].ToolName)
+	}
+	if entries[3].ToolDetail != "go build ./..." {
+		t.Errorf("entry 3: expected tool detail 'go build ./...', got %s", entries[3].ToolDetail)
+	}
+}
+
+func TestBuildCondensedTranscriptFromBytes_GeminiToolCallArgShapes(t *testing.T) {
+	// Tool call with "path" arg (instead of "file_path")
+	geminiJSON := `{"messages":[
+		{"type":"gemini","toolCalls":[
+			{"id":"tc-1","name":"write_file","args":{"path":"/tmp/out.txt","content":"hello"}},
+			{"id":"tc-2","name":"search","args":{"pattern":"TODO","description":"Search for TODOs"}},
+			{"id":"tc-3","name":"unknown_tool","args":{"foo":"bar"}}
+		]}
+	]}`
+
+	entries, err := BuildCondensedTranscriptFromBytes([]byte(geminiJSON), agent.AgentTypeGemini)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+
+	// "path" arg
+	if entries[0].ToolDetail != "/tmp/out.txt" {
+		t.Errorf("entry 0: expected tool detail /tmp/out.txt, got %s", entries[0].ToolDetail)
+	}
+
+	// "description" arg (checked before "pattern" in extractGenericToolDetail)
+	if entries[1].ToolDetail != "Search for TODOs" {
+		t.Errorf("entry 1: expected tool detail 'Search for TODOs', got %s", entries[1].ToolDetail)
+	}
+
+	// No recognized args - empty detail
+	if entries[2].ToolDetail != "" {
+		t.Errorf("entry 2: expected empty tool detail, got %s", entries[2].ToolDetail)
+	}
+}
+
+func TestBuildCondensedTranscriptFromBytes_GeminiSkipsEmptyContent(t *testing.T) {
+	geminiJSON := `{"messages":[
+		{"type":"user","content":""},
+		{"type":"gemini","content":"","toolCalls":[
+			{"id":"tc-1","name":"read_file","args":{"file_path":"main.go"}}
+		]},
+		{"type":"user","content":"Thanks"}
+	]}`
+
+	entries, err := BuildCondensedTranscriptFromBytes([]byte(geminiJSON), agent.AgentTypeGemini)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Empty user and empty assistant content should be skipped, only tool call + "Thanks" remain
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0].Type != EntryTypeTool {
+		t.Errorf("entry 0: expected type %s, got %s", EntryTypeTool, entries[0].Type)
+	}
+	if entries[1].Type != EntryTypeUser {
+		t.Errorf("entry 1: expected type %s, got %s", EntryTypeUser, entries[1].Type)
+	}
+	if entries[1].Content != "Thanks" {
+		t.Errorf("entry 1: expected content 'Thanks', got %s", entries[1].Content)
+	}
+}
+
+func TestBuildCondensedTranscriptFromBytes_GeminiEmptyTranscript(t *testing.T) {
+	geminiJSON := `{"messages":[]}`
+
+	entries, err := BuildCondensedTranscriptFromBytes([]byte(geminiJSON), agent.AgentTypeGemini)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries for empty Gemini transcript, got %d", len(entries))
+	}
+}
+
+func TestBuildCondensedTranscriptFromBytes_GeminiInvalidJSON(t *testing.T) {
+	_, err := BuildCondensedTranscriptFromBytes([]byte(`not json`), agent.AgentTypeGemini)
+	if err == nil {
+		t.Error("expected error for invalid Gemini JSON")
+	}
+}
+
 func TestFormatCondensedTranscript_BasicFormat(t *testing.T) {
 	input := Input{
 		Transcript: []Entry{
@@ -506,7 +659,7 @@ func TestGenerateFromTranscript(t *testing.T) {
 	transcript := []byte(`{"type":"user","message":{"content":"Hello"}}
 {"type":"assistant","message":{"content":[{"type":"text","text":"Hi there"}]}}`)
 
-	summary, err := GenerateFromTranscript(context.Background(), transcript, []string{"file.go"}, mockGenerator)
+	summary, err := GenerateFromTranscript(context.Background(), transcript, []string{"file.go"}, "", mockGenerator)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -521,7 +674,7 @@ func TestGenerateFromTranscript(t *testing.T) {
 func TestGenerateFromTranscript_EmptyTranscript(t *testing.T) {
 	mockGenerator := &ClaudeGenerator{}
 
-	summary, err := GenerateFromTranscript(context.Background(), []byte{}, []string{}, mockGenerator)
+	summary, err := GenerateFromTranscript(context.Background(), []byte{}, []string{}, "", mockGenerator)
 	if err == nil {
 		t.Error("expected error for empty transcript")
 	}
@@ -535,10 +688,188 @@ func TestGenerateFromTranscript_NilGenerator(t *testing.T) {
 
 	// With nil generator, should use default ClaudeGenerator
 	// This will fail because claude CLI isn't available in test, but tests the nil handling
-	_, err := GenerateFromTranscript(context.Background(), transcript, []string{}, nil)
+	_, err := GenerateFromTranscript(context.Background(), transcript, []string{}, "", nil)
 	// Error is expected (claude CLI not available), but function should not panic
 	if err == nil {
 		t.Log("Unexpectedly succeeded - claude CLI must be available")
+	}
+}
+
+func TestBuildCondensedTranscriptFromBytes_OpenCodeUserAndAssistant(t *testing.T) {
+	// OpenCode export JSON format
+	ocExportJSON := `{
+		"info": {"id": "test-session"},
+		"messages": [
+			{"info": {"id": "msg-1", "role": "user", "time": {"created": 1708300000}}, "parts": [{"type": "text", "text": "Fix the bug in main.go"}]},
+			{"info": {"id": "msg-2", "role": "assistant", "time": {"created": 1708300001}}, "parts": [{"type": "text", "text": "I'll fix the bug."}]}
+		]
+	}`
+
+	entries, err := BuildCondensedTranscriptFromBytes([]byte(ocExportJSON), agent.AgentTypeOpenCode)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	if entries[0].Type != EntryTypeUser {
+		t.Errorf("entry 0: expected type %s, got %s", EntryTypeUser, entries[0].Type)
+	}
+	if entries[0].Content != "Fix the bug in main.go" {
+		t.Errorf("entry 0: unexpected content: %s", entries[0].Content)
+	}
+
+	if entries[1].Type != EntryTypeAssistant {
+		t.Errorf("entry 1: expected type %s, got %s", EntryTypeAssistant, entries[1].Type)
+	}
+	if entries[1].Content != "I'll fix the bug." {
+		t.Errorf("entry 1: unexpected content: %s", entries[1].Content)
+	}
+}
+
+func TestBuildCondensedTranscriptFromBytes_OpenCodeToolCalls(t *testing.T) {
+	// OpenCode export JSON format with tool calls
+	ocExportJSON := `{
+		"info": {"id": "test-session"},
+		"messages": [
+			{"info": {"id": "msg-1", "role": "user", "time": {"created": 1708300000}}, "parts": [{"type": "text", "text": "Edit main.go"}]},
+			{"info": {"id": "msg-2", "role": "assistant", "time": {"created": 1708300001}}, "parts": [
+				{"type": "text", "text": "Editing now."},
+				{"type": "tool", "tool": "edit", "callID": "call-1", "state": {"status": "completed", "input": {"filePath": "main.go"}, "output": "Applied"}},
+				{"type": "tool", "tool": "bash", "callID": "call-2", "state": {"status": "completed", "input": {"command": "go test ./..."}, "output": "PASS"}}
+			]}
+		]
+	}`
+
+	entries, err := BuildCondensedTranscriptFromBytes([]byte(ocExportJSON), agent.AgentTypeOpenCode)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// user + assistant + 2 tool calls
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 entries, got %d", len(entries))
+	}
+
+	if entries[2].Type != EntryTypeTool {
+		t.Errorf("entry 2: expected type %s, got %s", EntryTypeTool, entries[2].Type)
+	}
+	if entries[2].ToolName != "edit" {
+		t.Errorf("entry 2: expected tool name edit, got %s", entries[2].ToolName)
+	}
+	if entries[2].ToolDetail != "main.go" {
+		t.Errorf("entry 2: expected tool detail main.go, got %s", entries[2].ToolDetail)
+	}
+
+	if entries[3].ToolName != "bash" {
+		t.Errorf("entry 3: expected tool name bash, got %s", entries[3].ToolName)
+	}
+	if entries[3].ToolDetail != "go test ./..." {
+		t.Errorf("entry 3: expected tool detail 'go test ./...', got %s", entries[3].ToolDetail)
+	}
+}
+
+func TestBuildCondensedTranscriptFromBytes_OpenCodeSkipsEmptyContent(t *testing.T) {
+	// OpenCode export JSON format with empty content messages
+	ocExportJSON := `{
+		"info": {"id": "test-session"},
+		"messages": [
+			{"info": {"id": "msg-1", "role": "user", "time": {"created": 1708300000}}, "parts": []},
+			{"info": {"id": "msg-2", "role": "assistant", "time": {"created": 1708300001}}, "parts": []},
+			{"info": {"id": "msg-3", "role": "user", "time": {"created": 1708300010}}, "parts": [{"type": "text", "text": "Real prompt"}]}
+		]
+	}`
+
+	entries, err := BuildCondensedTranscriptFromBytes([]byte(ocExportJSON), agent.AgentTypeOpenCode)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry (empty content skipped), got %d", len(entries))
+	}
+	if entries[0].Content != "Real prompt" {
+		t.Errorf("expected 'Real prompt', got %s", entries[0].Content)
+	}
+}
+
+func TestBuildCondensedTranscriptFromBytes_OpenCodeInvalidJSON(t *testing.T) {
+	// Invalid JSON now returns an error (not silently skipped like JSONL)
+	_, err := BuildCondensedTranscriptFromBytes([]byte("not json"), agent.AgentTypeOpenCode)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestBuildCondensedTranscriptFromBytes_CursorRoleBasedJSONL(t *testing.T) {
+	// Cursor transcripts use "role" instead of "type" and wrap user text in <user_query> tags.
+	// The transcript parser normalizes role→type, so condensation should work.
+	cursorJSONL := `{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nhello\n</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Hi there!"}]}}
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\nadd one to a file and commit\n</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Created one.txt with one and committed."}]}}
+`
+
+	entries, err := BuildCondensedTranscriptFromBytes([]byte(cursorJSONL), agent.AgentTypeCursor)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(entries) == 0 {
+		t.Fatal("expected non-empty entries for Cursor transcript, got 0 (role→type normalization may be broken)")
+	}
+
+	// Should have 4 entries: 2 user + 2 assistant
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 entries, got %d", len(entries))
+	}
+
+	if entries[0].Type != EntryTypeUser {
+		t.Errorf("entry 0: expected type %s, got %s", EntryTypeUser, entries[0].Type)
+	}
+	if !strings.Contains(entries[0].Content, "hello") {
+		t.Errorf("entry 0: expected content containing 'hello', got %q", entries[0].Content)
+	}
+
+	if entries[1].Type != EntryTypeAssistant {
+		t.Errorf("entry 1: expected type %s, got %s", EntryTypeAssistant, entries[1].Type)
+	}
+	if entries[1].Content != "Hi there!" {
+		t.Errorf("entry 1: expected 'Hi there!', got %q", entries[1].Content)
+	}
+
+	if entries[2].Type != EntryTypeUser {
+		t.Errorf("entry 2: expected type %s, got %s", EntryTypeUser, entries[2].Type)
+	}
+
+	if entries[3].Type != EntryTypeAssistant {
+		t.Errorf("entry 3: expected type %s, got %s", EntryTypeAssistant, entries[3].Type)
+	}
+}
+
+func TestBuildCondensedTranscriptFromBytes_CursorNoToolUseBlocks(t *testing.T) {
+	// Cursor transcripts have no tool_use blocks — only text content.
+	// This verifies we get entries (not an empty result) even without tool calls.
+	cursorJSONL := `{"role":"user","message":{"content":[{"type":"text","text":"write a poem"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Here is a poem about code."}]}}
+`
+
+	entries, err := BuildCondensedTranscriptFromBytes([]byte(cursorJSONL), agent.AgentTypeCursor)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+
+	// No tool entries should appear
+	for i, e := range entries {
+		if e.Type == EntryTypeTool {
+			t.Errorf("entry %d: unexpected tool entry in Cursor transcript", i)
+		}
 	}
 }
 

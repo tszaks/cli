@@ -2,7 +2,6 @@ package strategy
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/entireio/cli/cmd/entire/cli/jsonutil"
 	"github.com/entireio/cli/cmd/entire/cli/logging"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/entireio/cli/cmd/entire/cli/validation"
 )
@@ -37,32 +37,19 @@ func sessionStateFile(sessionID string) (string, error) {
 }
 
 // LoadSessionState loads the session state for the given session ID.
-// Returns (nil, nil) when session file doesn't exist (not an error condition).
+// Returns (nil, nil) when session file doesn't exist or session is stale (not an error condition).
+// Stale sessions are automatically deleted by the underlying StateStore.
 func LoadSessionState(sessionID string) (*SessionState, error) {
-	// Validate session ID to prevent path traversal
-	if err := validation.ValidateSessionID(sessionID); err != nil {
-		return nil, fmt.Errorf("invalid session ID: %w", err)
-	}
-
-	stateFile, err := sessionStateFile(sessionID)
+	store, err := session.NewStateStore()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get session state file path: %w", err)
+		return nil, fmt.Errorf("failed to create state store: %w", err)
 	}
 
-	data, err := os.ReadFile(stateFile) //nolint:gosec // stateFile is derived from sessionID, not user input
-	if os.IsNotExist(err) {
-		return nil, nil //nolint:nilnil // nil,nil indicates session not found (expected case)
-	}
+	state, err := store.Load(context.Background(), sessionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read session state: %w", err)
+		return nil, fmt.Errorf("failed to load session state: %w", err)
 	}
-
-	var state SessionState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal session state: %w", err)
-	}
-	state.NormalizeAfterLoad()
-	return &state, nil
+	return state, nil
 }
 
 // SaveSessionState saves the session state atomically.
@@ -128,7 +115,7 @@ func FindMostRecentSession() string {
 	}
 
 	// Scope to current worktree to prevent cross-worktree pollution.
-	worktreePath, wpErr := GetWorktreePath()
+	worktreePath, wpErr := paths.WorktreeRoot()
 	if wpErr == nil && worktreePath != "" {
 		var filtered []*SessionState
 		for _, s := range states {
@@ -167,16 +154,26 @@ func FindMostRecentSession() string {
 	return ""
 }
 
-// TransitionAndLog runs a session phase transition, applies common actions, logs the
-// transition, and returns any remaining strategy-specific actions.
+// TransitionAndLog runs a session phase transition, applies actions via the
+// handler, and logs the transition. Returns the first handler error from
+// ApplyTransition (if any) so callers can surface it. The error is also
+// logged internally for diagnostics.
 // This is the single entry point for all state machine transitions to ensure
 // consistent logging of phase changes.
-func TransitionAndLog(state *SessionState, event session.Event, ctx session.TransitionContext) []session.Action {
+func TransitionAndLog(state *SessionState, event session.Event, ctx session.TransitionContext, handler session.ActionHandler) error {
 	oldPhase := state.Phase
 	result := session.Transition(oldPhase, event, ctx)
-	remaining := session.ApplyCommonActions(state, result)
-
 	logCtx := logging.WithComponent(context.Background(), "session")
+
+	handlerErr := session.ApplyTransition(state, result, handler)
+	if handlerErr != nil {
+		logging.Error(logCtx, "action handler error during transition",
+			slog.String("session_id", state.SessionID),
+			slog.String("event", event.String()),
+			slog.Any("error", handlerErr),
+		)
+	}
+
 	if result.NewPhase != oldPhase {
 		logging.Info(logCtx, "phase transition",
 			slog.String("session_id", state.SessionID),
@@ -189,10 +186,14 @@ func TransitionAndLog(state *SessionState, event session.Event, ctx session.Tran
 			slog.String("session_id", state.SessionID),
 			slog.String("event", event.String()),
 			slog.String("phase", string(result.NewPhase)),
+			slog.Any("result", result),
 		)
 	}
 
-	return remaining
+	if handlerErr != nil {
+		return fmt.Errorf("transition %s: %w", event, handlerErr)
+	}
+	return nil
 }
 
 // ClearSessionState removes the session state file for the given session ID.

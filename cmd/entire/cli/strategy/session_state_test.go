@@ -1,10 +1,13 @@
 package strategy
 
 import (
+	"errors"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/session"
 	"github.com/go-git/go-git/v5"
 )
 
@@ -297,9 +300,9 @@ func TestFindMostRecentSession_FiltersByWorktree(t *testing.T) {
 	t.Chdir(dir)
 
 	// Get the resolved worktree path (git resolves symlinks, e.g. /var → /private/var on macOS)
-	resolvedDir, err := GetWorktreePath()
+	resolvedDir, err := paths.WorktreeRoot()
 	if err != nil {
-		t.Fatalf("GetWorktreePath() error = %v", err)
+		t.Fatalf("paths.WorktreeRoot() error = %v", err)
 	}
 
 	older := time.Now().Add(-1 * time.Hour)
@@ -378,5 +381,88 @@ func TestFindMostRecentSession_FallsBackWhenNoWorktreeMatch(t *testing.T) {
 	// Cleanup
 	if err := os.Remove(dir + "/.git/entire-sessions/only-session.json"); err != nil && !os.IsNotExist(err) {
 		t.Logf("cleanup warning: %v", err)
+	}
+}
+
+// errorActionHandler returns an error from HandleCondense to test
+// that TransitionAndLog propagates handler errors while still applying the phase transition.
+type errorActionHandler struct {
+	session.NoOpActionHandler
+}
+
+func (errorActionHandler) HandleCondense(_ *session.State) error {
+	return errors.New("test condense error")
+}
+
+// TestTransitionAndLog_ReturnsHandlerError verifies that TransitionAndLog
+// applies the phase transition even when the handler returns an error,
+// and propagates that error to the caller.
+func TestTransitionAndLog_ReturnsHandlerError(t *testing.T) {
+	t.Parallel()
+
+	state := &SessionState{
+		SessionID: "test-error-handler",
+		Phase:     session.PhaseIdle,
+	}
+
+	// IDLE + GitCommit → IDLE with ActionCondense.
+	// The handler will fail on ActionCondense, but the phase should still be IDLE.
+	err := TransitionAndLog(state, session.EventGitCommit, session.TransitionContext{}, &errorActionHandler{})
+
+	if state.Phase != session.PhaseIdle {
+		t.Errorf("Phase = %q, want %q (should transition despite handler error)", state.Phase, session.PhaseIdle)
+	}
+	if err == nil {
+		t.Error("TransitionAndLog() should return handler error")
+	}
+}
+
+// TestLoadSessionState_DeletesStaleSession tests that LoadSessionState returns (nil, nil)
+// for a stale session and deletes the file from disk.
+func TestLoadSessionState_DeletesStaleSession(t *testing.T) {
+	dir := t.TempDir()
+	_, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatalf("failed to init git repo: %v", err)
+	}
+
+	t.Chdir(dir)
+
+	// Create a stale session (ended >2wk ago)
+	staleInteracted := time.Now().Add(-2 * 7 * 24 * time.Hour)
+	state := &SessionState{
+		SessionID:           "stale-load-test",
+		BaseCommit:          "abc123def456",
+		StartedAt:           time.Now().Add(-3 * 7 * 24 * time.Hour),
+		LastInteractionTime: &staleInteracted,
+		StepCount:           5,
+	}
+
+	err = SaveSessionState(state)
+	if err != nil {
+		t.Fatalf("SaveSessionState() error = %v", err)
+	}
+
+	// Verify file exists before load
+	stateFile, err := sessionStateFile("stale-load-test")
+	if err != nil {
+		t.Fatalf("sessionStateFile() error = %v", err)
+	}
+	if _, err := os.Stat(stateFile); err != nil {
+		t.Fatalf("state file should exist before load: %v", err)
+	}
+
+	// Load should return (nil, nil) for stale session
+	loaded, err := LoadSessionState("stale-load-test")
+	if err != nil {
+		t.Errorf("LoadSessionState() error = %v, want nil for stale session", err)
+	}
+	if loaded != nil {
+		t.Error("LoadSessionState() returned non-nil for stale session")
+	}
+
+	// File should be deleted from disk
+	if _, err := os.Stat(stateFile); !os.IsNotExist(err) {
+		t.Error("stale session file should be deleted after LoadSessionState()")
 	}
 }

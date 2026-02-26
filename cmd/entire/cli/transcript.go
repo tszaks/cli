@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	agentpkg "github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/agent/claudecode"
+	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/textutil"
 	"github.com/entireio/cli/cmd/entire/cli/transcript"
 )
@@ -21,106 +23,6 @@ const (
 	contentTypeText         = transcript.ContentTypeText
 	contentTypeToolUse      = transcript.ContentTypeToolUse
 )
-
-// parseTranscript reads and parses a Claude Code transcript file.
-// Uses bufio.Reader to handle arbitrarily long lines.
-func parseTranscript(path string) ([]transcriptLine, error) {
-	file, err := os.Open(path) //nolint:gosec // Reading from controlled git metadata path
-	if err != nil {
-		return nil, err //nolint:wrapcheck // already present in codebase
-	}
-	defer func() { _ = file.Close() }()
-
-	var lines []transcriptLine
-	reader := bufio.NewReader(file)
-
-	for {
-		lineBytes, err := reader.ReadBytes('\n')
-		if err != nil && err != io.EOF {
-			return nil, fmt.Errorf("failed to read transcript: %w", err)
-		}
-
-		// Handle empty line or EOF without content
-		if len(lineBytes) == 0 {
-			if err == io.EOF {
-				break
-			}
-			continue
-		}
-
-		var line transcriptLine
-		if err := json.Unmarshal(lineBytes, &line); err == nil {
-			lines = append(lines, line)
-		}
-
-		if err == io.EOF {
-			break
-		}
-	}
-
-	return lines, nil
-}
-
-// parseTranscriptFromLine reads and parses a transcript file starting from a specific line.
-// Uses bufio.Reader to handle arbitrarily long lines.
-// Returns:
-//   - lines: parsed transcript lines from startLine onwards (malformed lines skipped)
-//   - totalLines: total number of lines in the file (including malformed ones)
-//   - error: any error encountered during reading
-//
-// The startLine parameter is 0-indexed (startLine=0 reads from the beginning).
-// This is useful for incremental parsing when you've already processed some lines.
-func parseTranscriptFromLine(path string, startLine int) ([]transcriptLine, int, error) {
-	file, err := os.Open(path) //nolint:gosec // path is a controlled transcript file path
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to open transcript: %w", err)
-	}
-	defer func() { _ = file.Close() }()
-
-	var lines []transcriptLine
-	reader := bufio.NewReader(file)
-
-	totalLines := 0
-	for {
-		lineBytes, err := reader.ReadBytes('\n')
-		if err != nil && err != io.EOF {
-			return nil, 0, fmt.Errorf("failed to read transcript: %w", err)
-		}
-
-		// Handle empty line or EOF without content
-		if len(lineBytes) == 0 {
-			if err == io.EOF {
-				break
-			}
-			continue
-		}
-
-		// Count all lines for totalLines, but only parse after startLine
-		if totalLines >= startLine {
-			var line transcriptLine
-			if err := json.Unmarshal(lineBytes, &line); err == nil {
-				lines = append(lines, line)
-			}
-		}
-		totalLines++
-
-		if err == io.EOF {
-			break
-		}
-	}
-
-	return lines, totalLines, nil
-}
-
-// parseTranscriptFromBytes parses transcript content from a byte slice.
-// Uses bufio.Reader to handle arbitrarily long lines.
-func parseTranscriptFromBytes(content []byte) ([]transcriptLine, error) {
-	lines, err := transcript.ParseFromBytes(content)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse transcript: %w", err)
-	}
-	return lines, nil
-}
 
 // PromptResponsePair represents a user prompt and the assistant's responses.
 // Used for extracting all interactions from a transcript.
@@ -272,25 +174,6 @@ func extractLastUserPrompt(transcript []transcriptLine) string {
 	return prompts[len(prompts)-1]
 }
 
-// extractLastAssistantMessage extracts the last text message from the assistant
-func extractLastAssistantMessage(transcript []transcriptLine) string {
-	for i := len(transcript) - 1; i >= 0; i-- {
-		if transcript[i].Type == transcriptTypeAssistant {
-			var msg assistantMessage
-			if err := json.Unmarshal(transcript[i].Message, &msg); err != nil {
-				continue
-			}
-
-			for _, block := range msg.Content {
-				if block.Type == contentTypeText && block.Text != "" {
-					return block.Text
-				}
-			}
-		}
-	}
-	return ""
-}
-
 // findLastUserUUID finds the UUID of the last user message (that has string content)
 func findLastUserUUID(transcript []transcriptLine) string {
 	for i := len(transcript) - 1; i >= 0; i-- {
@@ -375,44 +258,19 @@ func extractModifiedFiles(transcript []transcriptLine) []string {
 	return files
 }
 
-// extractKeyActions extracts key actions from the transcript for context file
-func extractKeyActions(transcript []transcriptLine, maxActions int) []string {
-	var keyActions []string
-
-	for _, line := range transcript {
-		if line.Type == transcriptTypeAssistant {
-			var msg assistantMessage
-			if err := json.Unmarshal(line.Message, &msg); err != nil {
-				continue
-			}
-
-			for _, block := range msg.Content {
-				if block.Type == contentTypeToolUse {
-					var input toolInput
-					_ = json.Unmarshal(block.Input, &input) //nolint:errcheck // Best-effort parsing for display purposes
-
-					detail := input.Description
-					if detail == "" {
-						detail = input.Command
-					}
-					if detail == "" {
-						detail = input.FilePath
-					}
-					if detail == "" {
-						detail = input.Pattern
-					}
-
-					action := "- **" + block.Name + "**: " + detail
-					keyActions = append(keyActions, action)
-					if len(keyActions) >= maxActions {
-						return keyActions
-					}
-				}
-			}
-		}
+// resolveTranscriptPath determines the correct file path for an agent's session transcript.
+// Computes the path dynamically from the current repo location for cross-machine portability.
+func resolveTranscriptPath(sessionID string, agent agentpkg.Agent) (string, error) {
+	repoRoot, err := paths.WorktreeRoot()
+	if err != nil {
+		return "", fmt.Errorf("failed to get worktree root: %w", err)
 	}
 
-	return keyActions
+	sessionDir, err := agent.GetSessionDir(repoRoot)
+	if err != nil {
+		return "", fmt.Errorf("failed to get agent session directory: %w", err)
+	}
+	return agent.ResolveSessionFile(sessionDir, sessionID), nil
 }
 
 // AgentTranscriptPath returns the path to a subagent's transcript file.

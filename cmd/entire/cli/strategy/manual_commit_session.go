@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/agent"
-	"github.com/entireio/cli/cmd/entire/cli/buildinfo"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
+	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
+	"github.com/entireio/cli/cmd/entire/cli/versioninfo"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -150,9 +151,9 @@ func (s *ManualCommitStrategy) ClearSessionState(sessionID string) error {
 // about concurrent sessions that will be included in the next commit.
 // Returns 0, nil if no such sessions exist.
 func (s *ManualCommitStrategy) CountOtherActiveSessionsWithCheckpoints(currentSessionID string) (int, error) {
-	currentWorktree, err := GetWorktreePath()
+	currentWorktree, err := paths.WorktreeRoot()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to get worktree root: %w", err)
 	}
 
 	// Get current HEAD to compare with session base commits
@@ -197,7 +198,7 @@ func (s *ManualCommitStrategy) initializeSession(repo *git.Repository, sessionID
 		return nil, fmt.Errorf("failed to get HEAD: %w", err)
 	}
 
-	worktreePath, err := GetWorktreePath()
+	worktreePath, err := paths.WorktreeRoot()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get worktree path: %w", err)
 	}
@@ -215,17 +216,24 @@ func (s *ManualCommitStrategy) initializeSession(repo *git.Repository, sessionID
 		untrackedFiles = nil
 	}
 
+	// Generate TurnID for the first turn
+	turnID, err := id.Generate()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate turn ID: %w", err)
+	}
+
 	now := time.Now()
 	headHash := head.Hash().String()
 	state := &SessionState{
 		SessionID:             sessionID,
-		CLIVersion:            buildinfo.Version,
+		CLIVersion:            versioninfo.Version,
 		BaseCommit:            headHash,
 		AttributionBaseCommit: headHash,
 		WorktreePath:          worktreePath,
 		WorktreeID:            worktreeID,
 		StartedAt:             now,
 		LastInteractionTime:   &now,
+		TurnID:                turnID.String(),
 		StepCount:             0,
 		UntrackedFilesAtStart: untrackedFiles,
 		AgentType:             agentType,

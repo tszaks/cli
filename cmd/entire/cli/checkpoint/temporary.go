@@ -382,6 +382,15 @@ func (s *GitStore) addTaskMetadataToTree(baseTreeHash plumbing.Hash, opts WriteT
 		// Add subagent transcript if available
 		if opts.SubagentTranscriptPath != "" && opts.AgentID != "" {
 			if agentContent, readErr := os.ReadFile(opts.SubagentTranscriptPath); readErr == nil {
+				redacted, jsonlErr := redact.JSONLBytes(agentContent)
+				if jsonlErr != nil {
+					logging.Warn(context.Background(), "subagent transcript is not valid JSONL, falling back to plain redaction",
+						slog.String("path", opts.SubagentTranscriptPath),
+						slog.String("error", jsonlErr.Error()),
+					)
+					redacted = redact.Bytes(agentContent)
+				}
+				agentContent = redacted
 				if blobHash, blobErr := CreateBlobFromContent(s.repo, agentContent); blobErr == nil {
 					agentPath := taskMetadataDir + "/agent-" + opts.AgentID + ".jsonl"
 					entries[agentPath] = object.TreeEntry{
@@ -615,7 +624,7 @@ func (s *GitStore) ShadowBranchExists(baseCommit, worktreeID string) bool {
 // persist deletions with packed refs or worktrees.
 func (s *GitStore) DeleteShadowBranch(baseCommit, worktreeID string) error {
 	shadowBranchName := ShadowBranchNameForCommit(baseCommit, worktreeID)
-	cmd := exec.CommandContext(context.Background(), "git", "branch", "-D", "--", shadowBranchName) //nolint:gosec // shadowBranchName is constructed from commit hash, not user input
+	cmd := exec.CommandContext(context.Background(), "git", "branch", "-D", "--", shadowBranchName)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to delete shadow branch %s: %s: %w", shadowBranchName, strings.TrimSpace(string(output)), err)
 	}
@@ -692,13 +701,13 @@ func (s *GitStore) buildTreeWithChanges(
 	modifiedFiles, deletedFiles []string,
 	metadataDir, metadataDirAbs string,
 ) (plumbing.Hash, error) {
-	// Get repo root for resolving file paths
+	// Get worktree root for resolving file paths
 	// This is critical because fileExists() and createBlobFromFile() use os.Stat()
 	// which resolves relative to CWD. The modifiedFiles are repo-relative paths,
 	// so we must resolve them against repo root, not CWD.
-	repoRoot, err := paths.RepoRoot()
+	repoRoot, err := paths.WorktreeRoot()
 	if err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("failed to get repo root: %w", err)
+		return plumbing.ZeroHash, fmt.Errorf("failed to get worktree root: %w", err)
 	}
 
 	// Get the base tree
@@ -877,6 +886,25 @@ func addDirectoryToEntriesWithAbsPath(repo *git.Repository, dirPathAbs, dirPathR
 		if err != nil {
 			return err
 		}
+
+		// Skip symlinks to prevent reading files outside the metadata directory.
+		// A symlink could point to sensitive files (e.g., /etc/passwd) which would
+		// then be captured in the checkpoint and stored in git history.
+		// NOTE: filepath.Walk uses os.Stat (follows symlinks), so info.Mode() never
+		// reports ModeSymlink. We use os.Lstat to check the entry itself.
+		// This check MUST come before IsDir() because Walk follows symlinked
+		// directories and would recurse into them otherwise.
+		linfo, lstatErr := os.Lstat(path)
+		if lstatErr != nil {
+			return fmt.Errorf("failed to lstat %s: %w", path, lstatErr)
+		}
+		if linfo.Mode()&os.ModeSymlink != 0 {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
 		if info.IsDir() {
 			return nil
 		}
@@ -887,12 +915,17 @@ func addDirectoryToEntriesWithAbsPath(repo *git.Repository, dirPathAbs, dirPathR
 			return fmt.Errorf("failed to get relative path for %s: %w", path, err)
 		}
 
-		blobHash, mode, err := createBlobFromFile(repo, path)
+		// Prevent path traversal via symlinks pointing outside the metadata dir
+		if strings.HasPrefix(relWithinDir, "..") {
+			return fmt.Errorf("path traversal detected: %s", relWithinDir)
+		}
+
+		treePath := filepath.ToSlash(filepath.Join(dirPathRel, relWithinDir))
+
+		blobHash, mode, err := createRedactedBlobFromFile(repo, path, treePath)
 		if err != nil {
 			return fmt.Errorf("failed to create blob for %s: %w", path, err)
 		}
-
-		treePath := filepath.Join(dirPathRel, relWithinDir)
 		entries[treePath] = object.TreeEntry{
 			Name: treePath,
 			Mode: mode,
@@ -1035,7 +1068,7 @@ type changedFilesResult struct {
 //
 // Uses `git status --porcelain -z` for reliable parsing of filenames with special characters.
 func collectChangedFiles(ctx context.Context, repo *git.Repository) (changedFilesResult, error) {
-	// Get repo root directory for running git command
+	// Get worktree root directory for running git command
 	wt, err := repo.Worktree()
 	if err != nil {
 		return changedFilesResult{}, fmt.Errorf("failed to get worktree: %w", err)

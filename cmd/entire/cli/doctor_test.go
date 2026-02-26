@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -94,7 +97,6 @@ func TestClassifySession_ActiveStale_OldInteractionTime(t *testing.T) {
 	assert.Equal(t, 2, result.FilesTouchedCount)
 }
 
-//nolint:dupl // Tests distinct phase (ACTIVE vs ACTIVE_COMMITTED), collapsing harms readability
 func TestClassifySession_ActiveRecent_Healthy(t *testing.T) {
 	dir := setupGitRepoForPhaseTest(t)
 	repo, err := git.PlainOpen(dir)
@@ -111,45 +113,6 @@ func TestClassifySession_ActiveRecent_Healthy(t *testing.T) {
 
 	result := classifySession(state, repo, time.Now())
 	assert.Nil(t, result, "active session with recent interaction should be healthy")
-}
-
-func TestClassifySession_ActiveCommittedStale(t *testing.T) {
-	dir := setupGitRepoForPhaseTest(t)
-	repo, err := git.PlainOpen(dir)
-	require.NoError(t, err)
-
-	twoHoursAgo := time.Now().Add(-2 * time.Hour)
-	state := &strategy.SessionState{
-		SessionID:           "test-ac-stale",
-		BaseCommit:          testBaseCommit,
-		Phase:               session.PhaseActiveCommitted,
-		StepCount:           5,
-		LastInteractionTime: &twoHoursAgo,
-	}
-
-	result := classifySession(state, repo, time.Now())
-
-	require.NotNil(t, result, "ACTIVE_COMMITTED session with stale interaction should be stuck")
-	assert.Contains(t, result.Reason, "active, last interaction")
-}
-
-//nolint:dupl // Tests distinct phase (ACTIVE_COMMITTED vs ACTIVE), collapsing harms readability
-func TestClassifySession_ActiveCommittedRecent_Healthy(t *testing.T) {
-	dir := setupGitRepoForPhaseTest(t)
-	repo, err := git.PlainOpen(dir)
-	require.NoError(t, err)
-
-	recentTime := time.Now().Add(-30 * time.Minute)
-	state := &strategy.SessionState{
-		SessionID:           "test-ac-healthy",
-		BaseCommit:          testBaseCommit,
-		Phase:               session.PhaseActiveCommitted,
-		StepCount:           5,
-		LastInteractionTime: &recentTime,
-	}
-
-	result := classifySession(state, repo, time.Now())
-	assert.Nil(t, result, "ACTIVE_COMMITTED session with recent interaction should be healthy")
 }
 
 func TestClassifySession_EndedWithUncondensedData(t *testing.T) {
@@ -325,4 +288,34 @@ func TestClassifySession_WorktreeIDInShadowBranch(t *testing.T) {
 	assert.True(t, result.HasShadowBranch)
 	expectedBranch := checkpoint.ShadowBranchNameForCommit(baseCommit, worktreeID)
 	assert.Equal(t, expectedBranch, result.ShadowBranch)
+}
+
+func TestRunSessionsFix_DeprecatedStrategyWarning(t *testing.T) {
+	dir := setupGitRepoForPhaseTest(t)
+	t.Chdir(dir)
+
+	writeSettings(t, `{"enabled": true, "strategy": "auto-commit"}`)
+
+	var stdout bytes.Buffer
+	cmd := &cobra.Command{Use: "doctor"}
+	cmd.SetOut(&stdout)
+
+	// runSessionsFix should show warning after "No stuck sessions found."
+	err := runSessionsFix(cmd, false)
+	require.NoError(t, err)
+
+	output := stdout.String()
+	if !strings.Contains(output, "no longer needed") {
+		t.Errorf("Expected deprecation warning, got: %s", output)
+	}
+	if !strings.Contains(output, "strategy") {
+		t.Errorf("Expected warning to mention 'strategy', got: %s", output)
+	}
+
+	// Warning should appear after the main output
+	noStuckIdx := strings.Index(output, "No stuck sessions found.")
+	warningIdx := strings.Index(output, "no longer needed")
+	if noStuckIdx >= warningIdx {
+		t.Errorf("Expected warning after main output, got: %s", output)
+	}
 }
