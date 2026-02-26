@@ -55,10 +55,8 @@ func TestMain(m *testing.M) {
 		version = string(out)
 	}
 
-	hookEntire, _ := exec.LookPath("entire")
-
-	preflight := fmt.Sprintf("entire binary:  %s\nentire (PATH):  %s\nentire version: %s\nartifact dir:   %s\n",
-		entireBin, hookEntire, version, runDir)
+	preflight := fmt.Sprintf("entire binary:  %s\nentire version: %s\n",
+		entireBin, version)
 	fmt.Fprint(os.Stderr, preflight)
 	_ = os.WriteFile(filepath.Join(runDir, "entire-version.txt"), []byte(preflight), 0o644)
 
