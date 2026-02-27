@@ -104,7 +104,9 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Show build information",
 		Run: func(cmd *cobra.Command, _ []string) {
-			cmd.Print(versionString())
+			// Use OutOrStdout explicitly — cobra's cmd.Print() defaults to
+			// stderr in v1.10+, but version output should go to stdout.
+			fmt.Fprint(cmd.OutOrStdout(), versionString())
 		},
 	}
 }
