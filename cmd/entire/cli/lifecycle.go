@@ -371,7 +371,7 @@ func handleLifecycleTurnEnd(ctx context.Context, ag agent.Agent, event *agent.Ev
 	}
 
 	// Calculate token usage - prefer SubagentAwareExtractor to include subagent tokens
-	tokenUsage := agent.CalculateTokenUsage(ag, transcriptData, transcriptLinesAtStart, subagentsDir)
+	tokenUsage := agent.CalculateTokenUsage(ctx, ag, transcriptData, transcriptLinesAtStart, subagentsDir)
 
 	// Build fully-populated step context and delegate to strategy
 	stepCtx := strategy.StepContext{
