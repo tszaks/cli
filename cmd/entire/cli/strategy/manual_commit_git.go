@@ -139,6 +139,14 @@ func (s *ManualCommitStrategy) SaveStep(ctx context.Context, step StepContext) e
 		return fmt.Errorf("failed to save session state: %w", err)
 	}
 
+	if !branchExisted {
+		logging.Info(logging.WithComponent(ctx, "checkpoint"), "created shadow branch and committed changes",
+			slog.String("shadow_branch", shadowBranchName))
+	} else {
+		logging.Info(logging.WithComponent(ctx, "checkpoint"), "committed changes to shadow branch",
+			slog.String("shadow_branch", shadowBranchName))
+	}
+
 	// Log checkpoint creation
 	logCtx := logging.WithComponent(ctx, "checkpoint")
 	logging.Info(logCtx, "checkpoint saved",
@@ -248,6 +256,14 @@ func (s *ManualCommitStrategy) SaveTaskStep(ctx context.Context, step TaskStepCo
 	// Save updated state
 	if err := s.saveSessionState(ctx, state); err != nil {
 		return fmt.Errorf("failed to save session state: %w", err)
+	}
+
+	if !branchExisted {
+		logging.Info(logging.WithComponent(ctx, "checkpoint"), "created shadow branch and committed task checkpoint",
+			slog.String("shadow_branch", shadowBranchName))
+	} else {
+		logging.Info(logging.WithComponent(ctx, "checkpoint"), "committed task checkpoint to shadow branch",
+			slog.String("shadow_branch", shadowBranchName))
 	}
 
 	// Log task checkpoint creation

@@ -926,6 +926,7 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 
 	logging.Info(logCtx, "session condensed",
 		slog.String("strategy", "manual-commit"),
+		slog.String("session_id", state.SessionID),
 		slog.String("checkpoint_id", result.CheckpointID.String()),
 		slog.Int("checkpoints_condensed", result.CheckpointsCount),
 		slog.Int("transcript_lines", result.TotalTranscriptLines),
