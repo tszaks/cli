@@ -6,6 +6,8 @@
 
 set -eu
 
+export E2E_AGENT="${usage_agent:-}"
+
 # Build from source with version info unless a pre-built binary is provided.
 if [ -z "${E2E_ENTIRE_BIN:-}" ]; then
   mise run build
