@@ -1,0 +1,35 @@
+#!/bin/sh
+#MISE description="Run E2E tests (internal — use test:e2e, test:e2e:claude, etc.)"
+#MISE hide=true
+#MISE quiet=true
+# Shared E2E runner. Called by the test:e2e:* tasks in mise.toml.
+#
+# Environment variables:
+#   E2E_AGENT                  - agent to test (claude-code, gemini-cli, opencode); empty = all
+#   E2E_CONCURRENT_TEST_LIMIT  - override per-agent concurrency gate size
+
+set -eu
+
+# Build from source with version info unless a pre-built binary is provided.
+if [ -z "${E2E_ENTIRE_BIN:-}" ]; then
+  mise run build
+  export E2E_ENTIRE_BIN="$PWD/entire"
+fi
+
+E2E_ARTIFACT_DIR="$PWD/e2e/artifacts/$(date +%Y-%m-%dT%H-%M-%S)"
+export E2E_ARTIFACT_DIR
+mkdir -p "$E2E_ARTIFACT_DIR"
+echo "artifacts: $E2E_ARTIFACT_DIR"
+
+filter="${usage_filter:-}"
+
+gotestsum --format dots --jsonfile "$E2E_ARTIFACT_DIR/test-events.json" -- \
+  -tags=e2e -count=1 -timeout=30m \
+  ${filter:+-run "$filter"} \
+  ./e2e/tests/... || rc=$?
+
+go run ./e2e/cmd/testreport -color -o "$E2E_ARTIFACT_DIR/report.txt" "$E2E_ARTIFACT_DIR/test-events.json"
+echo ""
+cat "$E2E_ARTIFACT_DIR/entire-version.txt" 2>/dev/null
+echo "artifacts: $E2E_ARTIFACT_DIR"
+exit "${rc:-0}"
