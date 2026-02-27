@@ -717,9 +717,10 @@ func (s *ManualCommitStrategy) PostCommit(ctx context.Context) error {
 			continue
 		}
 		if err := deleteShadowBranch(ctx, repo, shadowBranchName); err != nil {
-			fmt.Fprintf(os.Stderr, "[entire] Warning: failed to clean up %s: %v\n", shadowBranchName, err)
+			logging.Warn(logCtx, "failed to clean up shadow branch",
+				slog.String("shadow_branch", shadowBranchName),
+				slog.String("error", err.Error()))
 		} else {
-			fmt.Fprintf(os.Stderr, "[entire] Cleaned up shadow branch: %s\n", shadowBranchName)
 			logging.Info(logCtx, "shadow branch deleted",
 				slog.String("strategy", "manual-commit"),
 				slog.String("shadow_branch", shadowBranchName),
@@ -831,7 +832,8 @@ func (s *ManualCommitStrategy) postCommitProcessSession(
 	}
 
 	if err := TransitionAndLog(ctx, state, session.EventGitCommit, *transitionCtx, handler); err != nil {
-		fmt.Fprintf(os.Stderr, "[entire] Warning: post-commit action handler error: %v\n", err)
+		logging.Warn(logCtx, "post-commit action handler error",
+			slog.String("error", err.Error()))
 	}
 
 	// Record checkpoint ID for ACTIVE sessions so HandleTurnEnd can finalize
@@ -869,7 +871,9 @@ func (s *ManualCommitStrategy) postCommitProcessSession(
 
 	// Save the updated state
 	if err := s.saveSessionState(ctx, state); err != nil {
-		fmt.Fprintf(os.Stderr, "[entire] Warning: failed to update session state: %v\n", err)
+		logging.Warn(logCtx, "failed to update session state",
+			slog.String("session_id", state.SessionID),
+			slog.String("error", err.Error()))
 	}
 
 	// Only preserve shadow branch for active sessions that were NOT condensed.
@@ -895,9 +899,7 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 	logCtx := logging.WithComponent(ctx, "checkpoint")
 	result, err := s.CondenseSession(ctx, repo, checkpointID, state, committedFiles, opts...)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[entire] Warning: condensation failed for session %s: %v\n",
-			state.SessionID, err)
-		logging.Warn(logCtx, "post-commit: condensation failed",
+		logging.Warn(logCtx, "condensation failed",
 			slog.String("session_id", state.SessionID),
 			slog.String("error", err.Error()),
 		)
@@ -921,13 +923,6 @@ func (s *ManualCommitStrategy) condenseAndUpdateState(
 
 	// Save checkpoint ID so subsequent commits can reuse it (e.g., amend restores trailer)
 	state.LastCheckpointID = checkpointID
-
-	shortID := state.SessionID
-	if len(shortID) > 8 {
-		shortID = shortID[:8]
-	}
-	fmt.Fprintf(os.Stderr, "[entire] Condensed session %s: %s (%d checkpoints)\n",
-		shortID, result.CheckpointID, result.CheckpointsCount)
 
 	logging.Info(logCtx, "session condensed",
 		slog.String("strategy", "manual-commit"),
@@ -997,7 +992,9 @@ func (s *ManualCommitStrategy) postCommitUpdateBaseCommitOnly(ctx context.Contex
 			)
 			state.BaseCommit = newHead
 			if err := s.saveSessionState(ctx, state); err != nil {
-				fmt.Fprintf(os.Stderr, "[entire] Warning: failed to update session state: %v\n", err)
+				logging.Warn(logCtx, "failed to update session state",
+					slog.String("session_id", state.SessionID),
+					slog.String("error", err.Error()))
 			}
 		}
 	}
@@ -1545,7 +1542,9 @@ func (s *ManualCommitStrategy) InitializeSession(ctx context.Context, sessionID 
 	if state != nil && state.BaseCommit != "" {
 		// Session is fully initialized — apply phase transition for TurnStart.
 		if transErr := TransitionAndLog(ctx, state, session.EventTurnStart, session.TransitionContext{}, session.NoOpActionHandler{}); transErr != nil {
-			fmt.Fprintf(os.Stderr, "[entire] Warning: turn start transition failed: %v\n", transErr)
+			logging.Warn(logging.WithComponent(ctx, "hooks"), "turn start transition failed",
+				slog.String("session_id", sessionID),
+				slog.String("error", transErr.Error()))
 		}
 
 		// Generate a new TurnID for each turn (correlates carry-forward checkpoints)
@@ -1606,7 +1605,9 @@ func (s *ManualCommitStrategy) InitializeSession(ctx context.Context, sessionID 
 
 	// Apply phase transition: new session starts as ACTIVE.
 	if transErr := TransitionAndLog(ctx, state, session.EventTurnStart, session.TransitionContext{}, session.NoOpActionHandler{}); transErr != nil {
-		fmt.Fprintf(os.Stderr, "[entire] Warning: turn start transition failed: %v\n", transErr)
+		logging.Warn(logging.WithComponent(ctx, "hooks"), "turn start transition failed",
+			slog.String("session_id", sessionID),
+			slog.String("error", transErr.Error()))
 	}
 
 	// Calculate attribution for pre-prompt edits
@@ -1617,7 +1618,8 @@ func (s *ManualCommitStrategy) InitializeSession(ctx context.Context, sessionID 
 		return fmt.Errorf("failed to save attribution: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Initialized shadow session: %s\n", sessionID)
+	logging.Info(logging.WithComponent(ctx, "hooks"), "initialized shadow session",
+		slog.String("session_id", sessionID))
 	return nil
 }
 

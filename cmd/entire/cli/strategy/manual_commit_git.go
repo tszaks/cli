@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sort"
 
@@ -109,7 +108,6 @@ func (s *ManualCommitStrategy) SaveStep(ctx context.Context, step StepContext) e
 			slog.Int("checkpoint_count", state.StepCount),
 			slog.String("shadow_branch", shadowBranchName),
 		)
-		fmt.Fprintf(os.Stderr, "Skipped checkpoint (no changes since last checkpoint)\n")
 		return nil
 	}
 
@@ -139,12 +137,6 @@ func (s *ManualCommitStrategy) SaveStep(ctx context.Context, step StepContext) e
 	// Save updated state
 	if err := s.saveSessionState(ctx, state); err != nil {
 		return fmt.Errorf("failed to save session state: %w", err)
-	}
-
-	if !branchExisted {
-		fmt.Fprintf(os.Stderr, "Created shadow branch '%s' and committed changes\n", shadowBranchName)
-	} else {
-		fmt.Fprintf(os.Stderr, "Committed changes to shadow branch '%s'\n", shadowBranchName)
 	}
 
 	// Log checkpoint creation
@@ -256,12 +248,6 @@ func (s *ManualCommitStrategy) SaveTaskStep(ctx context.Context, step TaskStepCo
 	// Save updated state
 	if err := s.saveSessionState(ctx, state); err != nil {
 		return fmt.Errorf("failed to save session state: %w", err)
-	}
-
-	if !branchExisted {
-		fmt.Fprintf(os.Stderr, "Created shadow branch '%s' and committed task checkpoint\n", shadowBranchName)
-	} else {
-		fmt.Fprintf(os.Stderr, "Committed task checkpoint to shadow branch '%s'\n", shadowBranchName)
 	}
 
 	// Log task checkpoint creation

@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
+	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/settings"
 
 	"github.com/go-git/go-git/v5"
@@ -78,7 +79,9 @@ func isPushSessionsDisabled(ctx context.Context) bool {
 
 // doPushSessionsBranch pushes the sessions branch to the remote.
 func doPushSessionsBranch(ctx context.Context, remote, branchName string) error {
-	fmt.Fprintf(os.Stderr, "[entire] Pushing session logs to %s...\n", remote)
+	logCtx := logging.WithComponent(ctx, "push")
+	logging.Info(logCtx, "pushing session logs",
+		slog.String("remote", remote))
 
 	// Try pushing first
 	if err := tryPushSessionsCommon(ctx, remote, branchName); err == nil {
@@ -86,16 +89,18 @@ func doPushSessionsBranch(ctx context.Context, remote, branchName string) error 
 	}
 
 	// Push failed - likely non-fast-forward. Try to fetch and merge.
-	fmt.Fprintf(os.Stderr, "[entire] Syncing with remote session logs...\n")
+	logging.Info(logCtx, "syncing with remote session logs")
 
 	if err := fetchAndMergeSessionsCommon(ctx, remote, branchName); err != nil {
-		fmt.Fprintf(os.Stderr, "[entire] Warning: couldn't sync sessions: %v\n", err)
+		logging.Warn(logCtx, "couldn't sync sessions",
+			slog.String("error", err.Error()))
 		return nil // Don't fail the main push
 	}
 
 	// Try pushing again after merge
 	if err := tryPushSessionsCommon(ctx, remote, branchName); err != nil {
-		fmt.Fprintf(os.Stderr, "[entire] Warning: failed to push sessions after sync: %v\n", err)
+		logging.Warn(logCtx, "failed to push sessions after sync",
+			slog.String("error", err.Error()))
 	}
 
 	return nil

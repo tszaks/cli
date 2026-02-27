@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/entireio/cli/cmd/entire/cli/agent"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint"
 	"github.com/entireio/cli/cmd/entire/cli/checkpoint/id"
+	"github.com/entireio/cli/cmd/entire/cli/logging"
 	"github.com/entireio/cli/cmd/entire/cli/paths"
 	"github.com/entireio/cli/cmd/entire/cli/trailers"
 
@@ -302,7 +304,8 @@ func EnsureMetadataBranch(repo *git.Repository) error {
 		if err := repo.Storer.SetReference(ref); err != nil {
 			return fmt.Errorf("failed to create metadata branch from remote: %w", err)
 		}
-		fmt.Fprintf(os.Stderr, "✓ Created local branch '%s' from origin\n", paths.MetadataBranchName)
+		logging.Info(logging.WithComponent(context.Background(), "setup"), "created local metadata branch from origin",
+			slog.String("branch", paths.MetadataBranchName))
 		return nil
 	}
 
@@ -349,7 +352,8 @@ func EnsureMetadataBranch(repo *git.Repository) error {
 		return fmt.Errorf("failed to create metadata branch: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "✓ Created orphan branch '%s' for session metadata\n", paths.MetadataBranchName)
+	logging.Info(logging.WithComponent(context.Background(), "setup"), "created orphan metadata branch",
+		slog.String("branch", paths.MetadataBranchName))
 	return nil
 }
 
