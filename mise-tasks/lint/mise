@@ -17,7 +17,7 @@ in_block {
     # Check for closing delimiter first (dont count it)
     if (/^[ \t]*"""/ || /^[ \t]*'\'''\'''\''/) {
         in_block = 0
-        if (lines > 3) {
+        if (lines >= 3) {
             errors++
             printf "mise.toml:%d: multi-line script (%d lines) should be extracted to mise-tasks/\n", start_line, lines
         }
