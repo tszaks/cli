@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -136,19 +137,44 @@ func askConfirmTTY(header string, details []string, prompt string, defaultYes bo
 }
 
 // saveCommitLinkingAlways persists commit_linking = "always" to settings.local.json.
-// It loads the existing local settings first to preserve other overrides.
+// Uses raw JSON merge to set only the commit_linking field without affecting other
+// fields. This avoids writing unintended defaults (e.g., enabled: true) when the
+// local settings file doesn't exist yet.
 func saveCommitLinkingAlways(ctx context.Context) error {
 	localPath, err := paths.AbsPath(ctx, settings.EntireSettingsLocalFile)
 	if err != nil {
 		return fmt.Errorf("resolving local settings path: %w", err)
 	}
-	local, err := settings.LoadFromFile(localPath)
-	if err != nil {
-		return fmt.Errorf("loading local settings: %w", err)
+
+	// Read existing file as raw JSON map to preserve all existing fields.
+	// If the file doesn't exist, start with an empty map so we only write commit_linking.
+	var raw map[string]json.RawMessage
+	data, readErr := os.ReadFile(localPath) //nolint:gosec // path is from AbsPath
+	if readErr == nil {
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return fmt.Errorf("parsing local settings: %w", err)
+		}
+	} else if !os.IsNotExist(readErr) {
+		return fmt.Errorf("reading local settings: %w", readErr)
 	}
-	local.CommitLinking = settings.CommitLinkingAlways
-	if err := settings.SaveLocal(ctx, local); err != nil {
-		return fmt.Errorf("saving local settings: %w", err)
+	if raw == nil {
+		raw = make(map[string]json.RawMessage)
+	}
+
+	raw["commit_linking"] = json.RawMessage(`"` + settings.CommitLinkingAlways + `"`)
+
+	out, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling local settings: %w", err)
+	}
+	out = append(out, '\n')
+
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o750); err != nil {
+		return fmt.Errorf("creating settings directory: %w", err)
+	}
+	//nolint:gosec // G306: settings file is config, not secrets; 0o644 is appropriate
+	if err := os.WriteFile(localPath, out, 0o644); err != nil {
+		return fmt.Errorf("writing local settings: %w", err)
 	}
 	return nil
 }
