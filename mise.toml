@@ -136,7 +136,7 @@ quiet = true
 run = "E2E_AGENT=claude-code mise run test-e2e ${usage_filter:+\"$usage_filter\"}"
 
 [tasks."test:e2e:gemini"]
-description = "Run E2E tests with Gemini CLI (sequential)"
+description = "Run E2E tests with Gemini CLI only"
 usage = 'arg "[filter]" help="Test name filter (regex)" default=""'
 quiet = true
 run = "E2E_AGENT=gemini-cli mise run test-e2e ${usage_filter:+\"$usage_filter\"}"
