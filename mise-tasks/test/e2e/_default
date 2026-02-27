@@ -1,12 +1,8 @@
 #!/bin/sh
-#MISE description="Run E2E tests (internal — use test:e2e, test:e2e:claude, etc.)"
-#MISE hide=true
+#MISE description="Run E2E tests: mise run test:e2e --agent claude-code [filter]"
 #MISE quiet=true
-# Shared E2E runner. Called by the test:e2e:* tasks in mise.toml.
-#
-# Environment variables:
-#   E2E_AGENT                  - agent to test (claude-code, gemini-cli, opencode); empty = all
-#   E2E_CONCURRENT_TEST_LIMIT  - override per-agent concurrency gate size
+#USAGE flag "--agent <agent>" help="Agent (claude-code, gemini-cli, opencode)" default="" env="E2E_AGENT"
+#USAGE arg "[filter]" help="Test name filter (regex)" default=""
 
 set -eu
 

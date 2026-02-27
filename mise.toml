@@ -25,29 +25,3 @@ run = "go test -tags=integration -race ./..."
 description = "Build for all platforms using goreleaser"
 run = "goreleaser build --snapshot --clean"
 
-# E2E test tasks — all delegate to mise-tasks/test-e2e.
-# To add a new agent: add a task that sets E2E_AGENT and depends on test-e2e.
-
-[tasks."test:e2e"]
-description = "Run all E2E tests, optionally filtered: mise run test:e2e TestFoo"
-usage = 'arg "[filter]" help="Test name filter (regex)" default=""'
-quiet = true
-run = "mise run test-e2e ${usage_filter:+\"$usage_filter\"}"
-
-[tasks."test:e2e:claude"]
-description = "Run E2E tests with Claude Code only"
-usage = 'arg "[filter]" help="Test name filter (regex)" default=""'
-quiet = true
-run = "E2E_AGENT=claude-code mise run test-e2e ${usage_filter:+\"$usage_filter\"}"
-
-[tasks."test:e2e:gemini"]
-description = "Run E2E tests with Gemini CLI only"
-usage = 'arg "[filter]" help="Test name filter (regex)" default=""'
-quiet = true
-run = "E2E_AGENT=gemini-cli mise run test-e2e ${usage_filter:+\"$usage_filter\"}"
-
-[tasks."test:e2e:opencode"]
-description = "Run E2E tests with OpenCode only"
-usage = 'arg "[filter]" help="Test name filter (regex)" default=""'
-quiet = true
-run = "E2E_AGENT=opencode mise run test-e2e ${usage_filter:+\"$usage_filter\"}"
