@@ -14,8 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestDeletedFilesCommitDeletion tests that deleting a file that was tracked
-// in the session gets handled properly when committed via git rm.
+// TestDeletedFilesCommitDeletion tests that deleting a file during a session
+// doesn't break checkpointing. The deletion is bundled with a new file in a
+// single commit (via git add .), not a separate git rm commit.
 func TestDeletedFilesCommitDeletion(t *testing.T) {
 	testutil.ForEachAgent(t, 3*time.Minute, func(t *testing.T, s *testutil.RepoState, ctx context.Context) {
 		require.NoError(t, os.WriteFile(

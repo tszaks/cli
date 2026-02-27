@@ -55,9 +55,10 @@ func TestMain(m *testing.M) {
 		version = string(out)
 	}
 
+	// Write preflight info to artifact dir only — gotestsum swallows both
+	// stdout and stderr, so the test-e2e script cats this file at the end.
 	preflight := fmt.Sprintf("entire binary:  %s\nentire version: %s\n",
 		entireBin, version)
-	fmt.Fprint(os.Stderr, preflight)
 	_ = os.WriteFile(filepath.Join(runDir, "entire-version.txt"), []byte(preflight), 0o644)
 
 	// Don't look at user's Git config, ignore everything except the project-local Git settings.
