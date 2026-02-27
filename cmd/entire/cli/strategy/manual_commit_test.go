@@ -770,12 +770,7 @@ func TestShadowStrategy_PrepareCommitMsg_NoActiveSession(t *testing.T) {
 	}
 
 	s := NewManualCommitStrategy()
-	// NewManualCommitStrategy returns ManualCommitStrategy
-	sv2, ok := s.(*ManualCommitStrategy)
-	if !ok {
-		t.Fatal("failed to cast to ManualCommitStrategy")
-	}
-	prepErr := sv2.PrepareCommitMsg(context.Background(), commitMsgFile, "")
+	prepErr := s.PrepareCommitMsg(context.Background(), commitMsgFile, "")
 	if prepErr != nil {
 		t.Errorf("PrepareCommitMsg() error = %v", prepErr)
 	}
@@ -804,10 +799,6 @@ func TestShadowStrategy_PrepareCommitMsg_SkipSources(t *testing.T) {
 	originalMsg := "Merge branch 'feature'\n"
 
 	s := NewManualCommitStrategy()
-	sv2, ok := s.(*ManualCommitStrategy)
-	if !ok {
-		t.Fatal("failed to cast to ManualCommitStrategy")
-	}
 
 	skipSources := []string{"merge", "squash", "commit"}
 	for _, source := range skipSources {
@@ -816,7 +807,7 @@ func TestShadowStrategy_PrepareCommitMsg_SkipSources(t *testing.T) {
 				t.Fatalf("failed to write commit message file: %v", err)
 			}
 
-			prepErr := sv2.PrepareCommitMsg(context.Background(), commitMsgFile, source)
+			prepErr := s.PrepareCommitMsg(context.Background(), commitMsgFile, source)
 			if prepErr != nil {
 				t.Errorf("PrepareCommitMsg() error = %v", prepErr)
 			}
