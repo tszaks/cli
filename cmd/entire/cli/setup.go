@@ -204,15 +204,13 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 		fmt.Fprintln(w, "  Use --project to update the project settings file.")
 	}
 
-	// Helper to save settings to the appropriate file
+	// Save settings to the appropriate file.
 	saveSettings := func() error {
 		if shouldUseLocal {
 			return SaveEntireSettingsLocal(ctx, settings)
 		}
 		return SaveEntireSettings(ctx, settings)
 	}
-
-	// Save settings before telemetry prompt so config is persisted even if the user cancels
 	if err := saveSettings(); err != nil {
 		return fmt.Errorf("failed to save settings: %w", err)
 	}

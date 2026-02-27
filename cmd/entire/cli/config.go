@@ -60,11 +60,8 @@ func IsEnabled(ctx context.Context) (bool, error) {
 	return s.Enabled, nil
 }
 
-// GetStrategy returns the configured strategy instance.
-// Falls back to default if the configured strategy is not found.
-//
-
-func GetStrategy(_ context.Context) strategy.Strategy {
+// GetStrategy returns the manual-commit strategy instance.
+func GetStrategy(_ context.Context) *strategy.ManualCommitStrategy {
 	return strategy.NewManualCommitStrategy()
 }
 
