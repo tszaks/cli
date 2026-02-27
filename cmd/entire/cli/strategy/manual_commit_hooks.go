@@ -56,23 +56,38 @@ func hasTTY() bool {
 	return true
 }
 
-// askConfirmTTY prompts the user for a yes/no confirmation via /dev/tty.
+// ttyConfirmResult represents the outcome of a TTY confirmation prompt.
+type ttyConfirmResult int
+
+const (
+	ttyConfirmYes    ttyConfirmResult = iota // User confirmed (y/yes/enter with default=yes)
+	ttyConfirmNo                             // User declined (n/no)
+	ttyConfirmAlways                         // User chose "always" (a/always)
+)
+
+// askConfirmTTY prompts the user for a yes/no/always confirmation via /dev/tty.
 // This works even when stdin is redirected (e.g., git commit -m).
-// Returns true for yes, false for no. If TTY is unavailable, returns the default.
+// Returns ttyConfirmYes, ttyConfirmNo, or ttyConfirmAlways.
+// If TTY is unavailable, returns ttyConfirmYes when defaultYes is true, ttyConfirmNo otherwise.
 // If context is non-empty, it is displayed on a separate line before the prompt.
-func askConfirmTTY(prompt string, context string, defaultYes bool) bool {
+func askConfirmTTY(prompt string, context string, defaultYes bool) ttyConfirmResult {
+	defaultResult := ttyConfirmNo
+	if defaultYes {
+		defaultResult = ttyConfirmYes
+	}
+
 	// In test mode, don't try to interact with the real TTY — just use the default.
 	// ENTIRE_TEST_TTY=1 simulates "a human is present" for the hasTTY() check
 	// but we can't actually read from the TTY in tests.
 	if os.Getenv("ENTIRE_TEST_TTY") != "" {
-		return defaultYes
+		return defaultResult
 	}
 
 	// Gemini CLI sets GEMINI_CLI=1 when running shell commands (including git commit).
 	// The agent can't respond to TTY prompts, so use the default to avoid hanging.
 	// See: https://geminicli.com/docs/tools/shell/
 	if os.Getenv("GEMINI_CLI") != "" {
-		return defaultYes
+		return defaultResult
 	}
 
 	// Open /dev/tty for both reading and writing
@@ -80,7 +95,7 @@ func askConfirmTTY(prompt string, context string, defaultYes bool) bool {
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
 		// Can't open TTY (e.g., running in CI), use default
-		return defaultYes
+		return defaultResult
 	}
 	defer tty.Close()
 
@@ -93,9 +108,9 @@ func askConfirmTTY(prompt string, context string, defaultYes bool) bool {
 	// Write to tty directly, not stderr, since git hooks may redirect stderr to /dev/null
 	var hint string
 	if defaultYes {
-		hint = "[Y/n]"
+		hint = "[Y/n/a]"
 	} else {
-		hint = "[y/N]"
+		hint = "[y/N/a]"
 	}
 	fmt.Fprintf(tty, "%s %s ", prompt, hint)
 
@@ -103,19 +118,39 @@ func askConfirmTTY(prompt string, context string, defaultYes bool) bool {
 	reader := bufio.NewReader(tty)
 	response, err := reader.ReadString('\n')
 	if err != nil {
-		return defaultYes
+		return defaultResult
 	}
 
 	response = strings.TrimSpace(strings.ToLower(response))
 	switch response {
 	case "y", "yes":
-		return true
+		return ttyConfirmYes
 	case "n", "no":
-		return false
+		return ttyConfirmNo
+	case "a", "always":
+		return ttyConfirmAlways
 	default:
 		// Empty or invalid input - use default
-		return defaultYes
+		return defaultResult
 	}
+}
+
+// saveCommitLinkingAlways persists commit_linking = "always" to settings.local.json.
+// It loads the existing local settings first to preserve other overrides.
+func saveCommitLinkingAlways(ctx context.Context) error {
+	localPath, err := paths.AbsPath(ctx, settings.EntireSettingsLocalFile)
+	if err != nil {
+		return fmt.Errorf("resolving local settings path: %w", err)
+	}
+	local, err := settings.LoadFromFile(localPath)
+	if err != nil {
+		return fmt.Errorf("loading local settings: %w", err)
+	}
+	local.CommitLinking = settings.CommitLinkingAlways
+	if err := settings.SaveLocal(ctx, local); err != nil {
+		return fmt.Errorf("saving local settings: %w", err)
+	}
+	return nil
 }
 
 // CommitMsg is called by the git commit-msg hook after the user edits the message.
@@ -369,13 +404,22 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 				promptContext = "You have an active " + string(agentType) + " session.\nLast Prompt: " + displayPrompt
 			}
 
-			if !askConfirmTTY("Link this commit to "+string(agentType)+" session context?", promptContext, true) {
+			result := askConfirmTTY("Link this commit to "+string(agentType)+" session context?", promptContext, true)
+			if result == ttyConfirmNo {
 				// User declined - don't add trailer
 				logging.Debug(logCtx, "prepare-commit-msg: user declined trailer",
 					slog.String("strategy", "manual-commit"),
 					slog.String("source", source),
 				)
 				return nil
+			}
+			if result == ttyConfirmAlways {
+				// User chose "always" - persist to settings.local.json (non-fatal if it fails)
+				if saveErr := saveCommitLinkingAlways(ctx); saveErr != nil {
+					logging.Warn(logCtx, "prepare-commit-msg: failed to save commit_linking=always",
+						slog.String("error", saveErr.Error()),
+					)
+				}
 			}
 			message = addCheckpointTrailer(message, checkpointID)
 		}

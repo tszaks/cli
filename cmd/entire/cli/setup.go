@@ -168,10 +168,6 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 		}
 	}
 
-	// Check if this is a first-time setup before creating directories/loading settings.
-	// settings.IsSetUp checks if .entire/settings.json exists on disk.
-	isFirstSetup := !settings.IsSetUp(ctx)
-
 	// Setup .entire directory
 	if _, err := setupEntireDirectory(ctx); err != nil {
 		return fmt.Errorf("failed to setup .entire directory: %w", err)
@@ -186,17 +182,6 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 	// Update the specific fields
 	settings.LocalDev = localDev
 	settings.Enabled = true
-	// Set commit_linking and clean up deprecated strategy field.
-	// New installations get "always" (auto-link); existing repos get "prompt" written
-	// explicitly so the settings file reflects the current spec.
-	if settings.CommitLinking == "" {
-		if isFirstSetup {
-			settings.CommitLinking = CommitLinkingAlways
-		} else {
-			settings.CommitLinking = CommitLinkingPrompt
-		}
-	}
-	settings.Strategy = "" //nolint:staticcheck // Intentionally clearing deprecated field during setup
 
 	// Set push_sessions option if --skip-push-sessions flag was provided
 	if skipPushSessions {
@@ -220,24 +205,14 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 	}
 
 	// Save settings to the appropriate file.
-	// commit_linking and strategy cleanup always go to settings.json (the project file)
-	// so there's a single source of truth that users edit.
-	if shouldUseLocal {
-		// Save user-specific overrides to local (without commit_linking — that belongs in project settings)
-		localSettings := *settings
-		localSettings.CommitLinking = ""
-		localSettings.Strategy = "" //nolint:staticcheck // Clear deprecated field from local too
-		if err := SaveEntireSettingsLocal(ctx, &localSettings); err != nil {
-			return fmt.Errorf("failed to save local settings: %w", err)
+	saveSettings := func() error {
+		if shouldUseLocal {
+			return SaveEntireSettingsLocal(ctx, settings)
 		}
-		// Migrate project settings.json: clear deprecated strategy, write commit_linking
-		if err := migrateProjectSettings(ctx); err != nil {
-			return fmt.Errorf("failed to migrate project settings: %w", err)
-		}
-	} else {
-		if err := SaveEntireSettings(ctx, settings); err != nil {
-			return fmt.Errorf("failed to save settings: %w", err)
-		}
+		return SaveEntireSettings(ctx, settings)
+	}
+	if err := saveSettings(); err != nil {
+		return fmt.Errorf("failed to save settings: %w", err)
 	}
 
 	if _, err := strategy.InstallGitHook(ctx, true, localDev); err != nil {
@@ -258,17 +233,8 @@ func runEnableInteractive(ctx context.Context, w io.Writer, agents []agent.Agent
 		return fmt.Errorf("telemetry consent: %w", err)
 	}
 	// Save again to persist telemetry choice
-	if shouldUseLocal {
-		localSettings := *settings
-		localSettings.CommitLinking = ""
-		localSettings.Strategy = "" //nolint:staticcheck // Keep deprecated field out of local
-		if err := SaveEntireSettingsLocal(ctx, &localSettings); err != nil {
-			return fmt.Errorf("failed to save local settings: %w", err)
-		}
-	} else {
-		if err := SaveEntireSettings(ctx, settings); err != nil {
-			return fmt.Errorf("failed to save settings: %w", err)
-		}
+	if err := saveSettings(); err != nil {
+		return fmt.Errorf("failed to save settings: %w", err)
 	}
 
 	if err := strategy.EnsureSetup(ctx); err != nil {
@@ -612,9 +578,6 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 		return fmt.Errorf("failed to install hooks for %s: %w", agentName, err)
 	}
 
-	// Check if this is a first-time setup BEFORE creating .entire directory
-	isFirstSetup := !settings.IsSetUp(ctx)
-
 	// Setup .entire directory
 	if _, err := setupEntireDirectory(ctx); err != nil {
 		return fmt.Errorf("failed to setup .entire directory: %w", err)
@@ -630,15 +593,6 @@ func setupAgentHooksNonInteractive(ctx context.Context, w io.Writer, ag agent.Ag
 	if localDev {
 		settings.LocalDev = localDev
 	}
-	// Set commit_linking and clean up deprecated strategy field.
-	if settings.CommitLinking == "" {
-		if isFirstSetup {
-			settings.CommitLinking = CommitLinkingAlways
-		} else {
-			settings.CommitLinking = CommitLinkingPrompt
-		}
-	}
-	settings.Strategy = "" //nolint:staticcheck // Intentionally clearing deprecated field during setup
 
 	// Set push_sessions option if --skip-push-sessions flag was provided
 	if skipPushSessions {
@@ -721,29 +675,6 @@ func determineSettingsTarget(entireDir string, useLocal, useProject bool) (bool,
 
 	// Settings file doesn't exist - create it
 	return false, false
-}
-
-// migrateProjectSettings loads the project settings.json directly,
-// clears the deprecated strategy field, sets commit_linking if missing,
-// and saves it back. This is needed when the main save goes to
-// settings.local.json — the project file still needs cleanup.
-func migrateProjectSettings(ctx context.Context) error {
-	settingsFileAbs, err := paths.AbsPath(ctx, settings.EntireSettingsFile)
-	if err != nil {
-		return fmt.Errorf("resolving settings path: %w", err)
-	}
-	projectSettings, err := settings.LoadFromFile(settingsFileAbs)
-	if err != nil {
-		return fmt.Errorf("loading project settings: %w", err)
-	}
-	projectSettings.Strategy = "" //nolint:staticcheck // Intentionally clearing deprecated field
-	if projectSettings.CommitLinking == "" {
-		projectSettings.CommitLinking = settings.CommitLinkingPrompt
-	}
-	if err := settings.Save(ctx, projectSettings); err != nil {
-		return fmt.Errorf("saving project settings: %w", err)
-	}
-	return nil
 }
 
 // setupEntireDirectory creates the .entire directory and gitignore.
