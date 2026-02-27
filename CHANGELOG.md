@@ -51,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 Thanks to @ishaan812 for contributing to this release!
 
+Thanks to @9bany ([#260](https://github.com/entireio/cli/pull/260)) for their Cursor PR! We've now merged our Cursor integration. While we went with our own implementation, your PR were valuable in helping us validate our design choices and ensure we covered the right scenarios. We appreciate the effort you put into this!
+
 ## [0.4.7] - 2026-02-24
 
 ### Fixed
