@@ -69,8 +69,9 @@ const (
 // This works even when stdin is redirected (e.g., git commit -m).
 // Returns ttyConfirmYes, ttyConfirmNo, or ttyConfirmAlways.
 // If TTY is unavailable, returns ttyConfirmYes when defaultYes is true, ttyConfirmNo otherwise.
-// If context is non-empty, it is displayed on a separate line before the prompt.
-func askConfirmTTY(prompt string, context string, defaultYes bool) ttyConfirmResult {
+// header is displayed as the first line (e.g., "Entire: Active Claude Code session").
+// detail lines are displayed indented below the header.
+func askConfirmTTY(header string, details []string, prompt string, defaultYes bool) ttyConfirmResult {
 	defaultResult := ttyConfirmNo
 	if defaultYes {
 		defaultResult = ttyConfirmYes
@@ -99,20 +100,19 @@ func askConfirmTTY(prompt string, context string, defaultYes bool) ttyConfirmRes
 	}
 	defer tty.Close()
 
-	// Show context if provided
-	if context != "" {
-		fmt.Fprintf(tty, "%s\n", context)
+	// Write to tty directly, not stderr, since git hooks may redirect stderr to /dev/null
+	fmt.Fprintf(tty, "\n%s\n", header)
+	for _, line := range details {
+		fmt.Fprintf(tty, "  %s\n", line)
 	}
 
-	// Show prompt with default indicator
-	// Write to tty directly, not stderr, since git hooks may redirect stderr to /dev/null
-	var hint string
+	// Show prompt with option descriptions
+	fmt.Fprintf(tty, "\n%s\n", prompt)
 	if defaultYes {
-		hint = "[Y/n/a]"
+		fmt.Fprint(tty, "  [Y]es / [n]o / [a]lways (remember my choice): ")
 	} else {
-		hint = "[y/N/a]"
+		fmt.Fprint(tty, "  [y]es / [N]o / [a]lways (remember my choice): ")
 	}
-	fmt.Fprintf(tty, "%s %s ", prompt, hint)
 
 	// Read response
 	reader := bufio.NewReader(tty)
@@ -399,12 +399,13 @@ func (s *ManualCommitStrategy) PrepareCommitMsg(ctx context.Context, commitMsgFi
 		} else {
 			// Prompt mode: ask user interactively whether to add trailer
 			// (comments won't be stripped by git in this mode)
-			var promptContext string
+			header := "Entire: Active " + string(agentType) + " session detected"
+			var details []string
 			if displayPrompt != "" {
-				promptContext = "You have an active " + string(agentType) + " session.\nLast Prompt: " + displayPrompt
+				details = append(details, "Last prompt: "+displayPrompt)
 			}
 
-			result := askConfirmTTY("Link this commit to "+string(agentType)+" session context?", promptContext, true)
+			result := askConfirmTTY(header, details, "Link this commit to session context?", true)
 			if result == ttyConfirmNo {
 				// User declined - don't add trailer
 				logging.Debug(logCtx, "prepare-commit-msg: user declined trailer",
