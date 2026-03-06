@@ -2,9 +2,12 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	codexagent "github.com/entireio/cli/cmd/entire/cli/agent/codex"
@@ -19,6 +22,7 @@ const codexWatchInterval = 2 * time.Second
 const annotationSkipVersionCheckWhenJSON = "entire.io/skip-version-check-when-json"
 
 var collectCodexSessions = codexagent.CollectSessions
+var runCodexResume = execCodexResume
 
 func newCodexCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -27,6 +31,7 @@ func newCodexCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newCodexSessionsCmd())
+	cmd.AddCommand(newCodexResumeCmd())
 	return cmd
 }
 
@@ -64,6 +69,23 @@ func newCodexSessionsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output JSON instead of a table")
 	cmd.Flags().BoolVar(&includeDetails, "details", false, "Show recent action details")
 	cmd.Flags().BoolVar(&watch, "watch", false, "Refresh the table every 2 seconds")
+
+	return cmd
+}
+
+func newCodexResumeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "resume <thread-id-or-prefix>",
+		Short: "Resume a Codex session by thread id",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			session, err := resolveCodexSession(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			return runCodexResume(cmd.Context(), session.ThreadID)
+		},
+	}
 
 	return cmd
 }
@@ -298,4 +320,43 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func resolveCodexSession(ctx context.Context, query string) (codexagent.SessionSummary, error) {
+	snapshot, err := collectCodexSessions(ctx, codexagent.SessionCollectOptions{IncludeAll: true})
+	if err != nil {
+		return codexagent.SessionSummary{}, err
+	}
+
+	var matches []codexagent.SessionSummary
+	for _, session := range snapshot.Sessions {
+		if session.ThreadID == query || strings.HasPrefix(session.ThreadID, query) {
+			matches = append(matches, session)
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return codexagent.SessionSummary{}, fmt.Errorf("no Codex session found matching %q", query)
+	case 1:
+		return matches[0], nil
+	default:
+		ids := make([]string, 0, len(matches))
+		for _, match := range matches {
+			ids = append(ids, shortThreadID(match.ThreadID))
+		}
+		return codexagent.SessionSummary{}, fmt.Errorf("multiple Codex sessions match %q: %s", query, strings.Join(ids, ", "))
+	}
+}
+
+func execCodexResume(ctx context.Context, threadID string) error {
+	if strings.TrimSpace(threadID) == "" {
+		return errors.New("thread id is required")
+	}
+
+	cmd := exec.CommandContext(ctx, "codex", "resume", threadID)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }

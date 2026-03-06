@@ -81,7 +81,7 @@ func TestCodexSessionsCmdRejectsPositionalArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for positional args")
 	}
-	if !strings.Contains(err.Error(), "accepts 0 arg(s)") {
+	if !strings.Contains(err.Error(), "unknown command") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -129,5 +129,72 @@ func TestRootCodexSessionsJSONSkipsVersionCheckOutput(t *testing.T) {
 	var payload map[string]any
 	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
 		t.Fatalf("root output was not valid json: %v\n%s", err, stdout.String())
+	}
+}
+
+func TestCodexResumeCmdUsesUniquePrefix(t *testing.T) {
+	originalCollect := collectCodexSessions
+	originalRun := runCodexResume
+	defer func() {
+		collectCodexSessions = originalCollect
+		runCodexResume = originalRun
+	}()
+
+	collectCodexSessions = func(context.Context, codexagent.SessionCollectOptions) (*codexagent.SessionSnapshot, error) {
+		return &codexagent.SessionSnapshot{
+			Sessions: []codexagent.SessionSummary{
+				{ThreadID: "019cc45a-f772-7fd0-b7c0-f762df930f57", Status: "active"},
+				{ThreadID: "abcd1234-1111-2222-3333-444444444444", Status: "inactive"},
+			},
+		}, nil
+	}
+
+	var resumed string
+	runCodexResume = func(_ context.Context, threadID string) error {
+		resumed = threadID
+		return nil
+	}
+
+	cmd := newCodexResumeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"019cc45a"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+	if resumed != "019cc45a-f772-7fd0-b7c0-f762df930f57" {
+		t.Fatalf("unexpected resumed thread: %q", resumed)
+	}
+}
+
+func TestCodexResumeCmdRejectsAmbiguousPrefix(t *testing.T) {
+	originalCollect := collectCodexSessions
+	originalRun := runCodexResume
+	defer func() {
+		collectCodexSessions = originalCollect
+		runCodexResume = originalRun
+	}()
+
+	collectCodexSessions = func(context.Context, codexagent.SessionCollectOptions) (*codexagent.SessionSnapshot, error) {
+		return &codexagent.SessionSnapshot{
+			Sessions: []codexagent.SessionSummary{
+				{ThreadID: "019cc45a-f772-7fd0-b7c0-f762df930f57", Status: "active"},
+				{ThreadID: "019cc45a-aaaa-bbbb-cccc-555555555555", Status: "inactive"},
+			},
+		}, nil
+	}
+
+	cmd := newCodexResumeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"019cc45a"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected ambiguous prefix error")
+	}
+	if !strings.Contains(err.Error(), "multiple Codex sessions match") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

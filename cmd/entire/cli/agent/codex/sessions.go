@@ -28,7 +28,7 @@ const (
 )
 
 var (
-	changeDirCommandRegex     = regexp.MustCompile(`^\s*cd\s+(?:(['"])(.*?)\1|([^&|;]+))\s*&&`)
+	changeDirCommandRegex     = regexp.MustCompile(`^\s*cd\s+(?:"([^"]+)"|'([^']+)'|([^&|;]+))\s*&&`)
 	codexHomeDirFunc          = codexHomeDir
 	hostnameFunc              = os.Hostname
 	nowFunc                   = time.Now
@@ -583,6 +583,9 @@ func extractShellWorkdir(command string) string {
 		return ""
 	}
 
+	if matches[1] != "" {
+		return strings.TrimSpace(matches[1])
+	}
 	if matches[2] != "" {
 		return strings.TrimSpace(matches[2])
 	}
