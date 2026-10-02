@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var checkVersionAndNotify = versioncheck.CheckAndNotify
+
 const gettingStarted = `
 
 Getting Started:
@@ -64,7 +66,10 @@ func NewRootCmd() *cobra.Command {
 
 			// Version check and notification (synchronous with 2s timeout)
 			// Runs AFTER command completes to avoid interfering with interactive modes
-			versioncheck.CheckAndNotify(cmd.Context(), cmd.OutOrStdout(), versioninfo.Version)
+			if shouldSkipVersionCheck(cmd) {
+				return
+			}
+			checkVersionAndNotify(cmd.Context(), cmd.OutOrStdout(), versioninfo.Version)
 		},
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
@@ -79,6 +84,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newEnableCmd())
 	cmd.AddCommand(newDisableCmd())
 	cmd.AddCommand(newStatusCmd())
+	cmd.AddCommand(newCodexCmd())
 	cmd.AddCommand(newHooksCmd())
 	cmd.AddCommand(newVersionCmd())
 	cmd.AddCommand(newExplainCmd())
@@ -92,6 +98,18 @@ func NewRootCmd() *cobra.Command {
 	cmd.SetHelpCommand(NewHelpCmd(cmd))
 
 	return cmd
+}
+
+func shouldSkipVersionCheck(cmd *cobra.Command) bool {
+	if cmd == nil {
+		return false
+	}
+	if cmd.Annotations[annotationSkipVersionCheckWhenJSON] != "true" {
+		return false
+	}
+
+	flag := cmd.Flags().Lookup("json")
+	return flag != nil && flag.Value.String() == "true"
 }
 
 func versionString() string {
